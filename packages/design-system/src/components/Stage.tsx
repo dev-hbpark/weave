@@ -235,11 +235,15 @@ export function Stage({
           // Z-order dim: anything later in the scenes array paints above
           // earlier ones (DOM source order = z-order with no z-index set).
           // When the user navigates to scene N, scenes with index > N would
-          // otherwise visually obscure the target if they overlap. Fade them
-          // to opacity 0 with a duration roughly matched to the camera
-          // spring so opacity, zoom, and pan share a perceived timeline.
+          // otherwise visually obscure the target if they overlap. Fade
+          // them with an **ease-in** curve that lags behind the camera —
+          // the perceived hierarchy is "scale + pan lead, opacity trails,"
+          // which mirrors how real volumes behave: a moving object holds
+          // its silhouette until the motion mostly resolves, then fades.
+          // A symmetric ease-in-out makes opacity feel synchronized with
+          // the camera and reads as rushed; ease-in feels deliberate.
           const activeIdx = scenes.findIndex((s) => s.id === activeId);
-          const dimDuration = reduce ? 0 : 0.42;
+          const dimDuration = reduce ? 0 : 0.72;
           return scenes.map((scene, idx) => {
             const dimmed = activeIdx >= 0 && idx > activeIdx;
             return (
@@ -259,7 +263,13 @@ export function Stage({
                   overflow: "hidden",
                 }}
                 animate={{ opacity: dimmed ? 0 : 1 }}
-                transition={{ duration: dimDuration, ease: [0.32, 0.72, 0, 1] }}
+                transition={{
+                  duration: dimDuration,
+                  // ease-in: P1 weighted near origin, P2 flat at the end.
+                  // Holds opacity near 1 for the first ~40% of the
+                  // animation, then accelerates the fade.
+                  ease: [0.7, 0, 0.84, 0],
+                }}
               >
                 {scene.children}
               </motion.div>
