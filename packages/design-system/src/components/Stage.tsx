@@ -236,14 +236,14 @@ export function Stage({
           // earlier ones (DOM source order = z-order with no z-index set).
           // When the user navigates to scene N, scenes with index > N would
           // otherwise visually obscure the target if they overlap. Fade
-          // them with an **ease-in** curve that lags behind the camera —
-          // the perceived hierarchy is "scale + pan lead, opacity trails,"
-          // which mirrors how real volumes behave: a moving object holds
-          // its silhouette until the motion mostly resolves, then fades.
-          // A symmetric ease-in-out makes opacity feel synchronized with
-          // the camera and reads as rushed; ease-in feels deliberate.
+          // them with a **symmetric ease-in-out** so fade-in and fade-out
+          // feel balanced — a one-sided ease made the entry side (idx jumps
+          // from > active to <= active) read as a sudden pop. Duration
+          // (~800ms) trails just past the camera spring's settle time so
+          // opacity is the last channel to finish, but the symmetric curve
+          // keeps both edges of the fade gentle.
           const activeIdx = scenes.findIndex((s) => s.id === activeId);
-          const dimDuration = reduce ? 0 : 0.72;
+          const dimDuration = reduce ? 0 : 0.8;
           return scenes.map((scene, idx) => {
             const dimmed = activeIdx >= 0 && idx > activeIdx;
             return (
@@ -265,10 +265,11 @@ export function Stage({
                 animate={{ opacity: dimmed ? 0 : 1 }}
                 transition={{
                   duration: dimDuration,
-                  // ease-in: P1 weighted near origin, P2 flat at the end.
-                  // Holds opacity near 1 for the first ~40% of the
-                  // animation, then accelerates the fade.
-                  ease: [0.7, 0, 0.84, 0],
+                  // Symmetric ease-in-out — both edges decelerate, so the
+                  // fade-in (entering scene) and fade-out (leaving scene)
+                  // read as the same gesture. Material Design's "standard
+                  // easing" curve.
+                  ease: [0.4, 0, 0.2, 1],
                 }}
               >
                 {scene.children}
