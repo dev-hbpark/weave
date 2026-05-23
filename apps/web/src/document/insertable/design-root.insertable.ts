@@ -135,6 +135,17 @@ export const designRootInsertable: InsertableCapability<"design"> = {
       },
     });
   },
+
+  describeHover: () => ({
+    title: "이 캔버스에 프레임 추가",
+    hint: "드래그하여 새 도메인 프레임을 만들거나, Option(⌥) 키를 누른 채 드래그하면 아이템 위에서도 새 프레임을 추가할 수 있습니다.",
+    kinds: [
+      { id: "slide", label: "슬라이드", icon: KIND_GLYPHS.slide },
+      { id: "canvas-design", label: "캔버스", icon: KIND_GLYPHS["canvas-design"] },
+      { id: "block-doc", label: "문서", icon: KIND_GLYPHS["block-doc"] },
+      { id: "media", label: "미디어", icon: KIND_GLYPHS.media },
+    ],
+  }),
 };
 
 interface DomainSkeletonProps {

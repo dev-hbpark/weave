@@ -60,6 +60,19 @@ export interface InsertableCommitContext {
   readonly editor: Editor;
 }
 
+/** Content surfaced on empty-space hover (Phase G). Tells the user what
+ *  they can build by dragging here. `kinds` is the unfiltered catalog —
+ *  no bucket has been applied yet because no drag has happened. */
+export interface InsertableHoverHint {
+  readonly title: string;
+  readonly hint: string;
+  readonly kinds: ReadonlyArray<{
+    readonly id: string;
+    readonly label: string;
+    readonly icon?: ReactNode;
+  }>;
+}
+
 export interface InsertableCapability<K extends ContainerKind = ContainerKind> {
   readonly containerKind: K;
   readonly recommend: (
@@ -75,6 +88,9 @@ export interface InsertableCapability<K extends ContainerKind = ContainerKind> {
     rect: NormalizedDragRect,
     ctx: InsertableCommitContext,
   ) => void;
+  /** Phase G — empty-space hover hint. Optional; layer falls back to a
+   *  generic message when undefined. */
+  readonly describeHover?: (ctx: InsertableDescribeContext) => InsertableHoverHint;
 }
 
 export interface InsertableRegistry {

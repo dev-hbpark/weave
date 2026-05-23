@@ -50,6 +50,16 @@ export interface UseRubberBandReturn {
   readonly rect: RubberBandHostRect | null;
   /** Free-form identifier the popover layer sets via `preview()`. */
   readonly previewKind: string | null;
+  /** True whenever Option(Alt) is held over the host — layer can change the
+   *  cursor / show an inline mode hint. */
+  readonly altActive: boolean;
+  /** Cursor position in viewport (client) px while hovering empty space
+   *  (or Alt-held over any child) in idle. Null otherwise. Used to anchor
+   *  the empty-space hover hint popover via a Radix virtual ref. Client
+   *  coords (not host-local) so the popover portal — which mounts to
+   *  document.body and is unaffected by the host's CSS transform — can
+   *  position correctly. */
+  readonly hoverPoint: { readonly clientX: number; readonly clientY: number } | null;
   /**
    * Spread onto the host element (the container that should accept the
    * rubber-band drag — e.g. a design canvas or a frame's interior).
@@ -59,10 +69,15 @@ export interface UseRubberBandReturn {
    */
   readonly hostProps: {
     readonly ref: RefCallback<HTMLElement>;
+    /** Capture-phase intercept — fires *before* children. Used to honor
+     *  Option(Alt) modifier so the drag wins even when the pointer lands on
+     *  a child (frame / shape / selection handle). */
+    readonly onPointerDownCapture: (e: ReactPointerEvent<HTMLElement>) => void;
     readonly onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
     readonly onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void;
     readonly onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void;
     readonly onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void;
+    readonly onPointerLeave: (e: ReactPointerEvent<HTMLElement>) => void;
   };
   /**
    * Popover layer calls this on item hover / hover-out. `kind` is an opaque
@@ -88,6 +103,10 @@ export function useRubberBand(
   const [state, setState] = useState<RubberBandHostState>("idle");
   const [rect, setRect] = useState<RubberBandHostRect | null>(null);
   const [previewKind, setPreviewKind] = useState<string | null>(null);
+  const [altActive, setAltActive] = useState<boolean>(false);
+  const [hoverPoint, setHoverPoint] = useState<
+    { readonly clientX: number; readonly clientY: number } | null
+  >(null);
 
   const startPointRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
   const pointerIdRef = useRef<number | null>(null);
@@ -127,20 +146,10 @@ export function useRubberBand(
     [],
   );
 
-  const onPointerDown = useCallback(
+  /** Internal — actually start the drawing state. Shared between bubble
+   *  (empty-space) and capture (Alt-held) paths. */
+  const startDrawing = useCallback(
     (e: ReactPointerEvent<HTMLElement>) => {
-      // Empty-space guard — React's synthetic events bubble through the
-      // *component tree*, not the DOM tree. That means portal'd descendants
-      // (e.g. a Radix ContextMenu's menuitem rendered into document.body but
-      // declared inside one of our frame components) still surface their
-      // pointerdown here. Without this check the host would capture the
-      // pointer on a menuitem click, hijacking the menu's own click flow.
-      // `e.target === e.currentTarget` is true only when the pointerdown
-      // actually lands on the host element itself — i.e. genuine empty
-      // space between children.
-      if (e.target !== e.currentTarget) return;
-      if (e.button !== 0) return; // left button only
-      if (state !== "idle") return; // re-entry guard
       const host = hostRef.current;
       if (host === null) return;
       const { x, y } = toLocal(e.clientX, e.clientY);
@@ -151,25 +160,88 @@ export function useRubberBand(
       host.setPointerCapture(e.pointerId);
       setState("drawing");
       setRect({ left: sx, top: sy, width: 0, height: 0 });
+      setHoverPoint(null);
     },
-    [state, toLocal, snap],
+    [toLocal, snap],
+  );
+
+  /** Capture-phase intercept — runs *before* descendant handlers (item
+   *  selection, frame drag). When Option(Alt) is held we hijack the gesture
+   *  for drag-to-add so the user can start a drag even while pointing at an
+   *  existing item. */
+  const onPointerDownCapture = useCallback(
+    (e: ReactPointerEvent<HTMLElement>) => {
+      if (!e.altKey) return;
+      if (e.button !== 0) return;
+      if (state !== "idle") return;
+      // Block all descendant handlers (selection, drag-to-move) from acting
+      // on this event — they would otherwise fire in bubble phase after
+      // capture finishes propagating down.
+      e.stopPropagation();
+      e.preventDefault();
+      startDrawing(e);
+    },
+    [state, startDrawing],
+  );
+
+  const onPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLElement>) => {
+      // Empty-space guard — React's synthetic events bubble through the
+      // *component tree*, not the DOM tree. That means portal'd descendants
+      // (e.g. a Radix ContextMenu's menuitem rendered into document.body but
+      // declared inside one of our frame components) still surface their
+      // pointerdown here. Without this check the host would capture the
+      // pointer on a menuitem click, hijacking the menu's own click flow.
+      // `e.target === e.currentTarget` is true only when the pointerdown
+      // actually lands on the host element itself — i.e. genuine empty
+      // space between children. Option(Alt) bypass is handled in
+      // `onPointerDownCapture` above (fires before this).
+      if (e.target !== e.currentTarget) return;
+      if (e.button !== 0) return; // left button only
+      if (state !== "idle") return; // re-entry guard
+      startDrawing(e);
+    },
+    [state, startDrawing],
   );
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent<HTMLElement>) => {
-      if (state !== "drawing") return;
-      const start = startPointRef.current;
-      if (start === null) return;
-      const { x, y } = toLocal(e.clientX, e.clientY);
-      const sx = snap(x);
-      const sy = snap(y);
-      const left = Math.min(start.x, sx);
-      const top = Math.min(start.y, sy);
-      const width = Math.abs(sx - start.x);
-      const height = Math.abs(sy - start.y);
-      setRect({ left, top, width, height });
+      // Surface Alt state for visual mode hint (cursor change in the layer).
+      setAltActive(e.altKey);
+      if (state === "drawing") {
+        const start = startPointRef.current;
+        if (start === null) return;
+        const { x, y } = toLocal(e.clientX, e.clientY);
+        const sx = snap(x);
+        const sy = snap(y);
+        const left = Math.min(start.x, sx);
+        const top = Math.min(start.y, sy);
+        const width = Math.abs(sx - start.x);
+        const height = Math.abs(sy - start.y);
+        setRect({ left, top, width, height });
+        return;
+      }
+      // Idle hover tracking — only emit a hoverPoint when the cursor is on
+      // the host itself (genuine empty space) OR Option is held. Children
+      // (frames, shapes) shadow the hover hint so they can show their own
+      // tooltip without conflict.
+      if (state !== "idle") return;
+      const onEmpty = e.target === e.currentTarget;
+      if (!onEmpty && !e.altKey) {
+        setHoverPoint(null);
+        return;
+      }
+      setHoverPoint({ clientX: e.clientX, clientY: e.clientY });
     },
     [state, toLocal, snap],
+  );
+
+  const onPointerLeave = useCallback(
+    (_e: ReactPointerEvent<HTMLElement>) => {
+      setHoverPoint(null);
+      setAltActive(false);
+    },
+    [],
   );
 
   const releaseCapture = useCallback(() => {
@@ -274,6 +346,30 @@ export function useRubberBand(
     };
   }, [state, cancel]);
 
+  // Track Option(Alt) globally so the layer can switch its cursor / mode
+  // hint the moment the key is pressed, even before the user moves the
+  // pointer. Only active in idle — once a drag starts, the `altActive`
+  // state is frozen at whatever the drag's modifier was.
+  useEffect(() => {
+    if (state !== "idle") return;
+    if (typeof window === "undefined") return;
+    const onDown = (e: KeyboardEvent) => {
+      if (e.altKey) setAltActive(true);
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (!e.altKey) setAltActive(false);
+    };
+    const onBlur = () => setAltActive(false);
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [state]);
+
   const setRef = useCallback<RefCallback<HTMLElement>>((el) => {
     hostRef.current = el;
   }, []);
@@ -282,12 +378,16 @@ export function useRubberBand(
     state,
     rect,
     previewKind,
+    altActive,
+    hoverPoint,
     hostProps: {
       ref: setRef,
+      onPointerDownCapture,
       onPointerDown,
       onPointerMove,
       onPointerUp,
       onPointerCancel,
+      onPointerLeave,
     },
     preview,
     commit,

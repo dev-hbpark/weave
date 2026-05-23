@@ -35,11 +35,13 @@ import {
 } from "react";
 import { defaultInsertableRegistry } from "../insertable/default-registry.js";
 import {
+  type ContainerKind,
+  type InsertableHoverHint,
   type InsertableRecommendation,
   type NormalizedDragRect,
   normalizeDragRect,
-  type ContainerKind,
 } from "../insertable/types.js";
+import { EmptySpaceHint } from "./EmptySpaceHint.js";
 import { RecommendationPopover } from "./RecommendationPopover.js";
 import { useRubberBand } from "./use-rubber-band.js";
 
@@ -163,6 +165,28 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
 
   const popoverOpen = rb.state === "reviewing" || rb.state === "previewing";
 
+  // Empty-space hover hint — surfaced when idle and the cursor is over
+  // genuine empty space (or Alt is held anywhere over the host). Capability
+  // adapters supply the content via `describeHover`; absence falls back to
+  // a generic message so the affordance is always discoverable.
+  const hoverHint: InsertableHoverHint | null = useMemo(() => {
+    if (capability === undefined) return null;
+    const described = capability.describeHover?.({
+      containerId,
+      canUndo: editor.history.canUndo(),
+      canRedo: editor.history.canRedo(),
+    });
+    return (
+      described ?? {
+        title: "여기에 추가",
+        hint: "드래그하여 새 아이템을 그리거나, Option(⌥) 키를 누른 채 드래그하여 다른 아이템 위에서도 추가할 수 있습니다.",
+        kinds: [],
+      }
+    );
+  }, [capability, containerId, editor]);
+
+  const hintOpen = rb.state === "idle" && rb.hoverPoint !== null;
+
   const composedRef = useCallback(
     mergeRefs<HTMLDivElement>(forwardedRef, rb.hostProps.ref as Ref<HTMLDivElement>),
     [forwardedRef, rb.hostProps.ref],
@@ -171,16 +195,39 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
   return (
     <div
       ref={composedRef}
+      onPointerDownCapture={rb.hostProps.onPointerDownCapture}
       onPointerDown={rb.hostProps.onPointerDown}
       onPointerMove={rb.hostProps.onPointerMove}
       onPointerUp={rb.hostProps.onPointerUp}
       onPointerCancel={rb.hostProps.onPointerCancel}
+      onPointerLeave={rb.hostProps.onPointerLeave}
       className={className}
-      style={{ position: "relative", ...style }}
+      style={{
+        position: "relative",
+        // Alt-held over the host → switch to a "copy" cursor so the user
+        // sees the mode change. `crosshair` while drawing.
+        ...(rb.state === "drawing"
+          ? { cursor: "crosshair" }
+          : rb.altActive
+            ? { cursor: "copy" }
+            : {}),
+        ...style,
+      }}
       data-testid="rubber-band-host"
       data-rubber-band-host-state={rb.state}
+      data-rubber-band-alt-active={rb.altActive ? "true" : "false"}
     >
       {children}
+
+      {/* Empty-space hover hint — idle only. Pointer-transparent so it
+          never intercepts the drag start. */}
+      <EmptySpaceHint
+        open={hintOpen}
+        clientPoint={rb.hoverPoint}
+        hint={hoverHint}
+        altActive={rb.altActive}
+      />
+
 
       {/* Drawing state — RubberBand only, no popover yet. */}
       {rb.state === "drawing" && rb.rect !== null ? (

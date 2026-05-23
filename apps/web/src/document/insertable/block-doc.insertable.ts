@@ -92,6 +92,16 @@ export const blockDocInsertable: InsertableCapability<"block-doc"> = {
       }),
     });
   },
+
+  describeHover: () => ({
+    title: "이 문서에 단락 추가",
+    hint: "드래그하여 새 단락을 추가합니다. Option(⌥) 키를 누른 채 드래그하면 기존 단락 위에서도 새 단락을 추가할 수 있습니다.",
+    kinds: [
+      { id: "heading", label: "헤딩" },
+      { id: "list", label: "목록" },
+      { id: "body", label: "본문" },
+    ],
+  }),
 };
 
 interface ParagraphSkeletonProps {
