@@ -107,6 +107,25 @@ export interface FrameStageProps {
     | undefined;
 }
 
+/** Phase 13e — per-level z-order dim. Returns one boolean per child:
+ *  true if this child paints above the entered branch's level node and
+ *  must fade. When no descendant of this level lies on the trail, no one
+ *  fades. */
+function computeDrillDimFlags(
+  children: ReadonlyArray<AgocraftItem>,
+  trailIds: ReadonlySet<string>,
+): ReadonlyArray<boolean> {
+  let trailIdx = -1;
+  for (let i = 0; i < children.length; i += 1) {
+    if (trailIds.has(String(children[i]!.id))) {
+      trailIdx = i;
+      break;
+    }
+  }
+  if (trailIdx === -1) return children.map(() => false);
+  return children.map((_, i) => i > trailIdx);
+}
+
 interface NestedFrameProps {
   readonly item: AgocraftItem;
   readonly parentWidthPx: number;
@@ -115,6 +134,11 @@ interface NestedFrameProps {
   /** Phase D — currently entered (drill-in) frame id, threaded down so each
    *  NestedFrame's KindTooltip can compare against its own item id. */
   readonly enteredId: string | undefined;
+  /** Phase 13e — full ancestor-and-target id set for the entered frame.
+   *  Empty when nothing is entered. Each NestedFrame consults this when
+   *  rendering its own children to decide which siblings paint above the
+   *  trail branch at *this* level. */
+  readonly enteredTrailIds: ReadonlySet<string>;
   readonly onSelect: ((id: string | undefined) => void) | undefined;
   readonly onUpdateItem: FrameStageProps["onUpdateItem"];
   readonly onUpdateShape: FrameStageProps["onUpdateShape"];
@@ -137,6 +161,11 @@ interface NestedFrameProps {
         region: { x: number; y: number; width: number; height: number },
       ) => void)
     | undefined;
+  /** Phase 13e — z-order drill-in dim. Set to true when this frame paints
+   *  above the entered branch at its current tree level (= later in the
+   *  parent's children array). Renders with opacity 0 so it doesn't obscure
+   *  the entered frame after the drill-in zoom. */
+  readonly drillDimmed?: boolean;
 }
 
 function NestedFrame({
@@ -157,6 +186,8 @@ function NestedFrame({
   selectedHotspotId,
   onSelectHotspot,
   onCommitHotspotRegion,
+  drillDimmed = false,
+  enteredTrailIds,
 }: NestedFrameProps) {
   const itemId = String(item.id);
   const attrs = item.attrs as { frame?: ItemFrame };
@@ -322,6 +353,14 @@ function NestedFrame({
     borderRadius: "var(--radius-md)",
     boxSizing: "border-box",
     background: "var(--surface-1)",
+    // Phase 13e — drill-in dim. Siblings later in z-order than the entered
+    // branch fade out so the entered frame isn't obscured once the camera
+    // zooms in. Opacity transition aligns with the design-plane scale/translate
+    // transition above (520ms cubic-bezier) so the three changes share a
+    // perceived timeline.
+    opacity: drillDimmed ? 0 : 1,
+    transition: "opacity 520ms cubic-bezier(0.34, 1.20, 0.64, 1)",
+    pointerEvents: drillDimmed ? "none" : undefined,
   };
 
   const inner = (
@@ -412,28 +451,33 @@ function NestedFrame({
           />
         </div>
       ) : null}
-      {childFrames.map((c) => (
-        <NestedFrame
-          key={String(c.id)}
-          item={c}
-          parentWidthPx={widthPx}
-          parentHeightPx={heightPx}
-          selectedId={selectedId}
-          enteredId={enteredId}
-          onSelect={onSelect}
-          onUpdateItem={onUpdateItem}
-          onUpdateShape={onUpdateShape}
-          onRemoveShape={onRemoveShape}
-          onDropAdd={onDropAdd}
-          onDragOver={onDragOver}
-          renderFrameMenu={renderFrameMenu}
-          onCommitFrame={onCommitFrame}
-          onEnter={onEnter}
-          selectedHotspotId={selectedHotspotId}
-          onSelectHotspot={onSelectHotspot}
-          onCommitHotspotRegion={onCommitHotspotRegion}
-        />
-      ))}
+      {(() => {
+        const dimFlags = computeDrillDimFlags(childFrames, enteredTrailIds);
+        return childFrames.map((c, i) => (
+          <NestedFrame
+            key={String(c.id)}
+            item={c}
+            parentWidthPx={widthPx}
+            parentHeightPx={heightPx}
+            selectedId={selectedId}
+            enteredId={enteredId}
+            enteredTrailIds={enteredTrailIds}
+            onSelect={onSelect}
+            onUpdateItem={onUpdateItem}
+            onUpdateShape={onUpdateShape}
+            onRemoveShape={onRemoveShape}
+            onDropAdd={onDropAdd}
+            onDragOver={onDragOver}
+            renderFrameMenu={renderFrameMenu}
+            onCommitFrame={onCommitFrame}
+            onEnter={onEnter}
+            selectedHotspotId={selectedHotspotId}
+            onSelectHotspot={onSelectHotspot}
+            onCommitHotspotRegion={onCommitHotspotRegion}
+            drillDimmed={dimFlags[i] === true}
+          />
+        ));
+      })()}
       {isSelected && onCommitFrame !== undefined ? (
         <SelectionLayer
           box={{ left: 0, top: 0, width: "100%", height: "100%", rotation: 0 }}
@@ -596,6 +640,16 @@ export function FrameStage(props: FrameStageProps) {
     if (enteredId === undefined || doc === undefined) return ROOT_ABS_FRAME;
     return absoluteFrameFor(doc, enteredId);
   }, [enteredId, doc]);
+
+  // Phase 13e — the set of every id along the trail from root to the
+  // entered frame (inclusive). NestedFrame uses this at each tree level to
+  // decide which sibling paints above the trail's branch at that level.
+  const enteredTrailIds = useMemo<ReadonlySet<string>>(() => {
+    if (enteredId === undefined || doc === undefined) return new Set();
+    const trail = findTrailDeep(doc, enteredId);
+    if (trail === undefined) return new Set();
+    return new Set(trail.map((n) => String(n.id)));
+  }, [enteredId, doc]);
   const zoom = useMemo(() => {
     const z = 1 / Math.max(absFrame.width, absFrame.height, 0.0001);
     // viewport offset: entered frame's center in design px, translated to
@@ -672,7 +726,8 @@ export function FrameStage(props: FrameStageProps) {
             transition: reduceMotion ? "none" : "transform 520ms cubic-bezier(0.34, 1.20, 0.64, 1)",
             willChange: "transform",
           };
-          const planeChildren = frames.map((c) => (
+          const rootDimFlags = computeDrillDimFlags(frames, enteredTrailIds);
+          const planeChildren = frames.map((c, i) => (
             <NestedFrame
               key={String(c.id)}
               item={c}
@@ -680,6 +735,7 @@ export function FrameStage(props: FrameStageProps) {
               parentHeightPx={designHeight}
               selectedId={props.selectedId}
               enteredId={enteredId}
+              enteredTrailIds={enteredTrailIds}
               onSelect={onSelect}
               onUpdateItem={props.onUpdateItem}
               onUpdateShape={props.onUpdateShape}
@@ -692,6 +748,7 @@ export function FrameStage(props: FrameStageProps) {
               selectedHotspotId={props.selectedHotspotId}
               onSelectHotspot={props.onSelectHotspot}
               onCommitHotspotRegion={props.onCommitHotspotRegion}
+              drillDimmed={rootDimFlags[i] === true}
             />
           ));
           // [BISECT — RubberBandLayer mount restored to verify regression]

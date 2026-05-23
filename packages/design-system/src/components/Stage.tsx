@@ -231,28 +231,41 @@ export function Stage({
           scale: scaleMV,
         }}
       >
-        {scenes.map((scene) => (
-          <div
-            key={scene.id}
-            data-stage-scene-id={scene.id}
-            className="absolute"
-            style={{
-              left: scene.position.x - scene.size.width / 2,
-              top: scene.position.y - scene.size.height / 2,
-              width: scene.size.width,
-              height: scene.size.height,
-              // Clip to the frame's actual aspect ratio — matches the editor
-              // (FrameStage applies the same overflow:hidden per frame). Without
-              // this, renderers with their own aspect-ratio rules (e.g. the
-              // slide block's `aspect-[16/9]` inner card) bleed past the frame
-              // bounds in present mode and the visible aspect ends up wider or
-              // taller than the editor preview.
-              overflow: "hidden",
-            }}
-          >
-            {scene.children}
-          </div>
-        ))}
+        {(() => {
+          // Z-order dim: anything later in the scenes array paints above
+          // earlier ones (DOM source order = z-order with no z-index set).
+          // When the user navigates to scene N, scenes with index > N would
+          // otherwise visually obscure the target if they overlap. Fade them
+          // to opacity 0 with a duration roughly matched to the camera
+          // spring so opacity, zoom, and pan share a perceived timeline.
+          const activeIdx = scenes.findIndex((s) => s.id === activeId);
+          const dimDuration = reduce ? 0 : 0.42;
+          return scenes.map((scene, idx) => {
+            const dimmed = activeIdx >= 0 && idx > activeIdx;
+            return (
+              <motion.div
+                key={scene.id}
+                data-stage-scene-id={scene.id}
+                data-stage-scene-dimmed={dimmed ? "true" : "false"}
+                className="absolute"
+                style={{
+                  left: scene.position.x - scene.size.width / 2,
+                  top: scene.position.y - scene.size.height / 2,
+                  width: scene.size.width,
+                  height: scene.size.height,
+                  // Clip to the frame's actual aspect ratio — matches the
+                  // editor (FrameStage applies the same overflow:hidden per
+                  // frame).
+                  overflow: "hidden",
+                }}
+                animate={{ opacity: dimmed ? 0 : 1 }}
+                transition={{ duration: dimDuration, ease: [0.32, 0.72, 0, 1] }}
+              >
+                {scene.children}
+              </motion.div>
+            );
+          });
+        })()}
       </motion.div>
     </div>
   );
