@@ -1,0 +1,43 @@
+{
+  "name": "@weave/design-system",
+  "version": "0.0.0",
+  "private": true,
+  "description": "weave shared design system — 3-layer tokens, 3 theme variants (Aurora/Mono/Vivid), motion + Radix primitives. See features/design-system/README.md.",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./tokens.css": "./src/tokens.css",
+    "./aurora-bg.css": "./src/aurora-bg.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'no unit tests yet — visual coverage via apps/web e2e'",
+    "clean": "rm -rf .turbo *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "react": "^18.3.0 || ^19.0.0",
+    "react-dom": "^18.3.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@radix-ui/react-context-menu": "^2.2.16",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-radio-group": "^1.3.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-toggle-group": "^1.1.11",
+    "clsx": "^2.1.1",
+    "motion": "^12.40.0",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

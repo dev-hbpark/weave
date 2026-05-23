@@ -1,0 +1,13 @@
+/* @weave/design-system — single CSS bundle entry.
+ *
+ * Apps import this one file to get tokens + aurora background plumbing.
+ * Order matters: tokens.css must come before aurora-bg.css so the @theme
+ * directive declares the CSS variables aurora-bg.css consumes.
+ *
+ * Tailwind v4 itself is imported by the host app (not by this package),
+ * so we don't `@import "tailwindcss"` here — that would double-emit.
+ */
+
+@import "./tokens.css";
+@import "./aurora-bg.css";
+@import "./rubber-band.css";

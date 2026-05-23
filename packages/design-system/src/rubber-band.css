@@ -1,0 +1,30 @@
+/* @weave/design-system — RubberBand primitive CSS.
+ *
+ * Defines the pulse keyframe used by the `previewing` state. The animation
+ * combines a subtle opacity breathing and a glow lift — both bounded by
+ * accent + accent-soft tokens so theme swaps carry through.
+ *
+ * `prefers-reduced-motion: reduce` disables the animation entirely (the
+ * static box-shadow + border still renders, just without the pulse). */
+
+@keyframes weave-rubber-band-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 24px -4px var(--accent);
+    opacity: 0.94;
+  }
+}
+
+[data-rubber-band-state="previewing"] {
+  animation: weave-rubber-band-pulse 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-rubber-band-state="previewing"] {
+    animation: none;
+  }
+}
