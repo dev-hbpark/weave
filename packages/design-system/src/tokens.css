@@ -1,0 +1,207 @@
+/*
+ * weave design tokens — 3-layer
+ *   1. base       — palette, scale, motion, type. No semantic.
+ *   2. semantic   — bg / text / accent / surface / border / focus / aurora-stops.
+ *                   Overridden per [data-theme].
+ *   3. component  — defined in each component's CSS (or Tailwind utility composition).
+ *
+ * Theme variants: "aurora" (default, dark glass), "mono" (Linear-grade), "vivid" (max playful).
+ *
+ * a11y:
+ *   - Color contrast ≥ WCAG AA in every variant.
+ *   - All motion respects prefers-reduced-motion (handled in component CSS / motion lib config).
+ */
+
+@theme {
+  /* === BASE — palette === */
+  --color-ink-50: #fafbfc;
+  --color-ink-100: #eef0f4;
+  --color-ink-200: #d6dae3;
+  --color-ink-300: #aab1c0;
+  --color-ink-400: #7c8597;
+  --color-ink-500: #555c6d;
+  --color-ink-600: #3a4053;
+  --color-ink-700: #252a3a;
+  --color-ink-800: #15192a;
+  --color-ink-900: #0a0d1a;
+  --color-ink-950: #050715;
+
+  --color-magenta-300: #ff7ab8;
+  --color-magenta-500: #e83a93;
+  --color-magenta-600: #c81e74;
+  --color-magenta-700: #8e0e51;
+
+  --color-cyan-300: #7ce3ff;
+  --color-cyan-500: #33b8e6;
+  --color-cyan-600: #1e8fc1;
+  --color-cyan-700: #0f6588;
+
+  --color-violet-300: #b89cff;
+  --color-violet-500: #8358ff;
+  --color-violet-600: #6533e3;
+  --color-violet-700: #4920a5;
+
+  --color-amber-300: #ffd28a;
+  --color-amber-500: #ff9d2e;
+  --color-amber-600: #e07a07;
+
+  --color-emerald-300: #7eedb5;
+  --color-emerald-500: #2bb877;
+  --color-emerald-600: #138c53;
+
+  /* === BASE — spacing scale (default Tailwind) is fine, augment radius === */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
+  --radius-pill: 9999px;
+
+  /* === BASE — typography scale === */
+  --font-sans:
+    "Inter", "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display:
+    "Inter Display", "Inter", "Pretendard Variable", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* === BASE — motion === */
+  --motion-spring-fast: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --motion-spring-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-quick: 140ms;
+  --motion-normal: 240ms;
+  --motion-slow: 520ms;
+  --motion-aurora-drift: 28s;
+}
+
+/* === SEMANTIC — Aurora (default, dark premium glass) === */
+:root,
+[data-theme="aurora"] {
+  /* page surface */
+  --bg-page: var(--color-ink-950);
+  --bg-page-soft: var(--color-ink-900);
+
+  /* aurora stops — used by aurora-bg.css */
+  --aurora-1: rgba(232, 58, 147, 0.55); /* magenta */
+  --aurora-2: rgba(51, 184, 230, 0.5); /* cyan */
+  --aurora-3: rgba(131, 88, 255, 0.5); /* violet */
+  --aurora-4: rgba(255, 157, 46, 0.35); /* amber accent */
+  --aurora-strength: 1;
+
+  /* surface (glass card) */
+  --surface-1: rgba(255, 255, 255, 0.06);
+  --surface-1-border: rgba(255, 255, 255, 0.14);
+  --surface-2: rgba(255, 255, 255, 0.1);
+  --surface-2-border: rgba(255, 255, 255, 0.2);
+  --surface-blur: 22px;
+
+  /* text */
+  --text-strong: rgba(255, 255, 255, 0.96);
+  --text-default: rgba(255, 255, 255, 0.84);
+  --text-soft: rgba(255, 255, 255, 0.62);
+  --text-muted: rgba(255, 255, 255, 0.44);
+  --text-on-accent: #ffffff;
+
+  /* accent (action / highlight) */
+  --accent: var(--color-magenta-500);
+  --accent-soft: rgba(232, 58, 147, 0.16);
+  --accent-strong: var(--color-magenta-300);
+  --accent-gradient: linear-gradient(135deg, var(--color-magenta-500), var(--color-violet-500));
+
+  /* border / focus */
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --focus-ring: 0 0 0 2px var(--color-ink-950), 0 0 0 4px var(--color-magenta-300);
+
+  /* shadow */
+  --shadow-glass: 0 18px 60px -20px rgba(0, 0, 0, 0.55), 0 4px 16px -4px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 28px -4px var(--color-magenta-500);
+
+  /* domain accents — DR-design-001, 4 도메인의 시각 정체성 */
+  --domain-slide-accent: var(--color-cyan-500);
+  --domain-canvas-accent: var(--color-magenta-500);
+  --domain-block-accent: var(--color-violet-500);
+  --domain-media-accent: var(--color-amber-500);
+}
+
+/* === SEMANTIC — Mono (Linear-grade, sharp, B2B 진중) === */
+[data-theme="mono"] {
+  --bg-page: #07070a;
+  --bg-page-soft: #0d0d12;
+  --aurora-strength: 0; /* no aurora */
+  --aurora-1: transparent;
+  --aurora-2: transparent;
+  --aurora-3: transparent;
+  --aurora-4: transparent;
+
+  --surface-1: rgba(255, 255, 255, 0.04);
+  --surface-1-border: rgba(255, 255, 255, 0.08);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --surface-2-border: rgba(255, 255, 255, 0.12);
+  --surface-blur: 12px;
+
+  --text-strong: rgba(255, 255, 255, 0.96);
+  --text-default: rgba(255, 255, 255, 0.82);
+  --text-soft: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.4);
+  --text-on-accent: #07070a;
+
+  --accent: #ff6b35; /* single warm orange accent */
+  --accent-soft: rgba(255, 107, 53, 0.14);
+  --accent-strong: #ff8a5f;
+  --accent-gradient: linear-gradient(135deg, #ff6b35, #ff8a5f);
+
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --focus-ring: 0 0 0 2px #07070a, 0 0 0 4px #ff8a5f;
+
+  --shadow-glass: 0 12px 36px -16px rgba(0, 0, 0, 0.6), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 0 transparent;
+
+  /* Mono 의 도메인 accent — 모두 single orange. 도메인 구분은 라벨 텍스트가 우선 (DR-design-001 § Mono note). */
+  --domain-slide-accent: #ff8a5f;
+  --domain-canvas-accent: #ff6b35;
+  --domain-block-accent: #ffb088;
+  --domain-media-accent: #ffd0b8;
+}
+
+/* === SEMANTIC — Vivid (가장 톡톡, multi-color aurora, playful) === */
+[data-theme="vivid"] {
+  --bg-page: #0e0420;
+  --bg-page-soft: #1a0840;
+  --aurora-strength: 1.4;
+
+  --aurora-1: rgba(255, 80, 200, 0.75); /* hot pink */
+  --aurora-2: rgba(80, 220, 255, 0.7); /* electric cyan */
+  --aurora-3: rgba(255, 220, 80, 0.55); /* yellow */
+  --aurora-4: rgba(140, 90, 255, 0.65); /* electric violet */
+
+  --surface-1: rgba(255, 255, 255, 0.08);
+  --surface-1-border: rgba(255, 255, 255, 0.2);
+  --surface-2: rgba(255, 255, 255, 0.14);
+  --surface-2-border: rgba(255, 255, 255, 0.28);
+  --surface-blur: 30px;
+
+  --text-strong: #ffffff;
+  --text-default: rgba(255, 255, 255, 0.9);
+  --text-soft: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.5);
+  --text-on-accent: #ffffff;
+
+  --accent: #ff50c8; /* hot pink */
+  --accent-soft: rgba(255, 80, 200, 0.2);
+  --accent-strong: #ff7adb;
+  --accent-gradient: linear-gradient(135deg, #ff50c8 0%, #ffdc50 50%, #50dcff 100%);
+
+  --border-default: rgba(255, 255, 255, 0.18);
+  --border-strong: rgba(255, 255, 255, 0.3);
+  --focus-ring: 0 0 0 2px #0e0420, 0 0 0 4px #ffdc50;
+
+  --shadow-glass: 0 22px 70px -18px rgba(255, 80, 200, 0.3), 0 6px 22px -6px rgba(80, 220, 255, 0.25);
+  --shadow-glow: 0 0 38px -6px #ff50c8, 0 0 60px -16px #50dcff;
+
+  /* Vivid 도메인 accent — saturated tones. */
+  --domain-slide-accent: #50dcff;
+  --domain-canvas-accent: #ff50c8;
+  --domain-block-accent: #8c5aff;
+  --domain-media-accent: #ffdc50;
+}
