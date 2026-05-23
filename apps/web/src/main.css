@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* Tailwind v4 by default scans this app only; expand to sibling packages
+   so component utilities used in @weave/design-system are detected. */
+@source "../../../packages/design-system/src/**/*.{ts,tsx}";
+
+@import "@weave/design-system/styles.css";
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--text-default);
+  font-family: var(--font-sans);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* View Transitions API — cross-theme cross-fade. */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-normal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 1ms;
+  }
+}
+
+:focus {
+  outline: none;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}

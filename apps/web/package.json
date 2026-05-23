@@ -1,0 +1,45 @@
+{
+  "name": "@weave/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "@agocraft/core": "1.0.0-rc.20260522154310",
+    "@agocraft/domain-block-doc": "1.0.0-rc.20260522154310",
+    "@agocraft/domain-canvas-design": "1.0.0-rc.20260522154310",
+    "@agocraft/domain-media": "1.0.0-rc.20260522154310",
+    "@agocraft/domain-presentation": "1.0.0-rc.20260522154310",
+    "@agocraft/editor": "1.0.0-rc.20260522154310",
+    "@agocraft/input": "1.0.0-rc.20260522154310",
+    "@agocraft/interaction": "1.0.0-rc.20260522154310",
+    "@agocraft/manipulation": "1.0.0-rc.20260522154310",
+    "@agocraft/renderer-html-canvas": "1.0.0-rc.20260522154310",
+    "@tailwindcss/vite": "^4.3.0",
+    "@weave/design-system": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.15.1",
+    "tailwindcss": "^4.3.0"
+  },
+  "devDependencies": {
+    "@agocraft/renderer-mock": "1.0.0-rc.20260522154310",
+    "@agocraft/testing": "1.0.0-rc.20260522154310",
+    "@playwright/test": "^1.60.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^29.1.1",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}
