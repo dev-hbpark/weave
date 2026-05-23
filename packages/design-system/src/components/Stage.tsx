@@ -1,4 +1,11 @@
-import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
+import {
+  animate,
+  motion,
+  type MotionValue,
+  useMotionValue,
+  useReducedMotion,
+  useTransform,
+} from "motion/react";
 import {
   type ReactNode,
   useEffect,
@@ -234,56 +241,137 @@ export function Stage({
         {(() => {
           // Z-order dim: anything later in the scenes array paints above
           // earlier ones (DOM source order = z-order with no z-index set).
-          // When the user navigates to scene N, scenes with index > N would
-          // otherwise visually obscure the target if they overlap. Fade
-          // them with a **truly symmetric ease-in-out** at 1200ms.
           //
-          // Why not Material's `(0.4, 0, 0.2, 1)`? Its P2.X=0.2 is far before
-          // the midpoint, so it spends ~60% of the timeline near the target
-          // value and concentrates the visible delta in the first ~300ms.
-          // That reads as "sudden" — the user perceives the transition as
-          // a 300ms burst followed by a flat tail.
+          // **Each scene's opacity is derived from `progressMV` via
+          // `useTransform`** — the same motion value that drives the
+          // camera spring. Two consequences:
           //
-          // `(0.4, 0, 0.6, 1)` is symmetric around (0.5, 0.5): at half the
-          // duration the opacity is exactly 0.5, and the rate of change is
-          // mirrored on entry and exit. Combined with the 1200ms duration,
-          // the delta per frame is small enough that even the steepest part
-          // of the curve doesn't feel like a snap.
+          //   1. Opacity timing literally IS the camera timing. There's no
+          //      separate animation scheduler that could start late or
+          //      finish at a different beat. When the camera spring is at
+          //      progress p, the opacity is also at progress p (after the
+          //      stagger map below).
+          //   2. Distance-independent quality, distance-dependent duration.
+          //      A spring with the same stiffness/damping/mass settles in
+          //      effectively the same *normalized* time regardless of the
+          //      camera-displacement magnitude — but bigger displacements
+          //      take longer absolute time because progressMV is throttled
+          //      by the spring physics, not a fixed duration tween. Short
+          //      hops feel quick, long hops feel deliberate, with the same
+          //      curve shape.
+          //
+          // **Stagger**: leaving alpha (fade-out) finishes by p≈0.65,
+          // arriving alpha (fade-in) starts at p≈0.35. The two windows
+          // overlap in the middle 30% so the perceived flow is
+          //   "leaving first → both mid-transition → arriving last".
           const activeIdx = scenes.findIndex((s) => s.id === activeId);
-          const dimDuration = reduce ? 0 : 1.2;
           return scenes.map((scene, idx) => {
             const dimmed = activeIdx >= 0 && idx > activeIdx;
             return (
-              <motion.div
+              <SceneItem
                 key={scene.id}
-                data-stage-scene-id={scene.id}
-                data-stage-scene-dimmed={dimmed ? "true" : "false"}
-                className="absolute"
-                style={{
-                  left: scene.position.x - scene.size.width / 2,
-                  top: scene.position.y - scene.size.height / 2,
-                  width: scene.size.width,
-                  height: scene.size.height,
-                  // Clip to the frame's actual aspect ratio — matches the
-                  // editor (FrameStage applies the same overflow:hidden per
-                  // frame).
-                  overflow: "hidden",
-                }}
-                animate={{ opacity: dimmed ? 0 : 1 }}
-                transition={{
-                  duration: dimDuration,
-                  // True symmetric ease-in-out (P2.X=0.6, not Material's
-                  // 0.2). Opacity hits 0.5 at exactly midpoint and fade-in /
-                  // fade-out share the same shape — no front-loaded burst.
-                  ease: [0.4, 0, 0.6, 1],
-                }}
-              >
-                {scene.children}
-              </motion.div>
+                scene={scene}
+                dimmed={dimmed}
+                progressMV={progressMV}
+                reduce={reduce === true}
+              />
             );
           });
         })()}
       </motion.div>
     </div>
   );
+}
+
+interface SceneItemProps {
+  readonly scene: StageScene;
+  readonly dimmed: boolean;
+  readonly progressMV: MotionValue<number>;
+  readonly reduce: boolean;
+}
+
+/** A single Stage scene whose opacity rides the camera spring's
+ *  `progressMV`. The component owns from/to refs so a step change captures
+ *  whatever the live opacity is *at that instant* (handling rapid step
+ *  changes that interrupt a mid-flight transition) and re-targets to the
+ *  new dimmed state. */
+function SceneItem({ scene, dimmed, progressMV, reduce }: SceneItemProps) {
+  // The opacity the scene started this transition at, and the one it's
+  // heading toward. On the very first render they match — no animation,
+  // just the static initial state.
+  const fromRef = useRef<number>(dimmed ? 0 : 1);
+  const toRef = useRef<number>(dimmed ? 0 : 1);
+
+  // On `dimmed` change: snapshot the current interpolated opacity (so a
+  // mid-flight interrupt continues smoothly), then aim at the new target.
+  // Effect runs *before* the parent's camera spring reset, because child
+  // effects run before parent effects on the same commit — so by the time
+  // the parent calls `progressMV.set(0)` our refs are already updated.
+  useEffect(() => {
+    if (reduce) {
+      fromRef.current = dimmed ? 0 : 1;
+      toRef.current = dimmed ? 0 : 1;
+      return;
+    }
+    const p = progressMV.get();
+    const live = computeStaggered(fromRef.current, toRef.current, p);
+    fromRef.current = live;
+    toRef.current = dimmed ? 0 : 1;
+  }, [dimmed, progressMV, reduce]);
+
+  // Opacity derived from progressMV with the leaving-first / arriving-last
+  // stagger map. The useTransform's read function runs every animation
+  // frame while progressMV is moving — refs are stable by then.
+  const opacity = useTransform(progressMV, (p) =>
+    reduce
+      ? toRef.current
+      : computeStaggered(fromRef.current, toRef.current, p),
+  );
+
+  return (
+    <motion.div
+      data-stage-scene-id={scene.id}
+      data-stage-scene-dimmed={dimmed ? "true" : "false"}
+      className="absolute"
+      style={{
+        left: scene.position.x - scene.size.width / 2,
+        top: scene.position.y - scene.size.height / 2,
+        width: scene.size.width,
+        height: scene.size.height,
+        // Clip to the frame's actual aspect ratio — matches the editor.
+        overflow: "hidden",
+        opacity,
+      }}
+    >
+      {scene.children}
+    </motion.div>
+  );
+}
+
+/** Staggered opacity interpolation.
+ *
+ *  - Fade OUT (`to < from`): the leaving scene's alpha drops first. We
+ *    compress the change into `[0, 0.65]` — by the time the camera is 65%
+ *    through its spring the leaving alpha has reached its target.
+ *  - Fade IN (`to > from`): the arriving scene's alpha rises last. We
+ *    delay the change until `[0.35, 1]` — for the first 35% of the
+ *    progress nothing happens, then the alpha climbs to its target by
+ *    settle time.
+ *  - No change: short-circuit.
+ *
+ *  The two windows overlap in `[0.35, 0.65]` so a crossfade-style step
+ *  (one scene leaving + one scene arriving) reads as a single, blended
+ *  motion rather than two sequential effects. */
+function computeStaggered(from: number, to: number, p: number): number {
+  if (to === from) return from;
+  if (to > from) {
+    // fade IN — arriving alpha trails
+    const start = 0.35;
+    const adjusted = Math.max(0, (p - start) / (1 - start));
+    return from + (to - from) * adjusted;
+  }
+  // fade OUT — leaving alpha leads
+  const end = 0.65;
+  const adjusted = Math.min(1, p / end);
+  return from + (to - from) * adjusted;
 }

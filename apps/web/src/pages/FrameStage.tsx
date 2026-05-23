@@ -17,6 +17,14 @@ import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocra
 import type { Editor } from "@agocraft/editor";
 import { SelectionLayer } from "@weave/design-system";
 import type { SelectionHandleDir as HandleDir } from "@weave/design-system";
+import {
+  animate,
+  motion,
+  type MotionStyle,
+  type MotionValue,
+  useMotionValue,
+  useTransform,
+} from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type React from "react";
 import { findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
@@ -107,6 +115,23 @@ export interface FrameStageProps {
     | undefined;
 }
 
+/** Phase 13e — staggered opacity interpolation. Mirrors Stage's
+ *  `computeStaggered`: leaving alpha (fade-OUT) reaches its target by
+ *  p≈0.65; arriving alpha (fade-IN) starts moving only at p≈0.35. The two
+ *  windows overlap mid-spring so a drill-in (siblings fading out + entered
+ *  frame zooming in) reads as one continuous motion. */
+function computeDrillStaggered(from: number, to: number, p: number): number {
+  if (to === from) return from;
+  if (to > from) {
+    const start = 0.35;
+    const adjusted = Math.max(0, (p - start) / (1 - start));
+    return from + (to - from) * adjusted;
+  }
+  const end = 0.65;
+  const adjusted = Math.min(1, p / end);
+  return from + (to - from) * adjusted;
+}
+
 /** Phase 13e — per-level z-order dim. Returns one boolean per child:
  *  true if this child paints above the entered branch's level node and
  *  must fade. When no descendant of this level lies on the trail, no one
@@ -166,6 +191,10 @@ interface NestedFrameProps {
    *  parent's children array). Renders with opacity 0 so it doesn't obscure
    *  the entered frame after the drill-in zoom. */
   readonly drillDimmed?: boolean;
+  /** Phase 13e — the FrameStage-level spring progress motion value (0..1)
+   *  shared with the design-plane transform. Used to derive this frame's
+   *  opacity so transform and alpha settle on the same frame. */
+  readonly drillProgressMV?: MotionValue<number> | undefined;
 }
 
 function NestedFrame({
@@ -187,6 +216,7 @@ function NestedFrame({
   onSelectHotspot,
   onCommitHotspotRegion,
   drillDimmed = false,
+  drillProgressMV,
   enteredTrailIds,
 }: NestedFrameProps) {
   const itemId = String(item.id);
@@ -339,13 +369,38 @@ function NestedFrame({
     }
   }, []);
 
+  // Phase 13e — opacity derived from the FrameStage-level drill spring
+  // (`drillProgressMV`) so this frame's alpha rides exactly the same
+  // timeline as the design-plane transform. Staggered: a leaving frame
+  // (becoming dimmed) fades early; an arriving frame (becoming undimmed)
+  // fades late. The result reads as one motion — "leaving first → arriving
+  // last" — within one spring window.
+  //
+  // When no drillProgressMV is wired (read-only contexts, tests), we fall
+  // back to a static opacity so nothing animates.
+  const drillFromRef = useRef<number>(drillDimmed ? 0 : 1);
+  const drillToRef = useRef<number>(drillDimmed ? 0 : 1);
+  // Local fallback motion value when no shared spring is wired (read-only
+  // tests, storybook). Constant at 1 = `useTransform` returns `to` value
+  // directly, i.e. no animation, just the static target opacity.
+  const fallbackMV = useMotionValue(1);
+  const sourceMV = drillProgressMV ?? fallbackMV;
+  useEffect(() => {
+    const p = sourceMV.get();
+    const live = computeDrillStaggered(drillFromRef.current, drillToRef.current, p);
+    drillFromRef.current = live;
+    drillToRef.current = drillDimmed ? 0 : 1;
+  }, [drillDimmed, sourceMV]);
+  const drillOpacityMV = useTransform(sourceMV, (p: number) =>
+    computeDrillStaggered(drillFromRef.current, drillToRef.current, p),
+  );
+
   const style: CSSProperties = {
     position: "absolute",
     left: `${leftPx}px`,
     top: `${topPx}px`,
     width: `${widthPx}px`,
     height: `${heightPx}px`,
-    transform: frame.rotation ? `rotate(${frame.rotation}rad)` : undefined,
     transformOrigin: "center center",
     overflow: "hidden",
     outline: isSelected ? "2px solid var(--accent)" : "1px solid var(--surface-1-border)",
@@ -353,22 +408,12 @@ function NestedFrame({
     borderRadius: "var(--radius-md)",
     boxSizing: "border-box",
     background: "var(--surface-1)",
-    // Phase 13e — drill-in dim. Siblings later in z-order than the entered
-    // branch fade out so the entered frame isn't obscured once the camera
-    // zooms in. Opacity uses a **truly symmetric ease-in-out** at 1200ms.
-    // Material's `(0.4, 0, 0.2, 1)` was front-loaded (50% opacity hit at
-    // ~38% of the duration), so even though the total time was 800ms the
-    // user perceived a ~300ms burst. `(0.4, 0, 0.6, 1)` is symmetric
-    // around (0.5, 0.5) — fade-in and fade-out share the same shape and
-    // the 1200ms duration keeps the per-frame delta small so the change
-    // reads as gradual throughout.
-    opacity: drillDimmed ? 0 : 1,
-    transition: "opacity 1200ms cubic-bezier(0.4, 0, 0.6, 1)",
-    pointerEvents: drillDimmed ? "none" : undefined,
+    ...(frame.rotation ? { transform: `rotate(${frame.rotation}rad)` } : {}),
+    ...(drillDimmed ? { pointerEvents: "none" as const } : {}),
   };
 
   const inner = (
-    <div
+    <motion.div
       ref={selfRef}
       data-testid={`block-${kind}`}
       data-frame-id={itemId}
@@ -378,10 +423,10 @@ function NestedFrame({
       // bubble — useRubberBand only cares about `e.button === 0` anyway.
       // (The hook also has a `target === currentTarget` guard, but this
       // is the cheap-and-explicit local belt to the suspenders.)
-      onPointerDown={(e) => {
+      onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
         if (e.button === 0) e.stopPropagation();
       }}
-      onDoubleClick={(e) => {
+      onDoubleClick={(e: React.MouseEvent<HTMLDivElement>) => {
         // Phase 12c — double-click drills into the frame. The same guards
         // that protect single-click selection apply: a dbl-click on a
         // shape / inline-editable text shouldn't trigger drill-in.
@@ -398,7 +443,7 @@ function NestedFrame({
         e.stopPropagation();
         onEnter?.(itemId);
       }}
-      onClick={(e) => {
+      onClick={(e: React.MouseEvent<HTMLDivElement>) => {
         // Phase 12 — only treat clicks on the frame *chrome* as a "select
         // the frame" gesture. Clicks that originate in interactive children
         // — a canvas shape, an EditableText, a form control, the inner
@@ -425,11 +470,11 @@ function NestedFrame({
         onSelect?.(itemId);
       }}
       onDragOver={onDragOver}
-      onDrop={onDropAdd ? (e) => onDropAdd(e, itemId) : undefined}
+      onDrop={onDropAdd ? (e: React.DragEvent<HTMLDivElement>) => onDropAdd(e, itemId) : undefined}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      style={style}
+      style={{ ...style, opacity: drillOpacityMV } as MotionStyle}
     >
       {Renderer !== undefined ? (
         <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
@@ -479,6 +524,7 @@ function NestedFrame({
             onSelectHotspot={onSelectHotspot}
             onCommitHotspotRegion={onCommitHotspotRegion}
             drillDimmed={dimFlags[i] === true}
+            drillProgressMV={drillProgressMV}
           />
         ));
       })()}
@@ -577,7 +623,7 @@ function NestedFrame({
               );
             })
         : null}
-    </div>
+    </motion.div>
   );
 
   // Phase D — wrap with KindTooltip (capability registry per item.kind). The
@@ -654,6 +700,19 @@ export function FrameStage(props: FrameStageProps) {
     if (trail === undefined) return new Set();
     return new Set(trail.map((n) => String(n.id)));
   }, [enteredId, doc]);
+
+  // Phase 13e — shared drill-in spring progress. One spring drives the
+  // design-plane transform AND each NestedFrame's drill-dim opacity, so
+  // zoom, pan, and alpha share one timeline. A spring (not a fixed-
+  // duration tween) means farther drill-ins take proportionally longer —
+  // entering a tiny frame zooms harder and the animation rides longer
+  // accordingly, with the same curve shape at every scale.
+  const drillProgressMV = useMotionValue(1);
+  // From/To camera state (translate + scale in design-pixel space) tracked
+  // across enteredId changes so an interrupted drill-in continues smoothly
+  // from its current visual position.
+  const drillFromRef = useRef({ tx: 0, ty: 0, scale: 1 });
+  const drillToRef = useRef({ tx: 0, ty: 0, scale: 1 });
   const zoom = useMemo(() => {
     const z = 1 / Math.max(absFrame.width, absFrame.height, 0.0001);
     // viewport offset: entered frame's center in design px, translated to
@@ -689,6 +748,53 @@ export function FrameStage(props: FrameStageProps) {
   // Uniform scale that fits design.width into the outer (CSS-driven) width.
   const scale = outerWidth / designWidth;
 
+  // Drive the drill-in spring whenever the target zoom changes. The spring
+  // config is shared with NestedFrame's opacity (via `drillProgressMV` ref-
+  // drilled below) so all three channels — translate, scale, alpha — settle
+  // on the same frame.
+  useEffect(() => {
+    const nextTx = zoom.tx * scale;
+    const nextTy = zoom.ty * scale;
+    const nextScale = scale * zoom.z;
+    if (reduceMotion) {
+      drillFromRef.current = { tx: nextTx, ty: nextTy, scale: nextScale };
+      drillToRef.current = { tx: nextTx, ty: nextTy, scale: nextScale };
+      drillProgressMV.set(1);
+      return;
+    }
+    // Snapshot the current live position so an interrupted drill-in
+    // continues from where it is now instead of snapping back to "from".
+    const p = drillProgressMV.get();
+    const liveTx = drillFromRef.current.tx + (drillToRef.current.tx - drillFromRef.current.tx) * p;
+    const liveTy = drillFromRef.current.ty + (drillToRef.current.ty - drillFromRef.current.ty) * p;
+    const liveScale = drillFromRef.current.scale + (drillToRef.current.scale - drillFromRef.current.scale) * p;
+    drillFromRef.current = { tx: liveTx, ty: liveTy, scale: liveScale };
+    drillToRef.current = { tx: nextTx, ty: nextTy, scale: nextScale };
+    drillProgressMV.set(0);
+    const controls = animate(drillProgressMV, 1, {
+      type: "spring",
+      stiffness: 140,
+      damping: 22,
+      mass: 0.9,
+    });
+    return () => {
+      controls.stop();
+    };
+  }, [zoom.tx, zoom.ty, zoom.z, scale, reduceMotion, drillProgressMV]);
+
+  // Derive the design-plane transform values from `drillProgressMV` so the
+  // CSS transform updates every animation frame in lockstep with anything
+  // else (here: NestedFrame opacity) that subscribes to the same MV.
+  const planeTxMV = useTransform(drillProgressMV, (p: number) =>
+    drillFromRef.current.tx + (drillToRef.current.tx - drillFromRef.current.tx) * p,
+  );
+  const planeTyMV = useTransform(drillProgressMV, (p: number) =>
+    drillFromRef.current.ty + (drillToRef.current.ty - drillFromRef.current.ty) * p,
+  );
+  const planeScaleMV = useTransform(drillProgressMV, (p: number) =>
+    drillFromRef.current.scale + (drillToRef.current.scale - drillFromRef.current.scale) * p,
+  );
+
   const handleBackgroundClick = useCallback(() => {
     onSelect?.(undefined);
   }, [onSelect]);
@@ -714,22 +820,14 @@ export function FrameStage(props: FrameStageProps) {
         {/* Design plane — fixed pixel size, scaled into the outer box. Frames
             below it position themselves in design-pixel coordinates so their
             content (typography, padding) is never clipped just because the
-            frame is a small fraction of the design. Phase 12c — when
-            `enteredId` is set, a second transform layer composes a zoom-in
-            (and translate) animation on top, bringing the entered frame
-            viewport-filling. */}
+            frame is a small fraction of the design. Phase 13e — drill-in
+            zoom/translate is driven by `drillProgressMV` (a spring), which
+            also feeds each NestedFrame's drill-dim opacity. Spring physics
+            give distance-proportional duration: a deep drill-in into a tiny
+            frame zooms further and the animation rides longer, while a
+            shallow exit settles quickly — with the same curve shape both
+            ways. */}
         {(() => {
-          const designPlaneStyle: CSSProperties = {
-            position: "absolute",
-            left: 0,
-            top: 0,
-            width: `${designWidth}px`,
-            height: `${designHeight}px`,
-            transformOrigin: "top left",
-            transform: `translate(${zoom.tx * scale}px, ${zoom.ty * scale}px) scale(${scale * zoom.z})`,
-            transition: reduceMotion ? "none" : "transform 520ms cubic-bezier(0.34, 1.20, 0.64, 1)",
-            willChange: "transform",
-          };
           const rootDimFlags = computeDrillDimFlags(frames, enteredTrailIds);
           const planeChildren = frames.map((c, i) => (
             <NestedFrame
@@ -753,24 +851,43 @@ export function FrameStage(props: FrameStageProps) {
               onSelectHotspot={props.onSelectHotspot}
               onCommitHotspotRegion={props.onCommitHotspotRegion}
               drillDimmed={rootDimFlags[i] === true}
+              drillProgressMV={drillProgressMV}
             />
           ));
-          // [BISECT — RubberBandLayer mount restored to verify regression]
-          if (editor !== undefined) {
-            return (
+          const innerStyle: CSSProperties = { position: "absolute", inset: 0 };
+          const inner =
+            editor !== undefined ? (
               <RubberBandLayer
                 containerKind="design"
                 containerId={String(root.id)}
                 containerSize={{ width: designWidth, height: designHeight }}
                 editor={editor}
                 snapSize={20}
-                style={designPlaneStyle}
+                style={innerStyle}
               >
                 {planeChildren}
               </RubberBandLayer>
+            ) : (
+              <div style={innerStyle}>{planeChildren}</div>
             );
-          }
-          return <div style={designPlaneStyle}>{planeChildren}</div>;
+          return (
+            <motion.div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: `${designWidth}px`,
+                height: `${designHeight}px`,
+                transformOrigin: "top left",
+                x: planeTxMV,
+                y: planeTyMV,
+                scale: planeScaleMV,
+                willChange: "transform",
+              }}
+            >
+              {inner}
+            </motion.div>
+          );
         })()}
       </div>
     </div>

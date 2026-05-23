@@ -26,6 +26,7 @@
     "@agocraft/renderer-html-canvas": "1.0.0-rc.20260522154310",
     "@tailwindcss/vite": "^4.3.0",
     "@weave/design-system": "workspace:*",
+    "motion": "^12.40.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.15.1",
