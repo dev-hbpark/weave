@@ -236,14 +236,21 @@ export function Stage({
           // earlier ones (DOM source order = z-order with no z-index set).
           // When the user navigates to scene N, scenes with index > N would
           // otherwise visually obscure the target if they overlap. Fade
-          // them with a **symmetric ease-in-out** so fade-in and fade-out
-          // feel balanced — a one-sided ease made the entry side (idx jumps
-          // from > active to <= active) read as a sudden pop. Duration
-          // (~800ms) trails just past the camera spring's settle time so
-          // opacity is the last channel to finish, but the symmetric curve
-          // keeps both edges of the fade gentle.
+          // them with a **truly symmetric ease-in-out** at 1200ms.
+          //
+          // Why not Material's `(0.4, 0, 0.2, 1)`? Its P2.X=0.2 is far before
+          // the midpoint, so it spends ~60% of the timeline near the target
+          // value and concentrates the visible delta in the first ~300ms.
+          // That reads as "sudden" — the user perceives the transition as
+          // a 300ms burst followed by a flat tail.
+          //
+          // `(0.4, 0, 0.6, 1)` is symmetric around (0.5, 0.5): at half the
+          // duration the opacity is exactly 0.5, and the rate of change is
+          // mirrored on entry and exit. Combined with the 1200ms duration,
+          // the delta per frame is small enough that even the steepest part
+          // of the curve doesn't feel like a snap.
           const activeIdx = scenes.findIndex((s) => s.id === activeId);
-          const dimDuration = reduce ? 0 : 0.8;
+          const dimDuration = reduce ? 0 : 1.2;
           return scenes.map((scene, idx) => {
             const dimmed = activeIdx >= 0 && idx > activeIdx;
             return (
@@ -265,11 +272,10 @@ export function Stage({
                 animate={{ opacity: dimmed ? 0 : 1 }}
                 transition={{
                   duration: dimDuration,
-                  // Symmetric ease-in-out — both edges decelerate, so the
-                  // fade-in (entering scene) and fade-out (leaving scene)
-                  // read as the same gesture. Material Design's "standard
-                  // easing" curve.
-                  ease: [0.4, 0, 0.2, 1],
+                  // True symmetric ease-in-out (P2.X=0.6, not Material's
+                  // 0.2). Opacity hits 0.5 at exactly midpoint and fade-in /
+                  // fade-out share the same shape — no front-loaded burst.
+                  ease: [0.4, 0, 0.6, 1],
                 }}
               >
                 {scene.children}

@@ -355,14 +355,15 @@ function NestedFrame({
     background: "var(--surface-1)",
     // Phase 13e — drill-in dim. Siblings later in z-order than the entered
     // branch fade out so the entered frame isn't obscured once the camera
-    // zooms in. Opacity uses a **symmetric ease-in-out** so both the
-    // fade-out (entering drill-in) and the fade-in (Esc back out) feel
-    // balanced — an asymmetric ease made one side read as an abrupt pop.
-    // Duration (~800ms) runs past the design-plane scale/translate
-    // (520ms) so opacity is the last channel to settle, but the gentle
-    // curve at both edges keeps the transition from feeling rushed.
+    // zooms in. Opacity uses a **truly symmetric ease-in-out** at 1200ms.
+    // Material's `(0.4, 0, 0.2, 1)` was front-loaded (50% opacity hit at
+    // ~38% of the duration), so even though the total time was 800ms the
+    // user perceived a ~300ms burst. `(0.4, 0, 0.6, 1)` is symmetric
+    // around (0.5, 0.5) — fade-in and fade-out share the same shape and
+    // the 1200ms duration keeps the per-frame delta small so the change
+    // reads as gradual throughout.
     opacity: drillDimmed ? 0 : 1,
-    transition: "opacity 800ms cubic-bezier(0.4, 0, 0.2, 1)",
+    transition: "opacity 1200ms cubic-bezier(0.4, 0, 0.6, 1)",
     pointerEvents: drillDimmed ? "none" : undefined,
   };
 
