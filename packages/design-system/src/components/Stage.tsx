@@ -260,6 +260,15 @@ export function Stage({
           // the layer and re-rasterize text at the parent's pixel density,
           // restoring crisp glyphs after a zoom-in.
           willChange: animating ? "transform" : "auto",
+          // Create a new stacking context so descendant `backdrop-filter`
+          // (the glass cards) samples the camera's own children, not the
+          // global page composition. Without isolation Chromium would
+          // re-compute backdrop-filter against the constantly-shifting
+          // root composition during a camera transform and drop the
+          // filter mid-animation as an optimization — the user sees the
+          // glass effect "snap on" after settle. `isolation: isolate`
+          // gives the filter a stable, transform-shared backdrop.
+          isolation: "isolate",
           x: txMV,
           y: tyMV,
           scale: scaleMV,
