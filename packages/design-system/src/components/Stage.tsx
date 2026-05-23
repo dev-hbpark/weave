@@ -178,11 +178,38 @@ export function Stage({
       return;
     }
     setAnimating(true);
+    // Duration scales with the magnitude of the camera move so a far hop
+    // genuinely takes longer than a tiny one — same easing shape, more
+    // time. A spring with fixed stiffness/damping settles in roughly the
+    // same wall-clock regardless of magnitude (it just moves faster for
+    // bigger displacements), which the user perceived as "far hops move
+    // faster". This tween restores the constant-speed-ish reading: more
+    // ground to cover = more time, with one shared ease-out shape.
+    //
+    // Magnitude has two terms because the camera changes two perceptual
+    // axes simultaneously:
+    //   - positionMag: design-pixel distance the camera pans (Euclidean).
+    //   - scaleMag: log of the scale ratio. Perceived "zoom" is log-
+    //     proportional, so log-distance is the natural metric here.
+    const positionMag = Math.hypot(
+      toRef.current.cx - liveFrom.cx,
+      toRef.current.cy - liveFrom.cy,
+    );
+    const scaleMag = Math.abs(
+      Math.log(
+        Math.max(toRef.current.scale, 0.0001) / Math.max(liveFrom.scale, 0.0001),
+      ),
+    );
+    const duration = Math.max(
+      0.45,
+      Math.min(1.8, 0.4 + positionMag / 1500 + scaleMag * 0.55),
+    );
     const controls = animate(progressMV, 1, {
-      type: "spring",
-      stiffness: 90,
-      damping: 22,
-      mass: 0.9,
+      type: "tween",
+      duration,
+      // Smooth ease-out — no overshoot. The shape stays constant; only
+      // the duration adapts to distance.
+      ease: [0.22, 1, 0.36, 1],
       onComplete: () => setAnimating(false),
     });
     return () => {
@@ -274,6 +301,7 @@ export function Stage({
                 dimmed={dimmed}
                 progressMV={progressMV}
                 reduce={reduce === true}
+                activeKey={activeId}
               />
             );
           });
@@ -288,6 +316,14 @@ interface SceneItemProps {
   readonly dimmed: boolean;
   readonly progressMV: MotionValue<number>;
   readonly reduce: boolean;
+  /** The currently active scene's id. Threaded down only so SceneItem's
+   *  effect can re-fire on *every* step change — even when this scene's
+   *  own `dimmed` didn't flip — to re-snapshot from/to refs before the
+   *  parent resets `progressMV` to 0. Without this, scenes whose dimmed
+   *  state is unchanged keep stale refs (e.g. from=1 / to=0 from a prior
+   *  fade-out) and their opacity jumps to 1 when `progressMV` resets,
+   *  visible as a one-frame "z-order flash". */
+  readonly activeKey: string;
 }
 
 /** A single Stage scene whose opacity rides the camera spring's
@@ -295,7 +331,7 @@ interface SceneItemProps {
  *  whatever the live opacity is *at that instant* (handling rapid step
  *  changes that interrupt a mid-flight transition) and re-targets to the
  *  new dimmed state. */
-function SceneItem({ scene, dimmed, progressMV, reduce }: SceneItemProps) {
+function SceneItem({ scene, dimmed, progressMV, reduce, activeKey }: SceneItemProps) {
   // The opacity the scene started this transition at, and the one it's
   // heading toward. On the very first render they match — no animation,
   // just the static initial state.
@@ -313,11 +349,16 @@ function SceneItem({ scene, dimmed, progressMV, reduce }: SceneItemProps) {
       toRef.current = dimmed ? 0 : 1;
       return;
     }
+    // Re-sync from/to on EVERY step change (activeKey is in deps), not
+    // just when this scene's own `dimmed` flips. The parent's effect
+    // resets `progressMV` to 0 each step; if our refs are stale, the
+    // useTransform output snaps from the prior settled value to whatever
+    // computeStaggered(staleFrom, staleTo, 0) returns — a visible flash.
     const p = progressMV.get();
     const live = computeStaggered(fromRef.current, toRef.current, p);
     fromRef.current = live;
     toRef.current = dimmed ? 0 : 1;
-  }, [dimmed, progressMV, reduce]);
+  }, [dimmed, progressMV, reduce, activeKey]);
 
   // Opacity derived from progressMV with the leaving-first / arriving-last
   // stagger map. The useTransform's read function runs every animation

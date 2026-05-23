@@ -385,12 +385,16 @@ function NestedFrame({
   // directly, i.e. no animation, just the static target opacity.
   const fallbackMV = useMotionValue(1);
   const sourceMV = drillProgressMV ?? fallbackMV;
+  // Re-sync refs on every drill-in target change (enteredId in deps), not
+  // just when this frame's own dimmed flips. Parent resets drillProgressMV
+  // to 0 each enteredId change; stale refs would cause a one-frame opacity
+  // flash that reads as a sudden appear/disappear.
   useEffect(() => {
     const p = sourceMV.get();
     const live = computeDrillStaggered(drillFromRef.current, drillToRef.current, p);
     drillFromRef.current = live;
     drillToRef.current = drillDimmed ? 0 : 1;
-  }, [drillDimmed, sourceMV]);
+  }, [drillDimmed, sourceMV, enteredId]);
   const drillOpacityMV = useTransform(sourceMV, (p: number) =>
     computeDrillStaggered(drillFromRef.current, drillToRef.current, p),
   );
@@ -771,11 +775,22 @@ export function FrameStage(props: FrameStageProps) {
     drillFromRef.current = { tx: liveTx, ty: liveTy, scale: liveScale };
     drillToRef.current = { tx: nextTx, ty: nextTy, scale: nextScale };
     drillProgressMV.set(0);
+    // Distance-proportional duration. Same easing shape, more time for
+    // bigger drill-ins. The two terms cover the two perceptual axes:
+    //   - positionMag: viewport-pixel pan distance for the design plane.
+    //   - scaleMag: log of the scale ratio (perceived zoom is log-prop).
+    const positionMag = Math.hypot(nextTx - liveTx, nextTy - liveTy);
+    const scaleMag = Math.abs(
+      Math.log(Math.max(nextScale, 0.0001) / Math.max(liveScale, 0.0001)),
+    );
+    const duration = Math.max(
+      0.45,
+      Math.min(1.8, 0.4 + positionMag / 1500 + scaleMag * 0.55),
+    );
     const controls = animate(drillProgressMV, 1, {
-      type: "spring",
-      stiffness: 140,
-      damping: 22,
-      mass: 0.9,
+      type: "tween",
+      duration,
+      ease: [0.22, 1, 0.36, 1],
     });
     return () => {
       controls.stop();
