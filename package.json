@@ -1,0 +1,28 @@
+{
+  "name": "weave",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Horizontal multi-domain workspace for B2B teams — see records/work-items/WI-001",
+  "type": "module",
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "dev": "pnpm --filter @weave/web dev",
+    "typecheck": "pnpm --recursive --parallel typecheck",
+    "test": "pnpm --recursive --parallel test",
+    "build": "pnpm --recursive build",
+    "e2e": "pnpm --filter @weave/web e2e",
+    "e2e:install": "pnpm --filter @weave/web e2e:install",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm e2e",
+    "verify:no-e2e": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "typescript": "^5.6.0"
+  }
+}
