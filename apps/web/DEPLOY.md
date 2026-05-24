@@ -61,19 +61,50 @@ git push -u origin main
 
 ---
 
-## 4. Add Vercel KV + Blob (storage backends)
+## 4. Add Redis (KV) + Blob (storage backends)
+
+Vercel restructured the Storage UI in late 2024 — **"KV" is no longer a
+direct option in the Storage tab**. The supported path is now Marketplace
+→ Upstash → Redis, and the env vars it injects use `UPSTASH_REDIS_REST_*`
+naming. Our `apps/web/api/_lib/kv.ts` accepts both old (`KV_REST_API_*`)
+and new (`UPSTASH_REDIS_REST_*`) names automatically, so either path works.
 
 In the new project's **Storage** tab:
 
-1. **Create Database** → **KV (Powered by Upstash)** → **Continue** → name `weave-kv` → **Create**.
-   - In the **Connect** step pick this project + all three environments (Production / Preview / Development).
-   - Vercel auto-adds these env vars: `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN`, `KV_URL`.
+1. **Add Redis (KV-equivalent)** — recommended new flow:
+   - Click **Create Database** (or **Browse Marketplace**) → under
+     **Marketplace Database Providers** pick **Upstash** → **Redis**.
+   - Name it `weave-kv` → select region close to your function region →
+     **Create**.
+   - On the **Connect Project** step pick this project + Production /
+     Preview / Development.
+   - Vercel injects: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
+     (and possibly `KV_URL` for direct Redis access). Our client reads
+     both naming conventions.
 
-2. **Create Database** → **Blob** → **Continue** → name `weave-blob` → **Create**.
+   _Legacy projects:_ if your older Vercel project still shows
+   "KV (Powered by Upstash)" in the Storage tab, that path also works —
+   it produces the older `KV_REST_API_URL` / `KV_REST_API_TOKEN` vars,
+   and the code accepts those too.
+
+2. **Add Blob** — still a first-class Storage option:
+   - **Create Database** → **Blob** → name `weave-blob` → **Create**.
    - Connect to this project + all three environments.
    - Auto-adds `BLOB_READ_WRITE_TOKEN`.
 
-No app-specific env vars are required beyond those — the `@vercel/kv` and `@vercel/blob` SDKs pick them up automatically.
+After both stores are connected, hit **Redeploy** so the running serverless
+functions pick up the new env vars (env-var changes don't trigger an auto
+redeploy on their own).
+
+Verify env injection: **Project → Settings → Environment Variables**.
+You should see one of these pairs for Redis:
+
+| Variant | Vars present | Source |
+| --- | --- | --- |
+| New Marketplace path | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Upstash Marketplace integration |
+| Legacy KV path | `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_URL` | Vercel KV (legacy) |
+
+Plus `BLOB_READ_WRITE_TOKEN` from the Blob store.
 
 ---
 
@@ -108,7 +139,8 @@ curl -fsSL -i https://YOUR-PROJECT.vercel.app/api/designs | head -20
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Build fails on `@agocraft/core` not found | agocraft not on npm yet | go back to step 1, pick Option A/B/C |
-| Build OK but `/api/designs` returns 500 | KV not linked | Storage tab → Connect KV to this project for *all* envs |
+| Build OK but `/api/designs` returns 500 | KV/Redis not linked | Storage tab → Marketplace → Upstash → Redis, connect to project for *all* envs, then **Redeploy** |
+| Storage tab only shows Blob, no KV | Vercel removed direct KV; use Marketplace → Upstash → Redis instead | See §4 above — both naming conventions are supported by the code |
 | Image upload succeeds but reload loses it | Blob token missing in prod (running in dev mode) | Storage tab → confirm `BLOB_READ_WRITE_TOKEN` is set in Production |
 | Designs not appearing across devices | This is by design — `weave_did` cookie is per-browser. The MVP scopes data to the browser. | (Follow-up: real auth — Clerk / NextAuth) |
 | `Type 'StoredDesign' is not assignable...` at build | strict TS pulled a type from `@vercel/node` that doesn't match latest | bump to `@vercel/node@^5.0.0` |
