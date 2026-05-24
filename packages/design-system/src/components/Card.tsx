@@ -1,7 +1,7 @@
 import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
 import { cn } from "../cn.js";
 
-type Tone = "default" | "raised";
+type Tone = "default" | "raised" | "transparent";
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   tone?: Tone;
@@ -16,6 +16,7 @@ const toneClass: Record<Tone, string> = {
     "border border-[color:var(--surface-2-border)]",
     "shadow-[var(--shadow-glass)]",
   ].join(" "),
+  transparent: "bg-transparent",
 };
 
 export const Card = forwardRef<HTMLDivElement, CardProps>(
@@ -23,16 +24,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
     <div
       ref={ref}
       className={cn(
-        "relative rounded-[var(--radius-xl)] backdrop-blur-[var(--surface-blur)]",
-        // Pin the card to its own GPU layer so `backdrop-filter` stays
-        // applied across transform animations on ancestor elements. Without
-        // this, Chromium opportunistically drops backdrop-filter while a
-        // parent compositor layer is mid-animation (the present-mode
-        // camera transform), then re-applies it on settle — visible as a
-        // "things behind suddenly blur out" pop right after a slide
-        // change. `will-change: backdrop-filter` hints intent and
-        // `translateZ(0)` forces the layer promotion that backs it up.
-        "[transform:translateZ(0)] [will-change:backdrop-filter]",
+        "relative rounded-[var(--radius-xl)]",
         "p-6 md:p-8",
         toneClass[tone],
         className,

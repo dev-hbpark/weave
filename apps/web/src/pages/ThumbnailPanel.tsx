@@ -118,7 +118,7 @@ export function ThumbnailPanel({
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-30 px-6 md:px-10 py-3 bg-[color:var(--surface-1)]/85 border-t border-[color:var(--surface-1-border)] backdrop-blur"
+      className="shrink-0 px-4 md:px-6 py-2.5 bg-[color:var(--surface-1)] border-t border-[color:var(--surface-1-border)]"
       role="region"
       aria-label="Presentation order"
       data-testid="thumbnail-panel"

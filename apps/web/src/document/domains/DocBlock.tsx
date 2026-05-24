@@ -1,5 +1,5 @@
 import { useEditorOrNull } from "@agocraft/editor/react";
-import { Card, CardEyebrow, EditableText } from "@weave/design-system";
+import { Card, EditableText } from "@weave/design-system";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { RubberBandLayer } from "../rubber-band/RubberBandLayer.js";
 import type { AgoItem, BlockDocAttrs } from "../types.js";
@@ -65,19 +65,30 @@ export function DocBlock({ item, onUpdate }: DocBlockProps) {
   );
 
   return (
-    <Card tone="default" className="border-l-4 border-l-[color:var(--domain-block-accent)]">
-      <CardEyebrow>Doc · {new Date(item.meta.createdAt).toLocaleTimeString()}</CardEyebrow>
+    <Card
+      tone="transparent"
+      className="h-full"
+      {...(item.attrs.background !== undefined
+        ? { style: { background: item.attrs.background } }
+        : {})}
+    >
       {editable ? (
         <EditableText
           as="div"
+          clickToEdit="double"
           value={item.attrs.heading}
           ariaLabel="Doc heading"
           placeholder="Heading…"
-          className="mt-3 text-[20px] font-semibold tracking-tight text-[color:var(--text-strong)]"
+          className="text-[20px] font-semibold tracking-tight text-[color:var(--text-strong)]"
           onCommit={commitHeading}
+          data-hover-context="문서 제목"
+          data-hover-actions={JSON.stringify([
+            { action: "편집 — 클릭" },
+            { action: "확정 — Enter" },
+          ])}
         />
       ) : (
-        <h3 className="mt-3 text-[20px] font-semibold tracking-tight text-[color:var(--text-strong)]">
+        <h3 className="text-[20px] font-semibold tracking-tight text-[color:var(--text-strong)]">
           {item.attrs.heading}
         </h3>
       )}
@@ -96,6 +107,11 @@ export function DocBlock({ item, onUpdate }: DocBlockProps) {
           containerId={String(item.id)}
           containerSize={paragraphsSize}
           editor={editor}
+          // Same gesture-split rule as the canvas / editor layers: plain
+          // empty-area drag should NOT auto-open the add-paragraph
+          // recommendation. The Option(Alt)-drag capture path stays as
+          // the explicit add channel.
+          requireAltKey
           className="mt-3 space-y-3 min-h-[80px]"
         >
           <DocParagraphList
@@ -146,6 +162,7 @@ function DocParagraphList({
             // biome-ignore lint/suspicious/noArrayIndexKey: paragraphs are positional; we splice in place
             key={`p-${idx}`}
             as="div"
+            clickToEdit="double"
             value={p}
             ariaLabel={`Paragraph ${idx + 1}`}
             placeholder="Paragraph…"
@@ -153,6 +170,12 @@ function DocParagraphList({
             onCommit={(next) => commitParagraph(idx, next)}
             onEnterCommit={() => insertParagraphAfter(idx)}
             onBackspaceEmpty={() => removeParagraph(idx)}
+            data-hover-context={`문단 ${idx + 1}`}
+            data-hover-actions={JSON.stringify([
+              { action: "편집 — 클릭" },
+              { action: "추가 — Enter" },
+              { action: "삭제 — Backspace" },
+            ])}
           />
         ) : (
           <p

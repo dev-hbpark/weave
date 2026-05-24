@@ -27,7 +27,7 @@ export function RecommendationPopover({
     return (
       <div
         data-testid="rubber-band-popover-empty"
-        className="px-2 py-2.5 text-[12px] text-[color:var(--text-soft)]"
+        className="px-2 py-2.5 text-[12px] text-[color:var(--text-overlay-soft)]"
       >
         이 비율에 어울리는 추천이 없습니다
       </div>
@@ -56,8 +56,8 @@ export function RecommendationPopover({
               "w-full flex items-start gap-2.5 text-left",
               "px-2.5 py-2 rounded-[var(--radius-sm)]",
               "outline-none cursor-pointer select-none",
-              "hover:bg-[color:var(--surface-2)]",
-              "focus-visible:bg-[color:var(--surface-2)]",
+              "hover:bg-[color:var(--surface-overlay-2)]",
+              "focus-visible:bg-[color:var(--surface-overlay-2)]",
               "focus-visible:shadow-[var(--focus-ring)]",
               "transition-[background] duration-[var(--motion-quick)] ease-[var(--motion-spring-soft)]",
             )}
@@ -65,17 +65,17 @@ export function RecommendationPopover({
             {rec.icon !== undefined ? (
               <span
                 aria-hidden
-                className="mt-0.5 inline-flex w-4 h-4 items-center justify-center text-[color:var(--text-soft)]"
+                className="mt-0.5 inline-flex w-4 h-4 items-center justify-center text-[color:var(--text-overlay-soft)]"
               >
                 {rec.icon}
               </span>
             ) : null}
             <span className="flex-1 min-w-0">
-              <span className="block text-[13px] text-[color:var(--text-strong)]">
+              <span className="block text-[13px] text-[color:var(--text-overlay)]">
                 {rec.label}
               </span>
               {rec.description !== undefined ? (
-                <span className="block mt-0.5 text-[11px] text-[color:var(--text-soft)] leading-snug">
+                <span className="block mt-0.5 text-[11px] text-[color:var(--text-overlay-soft)] leading-snug">
                   {rec.description}
                 </span>
               ) : null}

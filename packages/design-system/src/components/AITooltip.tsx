@@ -151,6 +151,14 @@ export interface AITooltipProviderProps {
    * Hosts wire this from their hotkey registry (e.g. an editor's input bus).
    */
   readonly hotkeyTable?: AITooltipHotkeyTable;
+  /**
+   * Global suppression switch. When true, the provider refuses new tooltip
+   * opens and immediately dismisses any visible / pending tooltip. Used by
+   * hosts that own an editor-wide interaction-mode machine (rubber-band,
+   * frame manipulation, context menu open, pan, etc.) to silence hover
+   * chrome while a gesture owns the canvas.
+   */
+  readonly disabled?: boolean;
   readonly children: ReactNode;
 }
 
@@ -185,6 +193,7 @@ export function AITooltipProvider({
   hideDelayMs = 100,
   scan = "none",
   hotkeyTable,
+  disabled = false,
   children,
 }: AITooltipProviderProps): ReactElement {
   const [active, setActive] = useState<ActiveTarget | null>(null);
@@ -210,8 +219,15 @@ export function AITooltipProvider({
     }
   }, []);
 
+  // Live disabled flag in a ref so the document-level pointerover listener
+  // (installed once on mount) can check the current value without restarting
+  // when `disabled` toggles. The callback consumers below read this ref too.
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+
   const open = useCallback(
     (element: HTMLElement, data: TooltipData) => {
+      if (disabledRef.current) return;
       const st = stateRef.current;
 
       // Same target re-entering during pending-hide → cancel hide, restore.
@@ -294,6 +310,20 @@ export function AITooltipProvider({
     };
   }, [clearShowTimer, clearHideTimer]);
 
+  // When the host flips `disabled` to true mid-interaction, dismiss any
+  // visible / pending tooltip immediately. Bypasses the hide buffer because
+  // the new gesture (rubber-band, manipulation, menu) is now driving — a
+  // 100 ms tail of stale chrome on top of a moving handle reads as a glitch.
+  useEffect(() => {
+    if (!disabled) return;
+    clearShowTimer();
+    clearHideTimer();
+    if (stateRef.current.status !== "idle") {
+      stateRef.current = { status: "idle", target: null, data: null };
+      setActive(null);
+    }
+  }, [disabled, clearShowTimer, clearHideTimer]);
+
   // Esc dismissal — required by the WAI-ARIA tooltip pattern. Bypasses the
   // 100 ms hide buffer (an explicit dismissal should be immediate, not
   // accidental-leave-tolerant) by resetting the machine directly to idle.
@@ -320,6 +350,11 @@ export function AITooltipProvider({
   useEffect(() => {
     if (scan !== "dataset" || typeof document === "undefined") return;
     const onPointerOver = (e: PointerEvent) => {
+      // `disabledRef` (set above on every render) gates the dataset listener
+      // without restarting the document-level subscription each time the
+      // flag flips. Without this, the host could end up reattaching the
+      // listener mid-drag and miss a pointerout transition.
+      if (disabledRef.current) return;
       const t = e.target as Element | null;
       const r = e.relatedTarget as Element | null;
       const next =
@@ -450,8 +485,10 @@ function Floating({ active }: FloatingProps): ReactElement | null {
         "fixed z-50 pointer-events-none",
         "min-w-[180px] max-w-[320px]",
         "rounded-[var(--radius-md)] border",
-        "bg-[color:var(--surface-1)] border-[color:var(--surface-1-border)]",
-        "shadow-[var(--shadow-glass)]",
+        // Theme-independent dark glass — readable on any canvas color the
+        // user picks for `design.background`. See tokens.css §OVERLAY.
+        "bg-[color:var(--surface-overlay)] border-[color:var(--surface-overlay-border)]",
+        "shadow-[var(--shadow-overlay)]",
         "px-3 py-2.5",
         "backdrop-blur-[var(--surface-blur)]",
       )}
@@ -473,10 +510,10 @@ function Floating({ active }: FloatingProps): ReactElement | null {
     >
       {showContext && data.context !== undefined ? (
         <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-soft)]">
+          <span className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-overlay-soft)]">
             Context
           </span>
-          <span className="text-[13px] text-[color:var(--text-strong)]">
+          <span className="text-[13px] text-[color:var(--text-overlay)]">
             {data.context}
           </span>
         </div>
@@ -485,7 +522,7 @@ function Floating({ active }: FloatingProps): ReactElement | null {
       {showContext && showActions ? (
         <div
           aria-hidden
-          className="my-2 h-px bg-[color:var(--surface-1-border)]"
+          className="my-2 h-px bg-[color:var(--surface-overlay-border)]"
         />
       ) : null}
 
@@ -506,9 +543,9 @@ function Floating({ active }: FloatingProps): ReactElement | null {
                 // legitimately repeat across the list, so a stable index key is
                 // the honest choice here.
                 key={`${i}-${a.action}`}
-                className="flex items-center gap-2 text-[color:var(--text-default)]"
+                className="flex items-center gap-2 text-[color:var(--text-overlay)]"
               >
-                <span aria-hidden className="text-[color:var(--accent)]">
+                <span aria-hidden className="text-[color:var(--accent-strong)]">
                   ▸
                 </span>
                 <span className="flex-1">{a.action}</span>
@@ -517,8 +554,8 @@ function Floating({ active }: FloatingProps): ReactElement | null {
                     className={cn(
                       "inline-flex items-center px-1.5 py-0.5",
                       "rounded-[var(--radius-sm)] border",
-                      "bg-[color:var(--surface-2)] border-[color:var(--border-strong)]",
-                      "text-[11px] font-mono tracking-[0.04em] text-[color:var(--text-default)]",
+                      "bg-[color:var(--surface-overlay-2)] border-[color:var(--surface-overlay-border-strong)]",
+                      "text-[11px] font-mono tracking-[0.04em] text-[color:var(--text-overlay)]",
                     )}
                   >
                     {resolvedShortcut}

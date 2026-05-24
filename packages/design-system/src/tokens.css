@@ -205,3 +205,62 @@
   --domain-block-accent: #8c5aff;
   --domain-media-accent: #ffdc50;
 }
+
+/* === DOCUMENT CONTEXT — readable text/surface tokens on any canvas bg ===
+ *
+ * `data-canvas="document"` marks the design-plane subtree where the user's
+ * content lives. Its sibling `data-bg-tone` reflects the perceived luminance
+ * of `design.background` (computed by FrameStage / PresentPage). When the
+ * canvas is bright, document-scope text/surface tokens flip to dark-ink so
+ * content stays readable; when dark, we fall back to the global theme's
+ * already-light tokens. This keeps document content legible regardless of
+ * which UI theme (Aurora / Mono / Vivid) the editor chrome uses.
+ */
+/* === OVERLAY SURFACE — theme-independent dark glass for floating chrome ===
+ *
+ * Tooltips, popovers, dropdowns, context menus and dialogs portal into
+ * `document.body` and float over whatever surface is beneath them — the
+ * dark editor chrome or the user's design canvas (which can be white or
+ * any color the user picks). Translucent-white surface tokens disappear
+ * over light canvases, so floating chrome uses these opaque dark-glass
+ * tokens. Same values in every theme on purpose — floating chrome should
+ * feel like a single product layer, not a theme-skinned one.
+ */
+:root {
+  --surface-overlay: rgba(15, 23, 42, 0.94);
+  --surface-overlay-2: rgba(255, 255, 255, 0.08);
+  --surface-overlay-border: rgba(255, 255, 255, 0.14);
+  --surface-overlay-border-strong: rgba(255, 255, 255, 0.22);
+  --text-overlay: rgba(255, 255, 255, 0.96);
+  --text-overlay-soft: rgba(255, 255, 255, 0.74);
+  --text-overlay-muted: rgba(255, 255, 255, 0.52);
+  --shadow-overlay: 0 18px 60px -16px rgba(0, 0, 0, 0.65),
+    0 4px 14px -4px rgba(0, 0, 0, 0.5);
+}
+
+[data-canvas="document"][data-bg-tone="light"] {
+  /* text — dark-ink ramp tuned for white-ish surfaces */
+  --text-strong: rgba(15, 23, 42, 0.96);
+  --text-default: rgba(15, 23, 42, 0.84);
+  --text-soft: rgba(15, 23, 42, 0.62);
+  --text-muted: rgba(15, 23, 42, 0.44);
+
+  /* surfaces — very low-opacity inks so any inset chrome (selected cells,
+   * popovers anchored inside the canvas) reads on white without washing
+   * out the underlying content */
+  --surface-1: rgba(15, 23, 42, 0.04);
+  --surface-1-border: rgba(15, 23, 42, 0.12);
+  --surface-2: rgba(15, 23, 42, 0.07);
+  --surface-2-border: rgba(15, 23, 42, 0.18);
+
+  /* borders */
+  --border-default: rgba(15, 23, 42, 0.14);
+  --border-strong: rgba(15, 23, 42, 0.24);
+}
+
+/* When the canvas surface is dark, the parent theme tokens (light text /
+ * translucent-white surfaces) already work. No-op stub keeps the API
+ * symmetric — flipping `data-bg-tone` is the only thing FrameStage does. */
+[data-canvas="document"][data-bg-tone="dark"] {
+  /* inherits global theme tokens */
+}

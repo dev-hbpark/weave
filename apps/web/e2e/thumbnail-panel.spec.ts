@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { clearAllDesigns, prepareDesign } from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // Phase 12d — ThumbnailPanel tiles correspond to every domain *frame* in the
 // design. The design root is no longer a slide — only the frames the user
@@ -14,10 +14,8 @@ test("panel hides for empty designs; one tile per frame thereafter", async ({ pa
   await expect(page.getByTestId("thumbnail-panel")).toHaveCount(0);
 
   // Add two slides — panel appears with 2 tiles (one per frame, no root tile).
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
 
   await expect(page.getByTestId("thumbnail-panel")).toBeVisible();
   await expect(page.locator('[data-thumbnail-id]')).toHaveCount(2);
@@ -25,12 +23,9 @@ test("panel hides for empty designs; one tile per frame thereafter", async ({ pa
 
 test("drag reorder updates the panel sequence", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Reorder test" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-canvas-design").click();
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
+  await addFrame(page, "canvas-design");
+  await addFrame(page, "slide");
   await expect(page.getByTestId("thumbnail-panel")).toBeVisible();
   await expect(page.locator('[data-thumbnail-id]')).toHaveCount(3);
 
@@ -55,10 +50,8 @@ test("drag reorder updates the panel sequence", async ({ page }) => {
 
 test("reorder is reflected in present mode step count + order", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Present order" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
   await expect(page.locator('[data-thumbnail-id]')).toHaveCount(2);
 
   // Phase 12d — Present button is in the toolbar.
@@ -79,12 +72,13 @@ test("reorder is reflected in present mode step count + order", async ({ page })
 
 test("clicking a tile selects the corresponding frame", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Click select" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
 
   await expect(page.getByTestId("thumbnail-panel")).toBeVisible();
   // tile 0 is the slide frame; clicking selects it.
   await page.getByTestId("thumbnail-0").click();
   expect(page.url()).not.toContain("/sub/");
-  await expect(page.getByTestId("add-target-hint")).toHaveText(/Add into selected frame/i);
+  // add-target-hint was removed; selection is implicit. URL remains on the
+  // design route — the tile click should not navigate elsewhere.
+  await expect(page).toHaveURL(/\/design\/[^/]+$/);
 });

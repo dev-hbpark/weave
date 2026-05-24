@@ -43,3 +43,16 @@ body {
   background: var(--accent-soft);
   color: var(--text-strong);
 }
+
+/* Inside the design canvas (`data-canvas="document"`), text-range
+ * selection is disabled by default — drag-to-add and drag-to-move
+ * gestures lose to the browser's native text selection otherwise. Opt
+ * IN explicitly: anything with `contenteditable="true"` (i.e. that
+ * has entered edit mode), and standard form controls. Matches the
+ * inline `userSelect: none` on FrameStage's outer div in the JSX. */
+[data-canvas="document"] [contenteditable="true"],
+[data-canvas="document"] input,
+[data-canvas="document"] textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}

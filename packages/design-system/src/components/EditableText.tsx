@@ -41,6 +41,19 @@ interface EditableTextProps {
   readonly onBlur?: (e: FocusEvent<HTMLDivElement>) => void;
   /** Render-as element. Default span; use "div" for multiline blocks. */
   readonly as?: "span" | "div";
+  /** When should the user enter edit mode?
+   *  - "single" (default) — element is always contenteditable; a single
+   *    click focuses it and the user can type immediately. Use this for
+   *    standalone inputs.
+   *  - "double" — element is NOT contenteditable until the user double-
+   *    clicks. Single clicks pass through to the parent (frame selection
+   *    / drag-move). Used for inline text inside a frame so the user can
+   *    still pick the frame up with a click. */
+  readonly clickToEdit?: "single" | "double";
+  /** Arbitrary extra props forwarded to the underlying element — used by
+   *  callers to attach `data-hover-context` / `data-hover-actions` so the
+   *  cursor tooltip can describe each editable field individually. */
+  readonly [key: `data-${string}`]: string | undefined;
 }
 
 export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(
@@ -57,9 +70,15 @@ export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(
       onFocus,
       onBlur,
       as = "span",
+      clickToEdit = "single",
+      ...rest
     },
     ref,
   ) => {
+    // For double-click-to-edit mode the element starts NOT contenteditable
+    // so the underlying frame's selection / drag handlers see the click.
+    // dblclick flips to true and focuses; blur reverts.
+    const [isEditing, setIsEditing] = useState(clickToEdit === "single");
     const elRef = useRef<HTMLDivElement | HTMLSpanElement | null>(null);
     const reduce = useReducedMotion();
     const [flash, setFlash] = useState(false);
@@ -95,7 +114,19 @@ export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(
 
     function commit(): string {
       const el = elRef.current;
-      const next = (el?.textContent ?? "").trim();
+      // For multiline fields the user can insert `<br>` / `<div>` blocks
+      // via Enter — `textContent` flattens those and concatenates without
+      // newlines (so "Line 1<br>Line 2" → "Line 1Line 2"). `innerText`
+      // preserves the visual line breaks as `\n`. Single-line fields use
+      // textContent (Enter is preventDefaulted, so there are no breaks
+      // to worry about, and `innerText` triggers a layout flush we'd
+      // rather avoid on every commit).
+      const raw = el === null
+        ? ""
+        : multiline
+          ? (el as HTMLElement).innerText
+          : (el.textContent ?? "");
+      const next = raw.trim();
       if (next !== value) {
         onCommit(next);
         if (!reduce) {
@@ -132,7 +163,51 @@ export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(
     function handleBlur(e: FocusEvent<HTMLDivElement>): void {
       commit();
       onBlur?.(e);
+      if (clickToEdit === "double") setIsEditing(false);
     }
+
+    function handleDoubleClick(): void {
+      if (typeof window !== "undefined") {
+        (window as unknown as Record<string, unknown>).__editableDblClick =
+          (((window as unknown as Record<string, unknown>).__editableDblClick as number | undefined) ?? 0) + 1;
+      }
+      if (clickToEdit !== "double") return;
+      setIsEditing(true);
+      // Also flip contentEditable on the DOM synchronously so we can focus
+      // in the same task. React will still reconcile on the next render
+      // (matching attribute → no-op). Without this, the focus call below
+      // (or the user's immediate keystroke) lands before React applies
+      // contentEditable=true — and a contenteditable=false element can't
+      // hold the caret.
+      const el = elRef.current;
+      if (el === null) return;
+      el.setAttribute("contenteditable", "true");
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      if (sel !== null) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+
+    // After React commits `contentEditable=true` to the DOM, focus the
+    // element and select all its contents so the user can immediately
+    // type to replace, or click again to position the caret.
+    useEffect(() => {
+      if (!isEditing || clickToEdit !== "double") return;
+      const el = elRef.current;
+      if (el === null) return;
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      if (sel !== null) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }, [isEditing, clickToEdit]);
 
     const Comp = (as === "div" ? motion.div : motion.span) as typeof motion.div;
     const flashProps = flash
@@ -146,7 +221,7 @@ export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(
       <Comp
         // contentEditable plus suppressContentEditableWarning because we deliberately
         // sidestep React's reconciliation for the text node.
-        contentEditable
+        contentEditable={isEditing}
         suppressContentEditableWarning
         ref={(el) => {
           elRef.current = el as HTMLDivElement | HTMLSpanElement | null;
@@ -155,19 +230,30 @@ export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(
         aria-label={ariaLabel}
         aria-multiline={multiline}
         data-placeholder={placeholder}
+        data-double-click-edit={clickToEdit === "double" ? "true" : undefined}
         spellCheck={false}
         onKeyDown={handleKeyDown}
         onFocus={onFocus}
         onBlur={handleBlur}
+        onDoubleClick={handleDoubleClick}
         {...flashProps}
+        {...rest}
         className={cn(
           "outline-none rounded-[var(--radius-sm)] -mx-1 px-1",
+          // Quiet by default — chrome only on hover/focus. Empty-state
+          // placeholder uses the soft muted token; on light document
+          // canvases that resolves to ~0.4 alpha dark ink so the hint is
+          // legible without competing with real content.
           "hover:bg-[color:var(--surface-1)]",
           "focus-visible:bg-[color:var(--surface-1)]",
           "focus-visible:shadow-[var(--focus-ring)]",
           "transition-colors duration-[var(--motion-quick)]",
-          "empty:before:content-[attr(data-placeholder)] empty:before:text-[color:var(--text-muted)]",
-          "cursor-text",
+          "empty:before:content-[attr(data-placeholder)] empty:before:text-[color:var(--text-muted)] empty:before:opacity-70",
+          // In double-click-to-edit mode, the inactive state shouldn't
+          // advertise a text cursor — the user should feel they're
+          // interacting with the FRAME, not the text. text cursor
+          // appears only while editing.
+          isEditing ? "cursor-text" : "cursor-default",
           className,
         )}
       >

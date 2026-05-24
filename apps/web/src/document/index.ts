@@ -4,11 +4,20 @@ export {
   createInteractionRegistry,
   hotspotAdapter,
   type InteractionAdapter,
+  type InteractionMode,
+  InteractionModeProvider,
   type InteractionRegistry,
   interactionRegistry,
   type PresentContext,
   type PresentEvent,
   revealOnStepAdapter,
+  type Selection,
+  SelectionProvider,
+  useFrameSelectionAllowed,
+  useInteractionMode,
+  useRubberBandAllowed,
+  useSelection,
+  useTooltipsAllowed,
 } from "./interactions/index.js";
 export { createDefaultItem, tileFrame } from "./seed.js";
 export {
@@ -56,6 +65,7 @@ export {
 export {
   collectPresentationIds,
   effectivePresentationOrder,
+  FRAME_KINDS,
   reconcilePresentationOrder,
   reorder,
 } from "./presentation-order.js";

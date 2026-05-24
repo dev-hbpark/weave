@@ -44,8 +44,9 @@ export const PopoverContent = forwardRef<HTMLDivElement, PopoverContentProps>(
           className={cn(
             "z-50 min-w-[200px] max-w-[360px]",
             "rounded-[var(--radius-md)] border",
-            "bg-[color:var(--surface-1)] border-[color:var(--surface-1-border)]",
-            "shadow-[var(--shadow-glass)]",
+            "bg-[color:var(--surface-overlay)] border-[color:var(--surface-overlay-border)]",
+            "text-[color:var(--text-overlay)]",
+            "shadow-[var(--shadow-overlay)]",
             "backdrop-blur-[var(--surface-blur)]",
             "px-2 py-1.5",
             "focus-visible:outline-none",
@@ -84,7 +85,7 @@ export function PopoverArrow({ className, ...rest }: PopoverArrowProps) {
       height={6}
       {...rest}
       className={cn(
-        "fill-[color:var(--surface-1)] stroke-[color:var(--surface-1-border)]",
+        "fill-[color:var(--surface-overlay)] stroke-[color:var(--surface-overlay-border)]",
         className,
       )}
     />

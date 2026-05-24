@@ -122,8 +122,8 @@ export const canvasDesignInsertable: InsertableCapability<"canvas-design"> = {
   },
 
   describeHover: () => ({
-    title: "이 캔버스에 도형 추가",
-    hint: "드래그하여 새 도형을 그립니다. Option(⌥) 키를 누른 채 드래그하면 다른 도형 위에서도 새 도형을 그릴 수 있습니다.",
+    title: "도형 추가",
+    hint: "드래그 — 새 도형. ⌥ 드래그 — 위에 겹쳐 추가.",
     kinds: [
       { id: "block", label: "블록" },
       { id: "divider", label: "디바이더" },

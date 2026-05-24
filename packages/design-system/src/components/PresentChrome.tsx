@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
+import { IconChevronLeft, IconChevronRight, IconClose } from "./Icon.js";
 
 interface PresentChromeProps {
   readonly step: number;
@@ -39,6 +40,18 @@ export function PresentChrome({ step, total, onPrev, onNext, onClose, title }: P
 
   const progress = total > 0 ? ((step + 1) / total) * 100 : 0;
 
+  // PresentChrome floats above the user's design canvas, which can be any
+  // color the user picks. Theme tokens alone aren't enough: on a white
+  // canvas Aurora's light text + translucent-white chips disappear. The
+  // chrome here hard-codes a dark glass surface + light text so the chrome
+  // stays readable against any background, edit theme, or user wallpaper.
+  // Same chip shape on every chrome element keeps the system coherent.
+  const CHIP_BG = "rgba(15, 23, 42, 0.62)";
+  const CHIP_BG_HOVER = "rgba(15, 23, 42, 0.78)";
+  const CHIP_BORDER = "rgba(255, 255, 255, 0.14)";
+  const CHIP_TEXT = "rgba(255, 255, 255, 0.96)";
+  const CHIP_TEXT_SOFT = "rgba(255, 255, 255, 0.74)";
+
   return (
     <AnimatePresence>
       {visible ? (
@@ -52,13 +65,23 @@ export function PresentChrome({ step, total, onPrev, onNext, onClose, title }: P
             transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className="fixed top-0 inset-x-0 z-50 px-6 py-4 flex items-center gap-4 pointer-events-none"
           >
-            <div className="pointer-events-auto flex items-center gap-3 text-[12px] tracking-[0.18em] uppercase text-[color:var(--text-soft)]">
-              <span className="font-medium text-[color:var(--text-strong)]">
+            <div
+              className="pointer-events-auto flex items-center gap-3 text-[12px] tracking-[0.18em] uppercase h-9 px-3 rounded-[var(--radius-pill)] backdrop-blur-[8px] border"
+              style={{
+                color: CHIP_TEXT_SOFT,
+                background: CHIP_BG,
+                borderColor: CHIP_BORDER,
+              }}
+            >
+              <span className="font-medium" style={{ color: CHIP_TEXT }}>
                 {step + 1} / {total}
               </span>
-              {title ? <span className="opacity-70">{title}</span> : null}
+              {title ? <span className="opacity-80">{title}</span> : null}
             </div>
-            <div className="pointer-events-auto flex-1 h-[3px] rounded-full bg-[color:var(--surface-1)] overflow-hidden">
+            <div
+              className="pointer-events-auto flex-1 h-[3px] rounded-full overflow-hidden"
+              style={{ background: CHIP_BG }}
+            >
               <motion.div
                 className="h-full bg-[image:var(--accent-gradient)]"
                 animate={{ width: `${progress}%` }}
@@ -68,10 +91,24 @@ export function PresentChrome({ step, total, onPrev, onNext, onClose, title }: P
             <button
               type="button"
               onClick={onClose}
-              className="pointer-events-auto h-9 px-3.5 rounded-[var(--radius-pill)] text-[13px] text-[color:var(--text-default)] bg-[color:var(--surface-1)] backdrop-blur-[var(--surface-blur)] border border-[color:var(--surface-1-border)] hover:bg-[color:var(--surface-2)] transition-colors duration-[var(--motion-normal)] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+              className="pointer-events-auto h-9 px-3.5 rounded-[var(--radius-pill)] text-[13px] backdrop-blur-[8px] border transition-colors duration-[var(--motion-normal)] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+              style={{
+                color: CHIP_TEXT,
+                background: CHIP_BG,
+                borderColor: CHIP_BORDER,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = CHIP_BG_HOVER;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = CHIP_BG;
+              }}
               aria-label="Exit present mode"
             >
-              ✕ Esc
+              <span className="inline-flex items-center gap-1.5">
+                <IconClose size={14} />
+                Esc
+              </span>
             </button>
           </motion.div>
 
@@ -88,10 +125,25 @@ export function PresentChrome({ step, total, onPrev, onNext, onClose, title }: P
               type="button"
               onClick={onPrev}
               disabled={step <= 0}
-              className="pointer-events-auto h-11 px-5 rounded-[var(--radius-pill)] text-[14px] text-[color:var(--text-default)] bg-[color:var(--surface-1)] backdrop-blur-[var(--surface-blur)] border border-[color:var(--surface-1-border)] hover:bg-[color:var(--surface-2)] disabled:opacity-40 disabled:pointer-events-none transition-colors duration-[var(--motion-normal)] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+              className="pointer-events-auto h-11 px-5 rounded-[var(--radius-pill)] text-[14px] backdrop-blur-[8px] border disabled:opacity-40 disabled:pointer-events-none transition-colors duration-[var(--motion-normal)] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+              style={{
+                color: CHIP_TEXT,
+                background: CHIP_BG,
+                borderColor: CHIP_BORDER,
+              }}
+              onMouseEnter={(e) => {
+                if (e.currentTarget.disabled) return;
+                e.currentTarget.style.background = CHIP_BG_HOVER;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = CHIP_BG;
+              }}
               aria-label="Previous scene"
             >
-              ← Prev
+              <span className="inline-flex items-center gap-1.5">
+                <IconChevronLeft size={16} />
+                Prev
+              </span>
             </button>
             <button
               type="button"
@@ -100,7 +152,10 @@ export function PresentChrome({ step, total, onPrev, onNext, onClose, title }: P
               className="pointer-events-auto h-11 px-5 rounded-[var(--radius-pill)] text-[14px] font-medium text-[var(--text-on-accent)] bg-[image:var(--accent-gradient)] shadow-[var(--shadow-glow)] hover:brightness-110 disabled:opacity-40 disabled:pointer-events-none transition-[filter] duration-[var(--motion-normal)] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
               aria-label="Next scene"
             >
-              Next →
+              <span className="inline-flex items-center gap-1.5">
+                Next
+                <IconChevronRight size={16} />
+              </span>
             </button>
           </motion.div>
         </>

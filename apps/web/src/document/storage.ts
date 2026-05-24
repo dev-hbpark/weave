@@ -7,7 +7,7 @@ import {
   itemId,
 } from "@agocraft/core";
 import { toAgocraftDocument } from "./agocraft-mirror.js";
-import { FULL_FRAME } from "./types.js";
+import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME } from "./types.js";
 import type { CanvasShape, Design, Document, Item, ItemFrame } from "./types.js";
 
 // localStorage persistence.
@@ -79,6 +79,9 @@ interface SerializedDesignV5 {
   readonly title: string;
   readonly width: number;
   readonly height: number;
+  /** Optional in the persisted blob — older v5 blobs may not have it. Loader
+   *  defaults to `DEFAULT_DESIGN_BACKGROUND` (white) when missing. */
+  readonly background?: string;
   readonly document: unknown;
   readonly presentationOrder: ReadonlyArray<string>;
   readonly meta: {
@@ -242,6 +245,7 @@ function wrapDocumentInDesign(doc: AgocraftDocument): Design {
     title,
     width,
     height,
+    background: DEFAULT_DESIGN_BACKGROUND,
     document: normalizedDoc,
     presentationOrder: [],
     meta: {
@@ -274,6 +278,7 @@ export function loadDesign(id: string): Design | undefined {
             title: parsed.title,
             width: parsed.width,
             height: parsed.height,
+            background: parsed.background ?? DEFAULT_DESIGN_BACKGROUND,
             document: result.document,
             presentationOrder: parsed.presentationOrder ?? [],
             meta: parsed.meta,
@@ -300,11 +305,65 @@ export function saveDesign(design: Design): void {
     title: design.title,
     width: design.width,
     height: design.height,
+    background: design.background,
     document: docBlob,
     presentationOrder: design.presentationOrder,
     meta: design.meta,
   };
   window.localStorage.setItem(KEY_PREFIX_V5 + design.id, JSON.stringify(blob));
+  // WI-025 — mirror to cloud (fire-and-forget). The cloud sees the same
+  // serialized blob as localStorage. Loaded lazily so unit tests don't
+  // pull the cloud module by default.
+  void import("./cloud-sync.js")
+    .then((m) => {
+      m.pushDesignCloud(blob as unknown as Design);
+    })
+    .catch(() => {
+      /* dev / offline — silently skip */
+    });
+}
+
+/** Lightweight summary used by the workspace listing — we don't fully
+ *  deserialize the document for each entry. Reads each `weave.design.v5.*`
+ *  key, parses the top-level metadata, returns the array. Newest first. */
+export interface DesignSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly width: number;
+  readonly height: number;
+  readonly background: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export function listAllDesigns(): ReadonlyArray<DesignSummary> {
+  if (typeof window === "undefined") return [];
+  const out: DesignSummary[] = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (key === null) continue;
+    if (!key.startsWith(KEY_PREFIX_V5)) continue;
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) continue;
+    try {
+      const parsed = JSON.parse(raw) as Partial<SerializedDesignV5>;
+      if (parsed.meta?.schemaVersion !== 5) continue;
+      if (typeof parsed.id !== "string") continue;
+      out.push({
+        id: parsed.id,
+        title: parsed.title ?? "Untitled",
+        width: parsed.width ?? 1920,
+        height: parsed.height ?? 1080,
+        background: parsed.background ?? DEFAULT_DESIGN_BACKGROUND,
+        createdAt: parsed.meta.createdAt,
+        updatedAt: parsed.meta.updatedAt,
+      });
+    } catch {
+      /* skip malformed entries */
+    }
+  }
+  out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  return out;
 }
 
 export function clearDesign(id: string): void {
@@ -314,6 +373,11 @@ export function clearDesign(id: string): void {
   window.localStorage.removeItem(LEGACY_PREFIX_V3 + id);
   window.localStorage.removeItem(LEGACY_PREFIX_V2 + id);
   window.localStorage.removeItem(LEGACY_PREFIX_V1 + id);
+  void import("./cloud-sync.js")
+    .then((m) => m.deleteDesignCloud(id))
+    .catch(() => {
+      /* dev / offline — silently skip */
+    });
 }
 
 /** Read a v4 (AgocraftDocument) or any older legacy blob, returning an
@@ -408,6 +472,7 @@ export function createBlankDesign(input: {
   readonly width: number;
   readonly height: number;
   readonly flavor?: string;
+  readonly background?: string;
 }): Design {
   const now = new Date().toISOString();
   const schema = createSchema();
@@ -441,6 +506,7 @@ export function createBlankDesign(input: {
     title: input.title,
     width: input.width,
     height: input.height,
+    background: input.background ?? DEFAULT_DESIGN_BACKGROUND,
     document,
     presentationOrder: [],
     meta: { createdAt: now, updatedAt: now, schemaVersion: 5 },

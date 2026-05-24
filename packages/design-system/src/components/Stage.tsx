@@ -38,6 +38,14 @@ interface StageProps {
   readonly scenes: ReadonlyArray<StageScene>;
   /** ID of the scene the camera is currently focused on. */
   readonly activeId: string;
+  /** CSS color for the design plane background. Defaults to the theme's
+   *  page bg. The matching `bgTone` is propagated to descendants via
+   *  `data-bg-tone` so document-context text/surface tokens stay readable. */
+  readonly background?: string;
+  /** "light" or "dark" — perceived tone of `background`. Caller computes
+   *  it (FrameStage / PresentPage share the same helper) and passes it in
+   *  so Stage doesn't have to bundle a canvas-luminance probe. */
+  readonly bgTone?: "light" | "dark";
   readonly className?: string;
 }
 
@@ -87,6 +95,8 @@ export function Stage({
   viewportSize,
   scenes,
   activeId,
+  background,
+  bgTone,
   className,
 }: StageProps) {
   const reduce = useReducedMotion();
@@ -237,14 +247,17 @@ export function Stage({
       ref={outerRef}
       className={cn(
         "relative w-full h-full overflow-hidden",
-        "bg-[color:var(--bg-page)]",
+        background === undefined ? "bg-[color:var(--bg-page)]" : undefined,
         className,
       )}
-      style={
-        viewportSize
+      data-canvas="document"
+      data-bg-tone={bgTone}
+      style={{
+        ...(background !== undefined ? { background } : {}),
+        ...(viewportSize
           ? { width: viewportSize.width, height: viewportSize.height }
-          : undefined
-      }
+          : {}),
+      }}
     >
       <motion.div
         className="absolute"
@@ -388,8 +401,16 @@ function SceneItem({ scene, dimmed, progressMV, reduce, activeKey }: SceneItemPr
         top: scene.position.y - scene.size.height / 2,
         width: scene.size.width,
         height: scene.size.height,
-        // Clip to the frame's actual aspect ratio — matches the editor.
-        overflow: "hidden",
+        // Match the editor's frame-overflow policy: the per-scene wrapper
+        // does NOT clip its content. Frames are layout markers, not
+        // viewport masks — inner items (slide bullets bleeding below,
+        // canvas shapes drawn past the frame, doc paragraphs that wrap
+        // longer than the frame) show where the author placed them. The
+        // outer Stage container still clips to the viewport so off-stage
+        // content doesn't leak past the present surface. Mode-shared
+        // overflow rule lives at
+        // apps/web/src/document/render/FrameContent.tsx (FRAME_OVERFLOW).
+        overflow: "visible",
         opacity,
       }}
     >

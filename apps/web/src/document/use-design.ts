@@ -12,6 +12,7 @@ import {
   applyChangeToDocument,
   type PendingCreationLookup,
   removeChild,
+  reorderRootChildren,
   toAgocraftItem,
   updateAttrs,
   updateChild,
@@ -47,10 +48,17 @@ interface UseDesignResult {
    *  next array (use `reorder` / spread to build it). Tree positions are not
    *  touched. */
   readonly setPresentationOrder: (next: ReadonlyArray<string>) => void;
+  /** WI-019 Phase 3 — reorder root.children in z-ascending order. Used by
+   *  usePeekMode's onCommit for the peek drag drop. Items not mentioned in
+   *  `orderedAsc` retain their relative position at the end. */
+  readonly reorderRootChildren: (orderedAsc: ReadonlyArray<string>) => void;
   /** Phase 13c — append an interaction behavior (camera-target / hotspot /
    *  reveal-on-step / future kinds) to a frame's units. Returns the new
    *  unit id for callers that want to immediately edit it. */
   readonly addBehavior: (itemId: string, behavior: InteractionBehavior) => string;
+  /** Set the design's overall background CSS color (paints the canvas
+   *  behind every frame). Persists via the existing storage pipeline. */
+  readonly setDesignBackground: (color: string) => void;
 }
 
 function nowIso(): string {
@@ -199,6 +207,18 @@ export function useDesign(id: string): UseDesignResult {
     }));
   }, []);
 
+  const reorderRootChildrenCb = useCallback((orderedAsc: ReadonlyArray<string>) => {
+    setDesign((prev) => withDocument(prev, reorderRootChildren(prev.document, orderedAsc)));
+  }, []);
+
+  const setDesignBackground = useCallback((color: string) => {
+    setDesign((prev) => ({
+      ...prev,
+      background: color,
+      meta: { ...prev.meta, updatedAt: nowIso() },
+    }));
+  }, []);
+
   const addBehavior = useCallback((itemId: string, behavior: InteractionBehavior): string => {
     const newId = behavior.id;
     setDesign((prev) =>
@@ -236,7 +256,9 @@ export function useDesign(id: string): UseDesignResult {
     reset,
     applyChange,
     setPresentationOrder,
+    reorderRootChildren: reorderRootChildrenCb,
     addBehavior,
+    setDesignBackground,
   };
 }
 

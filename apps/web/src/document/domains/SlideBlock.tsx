@@ -1,4 +1,4 @@
-import { Card, CardEyebrow, EditableText } from "@weave/design-system";
+import { Card, EditableText } from "@weave/design-system";
 import { useCallback } from "react";
 import type { AgoItem, SlideAttrs } from "../types.js";
 
@@ -48,18 +48,50 @@ export function SlideBlock({ item, onUpdate }: SlideBlockProps) {
     [onUpdate, item.attrs.bullets],
   );
 
+  // Hover-tooltip metadata: each editable inner item carries its own
+  // `data-hover-context` so the cursor popup describes the inner element
+  // (the title, a single bullet) instead of "the slide". Read-only renders
+  // skip the attributes — there's nothing for the user to do.
+  const titleHover = editable
+    ? {
+        "data-hover-context": "슬라이드 제목",
+        "data-hover-actions": JSON.stringify([
+          { action: "편집 — 클릭" },
+          { action: "확정 — Enter" },
+        ]),
+      }
+    : {};
+  const bulletHover = (idx: number) =>
+    editable
+      ? {
+          "data-hover-context": `글머리 ${idx + 1}`,
+          "data-hover-actions": JSON.stringify([
+            { action: "편집 — 클릭" },
+            { action: "추가 — Enter" },
+            { action: "삭제 — Backspace" },
+          ]),
+        }
+      : {};
+
   return (
-    <Card tone="default" className="border-l-4 border-l-[color:var(--domain-slide-accent)]">
-      <CardEyebrow>Slide · {new Date(item.meta.createdAt).toLocaleTimeString()}</CardEyebrow>
-      <div className="mt-3 rounded-[var(--radius-lg)] aspect-[16/9] p-6 md:p-8 flex flex-col justify-between bg-[color:var(--surface-2)] border border-[color:var(--surface-2-border)]">
+    <Card
+      tone="transparent"
+      className="p-0 md:p-0 h-full"
+      {...(item.attrs.background !== undefined
+        ? { style: { background: item.attrs.background } }
+        : {})}
+    >
+      <div className="h-full p-6 md:p-8 flex flex-col justify-between">
         {editable ? (
           <EditableText
             as="div"
+            clickToEdit="double"
             value={item.attrs.title}
             ariaLabel="Slide title"
             placeholder="Title…"
             className="text-[28px] md:text-[32px] font-semibold tracking-tight text-[color:var(--text-strong)]"
             onCommit={commitTitle}
+            {...titleHover}
           />
         ) : (
           <h3 className="text-[28px] md:text-[32px] font-semibold tracking-tight text-[color:var(--text-strong)]">
@@ -77,6 +109,7 @@ export function SlideBlock({ item, onUpdate }: SlideBlockProps) {
               {editable ? (
                 <EditableText
                   as="span"
+                  clickToEdit="double"
                   value={b}
                   ariaLabel={`Bullet ${idx + 1}`}
                   placeholder="Bullet…"
@@ -84,6 +117,7 @@ export function SlideBlock({ item, onUpdate }: SlideBlockProps) {
                   onCommit={(next) => commitBullet(idx, next)}
                   onEnterCommit={() => insertBulletAfter(idx)}
                   onBackspaceEmpty={() => removeBullet(idx)}
+                  {...bulletHover(idx)}
                 />
               ) : (
                 <span>{b}</span>

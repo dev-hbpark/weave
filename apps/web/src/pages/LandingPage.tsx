@@ -1,3 +1,12 @@
+// WI-024 Phase 19 — workspace landing page.
+//
+// Replaces the marketing-heavy landing with a working workspace:
+//   1. "+ 새 디자인" CTA opens the new-design wizard.
+//   2. A grid of every saved design (`weave.design.v5.*` keys) — click
+//      to open at `/design/:id`, hover to see modified date + delete.
+//   3. A resources panel listing every uploaded image / video so the
+//      user can confirm what's stored and remove unwanted entries.
+
 import {
   AuroraBg,
   Button,
@@ -7,34 +16,77 @@ import {
   Reveal,
   ThemeSwitcher,
 } from "@weave/design-system";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  clearDesign,
+  type DesignSummary,
+  listAllDesigns,
+} from "../document/storage.js";
+import {
+  listResources,
+  type MediaResource,
+  removeResource,
+} from "../document/resource-storage.js";
 import { NewDesignWizard } from "./new-design/NewDesignWizard.js";
 
-const status: ReadonlyArray<{ label: string; value: string; accent?: boolean }> = [
-  { label: "WI-001 service kickoff", value: "In Progress" },
-  { label: "FR-001 feasibility verdict", value: "FEASIBLE WITH TRADE-OFFS", accent: true },
-  { label: "DR-001 agocraft dep", value: "Accepted · Option E (private npm + yalc)" },
-  { label: "WI-002 design system", value: "In Progress · this page", accent: true },
-  { label: "WI-003 first prototype", value: "In Progress · /doc/demo", accent: true },
-  { label: "HANDOFF-001 → agocraft", value: "Open — awaiting publish setup" },
-];
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-const milestones: ReadonlyArray<{ id: string; date: string; title: string }> = [
-  { id: "M0", date: "~2026-06-05", title: "DR-002~005 verdict · 사용자 인터뷰 ≥ 10" },
-  { id: "M1", date: "~2026-06-26", title: "한 doc 안 4 도메인 임베드 + localStorage" },
-  { id: "M2", date: "~2026-07-24", title: "Multi-tenant + closed beta n=20" },
-  { id: "M3", date: "~2026-08-14", title: "Retention 측정 + critical bug fix" },
-  { id: "M4", date: "~2026-08-31", title: "Open beta + template + blog + landing" },
-];
+function aspectLabel(width: number, height: number): string {
+  // GCD-based simple aspect display — 1920×1080 → 16:9 etc.
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const g = gcd(width, height);
+  return `${width / g}:${height / g}`;
+}
 
 export function LandingPage() {
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [designs, setDesigns] = useState<ReadonlyArray<DesignSummary>>([]);
+  const [resources, setResources] = useState<ReadonlyArray<MediaResource>>([]);
+
+  const refresh = useCallback(() => {
+    setDesigns(listAllDesigns());
+    setResources(listResources());
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    // Catch updates from other tabs / windows.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null) return;
+      if (
+        e.key.startsWith("weave.design.v5.") ||
+        e.key.startsWith("weave.resource.v1.")
+      ) {
+        refresh();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [refresh]);
 
   return (
     <>
       <AuroraBg />
-      <NewDesignWizard open={wizardOpen} onOpenChange={setWizardOpen} />
+      <NewDesignWizard
+        open={wizardOpen}
+        onOpenChange={(next) => {
+          setWizardOpen(next);
+          // Wizard close after a navigation — refresh list when user
+          // bounces back to the workspace.
+          if (!next) refresh();
+        }}
+      />
 
       <header className="px-6 md:px-10 pt-6 md:pt-10 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2.5 no-underline">
@@ -49,100 +101,192 @@ export function LandingPage() {
         <ThemeSwitcher />
       </header>
 
-      <main className="mx-auto max-w-[920px] px-6 md:px-10 pt-16 md:pt-24 pb-24">
+      <main className="mx-auto max-w-[1100px] px-6 md:px-10 pt-12 md:pt-16 pb-24">
         <Reveal mode="entrance" as="section" y={14}>
           <p className="text-[12px] uppercase tracking-[0.22em] text-[color:var(--text-soft)] mb-5">
-            Multi-domain workspace · B2B
+            Workspace
           </p>
-          <h1 className="text-[clamp(48px,8vw,84px)] font-semibold leading-[1.02] tracking-[-0.025em] text-[color:var(--text-strong)]">
-            One canvas.
-            <br />
-            <span className="bg-clip-text text-transparent bg-[image:var(--accent-gradient)]">
-              Four worlds woven.
-            </span>
+          <h1 className="text-[clamp(36px,5vw,56px)] font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--text-strong)]">
+            내 디자인
           </h1>
-          <p className="mt-6 text-[18px] md:text-[20px] text-[color:var(--text-default)] max-w-[640px]">
-            Slides, free canvas, block-docs, and rich media — in a single document your team can
-            edit, share, and showcase. Built on the agocraft engine.
+          <p className="mt-4 text-[16px] text-[color:var(--text-default)] max-w-[640px]">
+            저장된 디자인을 다시 열거나, 새로 시작하거나, 업로드한 이미지/비디오를
+            확인할 수 있어요.
           </p>
 
-          <div className="mt-9 flex flex-wrap items-center gap-3">
+          <div className="mt-7 flex flex-wrap items-center gap-3">
             <Button
               size="lg"
               trailingIcon={<span aria-hidden>→</span>}
               onClick={() => setWizardOpen(true)}
               data-testid="landing-new-design"
             >
-              Start a new design
+              새 디자인 시작
             </Button>
           </div>
         </Reveal>
 
-        <section className="mt-20 grid gap-6 md:grid-cols-2">
-          <Reveal>
-            <Card tone="raised">
-              <CardEyebrow>M0 status — 2026-05-22</CardEyebrow>
-              <CardTitle>What's already woven</CardTitle>
-              <ul className="mt-5 space-y-3">
-                {status.map((s) => (
-                  <li key={s.label} className="flex items-start gap-3">
-                    <span
-                      aria-hidden
-                      className={
-                        s.accent
-                          ? "mt-1.5 inline-block w-1.5 h-1.5 rounded-full bg-[color:var(--accent)] shadow-[var(--shadow-glow)]"
-                          : "mt-1.5 inline-block w-1.5 h-1.5 rounded-full bg-[color:var(--text-muted)]"
-                      }
-                    />
-                    <div className="flex-1">
-                      <div className="text-[13px] text-[color:var(--text-soft)] uppercase tracking-[0.08em]">
-                        {s.label}
-                      </div>
-                      <div className="text-[15px] text-[color:var(--text-strong)] mt-0.5">
-                        {s.value}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+        {/* Saved designs grid */}
+        <section className="mt-12" data-testid="workspace-designs">
+          <div className="flex items-baseline justify-between mb-4">
+            <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-[color:var(--text-strong)]">
+              저장된 디자인
+              <span className="ml-2 text-[14px] text-[color:var(--text-soft)] font-normal">
+                {designs.length}
+              </span>
+            </h2>
+          </div>
+          {designs.length === 0 ? (
+            <Card tone="default">
+              <p className="text-[14px] text-[color:var(--text-soft)]">
+                아직 저장된 디자인이 없어요. 위의 "새 디자인 시작" 버튼으로
+                만들어 보세요.
+              </p>
             </Card>
-          </Reveal>
-
-          <Reveal delay={0.08}>
-            <Card tone="raised">
-              <CardEyebrow>Roadmap — 90 days</CardEyebrow>
-              <CardTitle>Next milestones</CardTitle>
-              <ol className="mt-5 space-y-3.5">
-                {milestones.map((m) => (
-                  <li key={m.id} className="flex items-baseline gap-3">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--accent-strong)] min-w-[28px]">
-                      {m.id}
-                    </span>
-                    <span className="text-[11px] text-[color:var(--text-muted)] font-mono min-w-[90px]">
-                      {m.date}
-                    </span>
-                    <span className="text-[14px] text-[color:var(--text-default)] flex-1">
-                      {m.title}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </Card>
-          </Reveal>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {designs.map((d) => (
+                <Reveal key={d.id} delay={0.05}>
+                  <div
+                    data-testid="design-card"
+                    data-design-id={d.id}
+                    className="group relative"
+                  >
+                    <Link
+                      to={`/design/${d.id}`}
+                      className="block no-underline"
+                    >
+                      <Card tone="raised" className="h-full">
+                        {/* Thumbnail surface — paints the design's background
+                            color so the user at least recognises tone. */}
+                        <div
+                          aria-hidden
+                          className="aspect-[16/9] -mx-5 -mt-5 mb-4 rounded-t-[var(--radius-md)] border-b border-[color:var(--surface-1-border)] overflow-hidden"
+                          style={{ background: d.background }}
+                        >
+                          <div className="h-full w-full flex items-center justify-center">
+                            <span
+                              className="text-[14px] uppercase tracking-[0.16em] font-mono opacity-30"
+                              style={{
+                                color:
+                                  d.background.toLowerCase() === "#ffffff" ||
+                                  d.background === "white"
+                                    ? "#1f2933"
+                                    : "rgba(255,255,255,0.7)",
+                              }}
+                            >
+                              {aspectLabel(d.width, d.height)}
+                            </span>
+                          </div>
+                        </div>
+                        <CardTitle>{d.title}</CardTitle>
+                        <CardEyebrow>
+                          {d.width}×{d.height} · 마지막 수정 {formatDate(d.updatedAt)}
+                        </CardEyebrow>
+                      </Card>
+                    </Link>
+                    {/* Delete button — appears on hover. Lives OUTSIDE the
+                        Link so the click doesn't navigate. */}
+                    <button
+                      type="button"
+                      data-testid="design-delete"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (
+                          typeof window !== "undefined" &&
+                          !window.confirm(`"${d.title}" 디자인을 삭제할까요?`)
+                        ) {
+                          return;
+                        }
+                        clearDesign(d.id);
+                        refresh();
+                      }}
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] rounded-[var(--radius-sm)] px-2 py-1"
+                      aria-label="디자인 삭제"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          )}
         </section>
 
-        <section className="mt-16">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-muted)] mb-3">
-            Design system · WI-002 + WI-003
+        {/* Resources panel */}
+        <section className="mt-12" data-testid="workspace-resources">
+          <div className="flex items-baseline justify-between mb-4">
+            <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-[color:var(--text-strong)]">
+              리소스
+              <span className="ml-2 text-[14px] text-[color:var(--text-soft)] font-normal">
+                {resources.length}
+              </span>
+            </h2>
+            <p className="text-[12px] text-[color:var(--text-soft)]">
+              미디어 추가 시 자동으로 등록됩니다
+            </p>
           </div>
-          <p className="text-[14px] text-[color:var(--text-soft)] max-w-[640px]">
-            Aurora theme, premium glass + gradient. Switch the segmented control above to see Mono
-            (Linear-grade) and Vivid (max playful) — both built from the same 3-layer token system,
-            cross-faded via the View Transitions API. All motion respects{" "}
-            <code className="text-[color:var(--text-strong)]">prefers-reduced-motion</code>. The new{" "}
-            <code className="text-[color:var(--text-strong)]">--domain-*-accent</code> tokens
-            (DR-design-001) drive the demo doc.
-          </p>
+          {resources.length === 0 ? (
+            <Card tone="default">
+              <p className="text-[14px] text-[color:var(--text-soft)]">
+                업로드한 이미지나 비디오가 아직 없어요. 디자인 안에서 미디어를
+                추가하면 여기에도 표시됩니다.
+              </p>
+            </Card>
+          ) : (
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+              {resources.map((r) => (
+                <div
+                  key={r.id}
+                  data-testid="resource-card"
+                  data-resource-id={r.id}
+                  data-resource-kind={r.kind}
+                  data-resource-session-only={r.sessionOnly ? "true" : "false"}
+                  className="group relative aspect-square rounded-[var(--radius-md)] border border-[color:var(--surface-1-border)] bg-[color:var(--surface-1)] overflow-hidden"
+                >
+                  {r.kind === "image" ? (
+                    <img
+                      src={r.src}
+                      alt={r.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-black/40 text-[color:var(--text-strong)]">
+                      <div className="text-center">
+                        <div className="text-[28px]" aria-hidden>
+                          ▶
+                        </div>
+                        <div className="text-[11px] mt-1 text-white/80 break-all px-2">
+                          {r.name}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {r.sessionOnly ? (
+                    <span className="absolute top-1 left-1 bg-black/55 text-white text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded">
+                      이번 세션만
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    data-testid="resource-delete"
+                    onClick={() => {
+                      removeResource(r.id);
+                      refresh();
+                    }}
+                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/55 text-white text-[11px] leading-none rounded px-1.5 py-1"
+                    aria-label="리소스 삭제"
+                  >
+                    ×
+                  </button>
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[10px] px-2 py-1 truncate opacity-0 group-hover:opacity-100 transition-opacity">
+                    {r.name}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </main>
     </>

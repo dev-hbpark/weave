@@ -101,6 +101,12 @@ export interface AddItemInput {
    *  (Figma-style) or at a pointer-drop location for drag-add. Defaults to
    *  the seed default (`FULL_FRAME`). */
   readonly frame?: ItemFrame;
+  /** WI-020 — partial attrs to merge over the seeded defaults at creation
+   *  time. Lets the host inject (a) image / video src URL, (b) shape sub-kind
+   *  + subAttrs without a follow-up update (which would race the staging
+   *  pipeline since the new item is only in `PendingCreations` until the
+   *  next React tick). */
+  readonly attrsOverride?: Readonly<Record<string, unknown>>;
 }
 export interface RemoveItemInput {
   readonly itemId: string;
@@ -185,6 +191,12 @@ export function buildWeaveCommands(
           attrs: { ...weaveItem.attrs, frame: input.frame } as typeof weaveItem.attrs,
         };
       }
+      if (input.attrsOverride !== undefined) {
+        weaveItem = {
+          ...weaveItem,
+          attrs: { ...weaveItem.attrs, ...input.attrsOverride } as typeof weaveItem.attrs,
+        };
+      }
       const ts = new Date().toISOString();
       const agoItem = toAgocraftItem(weaveItem, ts);
       if (pending !== undefined) {
@@ -261,6 +273,17 @@ export function buildWeaveCommands(
         createdAt: child.meta.createdAt,
       };
       const after = input.patch(weaveItem).attrs as unknown as Readonly<Record<string, unknown>>;
+      // DR-017 ADR-D — drag auto-merge.
+      //   agocraft's `mergeKeyOf` derives the merge key from the patch's
+      //   target identity (e.g. `item.attrs#${itemId}`) and the editor's
+      //   `historyMergeWindowMs: 500` already folds consecutive same-
+      //   target patches into one undo step. A 60Hz drag on the same
+      //   item.attrs (frame box, shape geometry) therefore collapses to
+      //   a single entry without any per-patch hint here.
+      //   Future enhancement (session-scoped scope so that two drags
+      //   500ms apart on the same target remain separate undo steps)
+      //   would extend agocraft's Patch type with an explicit merge
+      //   namespace; out of scope for this iteration.
       const patch: Patch = {
         type: "item.attrs",
         itemId: child.id,
@@ -286,6 +309,9 @@ export function buildWeaveCommands(
         s.id === input.shapeId ? { ...s, ...input.patch } : s,
       );
       const nextAttrs = { ...attrs, shapes: nextShapes };
+      // DR-017 ADR-D — same auto-merge story as `weave.item.update`.
+      // Per-shape merge isolation would require an explicit merge
+      // namespace on the patch; left for a follow-up iteration.
       const patch: Patch = {
         type: "item.attrs",
         itemId: child.id,

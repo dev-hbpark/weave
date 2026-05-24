@@ -66,7 +66,7 @@ export function EmptySpaceHint({
       >
         <div className="flex flex-col gap-2 min-w-[240px] max-w-[320px]">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-overlay-soft)]">
               {hint.title}
             </div>
             <kbd
@@ -74,14 +74,14 @@ export function EmptySpaceHint({
               className={[
                 "rounded-[var(--radius-sm)] border px-1.5 py-0.5 text-[10px] font-medium tracking-tight",
                 altActive
-                  ? "border-[color:var(--accent)] bg-[color:var(--accent)]/15 text-[color:var(--text-strong)]"
-                  : "border-[color:var(--border-soft)] bg-[color:var(--surface-2)] text-[color:var(--text-soft)]",
+                  ? "border-[color:var(--accent)] bg-[color:var(--accent)]/15 text-[color:var(--text-overlay)]"
+                  : "border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay-2)] text-[color:var(--text-overlay-soft)]",
               ].join(" ")}
             >
               ⌥ drag
             </kbd>
           </div>
-          <p className="text-[12px] leading-relaxed text-[color:var(--text-default)]">
+          <p className="text-[12px] leading-relaxed text-[color:var(--text-overlay)]">
             {hint.hint}
           </p>
           {hint.kinds.length > 0 ? (
@@ -92,11 +92,11 @@ export function EmptySpaceHint({
               {hint.kinds.map((k) => (
                 <li
                   key={k.id}
-                  className="flex items-center gap-1.5 rounded-full bg-[color:var(--surface-2)] px-2 py-0.5 text-[11px] text-[color:var(--text-soft)]"
+                  className="flex items-center gap-1.5 rounded-full bg-[color:var(--surface-overlay-2)] px-2 py-0.5 text-[11px] text-[color:var(--text-overlay-soft)]"
                   data-testid={`rubber-band-empty-hint-kind-${k.id}`}
                 >
                   {k.icon !== undefined ? (
-                    <span aria-hidden className="text-[12px] leading-none text-[color:var(--accent)]">
+                    <span aria-hidden className="text-[12px] leading-none text-[color:var(--accent-strong)]">
                       {k.icon}
                     </span>
                   ) : null}

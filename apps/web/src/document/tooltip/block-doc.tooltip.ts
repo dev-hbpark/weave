@@ -8,34 +8,34 @@ export const blockDocTooltipCapability: TooltipCapability<"block-doc"> = {
     const heading =
       item.attrs.heading.length > 0 ? item.attrs.heading : "문서";
     const paragraphCount = item.attrs.paragraphs.length;
-    const paragraphNote =
-      paragraphCount === 0
-        ? "문단 없음"
-        : `문단 ${paragraphCount}개`;
+    const context =
+      paragraphCount === 0 ? heading : `${heading} · 문단 ${paragraphCount}`;
     if (ctx.entered) {
       return {
-        context: `${heading} · ${paragraphNote} (진입됨)`,
+        context,
         actions: [
-          { action: "Esc 로 프레임 나가기" },
-          { action: "문단 클릭하여 인라인 편집" },
+          { action: "나가기 — Esc" },
+          { action: "문단 편집 — 클릭" },
         ],
       };
     }
     if (ctx.selected) {
       return {
-        context: `${heading} · ${paragraphNote} (선택됨)`,
+        context,
         actions: [
-          { action: "더블클릭하여 진입 → 본문 편집" },
-          { action: "핸들 드래그로 이동·리사이즈" },
-          { action: "Backspace 로 삭제" },
+          { action: "진입 — 더블클릭" },
+          { action: "변형 — 핸들 드래그" },
+          { action: "삭제 — Delete" },
+          { action: "위에 추가 — ⌥ 드래그" },
         ],
       };
     }
     return {
-      context: `${heading} · ${paragraphNote}`,
+      context,
       actions: [
-        { action: "클릭하여 선택" },
-        { action: "더블클릭하여 본문 편집 모드" },
+        { action: "선택 — 클릭" },
+        { action: "진입 — 더블클릭" },
+        { action: "위에 추가 — ⌥ 드래그" },
       ],
     };
   },

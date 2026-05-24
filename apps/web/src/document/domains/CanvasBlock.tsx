@@ -2,12 +2,14 @@ import { useEditorOrNull } from "@agocraft/editor/react";
 import { createInputBus } from "@agocraft/input/bus";
 import {
   Card,
-  CardEyebrow,
   EditableText,
   SelectionLayer,
   type SelectionLayerCapability,
 } from "@weave/design-system";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMotionValue, useMotionValueEvent } from "motion/react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useSelection } from "../interactions/selection-context.js";
+import { HIT_THRESHOLD_PX, TotalScaleContext } from "../interactions/total-scale-context.js";
 import { RubberBandLayer } from "../rubber-band/RubberBandLayer.js";
 import {
   type CanvasShapeTarget,
@@ -33,7 +35,23 @@ type DragMode =
 export function CanvasBlock({ item, onUpdate, onUpdateShape, onRemoveShape }: CanvasBlockProps) {
   const editable = onUpdate !== undefined;
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Shape selection rides the editor-wide SelectionContext so it can't
+  // coexist with a frame selection — clicking a shape in one canvas
+  // automatically dismisses any other selection (frame or shape) in the
+  // entire document. `selectedId` here is just a derived view of the
+  // global state filtered down to *this* canvas frame's shapes.
+  const { selection, selectShape } = useSelection();
+  const canvasFrameId = String(item.id);
+  const selectedId =
+    selection?.kind === "shape" && selection.frameId === canvasFrameId
+      ? selection.shapeId
+      : null;
+  const setSelectedId = useCallback(
+    (next: string | null) => {
+      selectShape(canvasFrameId, next);
+    },
+    [canvasFrameId, selectShape],
+  );
   // WI-017 Phase F-2 — track viewport pixel size for RubberBandLayer's
   // ratio normalization (shapes use 0..1 ratio of the viewport).
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({
@@ -52,6 +70,60 @@ export function CanvasBlock({ item, onUpdate, onUpdateShape, onRemoveShape }: Ca
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Display-size hit gate for individual shapes. The canvas viewport is
+  // tracked via `viewportRef` (its rect reflects all active transforms);
+  // a shape's on-screen footprint = `viewport × shape.{width,height}`.
+  // Shape buttons register their DOM refs into `shapeRefsRef`, and we re-
+  // run `applyShapeHitGates` whenever the design plane's scale changes —
+  // the buttons whose footprint falls below `HIT_THRESHOLD_PX` flip to
+  // `pointer-events: none`, letting clicks pass through to the canvas
+  // background (or up the bubble path to the frame).
+  const shapeRefsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const setShapeRef = useCallback(
+    (id: string, el: HTMLButtonElement | null) => {
+      if (el === null) shapeRefsRef.current.delete(id);
+      else shapeRefsRef.current.set(id, el);
+    },
+    [],
+  );
+
+  // Live ref to the *selected* shape's button DOM node. The floating
+  // SelectionLayer rAF-reads `.current` on each frame, so we expose this
+  // as a getter — that way array reordering, shape mounts/unmounts and
+  // the current selection are all resolved lazily without needing to
+  // re-thread the ref through CanvasViewportChildren on every render.
+  const selectedShapeRef = useMemo(() => {
+    const ref: { current: HTMLButtonElement | null } = { current: null };
+    Object.defineProperty(ref, "current", {
+      get: () => {
+        if (selectedId === null) return null;
+        return shapeRefsRef.current.get(selectedId) ?? null;
+      },
+      configurable: true,
+    });
+    return ref as { current: HTMLButtonElement | null };
+  }, [selectedId]);
+  const applyShapeHitGates = useCallback(() => {
+    const vp = viewportRef.current?.getBoundingClientRect();
+    if (vp === undefined) return;
+    const shapesById = new Map(item.attrs.shapes.map((s) => [s.id, s] as const));
+    for (const [id, el] of shapeRefsRef.current) {
+      const shape = shapesById.get(id);
+      if (shape === undefined) continue;
+      const w = vp.width * shape.width;
+      const h = vp.height * shape.height;
+      el.style.pointerEvents =
+        Math.min(w, h) >= HIT_THRESHOLD_PX ? "auto" : "none";
+    }
+  }, [item.attrs.shapes]);
+  const totalScaleFromCtx = useContext(TotalScaleContext);
+  const totalScaleFallback = useMotionValue(1);
+  const totalScaleMV = totalScaleFromCtx ?? totalScaleFallback;
+  useMotionValueEvent(totalScaleMV, "change", () => applyShapeHitGates());
+  useLayoutEffect(() => {
+    applyShapeHitGates();
+  }, [applyShapeHitGates, viewportSize]);
   const dragRef = useRef<DragMode>({ kind: "none" });
   // WI-013 Phase 3 — when CanvasBlock is rendered inside an `<EditorProvider>`
   // (DemoDocPage path), we look up the agocraft manipulation capabilities and
@@ -222,7 +294,19 @@ export function CanvasBlock({ item, onUpdate, onUpdateShape, onRemoveShape }: Ca
   function handleShapePointerDown(shape: CanvasShape, e: React.PointerEvent) {
     if (!editable) return;
     e.stopPropagation();
+    // Select + prepare a potential move drag on the same press, so the user
+    // doesn't have to click once to select and press again to start moving.
+    // If the pointer never moves past the click→drag threshold the press
+    // collapses to a plain selection (no commit fires from `onPointerMove`,
+    // and `endDrag` clears the dragRef without touching the shape).
     setSelectedId(shape.id);
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    dragRef.current = {
+      kind: "move",
+      startX: e.clientX,
+      startY: e.clientY,
+      orig: shape,
+    };
   }
 
   function startMove(e: React.PointerEvent) {
@@ -270,26 +354,13 @@ export function CanvasBlock({ item, onUpdate, onUpdateShape, onRemoveShape }: Ca
   }
 
   return (
-    <Card tone="default" className="border-l-4 border-l-[color:var(--domain-canvas-accent)]">
-      <CardEyebrow>Canvas · {new Date(item.meta.createdAt).toLocaleTimeString()}</CardEyebrow>
-      {editable ? (
-        <EditableText
-          as="div"
-          multiline
-          value={item.attrs.summary}
-          ariaLabel="Canvas summary"
-          placeholder="Canvas summary…"
-          className="mt-3 text-[14px] text-[color:var(--text-soft)]"
-          onCommit={(next) => onUpdate({ summary: next })}
-        />
-      ) : (
-        <p className="mt-3 text-[14px] text-[color:var(--text-soft)]">{item.attrs.summary}</p>
-      )}
-      {/* WI-017 Phase F-2 — canvas-design frame interior is a rubber-band
-          host. Drag on empty space opens the InsertableCapability popover for
-          containerKind="canvas-design" (shape variants per aspect bucket).
-          Falls back to a plain div when no editor is in context (e.g.
-          PresentPage read-only render). */}
+    <Card
+      tone="transparent"
+      className="h-full p-0 md:p-0 flex flex-col"
+      {...(item.attrs.background !== undefined
+        ? { style: { background: item.attrs.background } }
+        : {})}
+    >
       {editable && editor !== null ? (
         <RubberBandLayer
           ref={viewportRef}
@@ -297,15 +368,27 @@ export function CanvasBlock({ item, onUpdate, onUpdateShape, onRemoveShape }: Ca
           containerId={String(item.id)}
           containerSize={viewportSize}
           editor={editor}
-          className="mt-4 rounded-[var(--radius-lg)] aspect-[16/10] bg-[color:var(--surface-2)] border border-[color:var(--surface-2-border)] overflow-hidden"
+          // Plain empty-area drags inside the canvas are reserved for the
+          // future selection/marquee gesture and for clean "do nothing"
+          // pointerdowns — they must NOT trigger the add-shape recommendation
+          // popover. Adding a shape via drag stays reachable through the
+          // capture-phase Option(Alt) override, matching the editor-level
+          // design plane. Without this flag, a plain mouse-down on canvas
+          // empty space immediately paints a 0×0 dimensions chip at the
+          // cursor and the resulting `reviewing`-state popover lingers
+          // until Esc.
+          requireAltKey
+          className="flex-1 overflow-visible"
         >
           <CanvasViewportChildren
             item={item}
             editable={editable}
             selectedShape={selectedShape}
             selectedTarget={selectedTarget}
+            selectedShapeRef={selectedShapeRef}
             selectionCapability={selectionCapability}
             handleShapePointerDown={handleShapePointerDown}
+            setShapeRef={setShapeRef}
             startMove={startMove}
             startResize={startResize}
             startRotate={startRotate}
@@ -314,28 +397,23 @@ export function CanvasBlock({ item, onUpdate, onUpdateShape, onRemoveShape }: Ca
       ) : (
         <div
           ref={viewportRef}
-          className="mt-4 relative rounded-[var(--radius-lg)] aspect-[16/10] bg-[color:var(--surface-2)] border border-[color:var(--surface-2-border)] overflow-hidden"
+          className="relative flex-1 overflow-visible"
         >
           <CanvasViewportChildren
             item={item}
             editable={editable}
             selectedShape={selectedShape}
             selectedTarget={selectedTarget}
+            selectedShapeRef={selectedShapeRef}
             selectionCapability={selectionCapability}
             handleShapePointerDown={handleShapePointerDown}
+            setShapeRef={setShapeRef}
             startMove={startMove}
             startResize={startResize}
             startRotate={startRotate}
           />
         </div>
       )}
-
-      {editable ? (
-        <p className="mt-3 text-[11px] text-[color:var(--text-muted)] uppercase tracking-[0.14em]">
-          Click a shape to select. Drag to move. Corner / edge handles resize (center-based). Top
-          dot rotates. Esc deselects. Delete removes.
-        </p>
-      ) : null}
     </Card>
   );
 }
@@ -345,11 +423,13 @@ interface CanvasViewportChildrenProps {
   readonly editable: boolean;
   readonly selectedShape: CanvasShape | null;
   readonly selectedTarget: CanvasShapeTarget | null;
+  readonly selectedShapeRef: { current: HTMLButtonElement | null };
   readonly selectionCapability: SelectionLayerCapability;
   readonly handleShapePointerDown: (
     shape: CanvasShape,
     e: React.PointerEvent,
   ) => void;
+  readonly setShapeRef: (id: string, el: HTMLButtonElement | null) => void;
   readonly startMove: (e: React.PointerEvent<HTMLButtonElement>) => void;
   readonly startResize: (
     dir: HandleDir,
@@ -366,8 +446,10 @@ function CanvasViewportChildren({
   editable,
   selectedShape,
   selectedTarget,
+  selectedShapeRef,
   selectionCapability,
   handleShapePointerDown,
+  setShapeRef,
   startMove,
   startResize,
   startRotate,
@@ -380,11 +462,22 @@ function CanvasViewportChildren({
           key={shape.id}
           data-shape-id={shape.id}
           aria-label={`Shape ${shape.id}`}
+          ref={(el) => setShapeRef(shape.id, el)}
           onPointerDown={(e) => handleShapePointerDown(shape, e)}
           // Phase 12 — block the bubbling React `click` too so the
           // containing FrameStage doesn't also select the canvas frame
           // when the user picks a shape.
           onClick={(e) => e.stopPropagation()}
+          {...(editable
+            ? {
+                "data-hover-context": "도형",
+                "data-hover-actions": JSON.stringify([
+                  { action: "선택 — 클릭" },
+                  { action: "변형 — 핸들 드래그" },
+                  { action: "삭제 — Delete" },
+                ]),
+              }
+            : {})}
           className="absolute rounded-[var(--radius-md)] p-0 m-0 border-0 cursor-pointer"
           style={{
             left: `${shape.x * 100}%`,
@@ -401,13 +494,7 @@ function CanvasViewportChildren({
       ))}
       {editable && selectedShape !== null && selectedTarget !== null ? (
         <SelectionLayer
-          box={{
-            left: `${selectedShape.x * 100}%`,
-            top: `${selectedShape.y * 100}%`,
-            width: `${selectedShape.width * 100}%`,
-            height: `${selectedShape.height * 100}%`,
-            rotation: selectedShape.rotation,
-          }}
+          targetRef={selectedShapeRef}
           capability={selectionCapability}
           onMoveStart={startMove}
           onResizeStart={startResize}

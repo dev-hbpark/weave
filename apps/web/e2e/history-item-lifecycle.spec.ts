@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { clearAllDesigns, prepareDesign } from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // Phase 8 / 10b — item add / remove must be undoable.
 
@@ -24,11 +24,10 @@ test("Cmd+Z undoes an item.add; Cmd+Shift+Z redoes it", async ({ page }) => {
   const initial = await countDomainItems(page);
   expect(initial).toBeGreaterThanOrEqual(1);
 
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
   expect(await countDomainItems(page)).toBe(initial + 1);
 
-  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(50);
   expect(await countDomainItems(page)).toBe(initial);
@@ -42,8 +41,7 @@ test("Cmd+Z undoes an item.remove; Cmd+Shift+Z redoes it", async ({ page }) => {
   await prepareDesign(page, { flavor: "slide-deck" });
   await expect(page.locator('[data-testid="block-slide"]')).toHaveCount(1);
   // Ensure at least 2 blocks so removal leaves one to assert against.
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
   await expect(page.locator('[data-testid="block-slide"]')).toHaveCount(2);
   const initial = await countDomainItems(page);
   expect(initial).toBeGreaterThanOrEqual(2);
@@ -52,10 +50,10 @@ test("Cmd+Z undoes an item.remove; Cmd+Shift+Z redoes it", async ({ page }) => {
   // click the top-most (last in DOM) block so the menu is dispatched.
   const topBlock = page.locator('[data-testid^="block-"]').last();
   await topBlock.click({ button: "right" });
-  await page.getByRole("menuitem", { name: /Delete frame/i }).click();
+  await page.getByTestId("ctx-delete-frame").click();
   expect(await countDomainItems(page)).toBe(initial - 1);
 
-  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(50);
   expect(await countDomainItems(page)).toBe(initial);

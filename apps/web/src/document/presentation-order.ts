@@ -15,7 +15,11 @@
 import type { Item as AgocraftItem } from "@agocraft/core";
 import type { Design } from "./types.js";
 
-const FRAME_KINDS: ReadonlySet<string> = new Set([
+/** Kinds that count as navigable frames (slide-equivalents). Items of other
+ *  kinds (image / video / shape) are visual content, not navigation targets,
+ *  and are skipped when building the presentation step list. Exported for
+ *  reuse by present-mode renderers that need the same partition. */
+export const FRAME_KINDS: ReadonlySet<string> = new Set([
   "slide",
   "canvas-design",
   "block-doc",

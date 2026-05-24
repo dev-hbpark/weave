@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Z-order Peek PoC — local stack lift</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Pretendard", sans-serif;
+    background: #0f1115;
+    color: #e6e8eb;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    height: 100vh;
+  }
+
+  /* ===== stage (canvas area) ===== */
+  .stage {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 50% 25%, #1a1f2a 0%, #0d0f14 75%);
+  }
+
+  .topbar {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 14px 18px;
+    z-index: 100;
+    display: flex; align-items: center; gap: 14px;
+    pointer-events: none;
+    font-size: 13px;
+    color: rgba(230, 232, 235, 0.7);
+    flex-wrap: wrap;
+  }
+  .topbar > * { pointer-events: auto; }
+  .topbar .title {
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: 0.2px;
+  }
+  .topbar .hint {
+    padding: 5px 11px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 7px;
+    font-size: 12px;
+    color: rgba(230, 232, 235, 0.75);
+  }
+  .topbar kbd {
+    background: rgba(255,255,255,0.14);
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.2);
+    font-size: 11px;
+    font-family: ui-monospace, "SF Mono", monospace;
+    color: #fff;
+  }
+  .topbar button, .topbar label.toggle {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #e6e8eb;
+    padding: 5px 12px;
+    border-radius: 7px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 140ms;
+    font: inherit;
+  }
+  .topbar button:hover, .topbar label.toggle:hover { background: rgba(255,255,255,0.12); }
+  .topbar label.toggle { display: inline-flex; align-items: center; gap: 7px; }
+  .topbar label.toggle input { margin: 0; cursor: pointer; }
+
+  /* ===== 3D canvas ===== */
+  .canvas-wrap {
+    position: absolute;
+    inset: 0;
+    perspective: 1800px;
+    perspective-origin: 50% 30%;
+  }
+  .canvas {
+    position: absolute;
+    inset: 0;
+    transform-style: preserve-3d;
+    transform: rotateX(0deg);
+    transition: transform 320ms cubic-bezier(0.4, 0, 0.2, 1);
+    transform-origin: 50% 40%;
+  }
+  .canvas.peeking {
+    transform: rotateX(14deg);
+  }
+
+  .item {
+    position: absolute;
+    left: 0; top: 0;
+    border-radius: 10px;
+    transition:
+      transform 260ms cubic-bezier(0.34, 1.16, 0.64, 1),
+      box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 180ms,
+      outline 120ms;
+    will-change: transform;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.35),
+      0 0 0 1px rgba(0,0,0,0.18) inset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(0,0,0,0.65);
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    cursor: default;
+    transform: translate3d(var(--x), var(--y), 0px);
+  }
+  .item.lifted {
+    transform: translate3d(var(--x), var(--y), calc(var(--z-rank) * 38px));
+    box-shadow:
+      0 20px 38px rgba(0,0,0,0.55),
+      0 6px 14px rgba(0,0,0,0.35),
+      0 0 0 1px rgba(255,255,255,0.22) inset;
+    cursor: grab;
+  }
+  .item.lifted.dragging {
+    transition: none;
+    cursor: grabbing;
+    box-shadow:
+      0 28px 54px rgba(0,0,0,0.65),
+      0 0 0 2px #6ea8ff inset,
+      0 0 0 4px rgba(110, 168, 255, 0.25);
+  }
+  .item.lifted.related-only {
+    box-shadow:
+      0 10px 22px rgba(0,0,0,0.45),
+      0 0 0 1px rgba(110, 168, 255, 0.55) inset;
+  }
+  .item.dimmed {
+    opacity: 0.32;
+    filter: saturate(0.6);
+  }
+  .item.row-hover {
+    outline: 2px solid #6ea8ff;
+    outline-offset: 3px;
+  }
+
+  .ghost {
+    position: absolute;
+    left: 0; top: 0;
+    border: 1.5px dashed rgba(255,255,255,0.22);
+    border-radius: 10px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 220ms;
+    transform: translate3d(var(--x), var(--y), 0px);
+  }
+  .ghost.visible { opacity: 1; }
+
+  .cursor-ring {
+    position: absolute;
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    border: 1px solid rgba(110, 168, 255, 0.55);
+    background: rgba(110, 168, 255, 0.06);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    transition: opacity 140ms;
+    opacity: 0;
+    z-index: 50;
+  }
+  .stage.peeking .cursor-ring { opacity: 1; }
+
+  .modeline {
+    position: absolute;
+    bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    background: rgba(110, 168, 255, 0.14);
+    border: 1px solid rgba(110, 168, 255, 0.4);
+    border-radius: 999px;
+    font-size: 12px;
+    color: #cfe0ff;
+    letter-spacing: 0.5px;
+    opacity: 0;
+    transition: opacity 180ms;
+    pointer-events: none;
+  }
+  .stage.peeking .modeline { opacity: 1; }
+
+  /* ===== inspector ===== */
+  .inspector {
+    background: #15181f;
+    border-left: 1px solid rgba(255,255,255,0.06);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .inspector .header {
+    padding: 18px 16px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .inspector h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(230, 232, 235, 0.92);
+    letter-spacing: 0.3px;
+  }
+  .inspector .meta {
+    margin-top: 5px;
+    font-size: 11px;
+    color: rgba(230, 232, 235, 0.5);
+    line-height: 1.5;
+  }
+  .stack-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+  }
+  .stack-row {
+    display: flex; align-items: center; gap: 11px;
+    padding: 10px 12px;
+    margin: 5px 0;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 9px;
+    cursor: grab;
+    transition: background 140ms, border-color 140ms;
+  }
+  .stack-row:hover { background: rgba(255,255,255,0.07); }
+  .stack-row.dragging { opacity: 0.4; cursor: grabbing; }
+  .stack-row.drop-above { border-top-color: #6ea8ff; border-top-width: 2px; }
+  .stack-row.drop-below { border-bottom-color: #6ea8ff; border-bottom-width: 2px; }
+  .stack-row .swatch {
+    width: 20px; height: 20px;
+    border-radius: 5px;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.3) inset;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    color: rgba(0,0,0,0.7);
+  }
+  .stack-row .label {
+    flex: 1;
+    font-size: 13px;
+    color: rgba(230, 232, 235, 0.92);
+  }
+  .stack-row .related-tag {
+    font-size: 9.5px;
+    color: rgba(110, 168, 255, 0.85);
+    margin-left: 7px;
+    letter-spacing: 0.6px;
+    background: rgba(110, 168, 255, 0.12);
+    border: 1px solid rgba(110, 168, 255, 0.3);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+  .stack-row .z-badge {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 11px;
+    color: rgba(230, 232, 235, 0.55);
+    background: rgba(255,255,255,0.06);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .empty-state {
+    padding: 36px 18px;
+    text-align: center;
+    color: rgba(230, 232, 235, 0.35);
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .empty-state .big {
+    font-size: 28px;
+    margin-bottom: 8px;
+    opacity: 0.5;
+  }
+
+  .statusbar {
+    padding: 10px 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 11px;
+    color: rgba(230, 232, 235, 0.5);
+    font-family: ui-monospace, "SF Mono", monospace;
+    display: flex; justify-content: space-between;
+    gap: 8px;
+  }
+
+  /* scrollbar */
+  .stack-list::-webkit-scrollbar { width: 8px; }
+  .stack-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage" id="stage">
+    <div class="topbar">
+      <span class="title">Z-order Peek</span>
+      <span class="hint">Hold <kbd>Space</kbd> + hover canvas · drag lifted card to reorder Z</span>
+      <label class="toggle"><input type="checkbox" id="expand-toggle"> 1-hop neighbors</label>
+      <button id="reset-btn">Reset</button>
+      <button id="shuffle-btn">Shuffle Z</button>
+    </div>
+
+    <div class="canvas-wrap">
+      <div class="canvas" id="canvas">
+        <!-- items + ghosts injected here -->
+      </div>
+    </div>
+
+    <div class="cursor-ring" id="cursor-ring"></div>
+    <div class="modeline">PEEK MODE</div>
+  </div>
+
+  <aside class="inspector">
+    <div class="header">
+      <h2>Point Stack Inspector</h2>
+      <div class="meta" id="inspector-meta">Hold Space and hover the canvas</div>
+    </div>
+    <div class="stack-list" id="stack-list">
+      <div class="empty-state">
+        <div class="big">·</div>
+        no overlapping items at cursor
+      </div>
+    </div>
+    <div class="statusbar">
+      <span id="status-pos">x: — y: —</span>
+      <span id="status-count">stack: 0</span>
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  // ===================== data =====================
+  const PALETTE = [
+    '#ffb4a2', '#ffcdb2', '#e5989b', '#b5838d',
+    '#a8dadc', '#84a59d', '#f6bd60', '#f7ede2',
+    '#caffbf', '#bdb2ff', '#a0c4ff', '#9bf6ff',
+    '#ffd6a5', '#fdffb6', '#cdb4db', '#ffc6ff',
+  ];
+  // Hand-tuned overlap-heavy layout
+  const SEED = [
+    { x: 110, y: 130, w: 240, h: 170 },
+    { x: 200, y: 175, w: 220, h: 200 },
+    { x: 280, y: 220, w: 200, h: 150 },
+    { x: 340, y: 150, w: 240, h: 190 },
+    { x: 470, y: 240, w: 260, h: 180 },
+    { x: 520, y: 320, w: 220, h: 170 },
+    { x: 600, y: 180, w: 200, h: 220 },
+    { x: 720, y: 270, w: 200, h: 170 },
+    { x: 150, y: 360, w: 230, h: 190 },
+    { x: 240, y: 430, w: 200, h: 170 },
+    { x: 380, y: 400, w: 210, h: 170 },
+    { x: 460, y: 470, w: 230, h: 170 },
+    { x: 660, y: 440, w: 210, h: 170 },
+    { x: 760, y: 380, w: 200, h: 210 },
+    { x: 100, y: 240, w: 180, h: 200 },
+  ];
+
+  function makeItems() {
+    return SEED.map((s, i) => ({
+      id: 'i' + i,
+      label: String.fromCharCode(65 + i),
+      x: s.x, y: s.y, w: s.w, h: s.h,
+      color: PALETTE[i % PALETTE.length],
+      z: i,
+    }));
+  }
+
+  // ===================== state =====================
+  let items = makeItems();
+  let peeking = false;
+  let expandRelated = false;
+  let liftSet = { coreIds: new Set(), relatedIds: new Set(), orderedIds: [] };
+  let dragState = null;
+  let cursor = { x: -9999, y: -9999, inside: false };
+
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('canvas');
+  const cursorRing = document.getElementById('cursor-ring');
+  const stackList = document.getElementById('stack-list');
+  const inspectorMeta = document.getElementById('inspector-meta');
+  const statusPos = document.getElementById('status-pos');
+  const statusCount = document.getElementById('status-count');
+  const expandToggle = document.getElementById('expand-toggle');
+  const resetBtn = document.getElementById('reset-btn');
+  const shuffleBtn = document.getElementById('shuffle-btn');
+
+  const HIT_RADIUS = 24;
+  const elById = new Map();
+
+  // ===================== render =====================
+  function renderInitial() {
+    canvas.innerHTML = '';
+    elById.clear();
+    for (const it of items) {
+      const ghost = document.createElement('div');
+      ghost.className = 'ghost';
+      ghost.style.width = it.w + 'px';
+      ghost.style.height = it.h + 'px';
+      ghost.style.setProperty('--x', it.x + 'px');
+      ghost.style.setProperty('--y', it.y + 'px');
+      canvas.appendChild(ghost);
+
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.dataset.id = it.id;
+      el.style.width = it.w + 'px';
+      el.style.height = it.h + 'px';
+      el.style.background = it.color;
+      el.style.setProperty('--x', it.x + 'px');
+      el.style.setProperty('--y', it.y + 'px');
+      el.style.setProperty('--z-rank', '0');
+      el.textContent = it.label;
+      canvas.appendChild(el);
+
+      elById.set(it.id, { el, ghostEl: ghost });
+    }
+    applyZOrder();
+  }
+
+  function applyZOrder() {
+    // re-attach in z-asc order so painter's algorithm matches z
+    const sorted = [...items].sort((a, b) => a.z - b.z);
+    for (const it of sorted) {
+      const { el, ghostEl } = elById.get(it.id);
+      canvas.appendChild(ghostEl);
+      canvas.appendChild(el);
+    }
+  }
+
+  // ===================== hit-test =====================
+  function bboxOverlap(a, b) {
+    return !(a.x + a.w < b.x || b.x + b.w < a.x ||
+             a.y + a.h < b.y || b.y + b.h < a.y);
+  }
+  function hitAtPoint(x, y) {
+    const probe = { x: x - HIT_RADIUS, y: y - HIT_RADIUS, w: HIT_RADIUS * 2, h: HIT_RADIUS * 2 };
+    return items.filter(it => bboxOverlap(it, probe));
+  }
+  function expandOneHop(base) {
+    const baseIds = new Set(base.map(b => b.id));
+    const out = [];
+    for (const it of items) {
+      if (baseIds.has(it.id)) continue;
+      if (base.some(b => bboxOverlap(it, b))) out.push(it);
+    }
+    return out;
+  }
+
+  // ===================== peek lifecycle =====================
+  function updatePeekTarget() {
+    if (!peeking || !cursor.inside) {
+      clearLift();
+      return;
+    }
+    const core = hitAtPoint(cursor.x, cursor.y);
+    if (core.length === 0) {
+      clearLift();
+      return;
+    }
+    const related = expandRelated ? expandOneHop(core) : [];
+    const all = [...core, ...related].sort((a, b) => a.z - b.z);
+
+    liftSet = {
+      coreIds: new Set(core.map(c => c.id)),
+      relatedIds: new Set(related.map(r => r.id)),
+      orderedIds: all.map(a => a.id),
+    };
+    applyLift();
+    renderInspector();
+  }
+
+  function applyLift() {
+    const { coreIds, relatedIds, orderedIds } = liftSet;
+    const liftedIds = new Set(orderedIds);
+    const rankOf = new Map();
+    orderedIds.forEach((id, idx) => rankOf.set(id, idx));
+
+    for (const it of items) {
+      const { el, ghostEl } = elById.get(it.id);
+      if (liftedIds.has(it.id)) {
+        el.classList.add('lifted');
+        el.classList.toggle('related-only', relatedIds.has(it.id) && !coreIds.has(it.id));
+        el.classList.remove('dimmed');
+        el.style.setProperty('--z-rank', rankOf.get(it.id));
+        ghostEl.classList.add('visible');
+      } else {
+        el.classList.remove('lifted', 'related-only');
+        el.classList.toggle('dimmed', peeking);
+        el.style.setProperty('--z-rank', '0');
+        ghostEl.classList.remove('visible');
+      }
+    }
+  }
+
+  function clearLift() {
+    liftSet = { coreIds: new Set(), relatedIds: new Set(), orderedIds: [] };
+    for (const it of items) {
+      const { el, ghostEl } = elById.get(it.id);
+      el.classList.remove('lifted', 'related-only', 'dimmed');
+      el.style.setProperty('--z-rank', '0');
+      ghostEl.classList.remove('visible');
+    }
+    renderInspector();
+  }
+
+  // ===================== inspector =====================
+  function renderInspector() {
+    const { orderedIds, coreIds, relatedIds } = liftSet;
+    if (orderedIds.length === 0) {
+      stackList.innerHTML = '<div class="empty-state"><div class="big">·</div>no overlapping items at cursor</div>';
+      inspectorMeta.textContent = peeking
+        ? 'PEEK MODE — hover the canvas'
+        : 'Hold Space and hover the canvas';
+      statusCount.textContent = 'stack: 0';
+      return;
+    }
+    // top-down: highest z first
+    const reversed = [...orderedIds].reverse();
+    const idToItem = new Map(items.map(it => [it.id, it]));
+    stackList.innerHTML = '';
+    reversed.forEach(id => {
+      const it = idToItem.get(id);
+      const row = document.createElement('div');
+      row.className = 'stack-row';
+      row.dataset.id = it.id;
+      row.draggable = true;
+      const isRelated = relatedIds.has(it.id) && !coreIds.has(it.id);
+      row.innerHTML =
+        `<span class="swatch" style="background:${it.color}">${it.label}</span>` +
+        `<span class="label">Item ${it.label}` +
+          (isRelated ? '<span class="related-tag">RELATED</span>' : '') +
+        `</span>` +
+        `<span class="z-badge">z=${it.z}</span>`;
+      attachRowDnD(row);
+      attachRowHover(row);
+      stackList.appendChild(row);
+    });
+    inspectorMeta.textContent =
+      `${coreIds.size} at cursor` +
+      (relatedIds.size ? ` · +${relatedIds.size} related (1-hop)` : '');
+    statusCount.textContent = `stack: ${orderedIds.length}`;
+  }
+
+  function attachRowHover(row) {
+    row.addEventListener('mouseenter', () => {
+      const ref = elById.get(row.dataset.id);
+      if (ref) ref.el.classList.add('row-hover');
+    });
+    row.addEventListener('mouseleave', () => {
+      const ref = elById.get(row.dataset.id);
+      if (ref) ref.el.classList.remove('row-hover');
+    });
+  }
+
+  function attachRowDnD(row) {
+    row.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', row.dataset.id);
+      e.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = row.getBoundingClientRect();
+      const above = e.clientY < rect.top + rect.height / 2;
+      row.classList.toggle('drop-above', above);
+      row.classList.toggle('drop-below', !above);
+    });
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drop-above', 'drop-below');
+    });
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const draggedId = e.dataTransfer.getData('text/plain');
+      const targetId = row.dataset.id;
+      const above = row.classList.contains('drop-above');
+      row.classList.remove('drop-above', 'drop-below');
+      reorderViaInspector(draggedId, targetId, above);
+    });
+  }
+
+  function reorderViaInspector(draggedId, targetId, above) {
+    if (draggedId === targetId) return;
+    if (!liftSet.orderedIds.includes(draggedId)) return;
+    if (!liftSet.orderedIds.includes(targetId)) return;
+    // inspector list is top=highest z. "above target" → higher z than target.
+    // build new ordered list in z-asc:
+    const idsAsc = liftSet.orderedIds.slice();
+    const di = idsAsc.indexOf(draggedId);
+    idsAsc.splice(di, 1);
+    let ti = idsAsc.indexOf(targetId);
+    // above = higher z = inserted AFTER target in asc list
+    if (above) ti += 1;
+    idsAsc.splice(ti, 0, draggedId);
+    commitLocalReorder(idsAsc);
+  }
+
+  // ===================== drag on lifted item (Z reorder) =====================
+  function attachItemDnD() {
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!peeking) return;
+      const el = e.target.closest('.item.lifted');
+      if (!el) return;
+      const id = el.dataset.id;
+      if (!liftSet.orderedIds.includes(id)) return;
+      e.preventDefault();
+      const rank = liftSet.orderedIds.indexOf(id);
+      dragState = {
+        id, startY: e.clientY, startRank: rank, currentRank: rank, pointerId: e.pointerId,
+      };
+      el.classList.add('dragging');
+      el.setPointerCapture(e.pointerId);
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!dragState) return;
+      const dy = dragState.startY - e.clientY; // up = higher z
+      const STEP_PX = 28;
+      const deltaRank = Math.round(dy / STEP_PX);
+      const max = liftSet.orderedIds.length - 1;
+      const newRank = Math.max(0, Math.min(max, dragState.startRank + deltaRank));
+      if (newRank !== dragState.currentRank) {
+        dragState.currentRank = newRank;
+        const ids = liftSet.orderedIds.slice();
+        const oldIdx = ids.indexOf(dragState.id);
+        ids.splice(oldIdx, 1);
+        ids.splice(newRank, 0, dragState.id);
+        liftSet.orderedIds = ids;
+        applyLiftRanksOnly();
+      }
+    });
+
+    function endDrag(e) {
+      if (!dragState) return;
+      const ref = elById.get(dragState.id);
+      if (ref) ref.el.classList.remove('dragging');
+      commitLocalReorder(liftSet.orderedIds.slice());
+      dragState = null;
+    }
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
+  }
+
+  function applyLiftRanksOnly() {
+    const rankOf = new Map();
+    liftSet.orderedIds.forEach((id, idx) => rankOf.set(id, idx));
+    for (const id of liftSet.orderedIds) {
+      const ref = elById.get(id);
+      if (ref) ref.el.style.setProperty('--z-rank', rankOf.get(id));
+    }
+  }
+
+  function commitLocalReorder(newOrderAsc) {
+    // newOrderAsc: id list in target z-ascending order (within local stack)
+    // Preserve the original z-value POOL — only redistribute among local stack
+    const stackItems = newOrderAsc.map(id => items.find(i => i.id === id));
+    const zPool = stackItems.map(it => it.z).sort((a, b) => a - b);
+    stackItems.forEach((it, idx) => { it.z = zPool[idx]; });
+    liftSet.orderedIds = newOrderAsc;
+    applyZOrder();
+    applyLift();
+    renderInspector();
+  }
+
+  // ===================== input =====================
+  stage.addEventListener('pointermove', (e) => {
+    const rect = stage.getBoundingClientRect();
+    cursor.x = e.clientX - rect.left;
+    cursor.y = e.clientY - rect.top;
+    cursor.inside = true;
+    cursorRing.style.left = cursor.x + 'px';
+    cursorRing.style.top = cursor.y + 'px';
+    statusPos.textContent = `x: ${Math.round(cursor.x)} y: ${Math.round(cursor.y)}`;
+    if (peeking && !dragState) updatePeekTarget();
+  });
+  stage.addEventListener('pointerleave', () => {
+    cursor.inside = false;
+    if (peeking && !dragState) clearLift();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !peeking && !e.repeat) {
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      e.preventDefault();
+      peeking = true;
+      stage.classList.add('peeking');
+      canvas.classList.add('peeking');
+      updatePeekTarget();
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' && peeking) {
+      e.preventDefault();
+      peeking = false;
+      stage.classList.remove('peeking');
+      canvas.classList.remove('peeking');
+      clearLift();
+    }
+  });
+
+  expandToggle.addEventListener('change', (e) => {
+    expandRelated = e.target.checked;
+    if (peeking) updatePeekTarget();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    items = makeItems();
+    renderInitial();
+    clearLift();
+  });
+
+  shuffleBtn.addEventListener('click', () => {
+    // Fisher-Yates on z values only — keeps positions, scrambles stacking
+    const zs = items.map(i => i.z);
+    for (let i = zs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [zs[i], zs[j]] = [zs[j], zs[i]];
+    }
+    items.forEach((it, i) => { it.z = zs[i]; });
+    applyZOrder();
+    if (peeking) updatePeekTarget();
+  });
+
+  // ===================== boot =====================
+  renderInitial();
+  attachItemDnD();
+})();
+</script>
+</body>
+</html>

@@ -14,7 +14,7 @@
 //      corresponding region while leaving others intact.
 
 import { expect, test } from "@playwright/test";
-import { clearAllDesigns, prepareDesign } from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 const TOOLTIP = "[data-ai-tooltip-surface]";
 
@@ -48,7 +48,7 @@ test("show-delay debounce — hover past 175ms opens the tooltip", async ({
   const tip = page.locator(TOOLTIP);
   await expect(tip).toBeVisible();
   await expect(tip).toHaveAttribute("role", "tooltip");
-  await expect(tip).toContainText("이전 작업으로 되돌리기");
+  await expect(tip).toContainText("되돌리기");
 });
 
 test("hide-buffer — leaving and returning within 100ms keeps tooltip visible", async ({
@@ -211,8 +211,7 @@ test("a11y — aria-describedby is wired, Escape dismisses without the hide buff
   // really matter — aria-describedby is set, and Escape immediate dismisses —
   // are exercised here via the hover path.
   await prepareDesign(page, { flavor: "mixed", title: "Tip-Kb" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
 
   const undo = page.getByTestId("toolbar-undo");
   await expect(undo).toBeEnabled();
@@ -353,9 +352,15 @@ test("edge-flip — target near the viewport bottom flips the tooltip above", as
   expect(rects.tipBottom).toBeLessThanOrEqual(rects.targetTop);
 });
 
-test("theme inheritance — surface bg/border tokens swap with [data-theme]", async ({
+test("overlay surface — AITooltip stays theme-independent so it stays readable over any canvas", async ({
   page,
 }) => {
+  // The tooltip moved off the per-theme surface tokens onto the global
+  // `--surface-overlay` (a dark glass shared by all themes). That's the
+  // intentional change: floating chrome must stay readable over the user's
+  // design canvas — which can be white, dark, or any color — regardless of
+  // which UI theme is active. The asserted invariant inverts the prior one:
+  // bg/border MUST be identical across all themes.
   await prepareDesign(page, { flavor: "mixed", title: "Tip-Th" });
   const tip = page.locator(TOOLTIP);
   const measure = async (theme: string) => {
@@ -371,7 +376,6 @@ test("theme inheritance — surface bg/border tokens swap with [data-theme]", as
       const s = window.getComputedStyle(el);
       return { bg: s.backgroundColor, border: s.borderTopColor };
     });
-    // Move away to let the hide buffer expire before the next theme.
     await page.mouse.move(0, 0);
     await page.waitForTimeout(150);
     return cs;
@@ -380,10 +384,9 @@ test("theme inheritance — surface bg/border tokens swap with [data-theme]", as
   const mono = await measure("mono");
   const vivid = await measure("vivid");
 
-  // Tokens differ across themes — the resolved RGBA must not all be identical.
-  expect(aurora.bg).not.toBe(mono.bg);
-  expect(mono.bg).not.toBe(vivid.bg);
-  expect(aurora.border).not.toBe(mono.border);
+  expect(aurora.bg).toBe(mono.bg);
+  expect(mono.bg).toBe(vivid.bg);
+  expect(aurora.border).toBe(mono.border);
 });
 
 test("live data refresh — tooltip content updates in place when the bound data changes", async ({

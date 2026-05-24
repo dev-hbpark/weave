@@ -15,18 +15,18 @@ test("Cmd+Z undoes a slide title commit; Cmd+Shift+Z redoes it", async ({ page }
   const title = page.getByRole("textbox", { name: "Slide title" });
   await expect(title).toHaveText("New slide");
 
-  await title.click();
+  await title.dblclick({ position: { x: 80, y: 20 } });
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Edited title");
   await title.blur();
   await expect(title).toHaveText("Edited title");
 
-  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(title).toHaveText("New slide", { timeout: 2_000 });
 
-  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect(title).toHaveText("Edited title", { timeout: 2_000 });
 });

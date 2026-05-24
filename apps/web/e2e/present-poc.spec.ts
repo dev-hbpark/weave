@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { clearAllDesigns, prepareDesign } from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // Phase 10b — the demo doc is gone; each test prepares a fresh design via the
 // new-design wizard and uses the seeded first item per flavor. The big demo
@@ -11,9 +11,11 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("landing renders the headline + new-design CTA", async ({ page }) => {
+test("landing renders the workspace headline + new-design CTA", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /One canvas\./ })).toBeVisible();
+  // Phase 19 — landing is now the workspace ("내 디자인"). Old "One canvas."
+  // marketing copy is gone; verify the new heading + CTA testid.
+  await expect(page.getByRole("heading", { name: /내 디자인/ })).toBeVisible();
   await expect(page.getByTestId("landing-new-design")).toBeVisible();
 });
 
@@ -22,7 +24,12 @@ test("slide-deck flavor seeds a slide; title inline edit + persist", async ({ pa
   const title = page.getByRole("textbox", { name: "Slide title" });
   await expect(title).toHaveText("New slide");
 
-  await title.click();
+  // The slide takes the full design plane, making the title element
+  // much wider than the viewport. Playwright's default click hits the
+  // element's center, which may land on a different element (toolbar /
+  // chrome) when the rect extends past the viewport. Force a position
+  // safely inside the visible portion.
+  await title.dblclick({ position: { x: 80, y: 20 } });
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Edited title");
   await title.blur();
@@ -36,12 +43,12 @@ test("slide-deck: bullet add via Enter + remove via Backspace", async ({ page })
   await prepareDesign(page, { flavor: "slide-deck" });
 
   const b1 = page.getByRole("textbox", { name: "Bullet 1" });
-  await b1.click();
+  await b1.dblclick({ position: { x: 20, y: 8 } });
   await page.keyboard.press("End");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("textbox", { name: "Bullet 2" })).toHaveText("");
 
-  await page.getByRole("textbox", { name: "Bullet 2" }).click();
+  await page.getByRole("textbox", { name: "Bullet 2" }).dblclick({ position: { x: 20, y: 8 } });
   await page.keyboard.press("Backspace");
   await expect(page.getByRole("textbox", { name: "Bullet 2" })).toHaveText("Supporting detail");
 });
@@ -50,7 +57,7 @@ test("doc-page flavor seeds a doc; heading inline edit + persist", async ({ page
   await prepareDesign(page, { flavor: "doc-page" });
 
   const heading = page.getByRole("textbox", { name: "Doc heading" });
-  await heading.click();
+  await heading.dblclick({ position: { x: 80, y: 12 } });
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Edited doc heading");
   await heading.blur();
@@ -59,19 +66,11 @@ test("doc-page flavor seeds a doc; heading inline edit + persist", async ({ page
   await expect(page.getByRole("textbox", { name: "Doc heading" })).toHaveText("Edited doc heading");
 });
 
-test("canvas-board flavor seeds a canvas; summary inline edit + persist", async ({ page }) => {
+// Canvas summary inline-editable was removed when the canvas frame became
+// edge-to-edge transparent content (no more Card eyebrow / summary chrome
+// inside the frame). Skip — feature intentionally retired.
+test.skip("canvas-board flavor seeds a canvas; summary inline edit + persist", async ({ page }) => {
   await prepareDesign(page, { flavor: "canvas-board" });
-
-  const summary = page.getByRole("textbox", { name: "Canvas summary" });
-  await summary.click();
-  await page.keyboard.press("ControlOrMeta+A");
-  await page.keyboard.type("Sticker wall for the campaign brainstorm");
-  await summary.blur();
-
-  await page.reload();
-  await expect(page.getByRole("textbox", { name: "Canvas summary" })).toHaveText(
-    "Sticker wall for the campaign brainstorm",
-  );
 });
 
 test("canvas-board: shape selection + 8 resize handles + rotation handle", async ({ page }) => {
@@ -100,7 +99,12 @@ test("canvas-board: shape selection + 8 resize handles + rotation handle", async
 test("slide title Esc reverts the in-flight change", async ({ page }) => {
   await prepareDesign(page, { flavor: "slide-deck" });
   const title = page.getByRole("textbox", { name: "Slide title" });
-  await title.click();
+  // The slide takes the full design plane, making the title element
+  // much wider than the viewport. Playwright's default click hits the
+  // element's center, which may land on a different element (toolbar /
+  // chrome) when the rect extends past the viewport. Force a position
+  // safely inside the visible portion.
+  await title.dblclick({ position: { x: 80, y: 20 } });
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Temporary");
   await page.keyboard.press("Escape");
@@ -118,10 +122,8 @@ test("Stage centers the active scene and zooms it to fill the viewport", async (
   // immediately; we want to inspect the steady-state geometry.
   await page.emulateMedia({ reducedMotion: "reduce" });
   const id = await prepareDesign(page, { flavor: "mixed", title: "Camera fit" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
 
   await page.goto(`/design/${id}/present`);
   // Reduced motion → no spring. Still allow one frame for ResizeObserver to
@@ -170,10 +172,8 @@ test("zoom and pan stay synchronized through a camera transition", async ({
   // The transition between them changes both camera position and scale, so we
   // can verify the two animate in lockstep.
   const id = await prepareDesign(page, { flavor: "mixed", title: "Sync" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
   await page.evaluate(async () => {
     const editor = (
       window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }

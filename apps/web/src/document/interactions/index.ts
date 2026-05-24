@@ -13,6 +13,19 @@ export type {
   PresentContext,
   PresentEvent,
 } from "./types.js";
+export {
+  type InteractionMode,
+  InteractionModeProvider,
+  useFrameSelectionAllowed,
+  useInteractionMode,
+  useRubberBandAllowed,
+  useTooltipsAllowed,
+} from "./interaction-mode.js";
+export {
+  type Selection,
+  SelectionProvider,
+  useSelection,
+} from "./selection-context.js";
 
 /** Singleton — extension point. Future plugins register here. */
 export const interactionRegistry = createInteractionRegistry();

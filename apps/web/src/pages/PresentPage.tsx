@@ -11,6 +11,7 @@ import {
   type CameraTargetBehavior,
   effectivePresentationOrder,
   type EntranceAnimationBehavior,
+  FRAME_KINDS,
   type HotspotAction,
   type HoverEffectBehavior,
   interactionRegistry,
@@ -18,7 +19,7 @@ import {
   type PresentContext,
   useDesign,
 } from "../document";
-import { DOMAIN_RENDERERS } from "../document/domains";
+import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 
 // Phase 13d-3 — entrance-animation Web Animations API keyframes per mode.
 function entranceKeyframes(mode: EntranceAnimationBehavior["mode"]): Keyframe[] {
@@ -388,23 +389,69 @@ export function PresentPage() {
     ],
   );
 
-  const scenes = useMemo<StageScene[]>(
+  // Phase 7b — root-level non-frame primitives (image / video / shape items
+  // added directly to the design root, outside any slide-equivalent frame).
+  // These aren't navigation targets, but they should still render in present
+  // mode at their absolute design coords. Done as one passive scene at the
+  // design's full bounds — first in scene array so it's never dimmed (Stage's
+  // dim rule fires on `idx > activeIdx`, and activeIdx is always a frame
+  // camera target at idx ≥ 1 because cameraTargets excludes the root).
+  const designLayerScene = useMemo<StageScene | undefined>(() => {
+    const rootPrimitives = docInAgocraft.root.children.filter(
+      (c) => isDomainItem(c) && !FRAME_KINDS.has(c.kind),
+    );
+    if (rootPrimitives.length === 0) return undefined;
+    return {
+      id: "present-design-layer",
+      position: { x: design.width / 2, y: design.height / 2 },
+      size: { width: design.width, height: design.height },
+      scale: 1, // never the active scene; scale unused
+      children: (
+        <div
+          data-testid="present-design-layer"
+          style={{ position: "absolute", inset: 0 }}
+        >
+          {rootPrimitives.map((child) => {
+            const f = (child.attrs as { frame?: ItemFrame }).frame;
+            if (f === undefined) return null;
+            const rotation = f.rotation ?? 0;
+            return (
+              <div
+                key={String(child.id)}
+                data-testid="present-primitive"
+                data-kind={child.kind}
+                data-item-id={String(child.id)}
+                style={{
+                  position: "absolute",
+                  left: `${f.x * 100}%`,
+                  top: `${f.y * 100}%`,
+                  width: `${f.width * 100}%`,
+                  height: `${f.height * 100}%`,
+                  ...(rotation
+                    ? {
+                        transform: `rotate(${rotation}rad)`,
+                        transformOrigin: "center center",
+                      }
+                    : {}),
+                }}
+              >
+                <PresentFrameTree item={child} />
+              </div>
+            );
+          })}
+        </div>
+      ),
+    };
+  }, [docInAgocraft, design.width, design.height]);
+
+  const cameraTargetScenes = useMemo<StageScene[]>(
     () =>
       cameraTargets.map(({ item, behavior, absW, absH }, idx) => {
-        // Phase 10c-3 — entry-mode: an entry is either the root doc or a
-        // sub-doc. Neither has its own DOMAIN_RENDERERS entry, so we render
-        // the entry's domain children stacked. Hotspot overlays apply per
-        // child for now (PoC; richer per-entry overlay arrives later).
-        const renderChildren = (parent: AgoItem) =>
-          parent.children.filter(isDomainItem).map((c) => {
-            const child = c as unknown as AgoItem;
-            const Renderer = DOMAIN_RENDERERS[child.kind] as React.ComponentType<{ item: AgoItem }>;
-            return <Renderer key={String(child.id)} item={child} />;
-          });
-        const isDomainEntry = isDomainItem(item as unknown as { kind: string } as never);
-        const Self = isDomainEntry
-          ? (DOMAIN_RENDERERS[item.kind] as React.ComponentType<{ item: AgoItem }> | undefined)
-          : undefined;
+        // Each navigable frame is its own scene. Body uses PresentFrameTree
+        // so the frame's renderer fires AND any non-frame children render
+        // at their relative position within the frame's bbox. Nested frames
+        // skip themselves — they have their own scene.
+        const sceneBody = <PresentFrameTree item={item as unknown as AgocraftItem} />;
         // Phase 13d-3 — entrance-animation behavior (if any) drives a Web
         // Animations API call when this entry becomes the active step.
         const units =
@@ -449,12 +496,24 @@ export function PresentPage() {
               onHoverChange={setHoveredEntry}
               onAction={dispatchAction}
             >
-              {Self ? <Self item={item} /> : renderChildren(item)}
+              {sceneBody}
             </PresentScene>
           ),
         };
       }),
     [cameraTargets, ctx, safeStep, design.width, design.height, hoveredEntry, dispatchAction],
+  );
+
+  // Combined scenes — design layer first (so it's never dimmed by Stage's
+  // `idx > activeIdx` rule), followed by the navigable camera-target scenes.
+  // activeId is always a camera target id, so the design layer is never the
+  // active scene.
+  const scenes = useMemo<StageScene[]>(
+    () =>
+      designLayerScene
+        ? [designLayerScene, ...cameraTargetScenes]
+        : cameraTargetScenes,
+    [designLayerScene, cameraTargetScenes],
   );
 
   if (totalSteps === 0) {
@@ -476,12 +535,35 @@ export function PresentPage() {
 
   const activeId = cameraTargets[safeStep]?.behavior.id ?? cameraTargets[0]?.behavior.id ?? "";
 
+  // Match FrameStage's tone heuristic so document-scope tokens stay aligned
+  // between edit and present. Same helper as in FrameStage — inline here to
+  // avoid a cross-page import; identical 0.2126/0.7152/0.0722 weighting.
+  const bgTone: "light" | "dark" = useMemo(() => {
+    const color = design.background ?? "#ffffff";
+    if (typeof document === "undefined") return "light";
+    const c = document.createElement("canvas");
+    c.width = 1;
+    c.height = 1;
+    const ctx = c.getContext("2d");
+    if (ctx === null) return "light";
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 1, 1);
+    const d = ctx.getImageData(0, 0, 1, 1).data;
+    const r = (d[0] ?? 0) / 255;
+    const g = (d[1] ?? 0) / 255;
+    const b = (d[2] ?? 0) / 255;
+    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return l >= 0.5 ? "light" : "dark";
+  }, [design.background]);
+
   return (
     <div className="fixed inset-0">
       <Stage
         designSize={{ width: design.width, height: design.height }}
         scenes={scenes}
         activeId={activeId}
+        background={design.background}
+        bgTone={bgTone}
       />
       <PresentChrome
         step={safeStep}

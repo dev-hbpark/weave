@@ -39,6 +39,15 @@ export interface RubberBandProps {
    * `drawing` state (live measurement feedback), `false` otherwise.
    */
   readonly showDimensions?: boolean;
+  /**
+   * Optional override for the chip's displayed dimensions. By default
+   * the chip shows the visual `rect.width` / `rect.height` (viewport
+   * pixels). Hosts whose drag is snapped to a domain grid (e.g.
+   * 20-design-pixel rubber-band snap) should pass the SNAPPED domain
+   * values so the chip text steps in recognisable increments. Without
+   * this, viewport projection rounding hides the snap behaviour.
+   */
+  readonly displayDimensions?: { readonly width: number; readonly height: number };
   /** Skeleton silhouette for the `previewing` state — domain-aware, host-supplied. */
   readonly children?: ReactNode;
   readonly className?: string;
@@ -49,8 +58,16 @@ const stateStyles: Record<RubberBandState, string> = {
     "border-[color:var(--accent)] border-solid border",
     "bg-[color:var(--accent-soft)]",
   ].join(" "),
+  // Reviewing — dashed accent border for the "ready to pick" semantic,
+  // PLUS a dual-stroke box-shadow stack so the rectangle is visible on
+  // ANY canvas tone. The outer dark seam wins on light backgrounds; the
+  // inner light highlight wins on dark backgrounds; at least one of the
+  // three layers always contrasts the surface behind. (Previous single
+  // `--text-soft` border washed out on white design planes — the
+  // primary failure mode this avoids.)
   reviewing: [
-    "border-[color:var(--text-soft)] border-dashed border",
+    "border-[color:var(--accent)] border-dashed border",
+    "shadow-[0_0_0_1px_rgba(0,0,0,0.55),inset_0_0_0_1px_rgba(255,255,255,0.85)]",
     "bg-transparent",
   ].join(" "),
   previewing: [
@@ -61,8 +78,12 @@ const stateStyles: Record<RubberBandState, string> = {
 };
 
 export const RubberBand = forwardRef<HTMLDivElement, RubberBandProps>(
-  function RubberBand({ rect, state, showDimensions, children, className }, ref) {
+  function RubberBand(
+    { rect, state, showDimensions, displayDimensions, children, className },
+    ref,
+  ) {
     const showChip = showDimensions ?? state === "drawing";
+    const chipDims = displayDimensions ?? { width: rect.width, height: rect.height };
     return (
       <div
         ref={ref}
@@ -87,7 +108,7 @@ export const RubberBand = forwardRef<HTMLDivElement, RubberBandProps>(
         }}
       >
         {children}
-        {showChip ? <DimensionsChip width={rect.width} height={rect.height} /> : null}
+        {showChip ? <DimensionsChip width={chipDims.width} height={chipDims.height} /> : null}
       </div>
     );
   },
@@ -110,9 +131,11 @@ function DimensionsChip({ width, height }: DimensionsChipProps) {
         "absolute -top-6 right-0",
         "inline-flex items-center px-1.5 py-0.5",
         "rounded-[var(--radius-sm)] border",
-        "bg-[color:var(--surface-2)] border-[color:var(--border-strong)]",
+        // Floats over the canvas during a rubber-band drag — use the overlay
+        // token so it stays readable on any design background.
+        "bg-[color:var(--surface-overlay)] border-[color:var(--surface-overlay-border)]",
         "backdrop-blur-[var(--surface-blur)]",
-        "text-[11px] font-mono tracking-[0.04em] text-[color:var(--text-strong)]",
+        "text-[11px] font-mono tracking-[0.04em] text-[color:var(--text-overlay)]",
         "whitespace-nowrap select-none",
       )}
     >

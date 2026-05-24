@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { clearAllDesigns, prepareDesign } from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // Phase 12c — right-click → "Enter frame" drills in. The design plane zooms
 // so that frame fills the viewport, the breadcrumb gains a trailing
@@ -12,20 +12,19 @@ test.beforeEach(async ({ page }) => {
 async function enterFirstFrame(page: import("@playwright/test").Page) {
   const frame = page.locator('[data-frame-id]').first();
   await frame.click({ button: "right", position: { x: 4, y: 4 } });
-  await page.getByRole("menuitem", { name: /Enter frame/i }).click();
+  await page.getByTestId("ctx-enter-frame").click();
 }
 
 test("Enter frame menu drills in (breadcrumb updates), Esc exits", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Drill design" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
 
   await expect(page.getByTestId("breadcrumb-entered-title")).toHaveCount(0);
   await enterFirstFrame(page);
   await expect(page.getByTestId("breadcrumb-entered-title")).toBeVisible();
 
   // Esc exits.
-  await page.locator("body").click({ position: { x: 2, y: 2 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("Escape");
   await page.waitForTimeout(80);
   await expect(page.getByTestId("breadcrumb-entered-title")).toHaveCount(0);
@@ -33,13 +32,17 @@ test("Enter frame menu drills in (breadcrumb updates), Esc exits", async ({ page
 
 test("entered frame routes Toolbar Add into its children", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Add inside" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
+  const enteredFrameId = await page
+    .locator('[data-frame-id]')
+    .first()
+    .getAttribute("data-frame-id");
+  if (enteredFrameId === null) throw new Error("first frame missing data-frame-id");
   await enterFirstFrame(page);
   await expect(page.getByTestId("breadcrumb-entered-title")).toBeVisible();
 
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  // Add inside the entered frame's children.
+  await addFrame(page, "slide", { containerId: enteredFrameId });
   await page.waitForTimeout(80);
 
   const counts = await page.evaluate(() => {
@@ -59,8 +62,7 @@ test("entered frame routes Toolbar Add into its children", async ({ page }) => {
 
 test("breadcrumb segment click exits the entered frame", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
   await enterFirstFrame(page);
   await expect(page.getByTestId("breadcrumb-entered-title")).toBeVisible();
 

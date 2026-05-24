@@ -1,11 +1,35 @@
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { cn } from "../cn.js";
-import { type HandleDir, SelectionHandle } from "./SelectionHandle.js";
+// Top-level floating selection chrome.
+//
+// Replaces the older in-place renderer that lived inside the selected
+// element's transformed subtree — handles there inherited the design
+// plane's pan + zoom scale, so they shrank to slivers when the canvas was
+// zoomed out. The new layer:
+//
+//   1. Tracks the target via `requestAnimationFrame` (the only reliable
+//      signal for getBoundingClientRect changes caused by CSS transforms
+//      driven by Framer-Motion; ResizeObserver alone misses transform-only
+//      changes, MutationObserver misses style-property updates on motion's
+//      ref).
+//   2. Renders its chrome through `createPortal` straight into
+//      `document.body`, where it sits above every editor surface and is no
+//      longer subject to any ancestor's transform. Handle sizes are
+//      therefore measured in viewport CSS pixels — they stay constant
+//      regardless of the canvas scale, which is what the user expects from
+//      a "selection ring" in a design tool.
+//   3. Positions handles by their *center* on the target's corners /
+//      edges via `translate(-50%, -50%)`, so the visible hit-target sits
+//      half inside / half outside the box for the corner cases the user
+//      flagged.
 
-/** Render-only selection overlay. Position + rotation come from the host so it
- *  can mirror whatever coordinate system the underlying surface uses. Capability
- *  flags decide which handles are visible — center-based math + state lives in
- *  the host's pointer-drag handler. */
+import {
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { type HandleDir, SelectionHandle } from "./SelectionHandle.js";
 
 export interface SelectionLayerCapability {
   readonly moveable: boolean;
@@ -14,115 +38,213 @@ export interface SelectionLayerCapability {
   readonly resizeHandles: ReadonlyArray<HandleDir>;
 }
 
-interface SelectionLayerProps {
-  /** Box position + rotation in the parent surface's units (px or percent). */
-  readonly box: {
-    readonly left: number | string;
-    readonly top: number | string;
-    readonly width: number | string;
-    readonly height: number | string;
-    readonly rotation: number; // radians
-  };
-  readonly capability: SelectionLayerCapability;
-  /** Pointer-down on the body (used for move drag). */
-  readonly onMoveStart?: (e: ReactPointerEvent<HTMLButtonElement>) => void;
-  /** Pointer-down on a resize handle. */
-  readonly onResizeStart?: (dir: HandleDir, e: ReactPointerEvent<HTMLButtonElement>) => void;
-  /** Pointer-down on the rotation handle. */
-  readonly onRotateStart?: (e: ReactPointerEvent<HTMLButtonElement>) => void;
-  readonly className?: string;
+// DR-018 — extension-first handle slot.
+//
+// Host supplies a `resolveHandles(bounds)` closure that returns the
+// placements for the current bounds. SelectionLayer's rAF tracker runs
+// the closure on each tick, so handles stay glued to the selection
+// box as the camera animates / the design plane pans / the user
+// drags. The registry + anchor math live in
+// `@agocraft/editor/selection-chrome`; this file stays vanilla-React.
+export interface ExternalHandlePlacement {
+  /** Stable id within the list. Used as React key. */
+  readonly id: string;
+  /** Pre-resolved viewport coords. SelectionLayer wraps the rendered
+   *  node in an absolutely-positioned container centred via
+   *  `translate(-50%, -50%)` on (x, y). */
+  readonly x: number;
+  readonly y: number;
+  /** Rendered node. */
+  readonly node: ReactNode;
+  /** Selected item's id. Mounted as `data-selection-handle-item-id` on
+   *  the placement wrapper so gesture bindings (resize / rotate) can
+   *  walk up from the click target and find the owning item without a
+   *  separate lookup. */
+  readonly itemId?: string;
 }
 
-const CORNER_POS: Record<HandleDir, { left: string; top: string; translate: string }> = {
-  nw: { left: "0%", top: "0%", translate: "-50% -50%" },
-  n: { left: "50%", top: "0%", translate: "-50% -50%" },
-  ne: { left: "100%", top: "0%", translate: "-50% -50%" },
-  e: { left: "100%", top: "50%", translate: "-50% -50%" },
-  se: { left: "100%", top: "100%", translate: "-50% -50%" },
-  s: { left: "50%", top: "100%", translate: "-50% -50%" },
-  sw: { left: "0%", top: "100%", translate: "-50% -50%" },
-  w: { left: "0%", top: "50%", translate: "-50% -50%" },
-};
+export interface SelectionLayerBounds {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+interface SelectionLayerProps {
+  /** Element the chrome should track. The layer measures this ref's
+   *  `getBoundingClientRect()` on every animation frame and renders its
+   *  outline + handles at the corresponding viewport coordinates. */
+  readonly targetRef: RefObject<HTMLElement | null>;
+  /** DR-018 — externally-resolved handles. SelectionLayer calls this on
+   *  every rAF tick with the live bounds; the returned placements
+   *  render. When supplied, `capability` + legacy `onResizeStart` /
+   *  `onRotateStart` props are ignored. */
+  readonly resolveHandles?: (
+    bounds: SelectionLayerBounds,
+  ) => ReadonlyArray<ExternalHandlePlacement>;
+  /** Legacy path — `capability` + start callbacks generate the built-in
+   *  8-resize-handle + 1-rotation-handle chrome. Used by callers that
+   *  haven't migrated to the registry yet. */
+  readonly capability?: SelectionLayerCapability;
+  readonly onMoveStart?: (e: ReactPointerEvent<HTMLButtonElement>) => void;
+  readonly onResizeStart?: (
+    dir: HandleDir,
+    e: ReactPointerEvent<HTMLButtonElement>,
+  ) => void;
+  readonly onRotateStart?: (e: ReactPointerEvent<HTMLButtonElement>) => void;
+  readonly moveLabel?: string;
+}
+
+interface TrackedBox {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
 
 export function SelectionLayer({
-  box,
+  targetRef,
+  resolveHandles,
   capability,
   onMoveStart,
   onResizeStart,
   onRotateStart,
-  className,
+  moveLabel,
 }: SelectionLayerProps) {
-  const wrapperStyle = {
-    left: box.left,
-    top: box.top,
-    width: box.width,
-    height: box.height,
-    transform: `rotate(${box.rotation}rad)`,
-    transformOrigin: "center center",
-  } as const;
+  const [box, setBox] = useState<TrackedBox | null>(null);
 
-  return (
+  useEffect(() => {
+    let raf = 0;
+    let lastKey = "";
+    const measure = () => {
+      const el = targetRef.current;
+      if (el === null) {
+        if (lastKey !== "") {
+          lastKey = "";
+          setBox(null);
+        }
+      } else {
+        const r = el.getBoundingClientRect();
+        // 0.1px quantisation kills jitter from sub-pixel float math during
+        // transform animations without making the chrome visibly lag.
+        const key = `${r.left.toFixed(1)}|${r.top.toFixed(1)}|${r.width.toFixed(
+          1,
+        )}|${r.height.toFixed(1)}`;
+        if (key !== lastKey) {
+          lastKey = key;
+          setBox({ left: r.left, top: r.top, width: r.width, height: r.height });
+        }
+      }
+      raf = requestAnimationFrame(measure);
+    };
+    raf = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(raf);
+  }, [targetRef]);
+
+  if (typeof document === "undefined" || box === null) return null;
+
+  return createPortal(
     <div
-      className={cn(
-        "absolute pointer-events-none",
-        // ring
-        "outline outline-2 outline-offset-0 outline-[color:var(--accent)]",
-        "shadow-[var(--shadow-glow)]",
-        className,
-      )}
-      style={wrapperStyle}
       data-selection-layer
+      style={{
+        position: "fixed",
+        left: box.left,
+        top: box.top,
+        width: box.width,
+        height: box.height,
+        pointerEvents: "none",
+        // Above frames, below tooltips. Tooltips/popovers (the AITooltip
+        // surface, RecommendationPopover) sit at z 50; this 40 keeps
+        // chrome interactive without blocking the higher overlays.
+        zIndex: 40,
+      }}
     >
-      {/* Body — moves on pointer drag if moveable. */}
-      {capability.moveable && onMoveStart ? (
-        <button
-          type="button"
-          aria-label="Move selection"
-          onPointerDown={onMoveStart}
-          className="absolute inset-0 cursor-move pointer-events-auto bg-transparent border-0 p-0 focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
-        />
-      ) : null}
+      {/* Selection outline. `outline` (not `border`) keeps the box's hit
+          area unchanged — borders would push children outward and shift
+          the move-body button by 1.5px. `outlineOffset: -1` paints the
+          stroke fully inside the bounds so handles centred on the corners
+          still align with the visible edge. */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          outline: "1.5px solid var(--accent)",
+          outlineOffset: -1,
+          pointerEvents: "none",
+        }}
+      />
 
-      {/* Resize handles. */}
-      {capability.resizable && onResizeStart
-        ? capability.resizeHandles.map((dir) => (
-            <span key={dir} className="absolute pointer-events-auto" style={CORNER_POS[dir]}>
-              <SelectionHandle
-                kind={dir === "n" || dir === "e" || dir === "s" || dir === "w" ? "edge" : "corner"}
-                dir={dir}
-                ariaLabel={`Resize ${dir}`}
-                onPointerDown={(e) => onResizeStart(dir, e)}
-              />
-            </span>
+      {/*
+        The body of the box is intentionally NOT an interactive button.
+        With the layer portaled to <body>, an `inset:0` move handle would
+        sit above the canvas everywhere inside the selected element's
+        bounds — including over shapes, contenteditable text and other
+        directly-selectable inner items, swallowing every click meant
+        for them. Move drag is handled in the host (NestedFrame /
+        CanvasBlock) directly on the target's own `pointerdown` instead,
+        which preserves the "first press selects + starts drag" gesture
+        for the frame body while letting inner items receive their own
+        presses normally.
+       */}
+
+      {/* DR-018 — externally-resolved handles take precedence. The
+          host's resolver runs against the LIVE bounds (`box`) each
+          render; SelectionLayer's rAF tick triggers re-render on
+          bounds change. Shape / color / behavior all flow from the
+          host. */}
+      {resolveHandles !== undefined
+        ? resolveHandles(box).map((p) => (
+            <div
+              key={p.id}
+              data-selection-handle-id={p.id}
+              data-selection-handle-item-id={p.itemId}
+              style={{
+                position: "absolute",
+                // Convert viewport-coords to layer-local coords (the
+                // layer's wrapper sits at box.left/box.top, so we
+                // offset by that origin).
+                left: p.x - box.left,
+                top: p.y - box.top,
+                transform: "translate(-50%, -50%)",
+                pointerEvents: "auto",
+              }}
+            >
+              {p.node}
+            </div>
           ))
-        : null}
-
-      {/* Rotation handle — short stem above top-center. */}
-      {capability.rotatable && onRotateStart ? (
-        <>
-          <span
-            aria-hidden
-            className="absolute pointer-events-none bg-[color:var(--accent)]"
-            style={{
-              left: "50%",
-              top: "-24px",
-              width: 2,
-              height: 18,
-              transform: "translateX(-50%)",
-            }}
-          />
-          <span
-            className="absolute pointer-events-auto"
-            style={{ left: "50%", top: "-28px", transform: "translate(-50%, -50%)" }}
-          >
-            <SelectionHandle
-              kind="rotation"
-              ariaLabel="Rotate selection"
-              onPointerDown={onRotateStart}
-            />
-          </span>
-        </>
-      ) : null}
-    </div>
+        : // Legacy fallback — built-in 8 resize + 1 rotate. Triggered
+          // only when `resolveHandles` is omitted; eventually removed
+          // once all call sites adopt the registry.
+          capability !== undefined
+          ? (
+              <>
+                {capability.resizable && onResizeStart
+                  ? capability.resizeHandles.map((dir) => (
+                      <SelectionHandle
+                        key={dir}
+                        kind={
+                          dir === "n" || dir === "e" || dir === "s" || dir === "w"
+                            ? "edge"
+                            : "corner"
+                        }
+                        dir={dir}
+                        ariaLabel={`Resize ${dir}`}
+                        onPointerDown={(e) => onResizeStart(dir, e)}
+                      />
+                    ))
+                  : null}
+                {capability.rotatable && onRotateStart ? (
+                  <SelectionHandle
+                    kind="rotation"
+                    ariaLabel="Rotate selection"
+                    onPointerDown={onRotateStart}
+                  />
+                ) : null}
+              </>
+            )
+          : null}
+    </div>,
+    document.body,
   );
 }

@@ -39,7 +39,14 @@ async function addItem(
   );
 }
 
-test("kind dispatch — slide vs canvas-design vs block-doc vs media surface different context", async ({
+// The frame-level KindTooltip was retired in favor of cursor-anchored
+// CursorTooltip popups attached to *inner* items (shape, paragraph, slide
+// title, etc.). Frames themselves now carry no hover popup, so the original
+// kind-dispatch assertion (hovering the frame chrome surfaces kind-specific
+// context) no longer applies. Inner-item coverage lives next to the items
+// themselves; this file's two tests are kept as a skip so the intent of the
+// retirement is on record.
+test.skip("kind dispatch — slide vs canvas-design vs block-doc vs media surface different context", async ({
   page,
 }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Tip-Kinds" });
@@ -88,13 +95,13 @@ test("kind dispatch — slide vs canvas-design vs block-doc vs media surface dif
   });
   expect(ids).toHaveLength(4);
 
-  await expectContext(ids[0]!, /슬라이드|클릭하여 선택/);
+  await expectContext(ids[0]!, /슬라이드|선택 — 클릭/);
   await expectContext(ids[1]!, /캔버스|도형/);
   await expectContext(ids[2]!, /문서|문단/);
   await expectContext(ids[3]!, /미디어|이미지|동영상/);
 });
 
-test("state dispatch — selecting a slide swaps the tooltip context in place", async ({
+test.skip("state dispatch — selecting a slide swaps the tooltip context in place", async ({
   page,
 }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Tip-StateSwap" });
@@ -115,21 +122,21 @@ test("state dispatch — selecting a slide swaps the tooltip context in place", 
 
   const frame = page.locator(`[data-frame-id="${frameId}"]`);
 
-  // Hover the unselected frame — should say "클릭하여 선택".
+  // Hover the unselected frame — should describe selection as a click.
   await frame.hover({ position: { x: 4, y: 4 } });
   await page.waitForTimeout(260);
   const tip = page.locator(TOOLTIP);
   await expect(tip).toBeVisible();
-  await expect(tip).toContainText("클릭하여 선택");
-  await expect(tip).not.toContainText("선택됨");
+  await expect(tip).toContainText("선택 — 클릭");
+  await expect(tip).not.toContainText("변형 — 핸들 드래그");
 
   // Click to select. The frame chrome click selects (per FrameStage rules).
   await frame.click({ position: { x: 4, y: 4 } });
 
   // After selection the live data refresh path (Phase A) should update the
-  // visible tooltip in place — no remount, content swaps from "클릭하여
-  // 선택" to the selected-state describer output ("선택됨" / 핸들 드래그…).
-  await expect(tip).toContainText("선택됨");
-  await expect(tip).toContainText("핸들 드래그");
+  // visible tooltip in place — no remount, content swaps from the hover-
+  // affordance set to the selected-state describer output (변형 핸들 드래그 …).
+  await expect(tip).toContainText("변형 — 핸들 드래그");
+  await expect(tip).toContainText("위에 추가 — ⌥ 드래그");
   await expect(tip).toHaveCount(1); // single surface, no flicker
 });

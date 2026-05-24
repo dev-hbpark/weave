@@ -24,7 +24,17 @@
 // container" — collapsed into the four real types, which now all support
 // nesting. The choice of visual (slide layout, canvas freeform, doc blocks,
 // media tone) is orthogonal to whether the frame has child frames inside.
-export type DomainKind = "slide" | "canvas-design" | "block-doc" | "media";
+export type DomainKind =
+  | "slide"
+  | "canvas-design"
+  | "block-doc"
+  | "media"
+  // WI-020 — new top-level kinds backed by agocraft DR-023 schema.
+  | "image"
+  | "video"
+  | "shape"
+  // Phase 15 — WI-023 text primitive (agocraft `text` kind).
+  | "text";
 
 // ── ItemFrame — universal parent-relative bounding box ──────────────────────
 //
@@ -83,6 +93,30 @@ export const DOMAIN_REGISTRY: Readonly<Record<DomainKind, DomainMeta>> = {
     tagline: "Image or video block",
     accentVar: "--domain-media-accent",
   },
+  image: {
+    kind: "image",
+    label: "Image",
+    tagline: "Photo, illustration, or other still picture",
+    accentVar: "--domain-media-accent",
+  },
+  video: {
+    kind: "video",
+    label: "Video",
+    tagline: "Video clip with controls + trim",
+    accentVar: "--domain-media-accent",
+  },
+  shape: {
+    kind: "shape",
+    label: "Shape",
+    tagline: "Geometric primitive (rect / ellipse / line / arrow / star / …)",
+    accentVar: "--domain-canvas-accent",
+  },
+  text: {
+    kind: "text",
+    label: "Text",
+    tagline: "Text box with font family / size / color controls",
+    accentVar: "--domain-block-accent",
+  },
 };
 
 export const DOMAIN_KINDS: ReadonlyArray<DomainKind> = [
@@ -98,6 +132,10 @@ export const DOMAIN_KINDS: ReadonlyArray<DomainKind> = [
 
 export interface SlideAttrs {
   readonly frame: ItemFrame;
+  /** Frame background — any CSS color. `undefined` = transparent (the
+   *  design's background shows through). Used by the toolbar's
+   *  Background section. */
+  readonly background?: string;
   readonly title: string;
   readonly bullets: ReadonlyArray<string>;
 }
@@ -124,27 +162,48 @@ export interface CanvasShape {
 
 export interface CanvasAttrs {
   readonly frame: ItemFrame;
+  readonly background?: string;
   readonly summary: string;
   readonly shapes: ReadonlyArray<CanvasShape>;
 }
 
 export interface BlockDocAttrs {
   readonly frame: ItemFrame;
+  readonly background?: string;
   readonly heading: string;
   readonly paragraphs: ReadonlyArray<string>;
 }
 
 export interface MediaAttrs {
   readonly frame: ItemFrame;
+  readonly background?: string;
   readonly caption: string;
   readonly tone: "image" | "video";
 }
+
+// WI-020 / Phase 15 — re-export agocraft's canonical Item primitive attr
+// types so weave's `ItemAttrsByKind` lookup is type-safe for new kinds
+// without re-declaring the shapes locally.
+import type {
+  ImageAttrs as AgocraftImageAttrs,
+  VideoAttrs as AgocraftVideoAttrs,
+  ShapeAttrs as AgocraftShapeAttrs,
+  TextAttrs as AgocraftTextAttrs,
+} from "@agocraft/core";
+export type ImageAttrs = AgocraftImageAttrs;
+export type VideoAttrs = AgocraftVideoAttrs;
+export type ShapeAttrs = AgocraftShapeAttrs;
+export type TextAttrs = AgocraftTextAttrs;
 
 export type ItemAttrsByKind = {
   slide: SlideAttrs;
   "canvas-design": CanvasAttrs;
   "block-doc": BlockDocAttrs;
   media: MediaAttrs;
+  image: ImageAttrs;
+  video: VideoAttrs;
+  shape: ShapeAttrs;
+  text: TextAttrs;
 };
 
 // ── Doc flavor — the "kind" of the top-level document (root.attrs.flavor) ──
@@ -382,6 +441,10 @@ export interface Design {
   readonly title: string;
   readonly width: number; // absolute px — the only absolute coord in the model
   readonly height: number; // absolute px
+  /** Canvas background. CSS color string — drives the editor's design-plane
+   *  background and the presentation surface. Models the "page" the user is
+   *  designing on, independent of the editor's UI theme. Default: white. */
+  readonly background: string;
   readonly document: AgocraftDocument;
   readonly presentationOrder: ReadonlyArray<string>;
   readonly meta: {
@@ -390,3 +453,5 @@ export interface Design {
     readonly schemaVersion: 5;
   };
 }
+
+export const DEFAULT_DESIGN_BACKGROUND = "#ffffff";

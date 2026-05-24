@@ -8,32 +8,35 @@ export const canvasDesignTooltipCapability: TooltipCapability<"canvas-design"> =
     const summary =
       item.attrs.summary.length > 0 ? item.attrs.summary : "캔버스";
     const shapeCount = item.attrs.shapes.length;
-    const shapeNote =
-      shapeCount === 0 ? "도형 없음" : `도형 ${shapeCount}개`;
+    const context =
+      shapeCount === 0 ? summary : `${summary} · 도형 ${shapeCount}`;
     if (ctx.entered) {
       return {
-        context: `${summary} · ${shapeNote} (진입됨)`,
+        context,
         actions: [
-          { action: "Esc 로 프레임 나가기" },
-          { action: "도형 클릭 → 개별 선택" },
+          { action: "나가기 — Esc" },
+          { action: "도형 선택 — 클릭" },
+          { action: "도형 추가 — 드래그" },
         ],
       };
     }
     if (ctx.selected) {
       return {
-        context: `${summary} · ${shapeNote} (선택됨)`,
+        context,
         actions: [
-          { action: "더블클릭하여 진입 → 도형 편집" },
-          { action: "핸들 드래그로 이동·리사이즈·회전" },
-          { action: "Backspace 로 삭제" },
+          { action: "진입 — 더블클릭" },
+          { action: "변형 — 핸들 드래그" },
+          { action: "삭제 — Delete" },
+          { action: "위에 추가 — ⌥ 드래그" },
         ],
       };
     }
     return {
-      context: `${summary} · ${shapeNote}`,
+      context,
       actions: [
-        { action: "클릭하여 선택" },
-        { action: "더블클릭하여 도형 편집 모드" },
+        { action: "선택 — 클릭" },
+        { action: "진입 — 더블클릭" },
+        { action: "위에 추가 — ⌥ 드래그" },
       ],
     };
   },

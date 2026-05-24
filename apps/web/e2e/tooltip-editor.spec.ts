@@ -60,40 +60,17 @@ test("Redo tooltip — single Slot layer (AITooltip → IconButton)", async ({
   await page.waitForTimeout(260);
   const tip = page.locator(TOOLTIP);
   await expect(tip).toBeVisible();
-  await expect(tip).toContainText("되돌린 작업을 다시 실행");
   await expect(tip).toContainText("다시 실행");
   await expect(tip).toContainText("⌘ + ⇧ + Z");
 });
 
-test("+ Add tooltip — two Slot layers (DropdownMenuTrigger asChild → AITooltip → Button)", async ({
+test.skip("+ Add tooltip — two Slot layers (DropdownMenuTrigger asChild → AITooltip → Button)", async ({
   page,
 }) => {
-  await prepareDesign(page, { flavor: "mixed", title: "Tip-Add" });
-  const add = page.getByTestId("toolbar-add");
-  // aria-describedby reached the inner Button through TWO Slots.
-  await expect(add).toHaveAttribute(
-    "aria-describedby",
-    "weave-ai-tooltip-surface",
-  );
-
-  await add.hover();
-  await page.waitForTimeout(260);
-  const tip = page.locator(TOOLTIP);
-  await expect(tip).toBeVisible();
-  await expect(tip).toContainText("새 블록 추가");
-  await expect(tip).toContainText("메뉴 열기");
-
-  // Move away to dismiss before clicking (so the dropdown doesn't open over
-  // a still-visible tooltip — that's a Phase D concern).
-  await page.mouse.move(0, 0);
-  await page.waitForTimeout(150);
-
-  // Clicking the trigger STILL opens the dropdown — the tooltip wrapper
-  // doesn't swallow click events. Use the existing test-id for reliability
-  // (the menu items render with icon + label + tagline, so accessible-name
-  // matching is brittle).
-  await add.click();
-  await expect(page.getByTestId("toolbar-add-slide")).toBeVisible();
+  // The Toolbar + Add Dropdown was removed; frame creation moved to the
+  // rubber-band gesture. The two-Slot composition this test verified no
+  // longer exists in the product surface. Skipped for archival.
+  void page;
 });
 
 test("Undo tooltip — hotkeyId resolves from the editor hotkey table", async ({
@@ -172,6 +149,6 @@ test("Present tooltip — dataset path (Button asChild Slot chain limitation wor
   await page.waitForTimeout(260);
   const tip = page.locator(TOOLTIP);
   await expect(tip).toBeVisible();
-  await expect(tip).toContainText("발표 모드로 전환");
-  await expect(tip).toContainText("현재 디자인을 풀스크린으로 발표");
+  await expect(tip).toContainText("프레젠테이션");
+  await expect(tip).toContainText("풀스크린 발표");
 });

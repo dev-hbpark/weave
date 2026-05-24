@@ -110,7 +110,7 @@ export function NewDesignWizard({ open, onOpenChange }: NewDesignWizardProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader
-          title="Start a new design"
+          headline="Start a new design"
           description="Pick a document flavor and size. You'll be able to add slides, canvases, blocks, media, and nested documents on the next screen."
         />
 

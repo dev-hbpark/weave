@@ -17,7 +17,21 @@ import {
   defaultRandom,
   IdGeneratorToken,
 } from "@agocraft/core";
-import { createEditor, type Editor } from "@agocraft/editor";
+import {
+  canonicalToViewport,
+  createEditor,
+  createEditorViewModel,
+  createGestureRouter,
+  createPlainCamera,
+  createSelectionChromeRegistry,
+  DEFAULT_COORDINATE_SYSTEM,
+  type Editor,
+  type EditorViewModel,
+  type GestureRouter,
+  type HostRect,
+  type SelectionChromeRegistry,
+  toCanonical,
+} from "@agocraft/editor";
 import { useEffect, useMemo, useRef } from "react";
 import type { PendingCreationLookup } from "./agocraft-mirror.js";
 import {
@@ -47,7 +61,19 @@ export interface UseWeaveEditorDeps {
 /** Build an Editor wired to the weave doc mirror. The Editor itself is stable
  *  (same instance across renders); only its `getDocument` resolves to the
  *  latest mirror via a ref. Slots and DocumentType registration happen once. */
-export function useWeaveEditor(deps: UseWeaveEditorDeps): Editor {
+export interface UseWeaveEditorResult {
+  readonly editor: Editor;
+  readonly vm: EditorViewModel;
+  /** DR-017 Phase 2 — single GestureRouter for the editor session. */
+  readonly router: GestureRouter;
+  /** DR-018 — selection chrome registry. Item kinds register their
+   *  selection view-models (`registerItemViewModel`); cross-cutting
+   *  plugins register generic providers (`registerProvider`).
+   *  NestedFrame / CanvasBlock consult this on every selection. */
+  readonly selectionChrome: SelectionChromeRegistry;
+}
+
+export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
   const docRef = useRef<AgocraftDocument>(deps.docInAgocraft);
   // Sync the ref *during render* so the very first dispatch (before any effect
   // has run) already sees the latest mirror. useEffect would defer the update
@@ -79,12 +105,14 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): Editor {
       capabilities: createCapabilityRegistry(),
       schema,
       getDocument: () => docRef.current,
-      // History merge window — coalesce same-target patches arriving within
-      // 500ms into one undo step. Critical for drag gestures: a 60Hz canvas
-      // drag emits ~60 patches/sec; without merging, Cmd+Z would step back
-      // one frame at a time. Text editing also benefits — a burst of
-      // keystrokes on the same EditableText commits as one undo.
       historyMergeWindowMs: 500,
+      // DR-019 — weave 의 컨벤션 명시: frame attrs 가 0..1 ratio, 원점
+      // 좌상단, 디자인 plane 1920×1080. 명시화는 두 가지를 보장:
+      //   (a) 다른 sister project 가 다른 컨벤션을 골라도 agocraft
+      //       의 변환 일관성으로 영향 없음.
+      //   (b) 모든 frame / shape / hotspot 산술이 single source
+      //       (editor.coordSystem) 을 consult — 한 위치에서 변경.
+      coordSystem: DEFAULT_COORDINATE_SYSTEM,
     });
     // Baseline slots so the idle-router has something to read. Plugins / DocumentType
     // contributions override later via registerSlot.
@@ -94,7 +122,13 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): Editor {
     e.documentTypes.register({
       kind: "weave-doc",
       displayName: "Weave Document",
-      allowedChildKinds: ["slide", "canvas-design", "block-doc", "media"],
+      // WI-020 — 3 new top-level kinds (DR-023) joining the original 4
+      // domain frames. agocraft schema entries (IMAGE_KIND / VIDEO_KIND /
+      // SHAPE_KIND) define the attr shapes.
+      allowedChildKinds: [
+        "slide", "canvas-design", "block-doc", "media",
+        "image", "video", "shape",
+      ],
       ux: {},
     });
     e.useDocumentType("weave-doc");
@@ -102,6 +136,51 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): Editor {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally
     // construct once; the ref carries doc changes.
   }, []);
+
+  // DR-017 — EditorViewModel as the single source of transient view-state
+  // (selection / mode / drill / hand-tool / camera / hover / gesture
+  // lifecycle). vm.derived signals (canUndo / canRedo / selectedItemId /
+  // selectedFrameBoundsViewport) auto-invalidate via the editor's
+  // ChangeStream subscription.
+  //
+  // DR-019 — weave delegates coordinate projection to agocraft.
+  // `toCanonical(frame, editor.coordSystem)` honours the host's
+  // declared (space, origin) once; `canonicalToViewport(canonical,
+  // camera)` then applies the camera. weave's specific knowledge
+  // (where in the document tree to find the frame) stays here;
+  // arithmetic stays in agocraft.
+  const vm = useMemo<EditorViewModel>(() => {
+    return createEditorViewModel({
+      editor,
+      camera: createPlainCamera(),
+      projectFrameToViewport: (itemId, ctx) => {
+        const doc = docRef.current;
+        const child = findItemInDoc(doc, itemId);
+        if (child === undefined) return null;
+        const frame = (child.attrs as { frame?: HostRect }).frame;
+        if (frame === undefined) return null;
+        const canonical = toCanonical(frame, editor.coordSystem);
+        return canonicalToViewport(canonical, {
+          tx: ctx.cameraTx,
+          ty: ctx.cameraTy,
+          scale: ctx.cameraScale,
+        });
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- construct
+    // once; vm reacts to editor.changeStream + camera/outerSize signals
+    // internally.
+  }, [editor]);
+
+  const router = useMemo<GestureRouter>(
+    () => createGestureRouter({ editor, vm }),
+    [editor, vm],
+  );
+
+  const selectionChrome = useMemo<SelectionChromeRegistry>(
+    () => createSelectionChromeRegistry(),
+    [],
+  );
 
   // Intentionally no `disposeState()` cleanup — React 18 StrictMode runs the
   // mount/cleanup pair twice in dev, which would dispose the singleton machine
@@ -183,5 +262,21 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): Editor {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
-  return editor;
+  return { editor, vm, router, selectionChrome };
+}
+
+// ── projector helper ─────────────────────────────────────────────────────
+function findItemInDoc(
+  doc: AgocraftDocument,
+  itemId: string,
+): { readonly attrs: Readonly<Record<string, unknown>> } | undefined {
+  const walk = (node: { id: string | number; attrs: Readonly<Record<string, unknown>>; children: ReadonlyArray<unknown> }): { attrs: Readonly<Record<string, unknown>> } | undefined => {
+    if (String(node.id) === itemId) return { attrs: node.attrs };
+    for (const c of node.children as ReadonlyArray<typeof node>) {
+      const found = walk(c);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  return walk(doc.root as unknown as Parameters<typeof walk>[0]);
 }

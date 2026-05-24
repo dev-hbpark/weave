@@ -12,7 +12,7 @@ export default defineConfig({
   retries: 0,
   reporter: process.env.CI ? "line" : "list",
   use: {
-    baseURL: "http://localhost:5174",
+    baseURL: "http://localhost:5179",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
@@ -24,8 +24,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:5174",
+    // Port 5179 (not 5174) so this never collides with a developer's
+    // own dev server on the default port — keeps `pnpm dev` for
+    // editing and `pnpm e2e` for verification cleanly separated.
+    command: "pnpm dev --port 5179",
+    url: "http://localhost:5179",
     reuseExistingServer: true,
     timeout: 60_000,
   },

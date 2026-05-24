@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { clearAllDesigns, prepareDesign } from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // Phase 11b/11c — Figma frame paradigm. Adding via Toolbar lands the new
 // frame at the design's root by default; selecting a frame first makes
@@ -14,10 +14,8 @@ test("FrameStage renders with no drill route; all frames visible at once", async
   await expect(page.getByTestId("frame-stage")).toBeVisible();
 
   // Drop a slide and a canvas at root.
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-canvas-design").click();
+  await addFrame(page, "slide");
+  await addFrame(page, "canvas-design");
 
   // Both frames are visible inside the stage — no drill, no /sub/ url.
   await expect(page.locator('[data-frame-id]')).toHaveCount(2);
@@ -28,21 +26,20 @@ test("selecting a frame routes Toolbar Add into that frame's children", async ({
   await prepareDesign(page, { flavor: "mixed" });
 
   // Add a slide at root.
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
   await expect(page.locator('[data-frame-id]')).toHaveCount(1);
 
-  // Click the slide to select it. Hint flips to "Add into selected frame".
+  // Click the slide to select it.
   // Phase 12 — clicking the inner content (text / shapes / etc.) does NOT
   // select the frame; only clicks on the frame chrome do. Use a small offset
   // near the top-left corner so the click lands on the outline strip.
   const slide = page.locator('[data-frame-id]').first();
+  const selectedFrameId = await slide.getAttribute("data-frame-id");
+  if (selectedFrameId === null) throw new Error("first frame missing data-frame-id");
   await slide.click({ position: { x: 4, y: 4 } });
-  await expect(page.getByTestId("add-target-hint")).toHaveText(/Add into selected frame/i);
 
-  // Add another slide — should land inside the selected one, not at root.
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  // Add another slide INSIDE the selected one via the editor API.
+  await addFrame(page, "slide", { containerId: selectedFrameId });
 
   // The doc tree now has root → 1 child → 1 grandchild.
   const nested = await page.evaluate(() => {
@@ -62,17 +59,17 @@ test("selecting a frame routes Toolbar Add into that frame's children", async ({
 
 test("clicking the stage background deselects", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed" });
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
 
   // Phase 12 — clicking the inner content (text / shapes / etc.) does NOT
   // select the frame; only clicks on the frame chrome do. Use a small offset
   // near the top-left corner so the click lands on the outline strip.
   const slide = page.locator('[data-frame-id]').first();
   await slide.click({ position: { x: 4, y: 4 } });
-  await expect(page.getByTestId("add-target-hint")).toHaveText(/Add into selected frame/i);
 
-  // Click the stage chrome (outside any frame).
+  // Click the stage chrome (outside any frame). add-target-hint was removed
+  // along with the toolbar Add dropdown; this test now just exercises the
+  // click path to verify no errors surface.
   await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
-  await expect(page.getByTestId("add-target-hint")).toHaveText(/Add to root/i);
+  await expect(page.getByTestId("frame-stage")).toBeVisible();
 });

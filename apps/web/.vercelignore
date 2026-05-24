@@ -1,0 +1,10 @@
+node_modules
+dist
+.turbo
+*.tsbuildinfo
+test-results
+playwright-report
+e2e
+*.publish-bak
+"package 2.json"
+"package 3.json"

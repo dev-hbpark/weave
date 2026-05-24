@@ -22,9 +22,11 @@ export function DropdownMenuContent({
         {...rest}
         className={cn(
           "z-50 min-w-[220px] p-1",
-          "rounded-[var(--radius-md)] bg-[color:var(--surface-1)]",
-          "border border-[color:var(--surface-1-border)]",
-          "backdrop-blur-[var(--surface-blur)] shadow-[var(--shadow-glow)]",
+          // Theme-independent dark glass overlay — readable over the user's
+          // design canvas regardless of its background color.
+          "rounded-[var(--radius-md)] bg-[color:var(--surface-overlay)]",
+          "border border-[color:var(--surface-overlay-border)]",
+          "backdrop-blur-[var(--surface-blur)] shadow-[var(--shadow-overlay)]",
           "focus-visible:outline-none",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=open]:fade-in data-[state=closed]:fade-out",
@@ -59,9 +61,9 @@ export function DropdownMenuItem({
       className={cn(
         "flex items-start gap-2.5",
         "px-2.5 py-2 rounded-[var(--radius-sm)]",
-        "text-[13px] text-[color:var(--text-strong)]",
+        "text-[13px] text-[color:var(--text-overlay)]",
         "outline-none cursor-pointer select-none",
-        "data-[highlighted]:bg-[color:var(--surface-2)]",
+        "data-[highlighted]:bg-[color:var(--surface-overlay-2)]",
         "data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed",
         variant === "danger" &&
           "text-[color:var(--accent-strong)] data-[highlighted]:bg-[color:var(--accent-soft)]",
@@ -69,18 +71,18 @@ export function DropdownMenuItem({
       )}
     >
       {icon !== undefined ? (
-        <span aria-hidden className="mt-0.5 inline-flex w-4 h-4 items-center justify-center text-[color:var(--text-soft)]">
+        <span aria-hidden className="mt-0.5 inline-flex w-4 h-4 items-center justify-center text-[color:var(--text-overlay-soft)]">
           {icon}
         </span>
       ) : null}
       <span className="flex-1 grid">
         <span>{children}</span>
         {tagline !== undefined ? (
-          <span className="text-[12px] text-[color:var(--text-muted)]">{tagline}</span>
+          <span className="text-[12px] text-[color:var(--text-overlay-muted)]">{tagline}</span>
         ) : null}
       </span>
       {shortcut !== undefined ? (
-        <span className="text-[11px] text-[color:var(--text-muted)] tracking-[0.06em] self-center">
+        <span className="text-[11px] text-[color:var(--text-overlay-muted)] tracking-[0.06em] self-center">
           {shortcut}
         </span>
       ) : null}
@@ -92,7 +94,7 @@ export function DropdownMenuSeparator({ className }: { readonly className?: stri
   return (
     <DropdownMenuPrimitive.Separator
       className={cn(
-        "h-px my-1 bg-[color:var(--surface-1-border)] -mx-1",
+        "h-px my-1 bg-[color:var(--surface-overlay-border)] -mx-1",
         className,
       )}
     />
@@ -109,7 +111,7 @@ export function DropdownMenuLabel({
   return (
     <DropdownMenuPrimitive.Label
       className={cn(
-        "px-2.5 py-1.5 text-[11px] uppercase tracking-[0.16em] text-[color:var(--text-soft)]",
+        "px-2.5 py-1.5 text-[11px] uppercase tracking-[0.16em] text-[color:var(--text-overlay-soft)]",
         className,
       )}
     >

@@ -295,6 +295,55 @@ export function addChild(
   return next === doc.root ? doc : withRoot(doc, next);
 }
 
+/** Reorder root.children according to `orderedAsc` (z-ascending). Any child
+ *  not mentioned in `orderedAsc` keeps its relative position at the end of
+ *  the result, preserving global order continuity for items outside the
+ *  local stack. Returns `doc` unchanged if the order is already a no-op.
+ *  WI-019 Phase 3 — invoked by usePeekMode's onCommit. */
+export function reorderRootChildren(
+  doc: AgocraftDocument,
+  orderedAsc: ReadonlyArray<string>,
+): AgocraftDocument {
+  const current = doc.root.children;
+  if (orderedAsc.length === 0) return doc;
+  const indexInOrder = new Map<string, number>();
+  orderedAsc.forEach((id, i) => indexInOrder.set(id, i));
+
+  // Items in the local stack reordered per orderedAsc; items outside stay
+  // in their existing relative order, placed at the end (highest z).
+  const inStack: AgocraftItem[] = [];
+  const outOfStack: AgocraftItem[] = [];
+  for (const child of current) {
+    if (indexInOrder.has(String(child.id))) inStack.push(child);
+    else outOfStack.push(child);
+  }
+  inStack.sort((a, b) => {
+    const ai = indexInOrder.get(String(a.id)) ?? 0;
+    const bi = indexInOrder.get(String(b.id)) ?? 0;
+    return ai - bi;
+  });
+  const nextChildren = [...inStack, ...outOfStack];
+
+  // Identical ordering — return doc as-is to avoid spurious re-render.
+  let same = nextChildren.length === current.length;
+  if (same) {
+    for (let i = 0; i < current.length; i += 1) {
+      if (current[i] !== nextChildren[i]) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (same) return doc;
+
+  const nextRoot: AgocraftItem = {
+    ...doc.root,
+    children: nextChildren,
+    meta: { ...doc.root.meta, updatedAt: nowIso() },
+  };
+  return withRoot(doc, nextRoot);
+}
+
 /** Remove the child whose id matches `childId`, searched anywhere in the
  *  tree. Returns `doc` unchanged if no match. */
 export function removeChild(doc: AgocraftDocument, childId: string): AgocraftDocument {
@@ -445,10 +494,21 @@ export function getBehaviors(item: {
 }
 
 /** Type narrower — `kind` is a known weave domain kind. Lets DemoDocPage /
- *  PresentPage cast `docInAgocraft.root.children` entries to typed AgoItem. */
+ *  PresentPage cast `docInAgocraft.root.children` entries to typed AgoItem.
+ *  WI-020 — image / video / shape are also accepted as domain items so they
+ *  render in FrameStage and participate in selection / drill flows. */
 export function isDomainItem(item: AgocraftItem): boolean {
   const k = item.kind;
-  return k === "slide" || k === "canvas-design" || k === "block-doc" || k === "media";
+  return (
+    k === "slide" ||
+    k === "canvas-design" ||
+    k === "block-doc" ||
+    k === "media" ||
+    k === "image" ||
+    k === "video" ||
+    k === "shape" ||
+    k === "text"
+  );
 }
 
 /** Project an agocraft Item back to a weave Item. Returns undefined when the

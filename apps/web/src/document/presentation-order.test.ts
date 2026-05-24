@@ -62,6 +62,7 @@ describe("effectivePresentationOrder", () => {
       title: "t",
       width: 1000,
       height: 1000,
+      background: "#ffffff",
       document: {
         id: "d",
         schema: undefined as never,

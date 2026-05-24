@@ -5,7 +5,7 @@
 // the URL).
 
 import type { Page } from "@playwright/test";
-import type { DocFlavor } from "../src/document/types.js";
+import type { DocFlavor, DomainKind, ItemFrame } from "../src/document/types.js";
 
 export async function clearAllDesigns(page: Page) {
   await page.goto("/");
@@ -48,4 +48,63 @@ export async function prepareDesign(
   const match = url.pathname.match(/^\/design\/([^/]+)$/);
   if (match === null) throw new Error(`unexpected URL after wizard: ${url.pathname}`);
   return match[1] as string;
+}
+
+interface AddFrameOptions {
+  /** Container id to add into; defaults to the design root. */
+  readonly containerId?: string;
+  /** Frame in 0..1 ratio inside the container; defaults to a small block
+   *  near the center so multiple sequential adds don't fully overlap. */
+  readonly frame?: ItemFrame;
+}
+
+/** Programmatically insert a frame via the editor exposed on `window`. The
+ *  rubber-band drag flow is the user-facing add path; this helper bypasses
+ *  the gesture so specs that focus on something else (history, drill-in,
+ *  thumbnails) don't need to choreograph a pixel-perfect drag every time. */
+export async function addFrame(
+  page: Page,
+  kind: DomainKind,
+  opts: AddFrameOptions = {},
+): Promise<void> {
+  const defaultFrame: ItemFrame = {
+    x: 0.4,
+    y: 0.4,
+    width: 0.2,
+    height: 0.2,
+    rotation: 0,
+  };
+  const frame = opts.frame ?? defaultFrame;
+  // Wait for DesignPage to stash the editor on `window` before exec. This
+  // mirrors the readiness handshake that the hand-rolled tooltip specs do.
+  await page.waitForFunction(() => {
+    const w = window as unknown as {
+      __weaveEditor?: unknown;
+      __weaveDoc?: unknown;
+    };
+    return w.__weaveEditor !== undefined && w.__weaveDoc !== undefined;
+  });
+  await page.evaluate(
+    ({ kind, frame, containerId }) => {
+      type Editor = {
+        exec: (
+          name: string,
+          input: { kind: string; containerId: string; frame: unknown },
+        ) => unknown;
+      };
+      type Doc = { root: { id: string | number } };
+      const w = window as unknown as { __weaveEditor?: Editor; __weaveDoc?: Doc };
+      const editor = w.__weaveEditor;
+      const doc = w.__weaveDoc;
+      if (editor === undefined || doc === undefined) {
+        throw new Error("addFrame: window.__weaveEditor not ready");
+      }
+      editor.exec("weave.item.add", {
+        kind,
+        containerId: containerId ?? String(doc.root.id),
+        frame,
+      });
+    },
+    { kind, frame, containerId: opts.containerId },
+  );
 }

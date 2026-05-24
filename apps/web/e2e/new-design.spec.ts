@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { clearAllDesigns, prepareDesign } from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // Phase 11a — sub-doc kind is gone; every domain is a Frame. The drill-in
 // suite (sub-doc tile → /sub/X navigation) was removed; nested frames will
@@ -25,19 +25,19 @@ test("landing → wizard → editor → add frames via toolbar", async ({ page }
   await page.getByTestId("new-design-create").click();
 
   await page.waitForURL(/\/design\/[^/]+$/);
-  await expect(page.getByRole("heading", { name: /My design/ })).toBeVisible();
+  // Slim header — the design title is rendered inline in the breadcrumb,
+  // not as an <h1>. Match it as visible text instead.
+  await expect(page.getByText("My design", { exact: false })).toBeVisible();
 
   // slide-deck flavor seeds one slide on creation.
   await expect(page.locator('[data-testid="block-slide"]')).toHaveCount(1);
 
-  // Toolbar Add → another Slide.
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  // Add another Slide via the editor API (rubber-band gesture is the user-facing path).
+  await addFrame(page, "slide");
   await expect(page.locator('[data-testid="block-slide"]')).toHaveCount(2);
 
-  // Toolbar Add → Canvas frame (Phase 11: every domain is a Frame).
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-canvas-design").click();
+  // Add a Canvas frame (Phase 11: every domain is a Frame).
+  await addFrame(page, "canvas-design");
   await expect(page.locator('[data-testid="block-canvas-design"]')).toHaveCount(1);
 });
 
@@ -45,8 +45,7 @@ test("toolbar undo/redo reverts the add", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed" });
   const initial = await page.locator('[data-testid="block-slide"]').count();
 
-  await page.getByTestId("toolbar-add").click();
-  await page.getByTestId("toolbar-add-slide").click();
+  await addFrame(page, "slide");
   const after = await page.locator('[data-testid="block-slide"]').count();
   expect(after).toBe(initial + 1);
 
