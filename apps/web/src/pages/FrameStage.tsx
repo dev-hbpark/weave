@@ -51,7 +51,9 @@ import {
   createModifierOverride,
   createPanBinding,
   createRubberBandBinding,
-  GESTURE_PRIORITY,
+  GESTURE_PRIORITY_ELEMENT_BODY,
+  GESTURE_PRIORITY_ELEMENT_HANDLE,
+  GESTURE_PRIORITY_FALLBACK,
   type FrameAccess,
   type FrameGeom,
   resolveAnchor,
@@ -1431,12 +1433,12 @@ export function FrameStage(props: FrameStageProps) {
         ...(altRubberBand === null ? [] : [altRubberBand]),
         createFrameMoveBinding({
           access: frameAccess,
-          priority: GESTURE_PRIORITY.ELEMENT_BODY,
+          priority: GESTURE_PRIORITY_ELEMENT_BODY,
           moveThreshold: 3,
         }),
         createPanBinding({
           enabled: () => panActiveRef.current,
-          priority: GESTURE_PRIORITY.FALLBACK,
+          priority: GESTURE_PRIORITY_FALLBACK,
         }),
       ],
     });
@@ -1492,7 +1494,7 @@ export function FrameStage(props: FrameStageProps) {
           acceptTarget: (target) =>
             target instanceof HTMLElement &&
             target.closest("[data-handle-kind][data-handle-dir]") !== null,
-          priority: GESTURE_PRIORITY.ELEMENT_HANDLE,
+          priority: GESTURE_PRIORITY_ELEMENT_HANDLE,
         }),
         createFrameRotateBinding({
           access: frameAccess,
@@ -1512,7 +1514,7 @@ export function FrameStage(props: FrameStageProps) {
           acceptTarget: (target) =>
             target instanceof HTMLElement &&
             target.closest("[data-handle-kind='rotation']") !== null,
-          priority: GESTURE_PRIORITY.ELEMENT_HANDLE,
+          priority: GESTURE_PRIORITY_ELEMENT_HANDLE,
         }),
       ],
     });

@@ -142,7 +142,7 @@ curl -fsSL -i https://YOUR-PROJECT.vercel.app/api/designs | head -20
 | Build OK but `/api/designs` returns 500 | KV/Redis not linked | Storage tab → Marketplace → Upstash → Redis, connect to project for *all* envs, then **Redeploy** |
 | Storage tab only shows Blob, no KV | Vercel removed direct KV; use Marketplace → Upstash → Redis instead | See §4 above — both naming conventions are supported by the code |
 | Image upload succeeds but reload loses it | Blob token missing in prod (running in dev mode) | Storage tab → confirm `BLOB_READ_WRITE_TOKEN` is set in Production |
-| Designs not appearing across devices | This is by design — `weave_did` cookie is per-browser. The MVP scopes data to the browser. | (Follow-up: real auth — Clerk / NextAuth) |
+| Designs not appearing across devices | This is by design — `weave_did` cookie is per-browser. **The MVP is anonymous, device-scoped, NOT multi-user.** | (Follow-up: real auth — Clerk / NextAuth — see §"Security model" below) |
 | `Type 'StoredDesign' is not assignable...` at build | strict TS pulled a type from `@vercel/node` that doesn't match latest | bump to `@vercel/node@^5.0.0` |
 
 ---
@@ -177,6 +177,39 @@ Blob layout:
 ```
 
 ---
+
+## Security model — explicit limitations
+
+**weave is anonymous device-scoped, NOT multi-user.** The implications of
+this MUST be understood before exposing a deployment to anyone outside the
+operator's own machines:
+
+- A `weave_did` cookie is the only identity. Anyone who can present this
+  cookie sees every design + resource in that scope. There is no auth,
+  no row-level permission, no audit log.
+- Cookie theft = full takeover. Cookies are not signed; an attacker who
+  replays a captured `weave_did` value reads and overwrites the victim's
+  data at will.
+- Two users on the same shared browser (kiosk, library, family iPad) share
+  the same workspace.
+- There is no quota or rate-limit. A malicious POST loop can fill the
+  Vercel KV free-tier in minutes.
+- API routes enforce payload size (800 KB design, 10 MB resource) but
+  not total per-device storage. Vercel KV per-key cap is 1 MB; the
+  per-tenant total cap is whatever the Upstash plan allows.
+
+Treat the deployment as a **personal-use scratch space**, not a product
+others can sign up for. Before sharing the URL publicly:
+
+1. Add real auth (Clerk, NextAuth, or HMAC-signed cookies with a server
+   secret).
+2. Namespace KV keys under `user:<uid>:` instead of `did:<did>:`.
+3. Add rate-limit middleware (Vercel Edge Middleware + Upstash ratelimit
+   is the canonical Vercel stack).
+4. Add a quota cap per user and a daily orphan-blob GC sweep.
+5. Replace the `__weave*` dev-only globals with proper React Context
+   already in progress; ensure `apps/web/src/document/interactions/*`
+   doesn't read from `window` in production bundles.
 
 ## Future hardening
 

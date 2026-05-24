@@ -27,7 +27,7 @@ import type { Editor, RubberBandState as VmRubberBandState } from "@agocraft/edi
 import {
   commitRubberBandRecommendation,
   createRubberBandBinding,
-  GESTURE_PRIORITY,
+  GESTURE_PRIORITY_REGION_GESTURE,
 } from "@agocraft/editor";
 import { Popover, PopoverAnchor, PopoverContent, RubberBand } from "@weave/design-system";
 import {
@@ -205,7 +205,7 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
             const fn = acceptTargetRef.current;
             return fn === undefined ? true : fn(t);
           },
-          priority: GESTURE_PRIORITY.REGION_GESTURE,
+          priority: GESTURE_PRIORITY_REGION_GESTURE,
           ...(snapSize !== undefined ? { snapSize } : {}),
           ...(minDragSize !== undefined ? { minDragSize } : {}),
         }),

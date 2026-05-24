@@ -8,6 +8,8 @@
 // shim so missing env doesn't crash the API route.
 
 import { createClient } from "@vercel/kv";
+import type { VercelResponse } from "@vercel/node";
+import { apiError } from "./errors.js";
 
 interface KvClient {
   get<T = unknown>(key: string): Promise<T | null>;
@@ -62,3 +64,33 @@ const remoteClient: KvClient | null = hasRemoteKv
 export const kv: KvClient = remoteClient ?? memoryClient;
 
 export const kvIsRemote = hasRemoteKv;
+
+const vercelEnv = env.VERCEL_ENV ?? env.NODE_ENV ?? "";
+const isProduction = vercelEnv === "production";
+
+if (isProduction && !hasRemoteKv) {
+  // Surface the misconfiguration in cold-start logs even before the first
+  // request lands — production deploys without remote KV would otherwise
+  // silently lose every save on the next cold start.
+  console.error(
+    "[weave/api/kv] PRODUCTION DEPLOY DETECTED BUT REMOTE KV ENV VARS ARE MISSING. " +
+      "Set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN " +
+      "(or legacy KV_REST_API_URL + KV_REST_API_TOKEN) and redeploy.",
+  );
+}
+
+/** Refuse a request if production is missing remote KV. Returns true when
+ *  the request may proceed; false when the response has already been
+ *  written with 503. Handlers must call this before touching `kv`. */
+export function assertKvAvailable(res: VercelResponse): boolean {
+  if (isProduction && !hasRemoteKv) {
+    apiError(
+      res,
+      503,
+      "STORAGE_UNAVAILABLE",
+      "Persistent storage is not configured for this deployment",
+    );
+    return false;
+  }
+  return true;
+}

@@ -18,7 +18,16 @@
 // no consumer needs to change.
 
 import { useEditorVM } from "@agocraft/editor/react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import type { EditorViewModel } from "@agocraft/editor";
+import {
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 export type Selection =
   | { readonly kind: "frame"; readonly id: string }
@@ -45,20 +54,26 @@ interface SelectionContextValue {
   readonly clear: () => void;
 }
 
-/** Provider — preserves the old surface, no-op underneath since the vm
- *  is the actual store. Kept so existing JSX trees that wrap with
- *  `<SelectionProvider>` keep compiling. */
-export function SelectionProvider({ children }: { readonly children: ReactNode }) {
-  return <>{children}</>;
+const SelectionVmContext = createContext<EditorViewModel | undefined>(undefined);
+
+/** Provider — wires the editor vm into the context so `useSelection()` can
+ *  read selection state without touching `window`. PresentPage and other
+ *  read-only consumers may omit `vm`; the hook then falls back to a no-op. */
+export function SelectionProvider({
+  children,
+  vm,
+}: {
+  readonly children: ReactNode;
+  readonly vm?: EditorViewModel | undefined;
+}) {
+  return <SelectionVmContext.Provider value={vm}>{children}</SelectionVmContext.Provider>;
 }
 
 /** Read the vm's selection slots. Outside an editor session (e.g.,
  *  read-only PresentPage with no vm wired) we return a no-op shape so
  *  callers don't have to branch. */
 export function useSelection(): SelectionContextValue {
-  const vm = (typeof window !== "undefined"
-    ? (window as unknown as { __weaveVm?: import("@agocraft/editor").EditorViewModel }).__weaveVm
-    : undefined);
+  const vm = useContext(SelectionVmContext);
   // Always call the hook (with a fallback no-op vm) to satisfy rules of
   // hooks even when the editor session isn't mounted yet.
   const stableNoOpVm = useStableNoOpVm();

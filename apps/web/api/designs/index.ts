@@ -11,7 +11,17 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { deviceScope, ensureDeviceId } from "../_lib/device-id.js";
-import { kv } from "../_lib/kv.js";
+import { apiError } from "../_lib/errors.js";
+import { assertKvAvailable, kv } from "../_lib/kv.js";
+import {
+  MAX_DESIGN_BYTES,
+  enforceContentLength,
+  enforceJsonContentType,
+  isBoundedString,
+  isFiniteNumber,
+  isIsoDateString,
+  isValidId,
+} from "../_lib/validate.js";
 
 interface StoredDesign {
   readonly id: string;
@@ -20,7 +30,6 @@ interface StoredDesign {
   readonly height: number;
   readonly background: string;
   readonly meta: { readonly createdAt: string; readonly updatedAt: string };
-  // The rest of the agocraft document blob — opaque to this endpoint.
   readonly [k: string]: unknown;
 }
 
@@ -43,10 +52,47 @@ async function writeIndex(did: string, ids: ReadonlyArray<string>): Promise<void
   await kv.set(indexKey(did), [...ids]);
 }
 
+function validateDesignBody(body: unknown):
+  | { ok: true; value: StoredDesign }
+  | { ok: false; code: "MISSING_FIELD" | "INVALID_FIELD"; message: string } {
+  if (body === null || typeof body !== "object") {
+    return { ok: false, code: "INVALID_FIELD", message: "Body must be a JSON object" };
+  }
+  const b = body as Record<string, unknown>;
+  if (!isValidId(b.id)) {
+    return { ok: false, code: "INVALID_FIELD", message: "id must match [A-Za-z0-9_-]{1,64}" };
+  }
+  if (!isBoundedString(b.title, 256)) {
+    return { ok: false, code: "INVALID_FIELD", message: "title must be string ≤ 256 chars" };
+  }
+  if (!isFiniteNumber(b.width, 1, 100_000)) {
+    return { ok: false, code: "INVALID_FIELD", message: "width must be finite number in [1, 100000]" };
+  }
+  if (!isFiniteNumber(b.height, 1, 100_000)) {
+    return { ok: false, code: "INVALID_FIELD", message: "height must be finite number in [1, 100000]" };
+  }
+  if (!isBoundedString(b.background, 64)) {
+    return { ok: false, code: "INVALID_FIELD", message: "background must be string ≤ 64 chars" };
+  }
+  const meta = b.meta;
+  if (meta === null || typeof meta !== "object") {
+    return { ok: false, code: "MISSING_FIELD", message: "meta is required" };
+  }
+  const m = meta as Record<string, unknown>;
+  if (!isIsoDateString(m.createdAt)) {
+    return { ok: false, code: "INVALID_FIELD", message: "meta.createdAt must be ISO date string" };
+  }
+  if (!isIsoDateString(m.updatedAt)) {
+    return { ok: false, code: "INVALID_FIELD", message: "meta.updatedAt must be ISO date string" };
+  }
+  return { ok: true, value: b as StoredDesign };
+}
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
+  if (!assertKvAvailable(res)) return;
   const did = ensureDeviceId(req, res);
 
   if (req.method === "GET") {
@@ -79,14 +125,15 @@ export default async function handler(
   }
 
   if (req.method === "POST") {
-    const body = req.body;
-    if (!body || typeof body !== "object" || typeof (body as { id?: unknown }).id !== "string") {
-      res.status(400).json({ error: "Invalid design payload (missing id)" });
+    if (!enforceContentLength(req, res, MAX_DESIGN_BYTES)) return;
+    if (!enforceJsonContentType(req, res)) return;
+    const v = validateDesignBody(req.body);
+    if (!v.ok) {
+      apiError(res, 400, v.code, v.message);
       return;
     }
-    const design = body as StoredDesign;
+    const design = v.value;
     await kv.set(designKey(did, design.id), design);
-    // Maintain newest-first index.
     const ids = await readIndex(did);
     const next = [design.id, ...ids.filter((x) => x !== design.id)];
     await writeIndex(did, next);
@@ -95,5 +142,5 @@ export default async function handler(
   }
 
   res.setHeader("Allow", "GET, POST");
-  res.status(405).json({ error: "Method not allowed" });
+  apiError(res, 405, "INVALID_METHOD", "Method not allowed");
 }

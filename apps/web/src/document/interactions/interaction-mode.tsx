@@ -24,7 +24,15 @@
 
 import { useEditorVM } from "@agocraft/editor/react";
 import type { ClaimToken, EditorViewModel } from "@agocraft/editor";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 export type InteractionMode =
   | "idle"
@@ -49,17 +57,20 @@ interface InteractionModeContextValue {
 
 const tokensByMode = new Map<InteractionMode, ClaimToken>();
 
-function readVm(): EditorViewModel | undefined {
-  if (typeof window === "undefined") return undefined;
-  return (window as unknown as { __weaveVm?: EditorViewModel }).__weaveVm;
-}
+const InteractionVmContext = createContext<EditorViewModel | undefined>(undefined);
 
-export function InteractionModeProvider({ children }: { readonly children: ReactNode }) {
-  return <>{children}</>;
+export function InteractionModeProvider({
+  children,
+  vm,
+}: {
+  readonly children: ReactNode;
+  readonly vm?: EditorViewModel | undefined;
+}) {
+  return <InteractionVmContext.Provider value={vm}>{children}</InteractionVmContext.Provider>;
 }
 
 export function useInteractionMode(): InteractionModeContextValue {
-  const vm = readVm();
+  const vm = useContext(InteractionVmContext);
   const stableNoOpVm = useStableNoOpVm();
   const activeVm = vm ?? stableNoOpVm;
 

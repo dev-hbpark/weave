@@ -130,17 +130,7 @@ function FrameContextMenu({
 }
 
 export function DesignPage() {
-  // Outer wrapper just owns the SelectionProvider so DesignPageBody (which
-  // reads `useSelection` directly) is rendered inside a populated context.
-  // The other editor-wide providers are still mounted from inside the body
-  // — they only need to be ancestors of *their* hook callers (NestedFrame
-  // / CanvasBlock / ContextMenu wrapper / tooltip provider), which are
-  // children of the body's return.
-  return (
-    <SelectionProvider>
-      <DesignPageBody />
-    </SelectionProvider>
-  );
+  return <DesignPageBody />;
 }
 
 function DesignPageBody() {
@@ -206,8 +196,9 @@ function DesignPageBody() {
     onReorderRoot: reorderRootChildren,
   });
 
-  // Expose peek controller for e2e diagnostics + dev tools.
-  if (typeof window !== "undefined") {
+  // Expose peek controller for e2e diagnostics + dev tools only — never read
+  // in production hot-path (use React Context for that).
+  if (import.meta.env.DEV && typeof window !== "undefined") {
     (window as unknown as { __weavePeek?: typeof peek }).__weavePeek = peek;
   }
 
@@ -410,7 +401,10 @@ function DesignPageBody() {
     [docInAgocraft],
   );
 
-  if (typeof window !== "undefined") {
+  // Dev-only diagnostics surface. Production code reads vm via
+  // `InteractionModeProvider` / `SelectionProvider` React Context, not via
+  // window globals — see `apps/web/CLAUDE.md` § "window.__weave* globals".
+  if (import.meta.env.DEV && typeof window !== "undefined") {
     (window as unknown as { __weaveEditor?: typeof editor }).__weaveEditor = editor;
     (window as unknown as { __weaveDoc?: typeof docInAgocraft }).__weaveDoc = docInAgocraft;
     (window as unknown as { __weaveDesign?: typeof design }).__weaveDesign = design;
@@ -558,7 +552,8 @@ function DesignPageBody() {
     <EditorVMProvider vm={vm}>
     <RouterProvider router={router}>
     <SelectionChromeProvider registry={selectionChrome}>
-    <InteractionModeProvider>
+    <SelectionProvider vm={vm}>
+    <InteractionModeProvider vm={vm}>
     <ModeAwareAITooltipProvider hotkeyTable={editorHotkeyTable}>
         <EditorProvider editor={editor}>
           <div className="fixed inset-0 flex flex-col bg-[color:var(--bg-page)]">
@@ -1196,6 +1191,7 @@ function DesignPageBody() {
         </EditorProvider>
     </ModeAwareAITooltipProvider>
     </InteractionModeProvider>
+    </SelectionProvider>
     </SelectionChromeProvider>
     </RouterProvider>
     </EditorVMProvider>

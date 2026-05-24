@@ -6,7 +6,9 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { deviceScope, ensureDeviceId } from "../_lib/device-id.js";
-import { kv } from "../_lib/kv.js";
+import { apiError } from "../_lib/errors.js";
+import { assertKvAvailable, kv } from "../_lib/kv.js";
+import { isValidId } from "../_lib/validate.js";
 
 function resourceKey(did: string, id: string): string {
   return `${deviceScope(did)}:resource:${id}`;
@@ -20,11 +22,12 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
+  if (!assertKvAvailable(res)) return;
   const did = ensureDeviceId(req, res);
   const idParam = req.query.id;
   const id = Array.isArray(idParam) ? idParam[0] : idParam;
-  if (typeof id !== "string" || id.length === 0) {
-    res.status(400).json({ error: "Missing resource id" });
+  if (!isValidId(id)) {
+    apiError(res, 400, "INVALID_FIELD", "id must match [A-Za-z0-9_-]{1,64}");
     return;
   }
 
@@ -40,5 +43,5 @@ export default async function handler(
   }
 
   res.setHeader("Allow", "DELETE");
-  res.status(405).json({ error: "Method not allowed" });
+  apiError(res, 405, "INVALID_METHOD", "Method not allowed");
 }

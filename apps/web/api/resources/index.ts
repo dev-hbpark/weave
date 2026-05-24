@@ -12,12 +12,20 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { put } from "@vercel/blob";
 import { deviceScope, ensureDeviceId } from "../_lib/device-id.js";
-import { kv } from "../_lib/kv.js";
+import { apiError } from "../_lib/errors.js";
+import { assertKvAvailable, kv } from "../_lib/kv.js";
+import {
+  MAX_RESOURCE_BYTES,
+  enforceContentLength,
+  enforceJsonContentType,
+  isAllowedSrc,
+  isBoundedString,
+} from "../_lib/validate.js";
 
 interface ResourceRecord {
   readonly id: string;
   readonly kind: "image" | "video";
-  readonly src: string; // Either a https://*.public.blob.vercel-storage.com URL or a data: URL
+  readonly src: string;
   readonly name: string;
   readonly addedAt: string;
   readonly sessionOnly: boolean;
@@ -46,10 +54,51 @@ const HAS_BLOB =
   typeof process.env.BLOB_READ_WRITE_TOKEN === "string" &&
   process.env.BLOB_READ_WRITE_TOKEN.length > 0;
 
+interface ParsedBody {
+  kind: ResourceRecord["kind"];
+  name: string;
+  src?: string;
+  dataUrl?: string;
+}
+
+function validateResourceBody(body: unknown):
+  | { ok: true; value: ParsedBody }
+  | { ok: false; code: "MISSING_FIELD" | "INVALID_FIELD"; message: string } {
+  if (body === null || typeof body !== "object") {
+    return { ok: false, code: "INVALID_FIELD", message: "Body must be a JSON object" };
+  }
+  const b = body as Record<string, unknown>;
+  if (b.kind !== "image" && b.kind !== "video") {
+    return { ok: false, code: "INVALID_FIELD", message: 'kind must be "image" or "video"' };
+  }
+  if (!isBoundedString(b.name, 256)) {
+    return { ok: false, code: "INVALID_FIELD", message: "name must be string ≤ 256 chars" };
+  }
+  const parsed: ParsedBody = { kind: b.kind, name: b.name };
+  if (typeof b.src === "string" && b.src.length > 0) {
+    if (!isAllowedSrc(b.src)) {
+      return { ok: false, code: "INVALID_FIELD", message: "src protocol not allowed" };
+    }
+    parsed.src = b.src;
+  } else if (typeof b.dataUrl === "string" && b.dataUrl.length > 0) {
+    if (!b.dataUrl.startsWith("data:")) {
+      return { ok: false, code: "INVALID_FIELD", message: "dataUrl must start with data:" };
+    }
+    if (b.dataUrl.length > MAX_RESOURCE_BYTES * 2) {
+      return { ok: false, code: "INVALID_FIELD", message: "dataUrl too large" };
+    }
+    parsed.dataUrl = b.dataUrl;
+  } else {
+    return { ok: false, code: "MISSING_FIELD", message: "Missing src or dataUrl" };
+  }
+  return { ok: true, value: parsed };
+}
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
+  if (!assertKvAvailable(res)) return;
   const did = ensureDeviceId(req, res);
 
   if (req.method === "GET") {
@@ -65,34 +114,23 @@ export default async function handler(
   }
 
   if (req.method === "POST") {
-    // Body shape: { kind, name, dataUrl } or { kind, name, src }
-    // dataUrl uploads through Blob (production) or stores the data URL
-    // directly in KV (dev / no blob token).
-    const body = req.body as
-      | { kind?: unknown; name?: unknown; dataUrl?: unknown; src?: unknown }
-      | undefined;
-    if (
-      body === undefined ||
-      typeof body.kind !== "string" ||
-      (body.kind !== "image" && body.kind !== "video") ||
-      typeof body.name !== "string"
-    ) {
-      res.status(400).json({ error: "Invalid resource payload" });
+    if (!enforceContentLength(req, res, MAX_RESOURCE_BYTES)) return;
+    if (!enforceJsonContentType(req, res)) return;
+    const v = validateResourceBody(req.body);
+    if (!v.ok) {
+      apiError(res, 400, v.code, v.message);
       return;
     }
-    const kind = body.kind;
-    const name = body.name;
+    const { kind, name } = v.value;
     let src: string;
-    if (typeof body.src === "string" && body.src.length > 0) {
-      // Caller provided an already-hosted URL (e.g., user pasted from
-      // anywhere). Store as-is, mark session-only if it's a blob: URL.
-      src = body.src;
-    } else if (typeof body.dataUrl === "string" && body.dataUrl.startsWith("data:")) {
+    if (v.value.src !== undefined) {
+      src = v.value.src;
+    } else {
+      const dataUrl = v.value.dataUrl as string;
       if (HAS_BLOB) {
-        // Convert data URL → Buffer → push to Blob.
-        const match = body.dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+        const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
         if (match === null) {
-          res.status(400).json({ error: "Malformed data URL" });
+          apiError(res, 400, "INVALID_FIELD", "Malformed data URL");
           return;
         }
         const mime = match[1]!;
@@ -103,12 +141,8 @@ export default async function handler(
         });
         src = blob.url;
       } else {
-        // Dev — keep the data: URL in KV.
-        src = body.dataUrl;
+        src = dataUrl;
       }
-    } else {
-      res.status(400).json({ error: "Missing src or dataUrl" });
-      return;
     }
     const record: ResourceRecord = {
       id: generateId(kind),
@@ -116,7 +150,7 @@ export default async function handler(
       src,
       name,
       addedAt: new Date().toISOString(),
-      sessionOnly: src.startsWith("blob:") || src.startsWith("data:") && !HAS_BLOB,
+      sessionOnly: src.startsWith("blob:") || (src.startsWith("data:") && !HAS_BLOB),
     };
     await kv.set(resourceKey(did, record.id), record);
     const ids = await readIndex(did);
@@ -126,5 +160,5 @@ export default async function handler(
   }
 
   res.setHeader("Allow", "GET, POST");
-  res.status(405).json({ error: "Method not allowed" });
+  apiError(res, 405, "INVALID_METHOD", "Method not allowed");
 }

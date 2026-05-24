@@ -55,7 +55,7 @@ const PEEK_STYLE_CSS = `
 /* The peek-tilt container under the canvas-host gains a subtle 3D tilt
    when peek is active. */
 [data-peek-tilt-target] {
-  transition: transform 320ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 320ms cubic-bezier(0.4, 0, 0.6, 1);
   transform-style: preserve-3d;
 }
 
@@ -68,9 +68,9 @@ const PEEK_STYLE_CSS = `
 
 [data-peek-active] [data-frame-id] {
   transition:
-    opacity 240ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1),
-    filter 240ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 240ms cubic-bezier(0.4, 0, 0.6, 1),
+    box-shadow 240ms cubic-bezier(0.4, 0, 0.6, 1),
+    filter 240ms cubic-bezier(0.4, 0, 0.6, 1),
     transform 360ms cubic-bezier(0.34, 1.16, 0.64, 1);
   opacity: 0.32;
   filter: saturate(0.6) brightness(0.78);
