@@ -8,7 +8,11 @@ export type ApiErrorCode =
   | "INVALID_CONTENT_TYPE"
   | "INTERNAL_ERROR"
   | "NOT_FOUND"
-  | "STORAGE_UNAVAILABLE";
+  | "STORAGE_UNAVAILABLE"
+  /** KV provider rejected the value as too large (Upstash per-key
+   *  cap, etc.). Distinct from PAYLOAD_TOO_LARGE — the API accepted
+   *  the request, but the backing store can't fit it. */
+  | "STORAGE_LIMIT";
 
 export interface ApiErrorBody {
   readonly error: { readonly code: ApiErrorCode; readonly message: string };

@@ -1,9 +1,16 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { apiError } from "./errors.js";
 
-// KV per-key limit on Upstash free is 1 MB; we leave headroom for the future
-// addition of relations + behaviors per design.
-export const MAX_DESIGN_BYTES = 800 * 1024;
+// Vercel Node functions default-cap request bodies at ~4.5 MB. We sit
+// just under that ceiling so a single design can carry many behaviors /
+// items / inline-text without bouncing at the edge.
+//
+// Note on the downstream KV limit: Upstash Redis caps each VALUE at
+// 1 MB on the free tier and 10 MB on Pro. Designs that exceed the
+// active KV plan are gracefully reported back as `STORAGE_LIMIT` (see
+// designs/index.ts) so the client can drop into localStorage-only mode
+// rather than pretending the cloud save succeeded.
+export const MAX_DESIGN_BYTES = 4 * 1024 * 1024;
 // 10 MB matches Vercel Blob's documented client upload comfort zone.
 export const MAX_RESOURCE_BYTES = 10 * 1024 * 1024;
 
@@ -36,7 +43,14 @@ export function enforceContentLength(
   if (typeof raw === "string") {
     const n = Number.parseInt(raw, 10);
     if (Number.isFinite(n) && n > maxBytes) {
-      apiError(res, 413, "PAYLOAD_TOO_LARGE", `Body exceeds ${maxBytes} bytes`);
+      const actualKb = Math.round(n / 1024);
+      const maxKb = Math.round(maxBytes / 1024);
+      apiError(
+        res,
+        413,
+        "PAYLOAD_TOO_LARGE",
+        `Body ${actualKb} KB exceeds the ${maxKb} KB API limit. Inline images / videos in the design? Upload them to /api/resources first and reference the returned URL instead.`,
+      );
       return false;
     }
   }

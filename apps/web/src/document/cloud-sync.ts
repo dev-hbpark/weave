@@ -36,6 +36,17 @@ async function safeFetch(
       credentials: "same-origin",
       ...init,
     });
+    // 413 (API payload limit) and 507 (KV storage limit) are
+    // PER-PAYLOAD failures, not a cloud-wide outage — the local copy
+    // is fine, this single design just can't make the round trip.
+    // Don't flip cloudAvailable; let the next save (or a smaller
+    // design) try again. Warn so the operator can diagnose.
+    if (!resp.ok && (resp.status === 413 || resp.status === 507)) {
+      console.warn(
+        `[cloud-sync] ${resp.status} for ${typeof input === "string" ? input : ""} — saved locally, skipped cloud mirror.`,
+      );
+      return resp;
+    }
     if (!resp.ok && resp.status >= 500) {
       cloudAvailable = false;
       return null;

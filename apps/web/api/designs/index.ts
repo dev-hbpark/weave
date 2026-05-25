@@ -122,7 +122,30 @@ export default async function handler(
       return;
     }
     const design = v.value;
-    await kv.set(designKey(design.id), design);
+    try {
+      await kv.set(designKey(design.id), design);
+    } catch (err) {
+      // Upstash returns an error when a single value exceeds the per-key
+      // cap (1 MB on the free tier, 10 MB on Pro). Surface this as a
+      // separate stable code so the client can fall back to localStorage-
+      // only mode for this design without disabling cloud sync entirely.
+      const message =
+        err instanceof Error ? err.message : "Unknown storage error";
+      const isSizeError =
+        /size|too large|max-?value/i.test(message)
+        || (typeof (err as { status?: number }).status === "number"
+          && (err as { status: number }).status === 413);
+      if (isSizeError) {
+        apiError(
+          res,
+          507,
+          "STORAGE_LIMIT",
+          `Design saved locally but the backing store rejected the value as too large. ${message}`,
+        );
+        return;
+      }
+      throw err;
+    }
     const ids = await readIndex();
     const next = [design.id, ...ids.filter((x) => x !== design.id)];
     await writeIndex(next);
