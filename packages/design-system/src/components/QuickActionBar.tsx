@@ -1,0 +1,91 @@
+// WI-027 Phase C — QuickActionBar.
+//
+// Figma-style floating action strip anchored to the hovered surface
+// (top-right of a frame by default). Lists every command whose
+// `visibleWhen` matches the current host context and renders each as a
+// `CommandIconButton`. Adding a new command never touches this file —
+// declare `visibleWhen` on the command and it auto-appears here.
+//
+// The bar is intentionally generic. The host decides:
+//   • where to mount it (per-frame absolute, or global cursor-following)
+//   • what icon a command maps to (CommandMetadata.icon is a host token)
+//   • category filter — limit to e.g. only "frame" commands
+
+import { type ReactNode, useMemo } from "react";
+import { cn } from "../cn.js";
+import { useCommandHostOrNull } from "./Command.js";
+
+export interface QuickActionBarProps {
+  /** Restrict to commands tagged with this category. Default: all
+   *  categories. */
+  readonly category?: string;
+  /** Override the host's context for visibleWhen / isEnabled. Default:
+   *  the CommandHostProvider's context. Useful when a section wants to
+   *  layer in extra keys (e.g. hoveredKind / hoveredId). */
+  readonly contextOverride?: Readonly<Record<string, unknown>>;
+  /** Maximum commands to show. The remaining are hidden — the user can
+   *  open the palette (Cmd+K) to find them. Default: 6. */
+  readonly maxItems?: number;
+  /** Renderer for each visible command. Receives the command id; should
+   *  return a ReactNode (typically `<CommandIconButton commandId={id}>
+   *  <SomeIcon /></CommandIconButton>`). Host owns the icon mapping. */
+  readonly renderItem: (commandId: string) => ReactNode;
+  /** Render when zero commands match. Default: render nothing. */
+  readonly emptyFallback?: ReactNode;
+  readonly className?: string;
+  readonly "data-testid"?: string;
+}
+
+export function QuickActionBar({
+  category,
+  contextOverride,
+  maxItems = 6,
+  renderItem,
+  emptyFallback = null,
+  className,
+  "data-testid": testid = "quick-action-bar",
+}: QuickActionBarProps): ReactNode {
+  const host = useCommandHostOrNull();
+
+  const commandIds = useMemo<ReadonlyArray<string>>(() => {
+    if (host === null) return [];
+    const ctx = contextOverride !== undefined
+      ? { ...host.context, ...contextOverride }
+      : host.context;
+    // Older registries (pre-WI-027) may not implement listVisible —
+    // fall back to filtering list() in that case.
+    const lister = host.registry.listVisible;
+    const all =
+      typeof lister === "function"
+        ? lister.call(host.registry, ctx)
+        : host.registry
+            .list()
+            .filter((m) => m.visibleWhen !== undefined && m.visibleWhen(ctx));
+    const filtered =
+      category !== undefined ? all.filter((m) => m.category === category) : all;
+    return filtered.slice(0, maxItems).map((m) => m.id);
+  }, [host, category, contextOverride, maxItems]);
+
+  if (host === null) return null;
+  if (commandIds.length === 0) return emptyFallback;
+
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-1 px-1.5 py-1 rounded-[var(--radius-pill)]",
+        "bg-[color:var(--surface-overlay)] backdrop-blur-[var(--surface-blur)]",
+        "border border-[color:var(--surface-overlay-border)]",
+        "shadow-[var(--shadow-glow)]",
+        "pointer-events-auto",
+        className,
+      )}
+      data-testid={testid}
+      role="toolbar"
+      aria-label="Quick actions"
+    >
+      {commandIds.map((id) => (
+        <span key={id}>{renderItem(id)}</span>
+      ))}
+    </div>
+  );
+}

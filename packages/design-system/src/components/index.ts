@@ -33,6 +33,7 @@ export {
   useResolvedCommand,
 } from "./Command.js";
 export { CommandPalette, type CommandPaletteProps } from "./CommandPalette.js";
+export { QuickActionBar, type QuickActionBarProps } from "./QuickActionBar.js";
 export { ColorPicker, type ColorPickerProps } from "./ColorPicker.js";
 export {
   ContextualToolbar,

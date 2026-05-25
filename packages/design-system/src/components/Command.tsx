@@ -49,6 +49,9 @@ export interface CommandMetaLike {
   readonly enabledWhen?: (
     ctx: Readonly<Record<string, unknown>>,
   ) => boolean;
+  readonly visibleWhen?: (
+    ctx: Readonly<Record<string, unknown>>,
+  ) => boolean;
 }
 
 /** Structural mirror of agocraft's `CommandMetadataRegistry`. */
@@ -58,6 +61,13 @@ export interface CommandRegistryLike {
     readonly category?: string;
   }): ReadonlyArray<CommandMetaLike>;
   isEnabled(id: string, ctx: Readonly<Record<string, unknown>>): boolean;
+  /** WI-027 — snapshot of every command whose `visibleWhen(ctx)` is true.
+   *  Hover affordances / quick-action bars read from here. Optional on
+   *  the structural type so older registries (without listVisible) still
+   *  compile; consumers should null-guard. */
+  listVisible?(
+    ctx: Readonly<Record<string, unknown>>,
+  ): ReadonlyArray<CommandMetaLike>;
 }
 
 export interface CommandHostValue {

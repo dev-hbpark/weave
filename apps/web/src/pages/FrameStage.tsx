@@ -464,6 +464,7 @@ function NestedFrame({
       ref={selfRef}
       data-testid={`block-${kind}`}
       data-frame-id={itemId}
+      data-frame-kind={kind}
       // Left-button pointerdown on a frame must NOT start the rubber band on
       // the parent design plane (right-click still bubbles to ContextMenuTrigger;
       // useRubberBand only acts on button=0 anyway). EXCEPT in hand / panning

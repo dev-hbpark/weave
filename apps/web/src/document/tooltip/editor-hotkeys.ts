@@ -39,6 +39,34 @@ interface EditorActionDeps {
   readonly openPalette?: () => void;
 }
 
+/** Host-side hook into a quick-action command. The action itself is a
+ *  closure over the hovered item the host knows about; this slot is
+ *  populated by DesignPage at mount and cleared on unmount. */
+let frameDuplicator: ((frameId: string) => void) | undefined;
+let frameDeleter: ((frameId: string) => void) | undefined;
+let mediaSrcOpener: ((kind: "image" | "video", frameId: string) => void) | undefined;
+
+export function setFrameDuplicator(fn: (frameId: string) => void): () => void {
+  frameDuplicator = fn;
+  return () => {
+    if (frameDuplicator === fn) frameDuplicator = undefined;
+  };
+}
+export function setFrameDeleter(fn: (frameId: string) => void): () => void {
+  frameDeleter = fn;
+  return () => {
+    if (frameDeleter === fn) frameDeleter = undefined;
+  };
+}
+export function setMediaSrcOpener(
+  fn: (kind: "image" | "video", frameId: string) => void,
+): () => void {
+  mediaSrcOpener = fn;
+  return () => {
+    if (mediaSrcOpener === fn) mediaSrcOpener = undefined;
+  };
+}
+
 let paletteOpener: (() => void) | undefined;
 
 /** Host registration — DesignPage calls this so the `palette.open`
@@ -110,7 +138,106 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       paletteOpener?.();
     },
   },
+  // ── Hover-visible commands (WI-027) ────────────────────────────────────
+  // These commands have `visibleWhen` so they appear in the hovered
+  // frame's QuickActionBar. They do NOT have a global hotkey — the bar
+  // is the discovery surface. Adding a new command here = new affordance.
+  {
+    id: "frame.duplicate",
+    label: { en: "Duplicate", ko: "복제" },
+    hint: { en: "Copy this frame.", ko: "이 프레임을 복제합니다." },
+    category: "frame",
+    visibleWhen: (ctx) =>
+      ctx.hoveredKind === "frame"
+      || ctx.hoveredKind === "image"
+      || ctx.hoveredKind === "video"
+      || ctx.hoveredKind === "shape"
+      || ctx.hoveredKind === "text",
+    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+    action: () => {
+      // No-op at module level — dispatched via the frameDuplicator slot
+      // since the closure captures useDesign's addItem.
+    },
+  },
+  {
+    id: "frame.delete",
+    label: { en: "Delete", ko: "삭제" },
+    hint: { en: "Remove this frame.", ko: "이 프레임을 삭제합니다." },
+    category: "frame",
+    visibleWhen: (ctx) =>
+      ctx.hoveredKind === "frame"
+      || ctx.hoveredKind === "image"
+      || ctx.hoveredKind === "video"
+      || ctx.hoveredKind === "shape"
+      || ctx.hoveredKind === "text",
+    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+    action: () => {
+      // Dispatched via frameDeleter slot.
+    },
+  },
+  {
+    id: "image.replaceSrc",
+    label: { en: "Replace image", ko: "이미지 교체" },
+    hint: { en: "Open the media picker.", ko: "이미지 소스를 변경합니다." },
+    category: "image",
+    visibleWhen: (ctx) => ctx.hoveredKind === "image",
+    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+    action: () => {
+      // Dispatched via mediaSrcOpener slot.
+    },
+  },
+  {
+    id: "video.replaceSrc",
+    label: { en: "Replace video", ko: "비디오 교체" },
+    hint: { en: "Open the media picker.", ko: "비디오 소스를 변경합니다." },
+    category: "video",
+    visibleWhen: (ctx) => ctx.hoveredKind === "video",
+    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+    action: () => {
+      // Dispatched via mediaSrcOpener slot.
+    },
+  },
 ];
+
+/** Bridge between dispatchEditorCommand and host-supplied action slots.
+ *  Called from dispatchEditorCommand for command ids whose static
+ *  `action` is a no-op (the host owns the closure). */
+function tryHostSlot(
+  id: string,
+  ctx: Readonly<Record<string, unknown>> | undefined,
+): boolean {
+  const hoveredId =
+    typeof ctx?.hoveredId === "string" ? ctx.hoveredId : undefined;
+  const hoveredKind =
+    typeof ctx?.hoveredKind === "string" ? ctx.hoveredKind : undefined;
+  if (id === "frame.duplicate" && frameDuplicator !== undefined && hoveredId !== undefined) {
+    frameDuplicator(hoveredId);
+    return true;
+  }
+  if (id === "frame.delete" && frameDeleter !== undefined && hoveredId !== undefined) {
+    frameDeleter(hoveredId);
+    return true;
+  }
+  if (
+    id === "image.replaceSrc"
+    && mediaSrcOpener !== undefined
+    && hoveredId !== undefined
+    && hoveredKind === "image"
+  ) {
+    mediaSrcOpener("image", hoveredId);
+    return true;
+  }
+  if (
+    id === "video.replaceSrc"
+    && mediaSrcOpener !== undefined
+    && hoveredId !== undefined
+    && hoveredKind === "video"
+  ) {
+    mediaSrcOpener("video", hoveredId);
+    return true;
+  }
+  return false;
+}
 
 /** Module-level registry. Populated once at import time so every
  *  consumer (tooltip, button, palette) shares the same metadata
@@ -134,11 +261,18 @@ function findAction(id: string): ((deps: EditorActionDeps) => void) | undefined 
 /** Dispatch an editor command by id. Used by CommandHostProvider's
  *  `dispatch` so UI buttons / palette entries share the same action
  *  source as the hotkey registry. No-op on unknown id (failure is
- *  surfaced via `metadata.isEnabled` and the button's `disabled` state). */
+ *  surfaced via `metadata.isEnabled` and the button's `disabled` state).
+ *
+ *  Falls back to a registered host slot (`setFrameDuplicator` /
+ *  `setFrameDeleter` / `setMediaSrcOpener`) when the command's static
+ *  action is a no-op — used for hover-context commands whose action
+ *  closure lives in DesignPage. */
 export function dispatchEditorCommand(
   id: string,
   deps: EditorActionDeps,
+  hoverCtx?: Readonly<Record<string, unknown>>,
 ): void {
+  if (tryHostSlot(id, hoverCtx)) return;
   findAction(id)?.(deps);
 }
 

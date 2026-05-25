@@ -8,6 +8,7 @@ import {
   CommandHostProvider,
   CommandIconButton,
   CommandPalette,
+  QuickActionBar,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -46,9 +47,13 @@ import { CursorTooltip } from "../document/tooltip/CursorTooltip.js";
 import {
   dispatchEditorCommand,
   editorCommandMetadata,
+  setFrameDeleter,
+  setFrameDuplicator,
+  setMediaSrcOpener,
   setPaletteOpener,
   useEditorHotkeys,
 } from "../document/tooltip/editor-hotkeys.js";
+import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useWeaveEditor } from "../document/use-weave-editor.js";
 import {
   PeekOverlay,
@@ -558,30 +563,49 @@ function DesignPageBody() {
   const canRedo = editor.history.canRedo();
   const bumpHistoryTick = useCallback(() => setHistoryTick((t) => t + 1), []);
 
-  // WI-026 Phase 5 — host context for CommandMetadata.isEnabled. Each
-  // CommandButton calls registry.isEnabled(id, context); reference equality
-  // on `context` controls re-renders, so we memoize the object and only
-  // rebuild when an input changes.
+  // WI-027 Phase B — pointer-based hover tracker. Reads data-frame-id /
+  // data-frame-kind / data-shape-id / data-hotspot-id from the DOM and
+  // surfaces the active hover surface in React state. Mounted on the
+  // canvas host so only that subtree triggers updates.
+  const hoverContext = useHoverContext(canvasHostRef);
+
+  // WI-026 Phase 5 + WI-027 — host context for CommandMetadata.isEnabled
+  // AND CommandMetadata.visibleWhen. Each CommandButton calls
+  // registry.isEnabled(id, context); QuickActionBar calls
+  // registry.listVisible(context). Reference equality on `context`
+  // controls re-renders.
   const commandContext = useMemo<Readonly<Record<string, unknown>>>(
     () => ({
       canUndo,
       canRedo,
       hasSelection: selectedIds.size > 0,
       selectionCount: selectedIds.size,
+      hoveredKind: hoverContext.hoveredKind,
+      hoveredId: hoverContext.hoveredId,
+      hoveredRole: hoverContext.hoveredRole,
     }),
-    [canUndo, canRedo, selectedIds.size],
+    [
+      canUndo,
+      canRedo,
+      selectedIds.size,
+      hoverContext.hoveredKind,
+      hoverContext.hoveredId,
+      hoverContext.hoveredRole,
+    ],
   );
 
-  // WI-026 Phase 4 — dispatch is the host-supplied executor. It looks up
-  // the command's runtime action (held in `EDITOR_COMMANDS`) and calls it
-  // with the current editor. History commands bump the tick so canUndo /
-  // canRedo flow into commandContext on the next render.
+  // WI-026 Phase 4 + WI-027 Phase D — dispatch is the host-supplied
+  // executor. It looks up the command's runtime action (held in
+  // `EDITOR_COMMANDS`) and calls it with the current editor. We pass the
+  // current hover context as a third arg so hover-scoped commands
+  // (frame.duplicate / frame.delete / image.replaceSrc) can resolve
+  // their target via the host slots registered below.
   const dispatchCommand = useCallback(
     (id: string) => {
-      dispatchEditorCommand(id, { editor });
+      dispatchEditorCommand(id, { editor }, hoverContext as unknown as Readonly<Record<string, unknown>>);
       bumpHistoryTick();
     },
-    [editor, bumpHistoryTick],
+    [editor, bumpHistoryTick, hoverContext],
   );
 
   // WI-026 Phase 6 — command palette state. The hotkey "palette.open"
@@ -590,6 +614,34 @@ function DesignPageBody() {
   // as a header click.
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => setPaletteOpener(() => setPaletteOpen(true)), []);
+
+  // WI-027 Phase D — register host action slots for hover-scope commands.
+  // The slots receive the hovered frame id from the dispatcher and run
+  // the appropriate weave action (delete / duplicate / open media src
+  // picker). The slots persist for the lifetime of this component.
+  useEffect(() => {
+    return setFrameDeleter((frameId) => removeItem(frameId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- removeItem
+    // closes over `rawRemoveItem` from useDesign which is stable.
+  }, []);
+  useEffect(() => {
+    return setFrameDuplicator((frameId) => {
+      // Stub: drop a fresh item of the same kind next to the hovered
+      // one. Real copy-of-attrs duplication is a follow-up.
+      const kind = hoverContext.hoveredKind;
+      if (kind === "none" || kind === "handle" || kind === "hotspot" || kind === "background") return;
+      void frameId;
+      rawAddItem(kind as DomainKind);
+    });
+  }, [rawAddItem, hoverContext.hoveredKind]);
+  useEffect(() => {
+    return setMediaSrcOpener((mediaKind) => {
+      // The "edit" action targets the currently-selected media item.
+      // For hover-driven invocations we tee up the dialog in edit mode;
+      // it inspects the active selection on submit.
+      setPendingMedia({ action: "edit", kind: mediaKind });
+    });
+  }, []);
   // Also re-tick whenever the ChangeStream emits — covers hotkey-driven
   // undo/redo + remote edits that don't go through the toolbar buttons.
   useEffect(() => {
@@ -1217,6 +1269,33 @@ function DesignPageBody() {
               open={paletteOpen}
               onOpenChange={setPaletteOpen}
             />
+            {/* WI-027 — hover-driven QuickActionBar. Sits fixed near the top-
+                right of the workspace and reflects whatever the pointer is
+                currently over. New commands with `visibleWhen` light up
+                here automatically; no edit to DesignPage required. */}
+            <div className="fixed top-16 right-4 z-30 pointer-events-none">
+              <QuickActionBar
+                data-testid="hover-quick-actions"
+                renderItem={(id) => {
+                  // Host-owned icon mapping. Keep tiny — the metadata
+                  // already carries label/aria/disabled; we just pick
+                  // a glyph here.
+                  const glyph =
+                    id === "frame.duplicate"
+                      ? "⊕"
+                      : id === "frame.delete"
+                        ? "✕"
+                        : id === "image.replaceSrc" || id === "video.replaceSrc"
+                          ? "↻"
+                          : "•";
+                  return (
+                    <CommandIconButton commandId={id} size="sm">
+                      <span className="text-[13px]">{glyph}</span>
+                    </CommandIconButton>
+                  );
+                }}
+              />
+            </div>
           </div>
         </EditorProvider>
     </ModeAwareAITooltipProvider>
