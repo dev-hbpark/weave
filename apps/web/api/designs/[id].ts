@@ -1,28 +1,19 @@
-// WI-025 — single-design endpoint.
+// WI-025 — single-design endpoint (globally shared workspace).
 //
 // GET    /api/designs/:id  → full Design JSON
 // DELETE /api/designs/:id  → remove from KV + index
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { deviceScope, ensureDeviceId } from "../_lib/device-id.js";
 import { apiError } from "../_lib/errors.js";
+import { designIndexKey, designKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
 import { isValidId } from "../_lib/validate.js";
-
-function designKey(did: string, id: string): string {
-  return `${deviceScope(did)}:design:${id}`;
-}
-
-function indexKey(did: string): string {
-  return `${deviceScope(did)}:designs`;
-}
 
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
   if (!assertKvAvailable(res)) return;
-  const did = ensureDeviceId(req, res);
   const idParam = req.query.id;
   const id = Array.isArray(idParam) ? idParam[0] : idParam;
   if (!isValidId(id)) {
@@ -31,7 +22,7 @@ export default async function handler(
   }
 
   if (req.method === "GET") {
-    const d = await kv.get(designKey(did, id));
+    const d = await kv.get(designKey(id));
     if (d === null) {
       apiError(res, 404, "NOT_FOUND", "Design not found");
       return;
@@ -41,10 +32,10 @@ export default async function handler(
   }
 
   if (req.method === "DELETE") {
-    await kv.del(designKey(did, id));
-    const ids = (await kv.get<string[]>(indexKey(did))) ?? [];
+    await kv.del(designKey(id));
+    const ids = (await kv.get<string[]>(designIndexKey())) ?? [];
     await kv.set(
-      indexKey(did),
+      designIndexKey(),
       ids.filter((x) => x !== id),
     );
     res.status(200).json({ ok: true });

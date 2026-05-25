@@ -1,18 +1,18 @@
-// WI-025 — resources collection endpoint.
+// WI-025 — resources collection endpoint (globally shared workspace).
 //
 // GET  /api/resources                 → list all resource metadata
-// POST /api/resources (multipart/form) → upload a new resource. The blob
-//      is written to Vercel Blob; the public URL + metadata are written
-//      to KV under `did:<did>:resource:<id>`.
+// POST /api/resources                 → upload a new resource. The blob is
+//      written to Vercel Blob; the public URL + metadata are written to
+//      KV under `shared:resource:<id>`.
 //
-// To keep the bundle small we use Vercel Blob's client-direct upload only
-// in production; in dev (no BLOB_READ_WRITE_TOKEN) we accept the body as
-// a base-64 data URL and store it directly in KV (works for small files).
+// In production we transcode data: URLs to Blob; in dev (no
+// BLOB_READ_WRITE_TOKEN) we accept the data URL as-is and store it
+// directly in KV (works for small files).
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { put } from "@vercel/blob";
-import { deviceScope, ensureDeviceId } from "../_lib/device-id.js";
 import { apiError } from "../_lib/errors.js";
+import { blobPath, resourceIndexKey, resourceKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
 import {
   MAX_RESOURCE_BYTES,
@@ -31,16 +31,8 @@ interface ResourceRecord {
   readonly sessionOnly: boolean;
 }
 
-function resourceKey(did: string, id: string): string {
-  return `${deviceScope(did)}:resource:${id}`;
-}
-
-function indexKey(did: string): string {
-  return `${deviceScope(did)}:resources`;
-}
-
-async function readIndex(did: string): Promise<string[]> {
-  return ((await kv.get<string[]>(indexKey(did))) ?? []);
+async function readIndex(): Promise<string[]> {
+  return ((await kv.get<string[]>(resourceIndexKey())) ?? []);
 }
 
 function generateId(kind: ResourceRecord["kind"]): string {
@@ -99,13 +91,12 @@ export default async function handler(
   res: VercelResponse,
 ): Promise<void> {
   if (!assertKvAvailable(res)) return;
-  const did = ensureDeviceId(req, res);
 
   if (req.method === "GET") {
-    const ids = await readIndex(did);
+    const ids = await readIndex();
     const records: ResourceRecord[] = [];
     for (const id of ids) {
-      const r = await kv.get<ResourceRecord>(resourceKey(did, id));
+      const r = await kv.get<ResourceRecord>(resourceKey(id));
       if (r !== null) records.push(r);
     }
     records.sort((a, b) => (a.addedAt < b.addedAt ? 1 : -1));
@@ -135,7 +126,7 @@ export default async function handler(
         }
         const mime = match[1]!;
         const buf = Buffer.from(match[2]!, "base64");
-        const blob = await put(`${did}/${generateId(kind)}-${name}`, buf, {
+        const blob = await put(blobPath(`${generateId(kind)}-${name}`), buf, {
           access: "public",
           contentType: mime,
         });
@@ -152,9 +143,9 @@ export default async function handler(
       addedAt: new Date().toISOString(),
       sessionOnly: src.startsWith("blob:") || (src.startsWith("data:") && !HAS_BLOB),
     };
-    await kv.set(resourceKey(did, record.id), record);
-    const ids = await readIndex(did);
-    await kv.set(indexKey(did), [record.id, ...ids]);
+    await kv.set(resourceKey(record.id), record);
+    const ids = await readIndex();
+    await kv.set(resourceIndexKey(), [record.id, ...ids]);
     res.status(200).json({ resource: record });
     return;
   }

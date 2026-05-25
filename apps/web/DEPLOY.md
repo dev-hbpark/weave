@@ -142,7 +142,7 @@ curl -fsSL -i https://YOUR-PROJECT.vercel.app/api/designs | head -20
 | Build OK but `/api/designs` returns 500 | KV/Redis not linked | Storage tab → Marketplace → Upstash → Redis, connect to project for *all* envs, then **Redeploy** |
 | Storage tab only shows Blob, no KV | Vercel removed direct KV; use Marketplace → Upstash → Redis instead | See §4 above — both naming conventions are supported by the code |
 | Image upload succeeds but reload loses it | Blob token missing in prod (running in dev mode) | Storage tab → confirm `BLOB_READ_WRITE_TOKEN` is set in Production |
-| Designs not appearing across devices | This is by design — `weave_did` cookie is per-browser. **The MVP is anonymous, device-scoped, NOT multi-user.** | (Follow-up: real auth — Clerk / NextAuth — see §"Security model" below) |
+| Designs not appearing across devices | First-paint of `/` shows only what's in `localStorage`; the shared cloud workspace is pulled by `bootstrapFromCloud()` which then re-paints. If you see an empty page, hard-reload and watch the network tab for `/api/designs` — it should return JSON with everything. | If empty even after that, check that Vercel Storage → Upstash Redis is connected and the env vars are present. |
 | `Type 'StoredDesign' is not assignable...` at build | strict TS pulled a type from `@vercel/node` that doesn't match latest | bump to `@vercel/node@^5.0.0` |
 
 ---
@@ -161,55 +161,58 @@ POST  /api/resources      → upload (dataUrl → Blob)
 DELETE /api/resources/:id → remove
 ```
 
-Data layout (KV keys):
+Data layout (KV keys — globally shared, see §"Security model"):
 
 ```
-did:<deviceId>:designs                 → ["d-abc", "d-def", ...]   (newest first)
-did:<deviceId>:design:<id>             → full Design JSON
-did:<deviceId>:resources               → ["img-abc", ...]
-did:<deviceId>:resource:<id>           → MediaResource JSON
+shared:designs                         → ["d-abc", "d-def", ...]   (newest first)
+shared:design:<id>                     → full Design JSON
+shared:resources                       → ["img-abc", ...]
+shared:resource:<id>                   → MediaResource JSON
 ```
 
 Blob layout:
 
 ```
-<deviceId>/<resourceId>-<filename>     → public https URL
+shared/<resourceId>-<filename>         → public https URL
 ```
 
 ---
 
-## Security model — explicit limitations
+## Security model — globally shared, no auth
 
-**weave is anonymous device-scoped, NOT multi-user.** The implications of
-this MUST be understood before exposing a deployment to anyone outside the
-operator's own machines:
+**weave is a single shared workspace with NO accounts, NO per-user scoping,
+and NO authentication.** Every client (every browser, every visitor) reads
+and writes the same KV keys under the `shared:` prefix. The implications
+MUST be understood before exposing the deployment publicly:
 
-- A `weave_did` cookie is the only identity. Anyone who can present this
-  cookie sees every design + resource in that scope. There is no auth,
-  no row-level permission, no audit log.
-- Cookie theft = full takeover. Cookies are not signed; an attacker who
-  replays a captured `weave_did` value reads and overwrites the victim's
-  data at will.
-- Two users on the same shared browser (kiosk, library, family iPad) share
-  the same workspace.
-- There is no quota or rate-limit. A malicious POST loop can fill the
-  Vercel KV free-tier in minutes.
-- API routes enforce payload size (800 KB design, 10 MB resource) but
-  not total per-device storage. Vercel KV per-key cap is 1 MB; the
-  per-tenant total cap is whatever the Upstash plan allows.
+- **No identity, no isolation.** Anyone who knows the URL sees and
+  modifies every design and resource. There is no concept of "my designs"
+  — the workspace is the global, public state of the deployment.
+- **Anyone can delete anything.** A malicious or careless visitor can
+  call `DELETE /api/designs/:id` and erase another visitor's work.
+- **No quota or rate-limit.** A POST loop can fill the Vercel KV free
+  tier (256 MB) or Blob free tier (1 GB) in minutes.
+- **API routes enforce payload size** (800 KB design, 10 MB resource)
+  but not total workspace storage. Vercel KV per-key cap is 1 MB; total
+  cap depends on the Upstash plan.
 
-Treat the deployment as a **personal-use scratch space**, not a product
-others can sign up for. Before sharing the URL publicly:
+This shape is intentional for the current development phase — there are
+no accounts yet, and a globally shared workspace is the simplest way to
+let the operator open the URL from any browser, any device, any session
+and see the same data immediately. Treat the deployment as **an open
+demo room** — anyone with the URL is implicitly a co-editor.
+
+Before adding accounts / public sign-up:
 
 1. Add real auth (Clerk, NextAuth, or HMAC-signed cookies with a server
    secret).
-2. Namespace KV keys under `user:<uid>:` instead of `did:<did>:`.
+2. Namespace KV keys under `user:<uid>:` instead of `shared:` — the
+   single point of change is `apps/web/api/_lib/keys.ts`.
 3. Add rate-limit middleware (Vercel Edge Middleware + Upstash ratelimit
    is the canonical Vercel stack).
 4. Add a quota cap per user and a daily orphan-blob GC sweep.
-5. Replace the `__weave*` dev-only globals with proper React Context
-   already in progress; ensure `apps/web/src/document/interactions/*`
-   doesn't read from `window` in production bundles.
+5. Migrate any existing `shared:*` keys into the per-user namespace —
+   either copy them to the operator's user id, or wipe them.
 
 ## Future hardening
 

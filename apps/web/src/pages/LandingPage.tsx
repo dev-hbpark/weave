@@ -18,6 +18,7 @@ import {
 } from "@weave/design-system";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { bootstrapFromCloud } from "../document/cloud-sync.js";
 import {
   clearDesign,
   type DesignSummary,
@@ -60,8 +61,19 @@ export function LandingPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    // Paint instantly with whatever localStorage already has, then pull
+    // the shared cloud workspace and re-paint. The bootstrap is idempotent
+    // (it skips ids already in LS) so re-running it from here in addition
+    // to App.tsx's mount is safe.
     refresh();
-    // Catch updates from other tabs / windows.
+    void bootstrapFromCloud().then(({ designs: d, resources: r }) => {
+      if (cancelled) return;
+      if (d > 0 || r > 0) refresh();
+    });
+    // Same-tab `localStorage.setItem` doesn't dispatch `storage`; this
+    // listener only catches *cross-tab* updates (e.g. another window
+    // saves a design). Same-tab refresh after bootstrap is handled above.
     const onStorage = (e: StorageEvent) => {
       if (e.key === null) return;
       if (
@@ -72,7 +84,10 @@ export function LandingPage() {
       }
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", onStorage);
+    };
   }, [refresh]);
 
   return (

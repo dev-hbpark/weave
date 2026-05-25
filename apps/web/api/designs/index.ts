@@ -1,17 +1,17 @@
-// WI-025 — designs collection endpoint.
+// WI-025 — designs collection endpoint (globally shared workspace).
 //
-// GET  /api/designs        → list all designs for this device.
+// GET  /api/designs        → list every design in the shared workspace.
 // POST /api/designs        → upsert a design (body = full Design JSON).
 //
 // Storage: each design is one KV entry under
-//   `did:<did>:design:<designId>` = stringified Design.
-// An index key `did:<did>:designs` holds an array of design IDs newest-
-// first so listing doesn't need a SCAN. List endpoint hydrates the
-// summary (id/title/size/timestamps/background) directly from each blob.
+//   `shared:design:<designId>` = stringified Design.
+// An index key `shared:designs` holds an array of design IDs newest-first
+// so listing doesn't need a SCAN. List endpoint hydrates the summary
+// (id/title/size/timestamps/background) directly from each blob.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { deviceScope, ensureDeviceId } from "../_lib/device-id.js";
 import { apiError } from "../_lib/errors.js";
+import { designIndexKey, designKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
 import {
   MAX_DESIGN_BYTES,
@@ -33,23 +33,13 @@ interface StoredDesign {
   readonly [k: string]: unknown;
 }
 
-const INDEX_SUFFIX = ":designs";
-
-function designKey(did: string, id: string): string {
-  return `${deviceScope(did)}:design:${id}`;
-}
-
-function indexKey(did: string): string {
-  return `${deviceScope(did)}${INDEX_SUFFIX}`;
-}
-
-async function readIndex(did: string): Promise<string[]> {
-  const ids = await kv.get<string[]>(indexKey(did));
+async function readIndex(): Promise<string[]> {
+  const ids = await kv.get<string[]>(designIndexKey());
   return Array.isArray(ids) ? ids : [];
 }
 
-async function writeIndex(did: string, ids: ReadonlyArray<string>): Promise<void> {
-  await kv.set(indexKey(did), [...ids]);
+async function writeIndex(ids: ReadonlyArray<string>): Promise<void> {
+  await kv.set(designIndexKey(), [...ids]);
 }
 
 function validateDesignBody(body: unknown):
@@ -93,10 +83,9 @@ export default async function handler(
   res: VercelResponse,
 ): Promise<void> {
   if (!assertKvAvailable(res)) return;
-  const did = ensureDeviceId(req, res);
 
   if (req.method === "GET") {
-    const ids = await readIndex(did);
+    const ids = await readIndex();
     const summaries: Array<{
       id: string;
       title: string;
@@ -107,7 +96,7 @@ export default async function handler(
       updatedAt: string;
     }> = [];
     for (const id of ids) {
-      const d = await kv.get<StoredDesign>(designKey(did, id));
+      const d = await kv.get<StoredDesign>(designKey(id));
       if (d === null) continue;
       summaries.push({
         id: d.id,
@@ -133,10 +122,10 @@ export default async function handler(
       return;
     }
     const design = v.value;
-    await kv.set(designKey(did, design.id), design);
-    const ids = await readIndex(did);
+    await kv.set(designKey(design.id), design);
+    const ids = await readIndex();
     const next = [design.id, ...ids.filter((x) => x !== design.id)];
-    await writeIndex(did, next);
+    await writeIndex(next);
     res.status(200).json({ ok: true, id: design.id });
     return;
   }
