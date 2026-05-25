@@ -3,10 +3,10 @@
 // sees the latest mirror without recreating the editor on every doc change.
 
 import {
+  type Document as AgocraftDocument,
   type Change,
   type ChangeSink,
   ClockToken,
-  type Document as AgocraftDocument,
   createCapabilityRegistry,
   createChangeStream,
   createContainer,
@@ -20,15 +20,6 @@ import {
   type Patch,
   scheduling,
 } from "@agocraft/core";
-import {
-  applyPatchToYDoc,
-  createHttpPollProvider,
-  createSyncEngine,
-  generateActorId,
-  seedYDocFromDocument,
-  type SyncEngine,
-} from "@agocraft/sync";
-import * as Y from "yjs";
 import {
   canonicalToViewport,
   createEditor,
@@ -44,7 +35,19 @@ import {
   type SelectionChromeRegistry,
   toCanonical,
 } from "@agocraft/editor";
+import {
+  applyPatchToYDoc,
+  createHttpPollProvider,
+  createSnapshotPolicy,
+  createSyncEngine,
+  deriveDocumentFromYDoc,
+  snapshot as encodeYDocSnapshot,
+  generateActorId,
+  type SyncEngine,
+  seedYDocFromDocument,
+} from "@agocraft/sync";
 import { useEffect, useMemo, useRef } from "react";
+import * as Y from "yjs";
 import type { PendingCreationLookup } from "./agocraft-mirror.js";
 import {
   createPendingCreations,
@@ -54,6 +57,7 @@ import {
 } from "./commands.js";
 import { bridgeCanvasShapeIntoAgocraft } from "./manipulation/agocraft-bridge.js";
 import { createCanvasShapeCapability } from "./manipulation/capabilities/canvas-shape.js";
+import { attachIndexedDbPersistence } from "./sync/offline-persistence.js";
 
 export interface UseWeaveEditorDeps {
   /** Latest agocraft Document mirror (from useDocument.docInAgocraft). */
@@ -68,6 +72,11 @@ export interface UseWeaveEditorDeps {
    *  user-command / system Change. The optional `pending` lookup resolves
    *  `item.children` added Patches against newly-staged Items. */
   readonly applyChange?: (change: Change, pending?: PendingCreationLookup) => void;
+  /** WI-028 Phase 3b — invoked when a remote actor's edit lands in the
+   *  Y.Doc. The Document derived from the merged CRDT state replaces the
+   *  host's React state directly (no History entry — we cannot undo
+   *  someone else's edit). Pair with `deps.sync`. */
+  readonly replaceDocumentFromRemote?: (next: AgocraftDocument) => void;
   /** Persistence sink invoked on a debounced ChangeStream subscription.
    *  Rendering still receives every Change immediately via `applyChange`;
    *  this callback fires at most once per `persistDebounceMs` window so
@@ -131,6 +140,10 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
   applyChangeRef.current = deps.applyChange;
   const persistRef = useRef<UseWeaveEditorDeps["persist"]>(deps.persist);
   persistRef.current = deps.persist;
+  const replaceDocumentFromRemoteRef = useRef<UseWeaveEditorDeps["replaceDocumentFromRemote"]>(
+    deps.replaceDocumentFromRemote,
+  );
+  replaceDocumentFromRemoteRef.current = deps.replaceDocumentFromRemote;
 
   const editor = useMemo<Editor>(() => {
     const container = createContainer();
@@ -170,8 +183,13 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       // domain frames. agocraft schema entries (IMAGE_KIND / VIDEO_KIND /
       // SHAPE_KIND) define the attr shapes.
       allowedChildKinds: [
-        "slide", "canvas-design", "block-doc", "media",
-        "image", "video", "shape",
+        "slide",
+        "canvas-design",
+        "block-doc",
+        "media",
+        "image",
+        "video",
+        "shape",
       ],
       ux: {},
     });
@@ -216,10 +234,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     // internally.
   }, [editor]);
 
-  const router = useMemo<GestureRouter>(
-    () => createGestureRouter({ editor, vm }),
-    [editor, vm],
-  );
+  const router = useMemo<GestureRouter>(() => createGestureRouter({ editor, vm }), [editor, vm]);
 
   const selectionChrome = useMemo<SelectionChromeRegistry>(
     () => createSelectionChromeRegistry(),
@@ -250,11 +265,94 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncConfig?.roomId]);
 
+  // WI-028 Phase 3b + Phase 5 + Phase 6 — close the read loop, snapshot
+  // periodically, persist offline.
+  //
+  // Order matters:
+  //   1. Attach the Y.Doc observer FIRST so the very first pull's updates
+  //      reach React state.
+  //   2. Hydrate from IndexedDB (offline state takes precedence — see
+  //      offline-persistence.ts) BEFORE remote pull lands new updates.
+  //   3. Start the snapshot policy. Updates that arrive before now still
+  //      count toward the threshold because the policy listens to Y.Doc
+  //      directly.
+  //   4. Start the engine (provider.connect, first pull).
+  //   5. pagehide → policy.snapshotNow() so the tab close doesn't leave
+  //      the updates list growing forever.
   useEffect(() => {
     if (syncBundle === undefined) return;
-    syncBundle.engine.start();
-    return () => syncBundle.engine.stop();
-  }, [syncBundle]);
+    const { engine, yDoc } = syncBundle;
+    const roomId = syncConfig?.roomId;
+
+    // Phase 3b — remote → React. Fires on every Y.Doc update; we only
+    // react to the "agocraft.sync.remote" origin tag the HTTP-poll
+    // provider stamps onto applyUpdate. Local mirrors (Patch → Y.Doc)
+    // run with origin === undefined and are skipped — applyChange has
+    // already updated React state for those.
+    const onRemoteUpdate = (_update: Uint8Array, origin: unknown): void => {
+      if (origin !== "agocraft.sync.remote") return;
+      const setFromRemote = replaceDocumentFromRemoteRef.current;
+      if (setFromRemote === undefined) return;
+      const derived = deriveDocumentFromYDoc(yDoc);
+      if (derived !== null) setFromRemote(derived);
+    };
+    yDoc.on("update", onRemoteUpdate);
+
+    // Phase 5 — snapshot uploader. POST /api/sync/<roomId>/snapshot with
+    // both the snapshot blob AND the matching state vector so the server
+    // can clear the updates list and `/since` can compute deltas from
+    // the new baseline. base64-in-JSON wire — same shape as push.
+    const u8ToBase64 = (bytes: Uint8Array): string => {
+      let s = "";
+      for (const byte of bytes) s += String.fromCharCode(byte);
+      return globalThis.btoa(s);
+    };
+    const policy = createSnapshotPolicy({
+      yDoc,
+      upload: async () => {
+        if (roomId === undefined) return;
+        const snap = encodeYDocSnapshot(yDoc);
+        await fetch(`/api/sync/${roomId}/snapshot`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            snapshot: u8ToBase64(snap.update),
+            vector: u8ToBase64(snap.stateVector),
+          }),
+          credentials: "same-origin",
+        });
+      },
+    });
+    const onPageHide = (): void => {
+      void policy.snapshotNow();
+    };
+    globalThis.addEventListener?.("pagehide", onPageHide);
+
+    // Phase 6 — IndexedDB attach is async (dynamic-import y-indexeddb).
+    // We must NOT block engine.start on it — first pull can race the
+    // hydrate, CRDT will merge either way. But we DO want to start it.
+    let indexedDbHandle: Awaited<ReturnType<typeof attachIndexedDbPersistence>> | undefined;
+    if (roomId !== undefined) {
+      attachIndexedDbPersistence(yDoc, roomId)
+        .then((h) => {
+          indexedDbHandle = h;
+        })
+        .catch(() => {
+          // IndexedDB unavailable (private mode / SSR / non-browser).
+          // Operate without offline persistence — provider still works.
+        });
+    }
+
+    engine.start();
+
+    return () => {
+      globalThis.removeEventListener?.("pagehide", onPageHide);
+      policy.dispose();
+      yDoc.off("update", onRemoteUpdate);
+      engine.stop();
+      void indexedDbHandle?.dispose();
+    };
+  }, [syncBundle, syncConfig?.roomId]);
 
   // Intentionally no `disposeState()` cleanup — React 18 StrictMode runs the
   // mount/cleanup pair twice in dev, which would dispose the singleton machine
@@ -423,7 +521,11 @@ function findItemInDoc(
   doc: AgocraftDocument,
   itemId: string,
 ): { readonly attrs: Readonly<Record<string, unknown>> } | undefined {
-  const walk = (node: { id: string | number; attrs: Readonly<Record<string, unknown>>; children: ReadonlyArray<unknown> }): { attrs: Readonly<Record<string, unknown>> } | undefined => {
+  const walk = (node: {
+    id: string | number;
+    attrs: Readonly<Record<string, unknown>>;
+    children: ReadonlyArray<unknown>;
+  }): { attrs: Readonly<Record<string, unknown>> } | undefined => {
     if (String(node.id) === itemId) return { attrs: node.attrs };
     for (const c of node.children as ReadonlyArray<typeof node>) {
       const found = walk(c);

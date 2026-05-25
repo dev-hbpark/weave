@@ -4,7 +4,7 @@
 // All editor mutations flow through `applyChange`; the legacy direct setters
 // are kept only as escape hatches for non-event-sourced commands (`reset`).
 
-import type { Change, Document as AgocraftDocument, Unit as AgocraftUnit } from "@agocraft/core";
+import type { Document as AgocraftDocument, Unit as AgocraftUnit, Change } from "@agocraft/core";
 import { unitId as makeUnitId } from "@agocraft/core";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -44,6 +44,10 @@ interface UseDesignResult {
   readonly removeShape: (itemId: string, shapeId: string) => void;
   readonly reset: () => void;
   readonly applyChange: (change: Change, pending?: PendingCreationLookup) => void;
+  /** WI-028 Phase 3b — replace the entire Document with a CRDT-derived one
+   *  (remote actor edited the shared doc). Bypasses History; see comment in
+   *  use-design.ts. */
+  readonly replaceDocument: (next: AgocraftDocument) => void;
   /** Phase 10c — overwrite the design's presentation order. Pass the full
    *  next array (use `reorder` / spread to build it). Tree positions are not
    *  touched. */
@@ -135,7 +139,11 @@ export function useDesign(id: string): UseDesignResult {
   }, []);
 
   const updateBehavior = useCallback(
-    (itemId: string, behaviorId: string, patch: (b: InteractionBehavior) => InteractionBehavior) => {
+    (
+      itemId: string,
+      behaviorId: string,
+      patch: (b: InteractionBehavior) => InteractionBehavior,
+    ) => {
       setDesign((prev) =>
         withDocument(
           prev,
@@ -212,6 +220,15 @@ export function useDesign(id: string): UseDesignResult {
     setDesign((prev) => withDocument(prev, applyChangeToDocument(prev.document, change, pending)));
   }, []);
 
+  // WI-028 Phase 3b — replace the entire Document from a remote source
+  // (CRDT-derived Y.Doc). The Document mutation rule (editor.exec → ChangeStream
+  // → History) governs USER mutations; remote sync is a state-load boundary,
+  // same shape as the initial mount via `initialDesign`. History stays empty
+  // for remote ops because we cannot undo someone else's edit anyway.
+  const replaceDocument = useCallback((next: AgocraftDocument) => {
+    setDesign((prev) => withDocument(prev, next));
+  }, []);
+
   const setPresentationOrder = useCallback((next: ReadonlyArray<string>) => {
     setDesign((prev) => ({
       ...prev,
@@ -268,6 +285,7 @@ export function useDesign(id: string): UseDesignResult {
     removeShape,
     reset,
     applyChange,
+    replaceDocument,
     setPresentationOrder,
     reorderRootChildren: reorderRootChildrenCb,
     addBehavior,

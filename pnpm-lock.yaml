@@ -5,23 +5,23 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz
-  '@agocraft/domain-block-doc': file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525040015.tgz
-  '@agocraft/domain-canvas-design': file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525040015.tgz
-  '@agocraft/domain-media': file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525040015.tgz
-  '@agocraft/domain-presentation': file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525040015.tgz
-  '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525040015.tgz
-  '@agocraft/input': file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525040015.tgz
-  '@agocraft/interaction': file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525040015.tgz
-  '@agocraft/manipulation': file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525040015.tgz
-  '@agocraft/plugin-sample-measurement': file:apps/web/vendor/agocraft/agocraft-plugin-sample-measurement-1.0.0-rc.20260525040015.tgz
-  '@agocraft/plugin-sample-sticky-note': file:apps/web/vendor/agocraft/agocraft-plugin-sample-sticky-note-1.0.0-rc.20260525040015.tgz
-  '@agocraft/renderer-canvas2d': file:apps/web/vendor/agocraft/agocraft-renderer-canvas2d-1.0.0-rc.20260525040015.tgz
-  '@agocraft/renderer-html-canvas': file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525040015.tgz
-  '@agocraft/renderer-mock': file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525040015.tgz
-  '@agocraft/spatial': file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525040015.tgz
-  '@agocraft/sync': file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525040015.tgz
-  '@agocraft/testing': file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525040015.tgz
+  '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz
+  '@agocraft/domain-block-doc': file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525041753.tgz
+  '@agocraft/domain-canvas-design': file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525041753.tgz
+  '@agocraft/domain-media': file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525041753.tgz
+  '@agocraft/domain-presentation': file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525041753.tgz
+  '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525041753.tgz
+  '@agocraft/input': file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525041753.tgz
+  '@agocraft/interaction': file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525041753.tgz
+  '@agocraft/manipulation': file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525041753.tgz
+  '@agocraft/plugin-sample-measurement': file:apps/web/vendor/agocraft/agocraft-plugin-sample-measurement-1.0.0-rc.20260525041753.tgz
+  '@agocraft/plugin-sample-sticky-note': file:apps/web/vendor/agocraft/agocraft-plugin-sample-sticky-note-1.0.0-rc.20260525041753.tgz
+  '@agocraft/renderer-canvas2d': file:apps/web/vendor/agocraft/agocraft-renderer-canvas2d-1.0.0-rc.20260525041753.tgz
+  '@agocraft/renderer-html-canvas': file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525041753.tgz
+  '@agocraft/renderer-mock': file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525041753.tgz
+  '@agocraft/spatial': file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525041753.tgz
+  '@agocraft/sync': file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525041753.tgz
+  '@agocraft/testing': file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525041753.tgz
 
 importers:
 
@@ -37,41 +37,41 @@ importers:
   apps/web:
     dependencies:
       '@agocraft/core':
-        specifier: file:vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@agocraft/domain-block-doc':
-        specifier: file:vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@agocraft/domain-canvas-design':
-        specifier: file:vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@agocraft/domain-media':
-        specifier: file:vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@agocraft/domain-presentation':
-        specifier: file:vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525040015.tgz(react@18.3.1)(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525041753.tgz(react@18.3.1)(typescript@5.9.3)
       '@agocraft/editor':
-        specifier: file:vendor/agocraft/agocraft-editor-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525040015.tgz(react@18.3.1)(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-editor-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525041753.tgz(react@18.3.1)(typescript@5.9.3)
       '@agocraft/input':
-        specifier: file:vendor/agocraft/agocraft-input-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525040015.tgz
+        specifier: file:vendor/agocraft/agocraft-input-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525041753.tgz
       '@agocraft/interaction':
-        specifier: file:vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@agocraft/manipulation':
-        specifier: file:vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@agocraft/renderer-html-canvas':
-        specifier: file:vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@agocraft/spatial':
-        specifier: file:vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525040015.tgz
+        specifier: file:vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525041753.tgz
       '@agocraft/sync':
-        specifier: file:vendor/agocraft/agocraft-sync-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-sync-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.0(vite@5.4.21(@types/node@22.19.19)(lightningcss@1.32.0))
@@ -110,11 +110,11 @@ importers:
         version: 13.6.30
     devDependencies:
       '@agocraft/renderer-mock':
-        specifier: file:vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@agocraft/testing':
-        specifier: file:vendor/agocraft/agocraft-testing-1.0.0-rc.20260525040015.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-testing-1.0.0-rc.20260525041753.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       '@playwright/test':
         specifier: ^1.60.0
         version: 1.60.0
@@ -197,66 +197,66 @@ importers:
 
 packages:
 
-  '@agocraft/core@file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-c5IiMWbY+pX0UlVV8THyny5krDDJMGHNiLMjfl9OBvUBz7Yh41YHNEF7fOh556zcbe0RvTfhkcOEZPBQZmdZ3Q==, tarball: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/core@file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-L6LH9/pxw38qPAh3udSwnKC2WGPQ2P8PUSKIoe+0WmHnYoy2xCd7J3V5/yepkF4RyQLdbUS3Jve4OquNSJicag==, tarball: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/domain-block-doc@file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-bEJt3+yTL2a7jkh+EmCcWovVjTSaJBDGlAJzNTP8mJDwL/fzA8SZVl0meMA3FmLps6bt3Kym3jQwR1h1Y9yVFg==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/domain-block-doc@file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-833g3dNpO4rxhSL1/Hwln1NGykV6fCph9Sv/YZpcR6+iFW3XWKe3we8UpFSAYLbG9eDxGg7IuRRCiZKSrvGaYQ==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/domain-canvas-design@file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-KauWhZCRFLKtgsMq71DLU+kIEqAJ0GtPcPbaOqYHgPiZ74h9174kSM+TWwz3ozjPHRUScK/q5x7ufKucvJBcQQ==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/domain-canvas-design@file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-cm/90oj5/dJLqsdOK1DZ4yhXeniWiZXM1wsvuA1oQyAUwSAKjP8Wyfec8A/rTq7660RbK9jlwRNv94sOdwD/aA==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/domain-media@file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-kh/Xeba5sHgEtvc/B2xx6scHfllaD/14xvbHjxPUJQxcbxtfHT38B6QclbZ6AZpRiZhGy12kEpTFgbaFE8AE/A==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/domain-media@file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-fkV0/6zz8EqD4MBiX/diI94HU/fGvxMJoLPxGjXnFWHvVGmlGOrlcVe2bhQxNMukY5camkpUIF7vqiNKyb9XUw==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/domain-presentation@file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-qKxzzkZO3sMsx0ygBO/lzzAtB7EJ7D3t6mff7nvQIlzV6ZTSf48ULOt2S+C5OQxsvNfoYn0C0o5I6zDJtqSlWg==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/domain-presentation@file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-lP6UG9rKBZWHx3PZL2AR3Na3D4er9fR8A3uxg+pfNB2p1fZhz//HD76kQluw4zGD1jkrnJoAY9PZkoHeBs59oQ==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/editor@file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-EE/mudOfM/CZ/yrbR91nPivHWOwnYX5C2iQqhPr9Ox/9SRz7PgcNxnl95+rOu9StdUW5pZRK4O8tOR/iBXoslQ==, tarball: file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/editor@file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-ChumUYGHIKPXoOUqX3nIgEyrscKjHdZnntR8/32ujYuSbDr+uX/GYv5w2uDxRs2WGFzEfYnseSqZXUWtl8cquw==, tarball: file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
     peerDependencies:
       react: '>=18'
     peerDependenciesMeta:
       react:
         optional: true
 
-  '@agocraft/input@file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-RJ3SS8OHHzE3/pGZnz8yr1L2XRXJ29d46rge/O948+1px1mMaVMmZmptrW8Q5PSXDSP1LAfYLwv9AmBmnjDViw==, tarball: file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/input@file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-af1SecMJ6glaV9s7c3C2IBab/6gHj3lihiRSWsDU3Ri863wNG1cBzUXC5ppUR5ePo30IYkDvsT5jDStm737Zng==, tarball: file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/interaction@file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-36QURU4Dt187XYIBXl/RFs0aPTdHggq+2rb6E5OA3PWlO67zUBaDUXoEZ05J8UKMkrsCGG2fdzsGwgNISAgzng==, tarball: file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/interaction@file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-KtAo/5QL6psIH9Gh/czTJ3qCAd1ECGfqd/dgq5J1U7r3O+y80L1rmdi3ZwoJbyo6T7lF2yixOCn6MFigVukzGQ==, tarball: file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/manipulation@file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-C+IrDaCKrMA3nQpLH14e08isSSppjBxnOBog1zGH2KZC75UZHZsPFGd+bwsKG1VPcZetvVBa9GZVFwoe8kDltg==, tarball: file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/manipulation@file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-DkeDFu7BY9yAA/lo/WL7JckeWuZsMZ2Wp1j98nujr3PNJRXnd5eNAdVC7vfx/rBDHBgthMVEb3t9EFKOvjgYCg==, tarball: file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/renderer-html-canvas@file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-3aSTraQL6PThsCAbR+vSgWY1DAyC4WLz8jpqIYVaFTmwWwfrT2LKBUGRI0DTSsO1/QnH4YWv2vQdbe8uzDWxtw==, tarball: file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/renderer-html-canvas@file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-meBWbHL5GDMKBV9UPvwmWm9bewmp/n9KzvxOz+vnTNVIIPgb9aliXnqNczdfX6DLwVAXBmKhC4+49VSfqOZZiw==, tarball: file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/renderer-mock@file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-JbYzYHDtxrqGT3qaRpg0rTGYi/SoncJZKOnnNURmWFwf63kJvIEnSnQwwDUzEp6g/9QRCTylLNVM9dt1XzsJSA==, tarball: file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/renderer-mock@file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-vpeSy7memGYiI4yIy9H+fKBXGY9xfJ7sQvjwPalaM+G9WRlN5VmGdVJmLQ8Y0nGtU6AkhxOMiS4XlHIjDO7mPw==, tarball: file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/spatial@file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-AvetCGPfpVgu3+tMoK1zEeieRRyULLPultNtgeag7mXJAos+6+hiX43rlazaQLbMskd3DQZi4qvKkQOeA517Cg==, tarball: file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/spatial@file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-rNtIWAYqT2Ih8k0JLQFzsbocl7SW1EH98+B3D+31XbbGALGBgVp9MlTDCCSCRCDogHluiWmUW/I35c2tU3eyxQ==, tarball: file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/sync@file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-mM+6trzZ42BUrqC9d8khUrw6GK7zPy2S+12EmUWvhReOEj1i8IJNE7lS6bxzB41NhM1gKJjUwGkzvpZeGnX/KA==, tarball: file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/sync@file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-+rfzkruFJ4XagcIaVpcWKTtFnHZ/S/kVUccLCH+35vehNEftKxCvbP/cVdWnp9BxkOU9GbG+9TGDKht1pL8XfQ==, tarball: file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
-  '@agocraft/testing@file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525040015.tgz':
-    resolution: {integrity: sha512-ROvZDnFiZFn9bsJwnU0FoYzQSbmgwSIlYg3j6I5cDwupWBd+8fbO/kUzLB+ze4OLlk3V/Pe8S5qlmAn07k7O3A==, tarball: file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525040015.tgz}
-    version: 1.0.0-rc.20260525040015
+  '@agocraft/testing@file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525041753.tgz':
+    resolution: {integrity: sha512-eEEA1t4JYhQUv4COv2UvGJuFm1bC2JDzUuqEkknenJmkQNmsGBZFrbgZZXasyN+wuoiezbVckUPY5XdEcH/AfQ==, tarball: file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525041753.tgz}
+    version: 1.0.0-rc.20260525041753
 
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
@@ -2587,99 +2587,99 @@ packages:
 
 snapshots:
 
-  '@agocraft/core@file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/core@file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
       '@preact/signals-core': 1.14.2
       valibot: 1.4.0(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/domain-block-doc@file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/domain-block-doc@file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       valibot: 1.4.0(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/domain-canvas-design@file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/domain-canvas-design@file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       valibot: 1.4.0(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/domain-media@file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/domain-media@file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       valibot: 1.4.0(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/domain-presentation@file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525040015.tgz(react@18.3.1)(typescript@5.9.3)':
+  '@agocraft/domain-presentation@file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260525041753.tgz(react@18.3.1)(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
-      '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525040015.tgz(react@18.3.1)(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
+      '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525041753.tgz(react@18.3.1)(typescript@5.9.3)
       valibot: 1.4.0(typescript@5.9.3)
     transitivePeerDependencies:
       - react
       - typescript
 
-  '@agocraft/editor@file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525040015.tgz(react@18.3.1)(typescript@5.9.3)':
+  '@agocraft/editor@file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260525041753.tgz(react@18.3.1)(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
-      '@agocraft/input': file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525040015.tgz
-      '@agocraft/interaction': file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
-      '@agocraft/manipulation': file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
+      '@agocraft/input': file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525041753.tgz
+      '@agocraft/interaction': file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
+      '@agocraft/manipulation': file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
     optionalDependencies:
       react: 18.3.1
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/input@file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525040015.tgz':
+  '@agocraft/input@file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260525041753.tgz':
     dependencies:
       '@preact/signals-core': 1.14.2
 
-  '@agocraft/interaction@file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/interaction@file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
-      '@agocraft/spatial': file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525040015.tgz
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
+      '@agocraft/spatial': file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525041753.tgz
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/manipulation@file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/manipulation@file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/renderer-html-canvas@file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/renderer-html-canvas@file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/renderer-mock@file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/renderer-mock@file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/spatial@file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525040015.tgz':
+  '@agocraft/spatial@file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260525041753.tgz':
     dependencies:
       rbush: 4.0.1
 
-  '@agocraft/sync@file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/sync@file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
       y-protocols: 1.0.7(yjs@13.6.30)
       yjs: 13.6.30
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/testing@file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)':
+  '@agocraft/testing@file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)':
     dependencies:
-      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
-      '@agocraft/renderer-mock': file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525040015.tgz(typescript@5.9.3)
+      '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
+      '@agocraft/renderer-mock': file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260525041753.tgz(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 

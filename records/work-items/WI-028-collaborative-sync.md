@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | ID | WI-028 |
-| Status | **Phase 1-6 minimum-wire complete** — agocraft sync core + HTTP-poll provider + weave API routes + host wire (write-only) + presence components + snapshot policy + IndexedDB offline. Phase 3b (remote → React) 와 host UI mount 는 다음 사이클 |
+| Status | **Phase 1-6 full wire complete** — agocraft sync core + HTTP-poll provider + weave API routes + bidirectional host wire (write + read) + presence components mounted in DesignPage + snapshot policy + IndexedDB offline. End-to-end collaborative editing functional. |
 | Date opened | 2026-05-25 |
 | Trigger | 사용자 — "옵션 C 로 제대로 만들고 싶어. 동시 편집 관련 최적화된 관리를 ago 라이브러리에 존재" |
 | Cross-references | OS-root Rule 4 (loose change coupling), Rule 5 (round-trip integrity), Rule 6 (declarative branching), DR-005 (capability dispatch), agocraft `@agocraft/core` Change/Patch model |
@@ -198,40 +198,42 @@ dependency-cruiser: `@agocraft/sync` → `@agocraft/core` + `yjs` + `y-protocols
   - `shared:sync:<roomId>:vector` — base64 state vector
 - weave 측에 `yjs ^13.6.18` + `y-protocols ^1.0.6` + `@agocraft/sync` 의존 추가 + re-vendor
 
-### Phase 3a ✅ — weave host wire (write-only)
+### Phase 3a ✅ — weave host wire (write side)
 구현 완료:
 - `useWeaveEditor({ ..., sync: { roomId } })` opt-in
 - 한 design 당 Y.Doc + HttpPollProvider + SyncEngine 자동 생성
 - Y.Doc 첫 mount 시 `seedYDocFromDocument(yDoc, doc)`
 - ChangeStream subscriber 가 매 local Patch 를 `applyPatchToYDoc(yDoc, patch)` 호출 (Rule 6 single-site permitted exception — `changeToPatch(c: Change)` switch on c.type)
 - Y.Doc observer → provider → POST `/api/sync/<roomId>/push`
-- DesignPage 의 `useWeaveEditor` 호출에 `sync: { roomId: designId }` 추가 — 자동 활성화
-- **단방향 (write-only)**: remote pull 은 Y.Doc 까지 반영되지만 React state 갱신은 Phase 3b 에서
 
-### Phase 3b — remote → React state (다음 사이클)
-- Y.Doc observer 에서 `deriveDocumentFromYDoc` 후 setDesign 호출
-- 충돌 방지: origin-tag `"agocraft.sync.local"` / `"agocraft.sync.remote"` 로 분기
-- 현재 기존 full-PUT 경로 (storage.ts / cloud-sync.ts) 도 dual-active. Phase 3b 끝나면 그것 deprecation
-
-### Phase 4 ✅ — Presence UI 컴포넌트 (host wire 다음 사이클)
+### Phase 3b ✅ — remote → React state (read side)
 구현 완료:
-- `apps/web/src/document/presence/PresenceCursors.tsx` — `SyncEngine.presence.subscribe` → SVG cursor + actor 이름 + per-actor color
-- `apps/web/src/document/presence/use-presence-local-cursor.ts` — pointermove throttle (60ms ≈ 16Hz) → `presence.setLocal({ cursor: { x, y } })`
-- 호스트가 `<PresenceCursors engine={sync.engine} />` + `usePresenceLocalCursor({ engine, hostRef, clientToLocal })` 호출 시 즉시 활성. DesignPage mount 는 Phase 3b 와 같이 (좌표 변환 host 측 책임)
+- `useDesign` 에 `replaceDocument(next: AgocraftDocument)` 추가 — History bypass (remote 는 우리가 undo 할 대상 아님)
+- `useWeaveEditor` deps 에 `replaceDocumentFromRemote?` 추가, ref-mirror
+- useEffect 안에서 `yDoc.on("update", (update, origin) => { if (origin === "agocraft.sync.remote") replaceDocumentFromRemote(deriveDocumentFromYDoc(yDoc)); })`
+- DesignPage 가 `replaceDocumentFromRemote: replaceDocument` 전달
+- 기존 full-PUT 경로 (storage.ts / cloud-sync.ts) 는 dual-active. production telemetry 후 deprecation
 
-### Phase 5 ✅ — Snapshot policy
+### Phase 4 ✅ — Presence UI 컴포넌트 + DesignPage mount
+구현 완료:
+- `apps/web/src/document/presence/PresenceCursors.tsx` — `SyncEngine.presence.subscribe` → SVG cursor + actor 이름 + per-actor color. 새 `project?` prop 으로 design-space → host-pixel 변환 위임 (host 가 자신의 plane scale 알기 때문).
+- `apps/web/src/document/presence/use-presence-local-cursor.ts` — pointermove throttle (60ms ≈ 16Hz) → `presence.setLocal({ cursor: { x, y } })`
+- **DesignPage mount 완료**: `<PresenceCursors engine={sync.engine} project={designToHost} />` 가 `<main>` 안 absolute overlay, `usePresenceLocalCursor({ engine, hostRef, clientToLocal })` 가 design-space 좌표 broadcast.
+- `screenToDesign` + `designToHost` 가 동일한 frame-sampling 로직 inverse 로 페어 — infinite-canvas zoom 상태에서도 정렬.
+
+### Phase 5 ✅ — Snapshot policy + useWeaveEditor wire
 구현 완료:
 - `@agocraft/sync` `createSnapshotPolicy({ yDoc, upload, thresholdUpdates?, thresholdMs? })`
-- updates count ≥ N (default 50) 또는 elapsed ≥ M ms (default 60s) → uploader 호출
-- uploader resolve = 카운터 리셋. reject = 다음 tick 재시도. concurrent guard.
-- `policy.snapshotNow()` — pagehide 시 forced flush
-- 호스트가 `policy = createSnapshotPolicy({ yDoc, upload: snap => fetch(...) })` 호출 시 즉시 활성
+- updates count ≥ 50 또는 elapsed ≥ 60s → uploader 호출 → POST `/api/sync/<roomId>/snapshot` (snapshot + state vector base64)
+- `policy.snapshotNow()` on `pagehide` 이벤트 — 탭 닫기 직전 flush
+- useWeaveEditor 안에서 syncBundle 와 함께 mount, cleanup 시 dispose
 
-### Phase 6 ✅ — IndexedDB offline persistence
+### Phase 6 ✅ — IndexedDB offline persistence + useWeaveEditor wire
 구현 완료:
 - `apps/web/src/document/sync/offline-persistence.ts` — `attachIndexedDbPersistence(yDoc, roomId)` async, dynamic-import `y-indexeddb ^9.0.12` (browser-only safe)
-- 호스트가 `await attachIndexedDbPersistence(yDoc, designId)` 호출 시 IndexedDB → Y.Doc hydrate + 모든 future update 자동 persist
-- 호스트 wire 는 Phase 3b 와 함께
+- useWeaveEditor syncBundle effect 안에서 fire-and-forget. catch 절이 SSR / private mode 등 IndexedDB 사용 불가 환경 silent fallback.
+- cleanup 시 handle.dispose()
+- CRDT 의 멱등 merge 덕에 first-pull + IndexedDB hydrate 의 race 가 안전 (어느 쪽이든 같은 최종 상태로 수렴)
 
 ## 5. weave 측 통합 시점 (Phase 3)
 
@@ -290,5 +292,5 @@ Origin tagging (`local` / `remote` / `system`) 이 ChangeStream subscriber 의 f
 ## 8. 변경 이력
 
 - 2026-05-25 — WI-028 발행. Phase 1 시작.
-- 2026-05-25 — Phase 2~6 minimum-wire 완료. HTTP-poll provider + Vercel API routes + weave host write-only wire + presence components + snapshot policy + IndexedDB offline. agocraft `pnpm verify` GREEN. weave `tsc + vite build` GREEN. 활성화: DesignPage 의 `useWeaveEditor` 가 `sync: { roomId: designId }` 전달.
-- 잔여 (Phase 3b 와 host mount): Y.Doc → setDesign 닫는 루프, PresenceCursors UI mount, snapshot policy schedule, IndexedDB attach.
+- 2026-05-25 — Phase 2~6 minimum-wire 완료. HTTP-poll provider + Vercel API routes + weave host write-only wire + presence components + snapshot policy + IndexedDB offline. agocraft `pnpm verify` GREEN. weave `tsc + vite build` GREEN.
+- 2026-05-25 (later) — **Phase 3b + 4 mount + 5 mount + 6 mount 완료**. Y.Doc → React read loop 닫음 (`replaceDocument` via `deriveDocumentFromYDoc`). DesignPage 에 PresenceCursors + usePresenceLocalCursor 박제 + design-space coord 변환 페어. Snapshot policy + IndexedDB attach 가 useWeaveEditor syncBundle effect 안에서 라이프사이클 관리. weave typecheck + build + tests + declarativecheck + puritycheck GREEN. baseline lint 297 → 291 (regression 없음, 사실 net positive).

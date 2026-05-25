@@ -22,9 +22,18 @@ interface RemoteCursor {
 
 interface PresenceCursorsProps {
   readonly engine: SyncEngine;
+  /** Optional projector: maps the design-space coords stored in presence
+   *  (the unit the broadcaster used) into the SVG's pixel space. Hosts
+   *  whose plane is scaled or letterboxed inside the cursor overlay
+   *  supply this; identity callers can omit it. Returning `null` skips
+   *  rendering that cursor for this tick (e.g., off-screen). */
+  readonly project?: (
+    designX: number,
+    designY: number,
+  ) => { readonly x: number; readonly y: number } | null;
 }
 
-export function PresenceCursors({ engine }: PresenceCursorsProps): JSX.Element {
+export function PresenceCursors({ engine, project }: PresenceCursorsProps): JSX.Element | null {
   const [cursors, setCursors] = useState<ReadonlyArray<RemoteCursor>>([]);
 
   useEffect(() => {
@@ -33,33 +42,33 @@ export function PresenceCursors({ engine }: PresenceCursorsProps): JSX.Element {
       for (const entry of entries) {
         if (entry.actorId === engine.actorId) continue;
         const c = (entry.state as { cursor?: { x?: number; y?: number } }).cursor;
-        if (
-          c === undefined
-          || typeof c.x !== "number"
-          || typeof c.y !== "number"
-        ) {
+        if (c === undefined || typeof c.x !== "number" || typeof c.y !== "number") {
           continue;
         }
+        const projected = project ? project(c.x, c.y) : { x: c.x, y: c.y };
+        if (projected === null) continue;
         out.push({
           actorId: entry.actorId ?? `client-${entry.clientId}`,
           clientId: entry.clientId,
-          x: c.x,
-          y: c.y,
+          x: projected.x,
+          y: projected.y,
           color: colorForActor(entry.actorId ?? String(entry.clientId)),
         });
       }
       setCursors(out);
     });
-  }, [engine]);
+  }, [engine, project]);
 
-  if (cursors.length === 0) return <></>;
+  if (cursors.length === 0) return null;
   return (
     <svg
-      aria-hidden
+      aria-hidden="true"
+      role="presentation"
       className="pointer-events-none absolute inset-0"
       style={{ overflow: "visible" }}
       data-testid="presence-cursors"
     >
+      <title>Collaborator cursors</title>
       {cursors.map((c) => (
         <g key={c.clientId} transform={`translate(${c.x},${c.y})`}>
           <path
