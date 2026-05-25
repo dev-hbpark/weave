@@ -71,9 +71,16 @@ export function SelectionProvider({
 
 /** Read the vm's selection slots. Outside an editor session (e.g.,
  *  read-only PresentPage with no vm wired) we return a no-op shape so
- *  callers don't have to branch. */
-export function useSelection(): SelectionContextValue {
-  const vm = useContext(SelectionVmContext);
+ *  callers don't have to branch.
+ *
+ *  `explicitVm` is for callers that hold the vm directly but are rendered
+ *  *outside* the SelectionProvider — e.g. the DesignPageBody function
+ *  body, whose own JSX defines the Provider it can't yet read. Pass the
+ *  vm explicitly there. Children rendered inside the Provider's JSX
+ *  should call `useSelection()` with no arg and pick up the context. */
+export function useSelection(explicitVm?: EditorViewModel): SelectionContextValue {
+  const ctxVm = useContext(SelectionVmContext);
+  const vm = explicitVm ?? ctxVm;
   // Always call the hook (with a fallback no-op vm) to satisfy rules of
   // hooks even when the editor session isn't mounted yet.
   const stableNoOpVm = useStableNoOpVm();

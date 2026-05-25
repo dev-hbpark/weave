@@ -433,6 +433,11 @@ function DesignPageBody() {
   // (selection, enteredFrameId, handMode, historyTick) + SelectionContext.
   // The compatibility shim `useSelection` now reads/writes vm.itemSelection
   // and vm.subSelection; downstream call sites are unchanged.
+  //
+  // We're called from DesignPageBody's function body, which is *outside*
+  // the SelectionProvider that the same body's JSX defines. The Provider
+  // can't supply us with a vm here, so we pass the vm explicitly. Child
+  // components rendered below pick up the same vm via context.
   const {
     selection,
     selectedIds,
@@ -440,7 +445,7 @@ function DesignPageBody() {
     selectFrames,
     addFrames,
     toggleFrames,
-  } = useSelection();
+  } = useSelection(vm);
   const selectedFrameId =
     selection?.kind === "frame" ? selection.id : undefined;
   const isMultiSelect = selectedIds.size > 1;
