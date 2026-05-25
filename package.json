@@ -18,8 +18,10 @@
     "build": "pnpm --recursive build",
     "e2e": "pnpm --filter @weave/web e2e",
     "e2e:install": "pnpm --filter @weave/web e2e:install",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm e2e",
-    "verify:no-e2e": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "declarativecheck": "ROOTS=\"apps packages\" bash tools/check_declarative_dispatch.sh",
+    "puritycheck": "bash tools/check_host_domain_leak.sh",
+    "verify": "pnpm lint && pnpm declarativecheck && pnpm puritycheck && pnpm typecheck && pnpm test && pnpm build && pnpm e2e",
+    "verify:no-e2e": "pnpm lint && pnpm declarativecheck && pnpm puritycheck && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

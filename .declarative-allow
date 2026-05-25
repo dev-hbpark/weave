@@ -1,0 +1,11 @@
+# weave — Rule 6 (declarative branching) allowlist.
+#
+# Lines are regex patterns matched against `<file>:<lineno>`. Each entry
+# documents a deliberate exception to the switch/mode-compare ban.
+# Justify in a code comment + add it here. The gate is in
+# `tools/check_declarative_dispatch.sh`.
+
+# Documentation comment that QUOTES the historical 18-case switch in
+# the file header — explanatory text, not a live branch. Removing the
+# quote would lose the migration history (AUDIT-002 / WI-026).
+^apps/web/src/document/toolbar/ContextualToolbar\.tsx:11$
