@@ -79,13 +79,69 @@ export async function fetchDesignCloud(id: string): Promise<Design | null> {
   return body?.design ?? null;
 }
 
-export function pushDesignCloud(design: Design): void {
-  // Fire and forget — the local copy is the source of truth on this
-  // device; cloud is a best-effort mirror.
+// useDesign's effect fires `saveDesign(design)` on every state change,
+// which in turn calls pushDesignCloud. A 60Hz drag would translate to
+// ~60 POSTs per second without debouncing. We coalesce per design.id —
+// only the most recent state is sent, and only after the caller stops
+// for `PUSH_DEBOUNCE_MS`. localStorage is written synchronously by
+// saveDesign, so cross-tab consumers still see the latest state instantly.
+const PUSH_DEBOUNCE_MS = 800;
+
+interface PendingPush {
+  timer: ReturnType<typeof setTimeout>;
+  design: Design;
+}
+
+const pendingPushes = new Map<string, PendingPush>();
+
+function flushPendingPush(id: string): void {
+  const pending = pendingPushes.get(id);
+  if (pending === undefined) return;
+  pendingPushes.delete(id);
   void safeFetch("/api/designs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(design),
+    body: JSON.stringify(pending.design),
+  });
+}
+
+export function pushDesignCloud(design: Design): void {
+  const existing = pendingPushes.get(design.id);
+  if (existing !== undefined) clearTimeout(existing.timer);
+  const timer = setTimeout(() => flushPendingPush(design.id), PUSH_DEBOUNCE_MS);
+  pendingPushes.set(design.id, { timer, design });
+}
+
+/** Sync any pending pushes to the cloud right now via sendBeacon — used
+ *  on `beforeunload` so the last edit before a tab closes still makes it
+ *  to the server. `fetch` is unreliable mid-unload; `sendBeacon` survives
+ *  the navigation by design. */
+function beaconFlushAll(): void {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
+    return;
+  }
+  for (const [id, pending] of pendingPushes) {
+    clearTimeout(pending.timer);
+    try {
+      navigator.sendBeacon(
+        "/api/designs",
+        new Blob([JSON.stringify(pending.design)], { type: "application/json" }),
+      );
+    } catch {
+      // Beacon dispatch failures (size limit, navigation already underway)
+      // are unrecoverable here; the local copy stays in localStorage and
+      // the next bootstrap from another device will reconcile.
+    }
+    pendingPushes.delete(id);
+  }
+}
+
+if (typeof window !== "undefined") {
+  // `pagehide` covers more cases than `beforeunload` (mobile Safari, bfcache).
+  window.addEventListener("pagehide", beaconFlushAll);
+  // `visibilitychange → hidden` is the recommended Save-on-leave signal.
+  window.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") beaconFlushAll();
   });
 }
 
