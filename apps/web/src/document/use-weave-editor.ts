@@ -36,6 +36,7 @@ import {
   toCanonical,
 } from "@agocraft/editor";
 import {
+  addItemTreeToYDoc,
   applyPatchToYDoc,
   createHttpPollProvider,
   createSnapshotPolicy,
@@ -257,6 +258,15 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     const provider = createHttpPollProvider({ yDoc, endpoint });
     const actorId = syncConfig.actorId ?? generateActorId();
     const engine = createSyncEngine({ yDoc, provider, actorId });
+    // Idempotent — returns false if the Y.Doc already has a rootId.
+    // Within-instance guard prevents StrictMode / HMR double-seed.
+    // The CROSS-CLIENT race (two fresh tabs on the same brand-new
+    // room) is not solved here — both clients see an empty server,
+    // both seed, CRDT picks one rootId. The "losing" seed's items
+    // are orphaned but harmless (no rendering path reaches them);
+    // either client's first edit lands on the winning root and both
+    // converge from there. A server-snapshot-first protocol would
+    // eliminate this entirely — tracked in a follow-up WI.
     seedYDocFromDocument(yDoc, docRef.current);
     return { engine, yDoc };
     // Intentionally constructed once per editor session — the same
@@ -294,7 +304,18 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       const setFromRemote = replaceDocumentFromRemoteRef.current;
       if (setFromRemote === undefined) return;
       const derived = deriveDocumentFromYDoc(yDoc);
-      if (derived !== null) setFromRemote(derived);
+      if (derived === null) return;
+      // agocraft.sync.deriveDocumentFromYDoc returns `schema: undefined`
+      // by design — the schema is not part of the CRDT state; only the
+      // host knows which schema this document is bound to. Re-inject
+      // the LOCAL doc's schema before handing the derived doc to React,
+      // otherwise downstream renderers / commands that consult
+      // `doc.schema` crash or silently drop items.
+      const withSchema: AgocraftDocument = {
+        ...derived,
+        schema: docRef.current.schema,
+      };
+      setFromRemote(withSchema);
     };
     yDoc.on("update", onRemoteUpdate);
 
@@ -494,7 +515,25 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       offSyncSink = editor.changeStream.subscribe(
         (change) => {
           const patch = changeToPatch(change);
-          if (patch !== undefined) applyPatchToYDoc(sync.yDoc, patch);
+          if (patch === undefined) return;
+          // An `item.children` "added" Patch carries only the ItemId,
+          // not the full Item shape. Without the lines below the Y.Doc
+          // would gain a dangling id and remote peers would never see
+          // the actual item content — `deriveDocumentFromYDoc` filters
+          // unknown ids silently. The local doc has the full shape
+          // (the pending side-channel supplied it for the same
+          // transaction), so we read it back and seed the Y.Doc BEFORE
+          // applying the parent's children-array Patch.
+          if (patch.type === "item.children") {
+            const lookup = pendingCreationsRef.current?.lookup;
+            if (lookup !== undefined) {
+              for (const addedId of patch.added) {
+                const item = lookup(String(addedId));
+                if (item !== undefined) addItemTreeToYDoc(sync.yDoc, item);
+              }
+            }
+          }
+          applyPatchToYDoc(sync.yDoc, patch);
         },
         { origins: ["user-command", "system"] },
       );

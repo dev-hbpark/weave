@@ -294,3 +294,9 @@ Origin tagging (`local` / `remote` / `system`) 이 ChangeStream subscriber 의 f
 - 2026-05-25 — WI-028 발행. Phase 1 시작.
 - 2026-05-25 — Phase 2~6 minimum-wire 완료. HTTP-poll provider + Vercel API routes + weave host write-only wire + presence components + snapshot policy + IndexedDB offline. agocraft `pnpm verify` GREEN. weave `tsc + vite build` GREEN.
 - 2026-05-25 (later) — **Phase 3b + 4 mount + 5 mount + 6 mount 완료**. Y.Doc → React read loop 닫음 (`replaceDocument` via `deriveDocumentFromYDoc`). DesignPage 에 PresenceCursors + usePresenceLocalCursor 박제 + design-space coord 변환 페어. Snapshot policy + IndexedDB attach 가 useWeaveEditor syncBundle effect 안에서 라이프사이클 관리. weave typecheck + build + tests + declarativecheck + puritycheck GREEN. baseline lint 297 → 291 (regression 없음, 사실 net positive).
+- 2026-05-25 (further) — **Continuous self-verification 사이클**. e2e `sync-read-loop.spec.ts` 작성, 3 가지 design bug 박제 & 수정:
+  1. **`applyPatchToYDoc("item.children")` 가 added 의 ID 만 children 배열에 push 하고 실제 Item content 를 `items` Y.Map 에 seed 안 함** → remote actor 가 받는 update 가 dangling id, deriveDocumentFromYDoc 가 silent drop. 해결: `addItemTreeToYDoc(yDoc, item)` 신설 + useWeaveEditor sync sink 에서 pendingCreationsRef 로 full Item lookup 해서 patch 적용 전 seed.
+  2. **`seedYDocFromDocument` 가 멱등하지 않음** → StrictMode / HMR double-seed 또는 race 시 기존 state overwrite. 해결: `struct.root.has(Y_ROOT_ID_FIELD)` guard, 두 번째 호출은 no-op + return false.
+  3. **`deriveDocumentFromYDoc` 가 `schema: undefined` 반환** → host re-inject 의무. useWeaveEditor 의 Phase 3b observer 에서 `docRef.current.schema` 로 패치. 미시: FrameStage 가 schema-undefined 상태에서는 모든 frame rendering drop (SlideBlock crash 등).
+  
+  agocraft sync tests 8 → 11 (3 신규: addItemTreeToYDoc happy / idempotent / seedYDocFromDocument idempotent). weave 98 e2e 모두 PASS (regression 없음, 새 sync-read-loop.spec.ts 1건 추가).

@@ -497,6 +497,17 @@ function DesignPageBody() {
     (window as unknown as { __weaveDoc?: typeof docInAgocraft }).__weaveDoc = docInAgocraft;
     (window as unknown as { __weaveDesign?: typeof design }).__weaveDesign = design;
     (window as unknown as { __weaveVm?: typeof vm }).__weaveVm = vm;
+    // WI-028 — expose the sync bundle so the e2e harness can simulate
+    // a remote-originated Y.Doc update (origin "agocraft.sync.remote")
+    // and assert the read loop closes. Production never touches this.
+    (window as unknown as { __weaveSync?: typeof sync }).__weaveSync = sync;
+    // Expose Yjs so the e2e harness can build a remote-tagged update
+    // (Y.encodeStateAsUpdate diff against the local state vector) and
+    // apply it to __weaveSync.yDoc with origin "agocraft.sync.remote"
+    // — that's the only origin the Phase 3b observer reacts to.
+    void import("yjs").then((Y) => {
+      (window as unknown as { __weaveYjs?: typeof Y }).__weaveYjs = Y;
+    });
   }
 
   const container = docInAgocraft.root;
