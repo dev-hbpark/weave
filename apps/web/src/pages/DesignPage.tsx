@@ -132,6 +132,24 @@ function FrameContextMenu({
   );
 }
 
+/** WI-028 — collaborative sync (CRDT via @agocraft/sync) feature gate.
+ *
+ *  Currently OFF. The HTTP-poll provider issues a GET /api/sync/<roomId>/
+ *  since every 1500 ms per open tab; while inexpensive per request, the
+ *  aggregate against a global-anonymous workspace inflates Vercel +
+ *  Upstash usage faster than the collaboration value warrants at this
+ *  stage. Re-enable by flipping the constant to `true` (and turning
+ *  this into an env-driven flag once we have separate environments to
+ *  toggle independently). The entire sync subsystem fan-outs from this
+ *  switch — Y.Doc, HttpPollProvider, ChangeStream → Y.Doc mirror,
+ *  Phase 3b read loop, presence cursors, snapshot policy, and IndexedDB
+ *  offline persistence all gate on `useWeaveEditor`'s `deps.sync` being
+ *  defined, so a single `false` here disables everything cleanly.
+ *
+ *  See `records/work-items/WI-028-collaborative-sync.md` § "Paused
+ *  2026-05-25" for the trade-off discussion. */
+const SYNC_ENABLED = false;
+
 export function DesignPage() {
   return <DesignPageBody />;
 }
@@ -170,14 +188,13 @@ function DesignPageBody() {
     },
     applyChange,
     persist: persistNow,
-    // WI-028 — collaborative sync. Y.Doc + HttpPollProvider per design.id.
-    // Phase 3b: remote actor edits land via the Y.Doc observer →
-    // deriveDocumentFromYDoc → replaceDocument (no History entry —
-    // remote edits aren't ours to undo). The legacy full-PUT path
-    // (cloud-sync.ts) still runs in parallel; it gets deprecated once
-    // production telemetry confirms the CRDT path is reliable.
+    // WI-028 — gated by SYNC_ENABLED at the top of this file. When OFF
+    // we still pass `replaceDocumentFromRemote` (cheap — just a ref
+    // mirror inside the hook) so flipping the flag back to true is a
+    // one-line change with no cascading prop edits. Persistence falls
+    // back entirely to cloud-sync.ts's full-PUT path while paused.
     replaceDocumentFromRemote: replaceDocument,
-    sync: { roomId: designId },
+    ...(SYNC_ENABLED ? { sync: { roomId: designId } } : {}),
   });
   void sync; // host-visible bundle; consumed by Phase 4 (presence UI).
   const editorHotkeyTable = useEditorHotkeys(editor);
@@ -497,17 +514,16 @@ function DesignPageBody() {
     (window as unknown as { __weaveDoc?: typeof docInAgocraft }).__weaveDoc = docInAgocraft;
     (window as unknown as { __weaveDesign?: typeof design }).__weaveDesign = design;
     (window as unknown as { __weaveVm?: typeof vm }).__weaveVm = vm;
-    // WI-028 — expose the sync bundle so the e2e harness can simulate
-    // a remote-originated Y.Doc update (origin "agocraft.sync.remote")
-    // and assert the read loop closes. Production never touches this.
-    (window as unknown as { __weaveSync?: typeof sync }).__weaveSync = sync;
-    // Expose Yjs so the e2e harness can build a remote-tagged update
-    // (Y.encodeStateAsUpdate diff against the local state vector) and
-    // apply it to __weaveSync.yDoc with origin "agocraft.sync.remote"
-    // — that's the only origin the Phase 3b observer reacts to.
-    void import("yjs").then((Y) => {
-      (window as unknown as { __weaveYjs?: typeof Y }).__weaveYjs = Y;
-    });
+    // WI-028 sync diagnostics — only expose when the sync subsystem is
+    // actually mounted (gated by `SYNC_ENABLED` at top of file). When
+    // the feature is paused, `sync` is undefined and the e2e harness
+    // for sync-read-loop is correspondingly skipped.
+    if (SYNC_ENABLED) {
+      (window as unknown as { __weaveSync?: typeof sync }).__weaveSync = sync;
+      void import("yjs").then((Y) => {
+        (window as unknown as { __weaveYjs?: typeof Y }).__weaveYjs = Y;
+      });
+    }
   }
 
   const container = docInAgocraft.root;

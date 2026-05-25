@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | ID | WI-028 |
-| Status | **Phase 1-6 full wire complete** — agocraft sync core + HTTP-poll provider + weave API routes + bidirectional host wire (write + read) + presence components mounted in DesignPage + snapshot policy + IndexedDB offline. End-to-end collaborative editing functional. |
+| Status | **Paused 2026-05-25** (Phase 1-6 fully wired; functional via the feature gate `SYNC_ENABLED` in `apps/web/src/pages/DesignPage.tsx`). The HTTP-poll provider's 1.5s `/api/sync/<roomId>/since` request rate was deemed too costly against the global-anonymous workspace at this stage of the product. Re-enable by flipping the constant to `true`. The push-based migration discussion (SSE / WebSocket) is deferred — see "Variant decisions" below. |
 | Date opened | 2026-05-25 |
 | Trigger | 사용자 — "옵션 C 로 제대로 만들고 싶어. 동시 편집 관련 최적화된 관리를 ago 라이브러리에 존재" |
 | Cross-references | OS-root Rule 4 (loose change coupling), Rule 5 (round-trip integrity), Rule 6 (declarative branching), DR-005 (capability dispatch), agocraft `@agocraft/core` Change/Patch model |
@@ -300,3 +300,7 @@ Origin tagging (`local` / `remote` / `system`) 이 ChangeStream subscriber 의 f
   3. **`deriveDocumentFromYDoc` 가 `schema: undefined` 반환** → host re-inject 의무. useWeaveEditor 의 Phase 3b observer 에서 `docRef.current.schema` 로 패치. 미시: FrameStage 가 schema-undefined 상태에서는 모든 frame rendering drop (SlideBlock crash 등).
   
   agocraft sync tests 8 → 11 (3 신규: addItemTreeToYDoc happy / idempotent / seedYDocFromDocument idempotent). weave 98 e2e 모두 PASS (regression 없음, 새 sync-read-loop.spec.ts 1건 추가).
+
+- 2026-05-25 (paused) — **WI-028 sync subsystem paused via `SYNC_ENABLED = false` in DesignPage**. 사유: 글로벌 익명 워크스페이스에서 1.5s 폴링이 Vercel + Upstash 요청 부담을 빠르게 누적시킴 (collaboration 가치 대비). 가짜 끄기가 아니라 진짜 OFF — `useWeaveEditor` 의 `sync` prop 전달이 빠지면 Y.Doc / Provider / Phase 3b observer / Presence / Snapshot policy / IndexedDB 가 전부 안 mount. 코드 그대로 두고 한 줄 flip 으로 재활성 가능. 박제 e2e (`sync-read-loop.spec.ts`) 는 `test.skip(true, ...)` 로 일치. 영향: 97 PASS + 7 SKIP (sync 1건 newly skipped, 기존 6 unchanged). 잔여 collaboration 가치: 없음 — full-PUT 의 cloud-sync.ts 가 persistence 단독 담당.
+
+  **Push-based migration (SSE / WebSocket) 보류 결정**: 같은 사이클에 검토. Vercel Node streaming response (SSE) + 내부 KV 폴 250ms 가 가장 cost-effective path. avg latency 1500ms → 50-250ms. 함수 GB-s 비용 증가가 트레이드오프. 이 시점에는 collaboration 자체가 paused 라 push 화도 같이 paused — sync 재활성 시점에 재검토.

@@ -21,6 +21,17 @@
 import { expect, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
+// WI-028 paused 2026-05-25 — the sync subsystem is gated by
+// `SYNC_ENABLED` in `apps/web/src/pages/DesignPage.tsx`. This spec
+// drives it directly via the `__weaveSync` / `__weaveYjs` dev globals
+// which are only exposed when sync is mounted, so the test cannot run
+// while the gate is OFF. Flip the constant in DesignPage back to
+// `true` and remove the skip below to re-validate the read loop.
+test.skip(
+  true,
+  "WI-028 sync subsystem paused — re-enable via SYNC_ENABLED in DesignPage.tsx",
+);
+
 test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
