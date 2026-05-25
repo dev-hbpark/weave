@@ -6,7 +6,7 @@
 
 import type { Change, Document as AgocraftDocument, Unit as AgocraftUnit } from "@agocraft/core";
 import { unitId as makeUnitId } from "@agocraft/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   addChild,
   applyChangeToDocument,
@@ -59,6 +59,12 @@ interface UseDesignResult {
   /** Set the design's overall background CSS color (paints the canvas
    *  behind every frame). Persists via the existing storage pipeline. */
   readonly setDesignBackground: (color: string) => void;
+  /** Snapshot the latest in-memory Design and write it through
+   *  `saveDesign` (localStorage + cloud mirror). Invoked by
+   *  `useWeaveEditor`'s debounced ChangeStream sink — see OS Rule 4 +
+   *  agocraft `scheduling.debounce`. Renders stay immediate while
+   *  persistence batches at the consumer's schedule. */
+  readonly persistNow: () => void;
 }
 
 function nowIso(): string {
@@ -84,14 +90,21 @@ function initialDesign(id: string): Design {
 export function useDesign(id: string): UseDesignResult {
   const [design, setDesign] = useState<Design>(() => initialDesign(id));
 
-  const isFirst = useRef(true);
-  useEffect(() => {
-    if (isFirst.current) {
-      isFirst.current = false;
-      return;
-    }
-    saveDesign(design);
-  }, [design]);
+  // Mirror the latest Design into a ref so persistNow can read it without
+  // re-creating the callback on every render. setDesign batching means the
+  // ref is updated synchronously on the very next render after a mutation.
+  const designRef = useRef<Design>(design);
+  designRef.current = design;
+
+  // Persistence is no longer driven by useEffect on design changes —
+  // useWeaveEditor wires a debounced ChangeStream sink to persistNow.
+  // The first render still establishes the initial Design via initialDesign;
+  // no save is needed on mount (the blob already came from loadDesign or is
+  // brand new from createBlankDesign and will be saved on the first user
+  // mutation via the debounced sink).
+  const persistNow = useCallback(() => {
+    saveDesign(designRef.current);
+  }, []);
 
   const addItem = useCallback((kind: DomainKind, containerId?: string) => {
     setDesign((prev) => {
@@ -259,6 +272,7 @@ export function useDesign(id: string): UseDesignResult {
     reorderRootChildren: reorderRootChildrenCb,
     addBehavior,
     setDesignBackground,
+    persistNow,
   };
 }
 

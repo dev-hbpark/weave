@@ -79,69 +79,49 @@ export async function fetchDesignCloud(id: string): Promise<Design | null> {
   return body?.design ?? null;
 }
 
-// useDesign's effect fires `saveDesign(design)` on every state change,
-// which in turn calls pushDesignCloud. A 60Hz drag would translate to
-// ~60 POSTs per second without debouncing. We coalesce per design.id —
-// only the most recent state is sent, and only after the caller stops
-// for `PUSH_DEBOUNCE_MS`. localStorage is written synchronously by
-// saveDesign, so cross-tab consumers still see the latest state instantly.
-const PUSH_DEBOUNCE_MS = 800;
+// Cadence is owned by the consumer attaching to editor.changeStream via
+// `scheduling.debounce(N)` (see use-weave-editor.ts). This function is
+// the leaf write — it fires immediately and the caller is responsible
+// for not calling it 60 times a second.
+//
+// We still flush on tab unload via sendBeacon so the last debounced
+// snapshot survives a navigation that interrupts the in-flight POST.
+let lastPushed: Design | null = null;
 
-interface PendingPush {
-  timer: ReturnType<typeof setTimeout>;
-  design: Design;
-}
-
-const pendingPushes = new Map<string, PendingPush>();
-
-function flushPendingPush(id: string): void {
-  const pending = pendingPushes.get(id);
-  if (pending === undefined) return;
-  pendingPushes.delete(id);
+export function pushDesignCloud(design: Design): void {
+  lastPushed = design;
   void safeFetch("/api/designs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(pending.design),
+    body: JSON.stringify(design),
   });
 }
 
-export function pushDesignCloud(design: Design): void {
-  const existing = pendingPushes.get(design.id);
-  if (existing !== undefined) clearTimeout(existing.timer);
-  const timer = setTimeout(() => flushPendingPush(design.id), PUSH_DEBOUNCE_MS);
-  pendingPushes.set(design.id, { timer, design });
-}
-
-/** Sync any pending pushes to the cloud right now via sendBeacon — used
- *  on `beforeunload` so the last edit before a tab closes still makes it
- *  to the server. `fetch` is unreliable mid-unload; `sendBeacon` survives
- *  the navigation by design. */
-function beaconFlushAll(): void {
+function beaconFlushLast(): void {
+  if (lastPushed === null) return;
   if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
     return;
   }
-  for (const [id, pending] of pendingPushes) {
-    clearTimeout(pending.timer);
-    try {
-      navigator.sendBeacon(
-        "/api/designs",
-        new Blob([JSON.stringify(pending.design)], { type: "application/json" }),
-      );
-    } catch {
-      // Beacon dispatch failures (size limit, navigation already underway)
-      // are unrecoverable here; the local copy stays in localStorage and
-      // the next bootstrap from another device will reconcile.
-    }
-    pendingPushes.delete(id);
+  try {
+    navigator.sendBeacon(
+      "/api/designs",
+      new Blob([JSON.stringify(lastPushed)], { type: "application/json" }),
+    );
+  } catch {
+    // Beacon dispatch failures are unrecoverable here; localStorage still
+    // holds the latest snapshot for the next bootstrap to reconcile.
   }
 }
 
 if (typeof window !== "undefined") {
-  // `pagehide` covers more cases than `beforeunload` (mobile Safari, bfcache).
-  window.addEventListener("pagehide", beaconFlushAll);
-  // `visibilitychange → hidden` is the recommended Save-on-leave signal.
+  // Repeat the latest snapshot on tab close — the debounced storage sink
+  // may have a pending Change that hasn't reached `pushDesignCloud` yet,
+  // but anything that DID reach us is the latest in-memory state and is
+  // worth re-asserting via sendBeacon in case the previous fetch was
+  // racing the unload.
+  window.addEventListener("pagehide", beaconFlushLast);
   window.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") beaconFlushAll();
+    if (document.visibilityState === "hidden") beaconFlushLast();
   });
 }
 

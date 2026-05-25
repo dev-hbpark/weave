@@ -151,6 +151,7 @@ function DesignPageBody() {
     setPresentationOrder,
     reorderRootChildren,
     setDesignBackground,
+    persistNow,
   } = useDesign(designId);
   const { editor, vm, router, selectionChrome } = useWeaveEditor({
     docInAgocraft,
@@ -164,6 +165,7 @@ function DesignPageBody() {
       reset: rawReset,
     },
     applyChange,
+    persist: persistNow,
   });
   const editorHotkeyTable = useEditorHotkeys(editor);
 

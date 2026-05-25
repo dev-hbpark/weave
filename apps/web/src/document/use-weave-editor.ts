@@ -4,6 +4,7 @@
 
 import {
   type Change,
+  type ChangeSink,
   ClockToken,
   type Document as AgocraftDocument,
   createCapabilityRegistry,
@@ -16,6 +17,7 @@ import {
   defaultClock,
   defaultRandom,
   IdGeneratorToken,
+  scheduling,
 } from "@agocraft/core";
 import {
   canonicalToViewport,
@@ -56,6 +58,14 @@ export interface UseWeaveEditorDeps {
    *  user-command / system Change. The optional `pending` lookup resolves
    *  `item.children` added Patches against newly-staged Items. */
   readonly applyChange?: (change: Change, pending?: PendingCreationLookup) => void;
+  /** Persistence sink invoked on a debounced ChangeStream subscription.
+   *  Rendering still receives every Change immediately via `applyChange`;
+   *  this callback fires at most once per `persistDebounceMs` window so
+   *  storage I/O batches across rapid edits. See OS-root Rule 4 + agocraft
+   *  `scheduling.debounce`. */
+  readonly persist?: () => void;
+  /** Trailing-edge debounce for the persist sink. Default 3000ms. */
+  readonly persistDebounceMs?: number;
 }
 
 /** Build an Editor wired to the weave doc mirror. The Editor itself is stable
@@ -87,6 +97,8 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
   targetsRef.current = deps.commandTargets;
   const applyChangeRef = useRef<UseWeaveEditorDeps["applyChange"]>(deps.applyChange);
   applyChangeRef.current = deps.applyChange;
+  const persistRef = useRef<UseWeaveEditorDeps["persist"]>(deps.persist);
+  persistRef.current = deps.persist;
 
   const editor = useMemo<Editor>(() => {
     const container = createContainer();
@@ -251,7 +263,26 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       { origins: ["user-command", "system"] },
     );
 
+    // Storage sink — attached to the SAME ChangeStream but via a debounced
+    // SchedulingPolicy (OS Rule 4: producer policy-free, consumer self-
+    // scheduled). Render path above stays immediate; persistence batches
+    // here so a 60Hz drag produces at most one save per debounce window.
+    const persistDebounceMs = deps.persistDebounceMs ?? 3000;
+    const storageSink: ChangeSink = {
+      flush() {
+        const persist = persistRef.current;
+        if (persist === undefined) return;
+        persist();
+      },
+    };
+    const offStorageSink = scheduling
+      .debounce(persistDebounceMs)
+      .attach(editor.changeStream, storageSink, {
+        origins: ["user-command", "system"],
+      });
+
     return () => {
+      offStorageSink();
       offChangeSink();
       offBridge();
       offCommands();
