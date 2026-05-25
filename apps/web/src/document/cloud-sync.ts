@@ -154,8 +154,27 @@ export function deleteResourceCloud(id: string): void {
 
 /** Pull the cloud lists into localStorage so the existing sync readers
  *  (listAllDesigns, listResources) see the same data. Called once on
- *  app mount. Returns the counts pulled so the caller can refresh state. */
-export async function bootstrapFromCloud(): Promise<{
+ *  app mount. Returns the counts pulled so the caller can refresh state.
+ *
+ *  Concurrent callers (e.g. App.tsx's background prefetch and
+ *  LandingPage's mount-time refresh) share the same in-flight promise,
+ *  so the cloud is fetched at most once per render boundary. Once the
+ *  in-flight call settles, the slot clears so a later refresh (manual
+ *  refresh button, re-navigation) issues a fresh fetch. */
+let inFlight: Promise<{ designs: number; resources: number }> | null = null;
+
+export function bootstrapFromCloud(): Promise<{
+  designs: number;
+  resources: number;
+}> {
+  if (inFlight !== null) return inFlight;
+  inFlight = bootstrapFromCloudImpl().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function bootstrapFromCloudImpl(): Promise<{
   designs: number;
   resources: number;
 }> {
