@@ -1,5 +1,9 @@
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+// Side-effect import — extends agocraft's SubSelectionVariants with
+// weave's host-specific variants (canvas-shape / doc-paragraph / hotspot).
+// Must execute before any consumer of `vm.subSelection`.
+import "./document/agocraft-augmentation.js";
 import { bootstrapFromCloud } from "./document/cloud-sync.js";
 import { DesignPage } from "./pages/DesignPage.js";
 import { LandingPage } from "./pages/LandingPage.js";
