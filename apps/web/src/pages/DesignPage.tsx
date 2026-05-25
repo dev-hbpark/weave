@@ -166,7 +166,7 @@ function DesignPageBody() {
     setDesignBackground,
     persistNow,
   } = useDesign(designId);
-  const { editor, vm, router, selectionChrome } = useWeaveEditor({
+  const { editor, vm, router, selectionChrome, sync } = useWeaveEditor({
     docInAgocraft,
     commandTargets: {
       addItem: rawAddItem,
@@ -179,7 +179,15 @@ function DesignPageBody() {
     },
     applyChange,
     persist: persistNow,
+    // WI-028 Phase 3a — opt in to collaborative sync. The Y.Doc / poll
+    // provider live for the lifetime of this DesignPage; one room per
+    // design.id. Phase 3b will replace the legacy full-PUT path with
+    // the SyncEngine's snapshot mechanism. For now sync runs alongside
+    // it (dual write — bandwidth is small enough; localStorage stays
+    // authoritative for the local renderer).
+    sync: { roomId: designId },
   });
+  void sync; // host-visible bundle; consumed by Phase 4 (presence UI).
   const editorHotkeyTable = useEditorHotkeys(editor);
 
   // DR-018 PoC — register slide-only "add bullet" handle. Demonstrates

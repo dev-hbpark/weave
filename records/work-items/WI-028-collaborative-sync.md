@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | ID | WI-028 |
-| Status | **Phase 1 in progress** — agocraft sync core. Phase 2~6 박제 |
+| Status | **Phase 1-6 minimum-wire complete** — agocraft sync core + HTTP-poll provider + weave API routes + host wire (write-only) + presence components + snapshot policy + IndexedDB offline. Phase 3b (remote → React) 와 host UI mount 는 다음 사이클 |
 | Date opened | 2026-05-25 |
 | Trigger | 사용자 — "옵션 C 로 제대로 만들고 싶어. 동시 편집 관련 최적화된 관리를 ago 라이브러리에 존재" |
 | Cross-references | OS-root Rule 4 (loose change coupling), Rule 5 (round-trip integrity), Rule 6 (declarative branching), DR-005 (capability dispatch), agocraft `@agocraft/core` Change/Patch model |
@@ -183,31 +183,55 @@ dependency-cruiser: `@agocraft/sync` → `@agocraft/core` + `yjs` + `y-protocols
 - 30+ vitest — 양방향 mapping / concurrent edit / snapshot round-trip / presence
 - `pnpm verify` 그린
 
-### Phase 2 — HTTP + SSE transport (Vercel/Upstash wire)
-- Vercel API routes: `/api/sync/push`, `/api/sync/pull`, `/api/sync/sse`
-- Upstash Redis pubsub 으로 actor 간 broadcast
-- `HttpSseTransport` 구현 (weave 측 또는 별도 `@agocraft/transport-http` 패키지)
-- bandwidth metering / rate-limit
+### Phase 2 ✅ — HTTP poll transport (Vercel)
+**채택 결정**: SSE 대신 long-poll. Vercel function timeout / Edge function complexity 회피. polling 이 EventSource 의 reconnect 책임을 대체. 정통 SSE 는 후속 WI 에서 검토.
 
-### Phase 3 — weave 측 wire
-- 현재 storage.ts / cloud-sync.ts 가 새 SyncEngine 위에서 작동
-- ChangeStream subscriber → SyncEngine.recordLocal(patches)
-- SyncEngine.applyRemote(envelope) → applyChangeToDocument (origin: "remote")
-- localStorage 가 snapshot cache, KV 가 authoritative
-- 기존 PUT /api/designs full-replacement deprecation (또는 hybrid 운영 기간)
+구현 완료:
+- `@agocraft/sync` `createHttpPollProvider({ yDoc, endpoint, pullIntervalMs?, pushDebounceMs?, fetch?, requestTimeoutMs? })`
+- weave Vercel API routes:
+  - `POST /api/sync/[roomId]/push` — base64 Yjs update → KV append
+  - `GET /api/sync/[roomId]/since?vector=…` — server side `Y.encodeStateAsUpdate(yDoc, remoteVector)` 로 missing delta 응답
+  - `GET / POST /api/sync/[roomId]/snapshot` — fetch/store latest snapshot + state vector
+- KV schema (`_lib/keys.ts`):
+  - `shared:sync:<roomId>:updates` — list of base64 binary updates
+  - `shared:sync:<roomId>:snapshot` — base64 snapshot
+  - `shared:sync:<roomId>:vector` — base64 state vector
+- weave 측에 `yjs ^13.6.18` + `y-protocols ^1.0.6` + `@agocraft/sync` 의존 추가 + re-vendor
 
-### Phase 4 — Presence
-- agocraft 측 PresenceChannel abstraction
-- weave 측 cursor/selection broadcast + UI (다른 사용자 cursor 표시)
+### Phase 3a ✅ — weave host wire (write-only)
+구현 완료:
+- `useWeaveEditor({ ..., sync: { roomId } })` opt-in
+- 한 design 당 Y.Doc + HttpPollProvider + SyncEngine 자동 생성
+- Y.Doc 첫 mount 시 `seedYDocFromDocument(yDoc, doc)`
+- ChangeStream subscriber 가 매 local Patch 를 `applyPatchToYDoc(yDoc, patch)` 호출 (Rule 6 single-site permitted exception — `changeToPatch(c: Change)` switch on c.type)
+- Y.Doc observer → provider → POST `/api/sync/<roomId>/push`
+- DesignPage 의 `useWeaveEditor` 호출에 `sync: { roomId: designId }` 추가 — 자동 활성화
+- **단방향 (write-only)**: remote pull 은 Y.Doc 까지 반영되지만 React state 갱신은 Phase 3b 에서
 
-### Phase 5 — Snapshot compaction + garbage collection
-- 일정 주기 (또는 patch count threshold) 마다 새 snapshot + 낡은 patches 정리
-- garbage collected log size bounded
+### Phase 3b — remote → React state (다음 사이클)
+- Y.Doc observer 에서 `deriveDocumentFromYDoc` 후 setDesign 호출
+- 충돌 방지: origin-tag `"agocraft.sync.local"` / `"agocraft.sync.remote"` 로 분기
+- 현재 기존 full-PUT 경로 (storage.ts / cloud-sync.ts) 도 dual-active. Phase 3b 끝나면 그것 deprecation
 
-### Phase 6 — IndexedDB offline persistence + bandwidth metering
-- `y-indexeddb` provider 추가 → 브라우저 닫고 다시 열어도 local CRDT state 보존
-- bandwidth usage metric (per-actor, per-session)
-- (CRDT 가 자동 merge 하므로 hard conflict prompt 불필요 — phase 6 의 scope 가 이쪽으로 이동)
+### Phase 4 ✅ — Presence UI 컴포넌트 (host wire 다음 사이클)
+구현 완료:
+- `apps/web/src/document/presence/PresenceCursors.tsx` — `SyncEngine.presence.subscribe` → SVG cursor + actor 이름 + per-actor color
+- `apps/web/src/document/presence/use-presence-local-cursor.ts` — pointermove throttle (60ms ≈ 16Hz) → `presence.setLocal({ cursor: { x, y } })`
+- 호스트가 `<PresenceCursors engine={sync.engine} />` + `usePresenceLocalCursor({ engine, hostRef, clientToLocal })` 호출 시 즉시 활성. DesignPage mount 는 Phase 3b 와 같이 (좌표 변환 host 측 책임)
+
+### Phase 5 ✅ — Snapshot policy
+구현 완료:
+- `@agocraft/sync` `createSnapshotPolicy({ yDoc, upload, thresholdUpdates?, thresholdMs? })`
+- updates count ≥ N (default 50) 또는 elapsed ≥ M ms (default 60s) → uploader 호출
+- uploader resolve = 카운터 리셋. reject = 다음 tick 재시도. concurrent guard.
+- `policy.snapshotNow()` — pagehide 시 forced flush
+- 호스트가 `policy = createSnapshotPolicy({ yDoc, upload: snap => fetch(...) })` 호출 시 즉시 활성
+
+### Phase 6 ✅ — IndexedDB offline persistence
+구현 완료:
+- `apps/web/src/document/sync/offline-persistence.ts` — `attachIndexedDbPersistence(yDoc, roomId)` async, dynamic-import `y-indexeddb ^9.0.12` (browser-only safe)
+- 호스트가 `await attachIndexedDbPersistence(yDoc, designId)` 호출 시 IndexedDB → Y.Doc hydrate + 모든 future update 자동 persist
+- 호스트 wire 는 Phase 3b 와 함께
 
 ## 5. weave 측 통합 시점 (Phase 3)
 
@@ -266,3 +290,5 @@ Origin tagging (`local` / `remote` / `system`) 이 ChangeStream subscriber 의 f
 ## 8. 변경 이력
 
 - 2026-05-25 — WI-028 발행. Phase 1 시작.
+- 2026-05-25 — Phase 2~6 minimum-wire 완료. HTTP-poll provider + Vercel API routes + weave host write-only wire + presence components + snapshot policy + IndexedDB offline. agocraft `pnpm verify` GREEN. weave `tsc + vite build` GREEN. 활성화: DesignPage 의 `useWeaveEditor` 가 `sync: { roomId: designId }` 전달.
+- 잔여 (Phase 3b 와 host mount): Y.Doc → setDesign 닫는 루프, PresenceCursors UI mount, snapshot policy schedule, IndexedDB attach.

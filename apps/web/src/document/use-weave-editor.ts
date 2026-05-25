@@ -17,8 +17,18 @@ import {
   defaultClock,
   defaultRandom,
   IdGeneratorToken,
+  type Patch,
   scheduling,
 } from "@agocraft/core";
+import {
+  applyPatchToYDoc,
+  createHttpPollProvider,
+  createSyncEngine,
+  generateActorId,
+  seedYDocFromDocument,
+  type SyncEngine,
+} from "@agocraft/sync";
+import * as Y from "yjs";
 import {
   canonicalToViewport,
   createEditor,
@@ -66,6 +76,24 @@ export interface UseWeaveEditorDeps {
   readonly persist?: () => void;
   /** Trailing-edge debounce for the persist sink. Default 3000ms. */
   readonly persistDebounceMs?: number;
+  /** WI-028 Phase 3 — enable collaborative sync. When set, the hook
+   *  wires a SyncEngine + Y.Doc + HttpPollProvider to the editor's
+   *  ChangeStream so local edits mirror into the Y.Doc and push to the
+   *  /api/sync/<roomId> backend. Default off — full-PUT storage stays
+   *  the active path until the host is ready to opt in. */
+  readonly sync?: {
+    /** Room id — typically the design.id. One Y.Doc per room. */
+    readonly roomId: string;
+    /** Base URL of the sync API. Default `"/api/sync/<roomId>"`. */
+    readonly endpoint?: string;
+    /** Override the local actor id (cookie / auth integration). */
+    readonly actorId?: string;
+  };
+}
+
+export interface UseWeaveEditorSync {
+  readonly engine: SyncEngine;
+  readonly yDoc: Y.Doc;
 }
 
 /** Build an Editor wired to the weave doc mirror. The Editor itself is stable
@@ -81,6 +109,10 @@ export interface UseWeaveEditorResult {
    *  plugins register generic providers (`registerProvider`).
    *  NestedFrame / CanvasBlock consult this on every selection. */
   readonly selectionChrome: SelectionChromeRegistry;
+  /** WI-028 — collaborative sync engine. `undefined` when `deps.sync`
+   *  isn't supplied; otherwise the engine + Y.Doc the host can wire
+   *  into presence UI, snapshot scheduling, etc. */
+  readonly sync: UseWeaveEditorSync | undefined;
 }
 
 export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
@@ -194,6 +226,36 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     [],
   );
 
+  // WI-028 Phase 3a — collaborative sync. When `deps.sync` is supplied
+  // the hook spins up a Y.Doc + HttpPollProvider + SyncEngine. The
+  // Y.Doc is seeded once from the current agocraft document, then a
+  // ChangeStream subscriber mirrors every local Patch into the Y.Doc
+  // via `applyPatchToYDoc`. The Y.Doc's `update` observer (inside the
+  // provider) pushes the binary delta to /api/sync/<roomId>/push.
+  // Phase 3b will close the loop the other way (remote pulls → re-derive
+  // agocraft Document → re-emit on ChangeStream as origin:"system").
+  const syncConfig = deps.sync;
+  const syncBundle = useMemo<UseWeaveEditorSync | undefined>(() => {
+    if (syncConfig === undefined) return undefined;
+    const yDoc = new Y.Doc();
+    const endpoint = syncConfig.endpoint ?? `/api/sync/${syncConfig.roomId}`;
+    const provider = createHttpPollProvider({ yDoc, endpoint });
+    const actorId = syncConfig.actorId ?? generateActorId();
+    const engine = createSyncEngine({ yDoc, provider, actorId });
+    seedYDocFromDocument(yDoc, docRef.current);
+    return { engine, yDoc };
+    // Intentionally constructed once per editor session — the same
+    // Y.Doc lives for the lifetime of this hook. Reseeding on every
+    // doc change would clobber remote edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncConfig?.roomId]);
+
+  useEffect(() => {
+    if (syncBundle === undefined) return;
+    syncBundle.engine.start();
+    return () => syncBundle.engine.stop();
+  }, [syncBundle]);
+
   // Intentionally no `disposeState()` cleanup — React 18 StrictMode runs the
   // mount/cleanup pair twice in dev, which would dispose the singleton machine
   // (`disposed = true`) and silently kill every subsequent dispatch. The
@@ -281,7 +343,67 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
         origins: ["user-command", "system"],
       });
 
+    // WI-028 Phase 3a — sync sink. Mirrors every local Patch into the
+    // Y.Doc (immediate, not debounced — the provider already batches
+    // outbound pushes). Only attached when collaborative sync is on.
+    //
+    // agocraft's Change union is patch-shaped (one Change == one Patch
+    // plus envelope metadata) so the conversion is structural — a
+    // single-site invariant (OS Rule 6's permitted exception for
+    // "one site that must know all variants", same shape as
+    // serializer.invertPatch).
+    const sync = syncBundle;
+    let offSyncSink: (() => void) | undefined;
+    if (sync !== undefined) {
+      const changeToPatch = (c: Change): Patch | undefined => {
+        switch (c.type) {
+          case "item.attrs":
+            return {
+              type: c.type,
+              itemId: c.itemId,
+              before: c.before,
+              after: c.after,
+            };
+          case "item.children":
+            return {
+              type: c.type,
+              itemId: c.itemId,
+              added: c.added,
+              removed: c.removed,
+              ...(c.reordered !== undefined ? { reordered: c.reordered } : {}),
+            };
+          case "item.units":
+            return {
+              type: c.type,
+              itemId: c.itemId,
+              added: c.added,
+              removed: c.removed,
+            };
+          case "unit.attrs":
+            return {
+              type: c.type,
+              itemId: c.itemId,
+              unitId: c.unitId,
+              unitKind: c.unitKind,
+              path: c.path,
+              before: c.before,
+              after: c.after,
+            };
+          default:
+            return undefined;
+        }
+      };
+      offSyncSink = editor.changeStream.subscribe(
+        (change) => {
+          const patch = changeToPatch(change);
+          if (patch !== undefined) applyPatchToYDoc(sync.yDoc, patch);
+        },
+        { origins: ["user-command", "system"] },
+      );
+    }
+
     return () => {
+      offSyncSink?.();
       offStorageSink();
       offChangeSink();
       offBridge();
@@ -293,7 +415,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
-  return { editor, vm, router, selectionChrome };
+  return { editor, vm, router, selectionChrome, sync: syncBundle };
 }
 
 // ── projector helper ─────────────────────────────────────────────────────
