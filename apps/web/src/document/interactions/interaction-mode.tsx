@@ -156,9 +156,14 @@ export function useRubberBandAllowed(): boolean {
   return mode === "idle";
 }
 
+/** Frame selection (click-to-pick, marquee, multi-select toggle) is
+ *  permitted only in the idle mode. Hand/panning own pointer events
+ *  exclusively while active; rubber-band / frame-manipulating /
+ *  text-editing / context-menu each carry their own selection
+ *  semantics and would conflict with a plain click-to-select. */
 export function useFrameSelectionAllowed(): boolean {
   const { mode } = useInteractionMode();
-  return mode === "idle" || mode === "hand";
+  return mode === "idle";
 }
 
 function useStableNoOpVm(): EditorViewModel {

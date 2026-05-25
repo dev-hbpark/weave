@@ -34,7 +34,7 @@ import type {
   DomainKind,
   ItemFrame,
 } from "../document";
-import { useInteractionMode } from "../document";
+import { useFrameSelectionAllowed, useInteractionMode } from "../document";
 import {
   HIT_THRESHOLD_PX,
   TotalScaleContext,
@@ -308,6 +308,10 @@ function NestedFrame({
   // race with the gesture. The transition is guarded — if a context menu or
   // pan happens to win the press, we don't stomp their mode.
   const im = useInteractionMode();
+  // Selection only runs in `idle`. Hand / panning / rubber-band /
+  // frame-manipulating / text-editing / context-menu each own their own
+  // event flow and must not have a parallel selection happen alongside.
+  const selectionAllowed = useFrameSelectionAllowed();
   // DR-018 — selection chrome registry. Cross-cutting providers (plugins,
   // AI selection-actions, future domain extensions) register here; the
   // NestedFrame's `<SelectionLayer>` resolver merges their specs with
@@ -468,7 +472,7 @@ function NestedFrame({
       // pan handler instead of being swallowed here.
       onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
         if (e.button !== 0) return;
-        if (im.mode === "hand" || im.mode === "panning") return;
+        if (!selectionAllowed) return;
         const t = e.target;
         if (t instanceof HTMLElement) {
           // Children that own their own pointer gesture get the press
@@ -534,7 +538,7 @@ function NestedFrame({
         // case the browser's native `dblclick` refuses to fire on because
         // the targets differ. Two qualifying clicks within ~350ms trigger
         // the fit-to-frame gesture.
-        if (im.mode === "hand" || im.mode === "panning") return;
+        if (!selectionAllowed) return;
         const t = e.target;
         if (t instanceof HTMLElement) {
           // Shape clicks live inside the canvas frame's inner SelectionLayer
@@ -1106,6 +1110,11 @@ export function FrameStage(props: FrameStageProps) {
   // the user is dragging the canvas. Wheel zoom is fire-and-forget — no
   // gating necessary because it doesn't conflict with other sources.
   const { transitionFrom, restoreIdleFrom } = useInteractionMode();
+  // Mode-isolation gate for selection-related entry points (background
+  // deselect, marquee acceptTarget). NestedFrame has its own copy via
+  // the same hook — kept consistent so every mode toggles cleanly with
+  // zero side effects on selection state.
+  const selectionAllowedOuter = useFrameSelectionAllowed();
 
   // Hand-armed publishing — when the hand tool is toggled OR Space is held,
   // surface that as the "hand" mode. With the mode machine flipped from
@@ -1620,8 +1629,9 @@ export function FrameStage(props: FrameStageProps) {
   }, [planeScaleMV, pan.scale, infiniteCanvas, totalScaleMV]);
 
   const handleBackgroundClick = useCallback(() => {
+    if (!selectionAllowedOuter) return;
     onSelect?.(undefined);
-  }, [onSelect]);
+  }, [onSelect, selectionAllowedOuter]);
 
   // viewport → design pixel converter for the rubber-band layer. The
   // design plane carries the full transform chain (pan × drill), so its
@@ -1877,6 +1887,11 @@ export function FrameStage(props: FrameStageProps) {
         // marquee starts on truly empty design-plane background only;
         // pressing on a frame/shape/handle defers to inner bindings.
         const emptyRegionAccept = (target: Element) => {
+          // Idle-only gate. Hand / panning / rubber-band / frame-manipulating
+          // / text-editing / context-menu all need to keep ownership of the
+          // pointer flow; the marquee (and the alt-rubber-band downstream)
+          // must not start under any of those modes.
+          if (!selectionAllowedOuter) return false;
           if (!(target instanceof HTMLElement)) return true;
           return (
             target.closest("[data-frame-id]") === null &&
