@@ -13,6 +13,26 @@ export {
 export { AuroraBg } from "./AuroraBg.js";
 export { Badge, type BadgeProps, type BadgeSize, type BadgeVariant } from "./Badge.js";
 export { Button } from "./Button.js";
+export {
+  CommandButton,
+  CommandIconButton,
+  type CommandIconButtonProps,
+  type CommandHostProviderProps,
+  CommandHostProvider,
+  type CommandHostValue,
+  CommandKeycap,
+  type CommandKeycapProps,
+  type CommandLocaleLike,
+  CommandMenuItem,
+  type CommandMenuItemProps,
+  type CommandMetaLike,
+  type CommandRegistryLike,
+  type ResolvedCommand,
+  useCommandHost,
+  useCommandHostOrNull,
+  useResolvedCommand,
+} from "./Command.js";
+export { CommandPalette, type CommandPaletteProps } from "./CommandPalette.js";
 export { ColorPicker, type ColorPickerProps } from "./ColorPicker.js";
 export {
   ContextualToolbar,

@@ -5,6 +5,9 @@ import {
   AITooltipProvider,
   type AITooltipHotkeyTable,
   Button,
+  CommandHostProvider,
+  CommandIconButton,
+  CommandPalette,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -26,7 +29,7 @@ import {
   IconUndo,
   ThemeSwitcher,
 } from "@weave/design-system";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   type DocFlavor,
@@ -40,7 +43,12 @@ import {
   useTooltipsAllowed,
 } from "../document";
 import { CursorTooltip } from "../document/tooltip/CursorTooltip.js";
-import { useEditorHotkeys } from "../document/tooltip/editor-hotkeys.js";
+import {
+  dispatchEditorCommand,
+  editorCommandMetadata,
+  setPaletteOpener,
+  useEditorHotkeys,
+} from "../document/tooltip/editor-hotkeys.js";
 import { useWeaveEditor } from "../document/use-weave-editor.js";
 import {
   PeekOverlay,
@@ -549,6 +557,39 @@ function DesignPageBody() {
   const canUndo = editor.history.canUndo();
   const canRedo = editor.history.canRedo();
   const bumpHistoryTick = useCallback(() => setHistoryTick((t) => t + 1), []);
+
+  // WI-026 Phase 5 — host context for CommandMetadata.isEnabled. Each
+  // CommandButton calls registry.isEnabled(id, context); reference equality
+  // on `context` controls re-renders, so we memoize the object and only
+  // rebuild when an input changes.
+  const commandContext = useMemo<Readonly<Record<string, unknown>>>(
+    () => ({
+      canUndo,
+      canRedo,
+      hasSelection: selectedIds.size > 0,
+      selectionCount: selectedIds.size,
+    }),
+    [canUndo, canRedo, selectedIds.size],
+  );
+
+  // WI-026 Phase 4 — dispatch is the host-supplied executor. It looks up
+  // the command's runtime action (held in `EDITOR_COMMANDS`) and calls it
+  // with the current editor. History commands bump the tick so canUndo /
+  // canRedo flow into commandContext on the next render.
+  const dispatchCommand = useCallback(
+    (id: string) => {
+      dispatchEditorCommand(id, { editor });
+      bumpHistoryTick();
+    },
+    [editor, bumpHistoryTick],
+  );
+
+  // WI-026 Phase 6 — command palette state. The hotkey "palette.open"
+  // calls into setPaletteOpener's registered opener (this effect wires
+  // it), so opening the palette goes through the same dispatch path
+  // as a header click.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => setPaletteOpener(() => setPaletteOpen(true)), []);
   // Also re-tick whenever the ChangeStream emits — covers hotkey-driven
   // undo/redo + remote edits that don't go through the toolbar buttons.
   useEffect(() => {
@@ -561,6 +602,12 @@ function DesignPageBody() {
     <SelectionChromeProvider registry={selectionChrome}>
     <SelectionProvider vm={vm}>
     <InteractionModeProvider vm={vm}>
+    <CommandHostProvider
+      registry={editorCommandMetadata}
+      context={commandContext}
+      locale="ko"
+      dispatch={dispatchCommand}
+    >
     <ModeAwareAITooltipProvider hotkeyTable={editorHotkeyTable}>
         <EditorProvider editor={editor}>
           <div className="fixed inset-0 flex flex-col bg-[color:var(--bg-page)]">
@@ -816,40 +863,12 @@ function DesignPageBody() {
                   aria-hidden
                   className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
                 />
-                <AITooltip
-                  context="되돌리기"
-                  actions={[{ action: "단축키", hotkeyId: "undo" }]}
-                >
-                  <IconButton
-                    aria-label="Undo"
-                    size="sm"
-                    disabled={!canUndo}
-                    onClick={() => {
-                      editor.history.undo();
-                      bumpHistoryTick();
-                    }}
-                    data-testid="toolbar-undo"
-                  >
-                    <IconUndo />
-                  </IconButton>
-                </AITooltip>
-                <AITooltip
-                  context="다시 실행"
-                  actions={[{ action: "단축키", hotkeyId: "redo" }]}
-                >
-                  <IconButton
-                    aria-label="Redo"
-                    size="sm"
-                    disabled={!canRedo}
-                    onClick={() => {
-                      editor.history.redo();
-                      bumpHistoryTick();
-                    }}
-                    data-testid="toolbar-redo"
-                  >
-                    <IconRedo />
-                  </IconButton>
-                </AITooltip>
+                <CommandIconButton commandId="history.undo" size="sm">
+                  <IconUndo />
+                </CommandIconButton>
+                <CommandIconButton commandId="history.redo" size="sm">
+                  <IconRedo />
+                </CommandIconButton>
               </div>
 
               <div className="flex items-center justify-end gap-2">
@@ -1194,9 +1213,14 @@ function DesignPageBody() {
               }}
               onCancel={() => setPendingMedia(null)}
             />
+            <CommandPalette
+              open={paletteOpen}
+              onOpenChange={setPaletteOpen}
+            />
           </div>
         </EditorProvider>
     </ModeAwareAITooltipProvider>
+    </CommandHostProvider>
     </InteractionModeProvider>
     </SelectionProvider>
     </SelectionChromeProvider>

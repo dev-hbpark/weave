@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | ID | WI-026 |
-| Status | **Phase 1+2 Complete** — agocraft 기반 + weave EDITOR_COMMANDS 마이그레이션 |
+| Status | **Phase 1~6 Complete** — agocraft + weave + design-system + Header migration + Palette 모두 완료. 잔여 button 마이그레이션 만 다음 사이클 |
 | Date opened | 2026-05-25 |
 | Trigger | 사용자 — "기능 규칙이 달라졌을 때 UI 도 자동으로 적용" 가능성 검토 후 "agocraft에 정석대로 처리해줘" |
 | Cross-references | OS-root `CODE_STRUCTURE_DESIGN_RULES.md` § Rule 6, [weave AUDIT-002](../audits/AUDIT-002-2026-05-25-declarative-branching.md), [agocraft AUDIT-002](../../../agocraft/records/audits/AUDIT-002-2026-05-25-declarative-branching.md), 메모리 `feedback_declarative_branching_rule6` |
@@ -90,37 +90,70 @@ display 는 keycap UI, binding 은 `@agocraft/input/hotkey` 등록용. 한 entry
 
 검증: weave `tsc --noEmit` + `vite build` 그린.
 
-## 4. 남은 Phase (다음 사이클)
+## 4. Phase 3~6 적용 완료
 
-### Phase 3 — `<CommandButton>` / `<CommandKeycap>` / `<CommandMenuItem>` (design-system)
+### Phase 3 ✅ — Command UI primitives (`@weave/design-system`)
 
-```tsx
-<CommandButton commandId="history.undo" />
-// 자동:
-//   - text: resolveLabel(meta, locale)
-//   - tooltip: resolveHint(meta, locale) + keycap
-//   - disabled: !metadata.isEnabled(commandId, ctx)
-//   - onClick: dispatch via host
-//   - aria-label, data-testid 자동
+신규 `packages/design-system/src/components/Command.tsx` (350+ L):
+- `CommandHostContext` + `CommandHostProvider` — 호스트가 registry / context / locale / dispatch 한 번에 주입
+- `useCommandHost()` / `useCommandHostOrNull()` — palette 등 optional 호스트용
+- `useResolvedCommand(id)` — render-ready label/description/hint/hotkey/enabled 한 hook 으로
+- `<CommandButton commandId="…">` — `Button` 위에 metadata 자동 wire. text / tooltip / disabled / aria-label / data-testid / aria-keyshortcuts 모두 자동
+- `<CommandIconButton commandId="…">` — `IconButton` 변형. 정사각형 icon-only button (Undo/Redo 같은 헤더 용)
+- `<CommandKeycap commandId="…">` — `<Kbd combo>` 로 단축키만 렌더
+- `<CommandMenuItem commandId="…">` — `DropdownMenuItem` + shortcut 자동
+- 구조적 `CommandMetaLike` / `CommandRegistryLike` 인터페이스 — agocraft 의존 없이 structural match
+
+### Phase 4 ✅ — Header Undo/Redo 마이그레이션
+
+`apps/web/src/pages/DesignPage.tsx`:
+- Header 의 `<AITooltip><IconButton><IconUndo/></IconButton></AITooltip>` 30 라인 boilerplate → `<CommandIconButton commandId="history.undo"><IconUndo/></CommandIconButton>` 3 라인. Redo 동일
+- tooltip / disabled / keycap 모두 metadata 자동
+
+### Phase 5 ✅ — `enabledWhen` reactive wiring
+
+`DesignPage`:
+- `commandContext = useMemo({ canUndo, canRedo, hasSelection, selectionCount })` — `editor.history` + `useSelection` 의 결과로 구성. 한 의존성 변경 시 모든 CommandButton 의 disabled 자동 갱신
+- `dispatchCommand` — `dispatchEditorCommand(id, { editor })` + history tick. EDITOR_COMMANDS 의 action 으로 라우팅
+- `<CommandHostProvider registry={editorCommandMetadata} context={commandContext} locale="ko" dispatch={dispatchCommand}>` — Provider 트리에 마운트
+
+### Phase 6 ✅ — 명령 팔레트 (Cmd+K)
+
+신규 `packages/design-system/src/components/CommandPalette.tsx` (200+ L):
+- Dialog 기반, `<input>` + 결과 list
+- `matchScore` 으로 fuzzy match (exact → prefix → substring → subsequence) on label/description/hotkey
+- 키보드: ArrowDown/Up 으로 선택, Enter 로 실행, ESC 로 닫기
+- 단축키 keycap 자동 표시
+- 자동 첫 entry focus + 검색 변경 시 focus 재설정
+
+신규 `EDITOR_COMMANDS` entry:
+```ts
+{
+  id: "palette.open",
+  label: { en: "Command palette", ko: "명령 팔레트" },
+  hotkey: { keys: "⌘ + K", binding: "Mod+K", scope: "editor" },
+  category: "view",
+  action: () => paletteOpener?.(),
+}
 ```
 
-design-system 측 wrapper. context 는 props 또는 React Context.
+`setPaletteOpener(opener)` — DesignPage 가 module-level slot 에 React setState 등록. hotkey 가 Mod+K 시 paletteOpener() 호출 → palette open.
 
-### Phase 4 — 기존 UI button 일괄 마이그레이션
+## 5. 검증
 
-- Header 의 Undo/Redo button → `<CommandButton commandId="history.undo" />` / `"history.redo"`
-- ContextualToolbar 의 각 section control 들도 점진 마이그레이션 (label/hint metadata 박제)
+- weave `tsc --noEmit` GREEN
+- weave `vite build` GREEN — 768 KB / 240 KB gzip (이전 744 KB 에서 24 KB 증가, palette + Command primitives 비용)
+- agocraft 측 변경 없음 (Phase 1+2 그대로)
 
-### Phase 5 — `enabledWhen` 와 mode / selection / history 자동 wiring
+## 6. 자동 적용 시나리오 — 사용자가 그린 그림 실현 확인
 
-- `useInteractionMode` + `useSelection` + `editor.history` → `EnabledWhenContext` 빌드
-- `<CommandButton>` 자동 disabled 처리 → hand mode 시 selection 관련 버튼 회색 처리 등
-
-### Phase 6 — 명령 팔레트 (Cmd+K)
-
-- `editorCommandMetadata.list()` 검색 UI
-- Fuzzy search on `resolveLabel` + `resolveDescription`
-- 단축키 표시 + 실행
+| 변경 | 자동 갱신 | 확인 |
+|---|---|---|
+| `EDITOR_COMMANDS.undo.hotkey.keys = "⌘ + Y"` | Undo 헤더 button keycap + palette 의 Undo entry keycap | ✅ |
+| `EDITOR_COMMANDS.undo.label.ko = "취소"` | 헤더 button aria-label / title / data-testid 외 모든 표시 | ✅ |
+| `EDITOR_COMMANDS.undo.enabledWhen = (ctx) => ctx.canUndo && ctx.mode === "idle"` | 헤더 button + palette entry 둘 다 hand mode 진입 시 자동 disabled | ✅ |
+| 새 command 추가 (EDITOR_COMMANDS 한 entry) | palette 에 자동 검색 가능 + 새 button 만들 때 commandId 만 알면 됨 | ✅ |
+| Locale "en" 추가 (CommandHostProvider locale prop 변경) | 모든 label 영문으로 자동 전환 | ✅ |
 
 ## 5. AUDIT-002 잔여 follow-up 과의 통합
 

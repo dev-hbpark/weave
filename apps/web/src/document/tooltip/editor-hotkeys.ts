@@ -33,6 +33,22 @@ import type { Editor } from "@agocraft/editor";
 
 interface EditorActionDeps {
   readonly editor: Editor;
+  /** Host-supplied opener for the command palette. Wired from DesignPage
+   *  via `setPaletteOpener` so the hotkey can toggle the palette without
+   *  this module owning React state. */
+  readonly openPalette?: () => void;
+}
+
+let paletteOpener: (() => void) | undefined;
+
+/** Host registration — DesignPage calls this so the `palette.open`
+ *  hotkey can fire the palette without this module owning the React
+ *  state. Returns a disposer that clears the binding. */
+export function setPaletteOpener(opener: () => void): () => void {
+  paletteOpener = opener;
+  return () => {
+    if (paletteOpener === opener) paletteOpener = undefined;
+  };
 }
 
 /** EDITOR_COMMANDS entries combine the user-facing metadata (used by
@@ -81,6 +97,19 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       if (editor.history.canRedo()) editor.history.redo();
     },
   },
+  {
+    id: "palette.open",
+    label: { en: "Command palette", ko: "명령 팔레트" },
+    description: {
+      en: "Open the command palette to search and run any command.",
+      ko: "명령 팔레트를 열어 모든 명령을 검색하고 실행합니다.",
+    },
+    hotkey: { keys: "⌘ + K", binding: "Mod+K", scope: "editor" },
+    category: "view",
+    action: () => {
+      paletteOpener?.();
+    },
+  },
 ];
 
 /** Module-level registry. Populated once at import time so every
@@ -100,6 +129,17 @@ for (const cmd of EDITOR_COMMANDS) {
 /** Lookup helper for the hotkey-action wiring. */
 function findAction(id: string): ((deps: EditorActionDeps) => void) | undefined {
   return EDITOR_COMMANDS.find((cmd) => cmd.id === id)?.action;
+}
+
+/** Dispatch an editor command by id. Used by CommandHostProvider's
+ *  `dispatch` so UI buttons / palette entries share the same action
+ *  source as the hotkey registry. No-op on unknown id (failure is
+ *  surfaced via `metadata.isEnabled` and the button's `disabled` state). */
+export function dispatchEditorCommand(
+  id: string,
+  deps: EditorActionDeps,
+): void {
+  findAction(id)?.(deps);
 }
 
 /** Skip a hotkey when the event originated from a text-editing surface
