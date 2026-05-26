@@ -209,6 +209,37 @@ test("WI-036 — multi-selection surfaces the `multi.delete` command and clearin
   await expect(page.getByTestId("cmd-multi-delete")).toHaveCount(0);
 });
 
+test("WI-036 — clicking a multi-selection corner handle does NOT clear the selection (pointerdown is swallowed)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-036-corner-swallow" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
+  });
+  await addFrame(page, "frame", {
+    frame: { x: 0.5, y: 0.5, width: 0.3, height: 0.3, rotation: 0 },
+  });
+  const ids = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => String(c.id));
+  });
+  await selectFrames(page, ids);
+  const corner = page.locator("[data-multi-corner='nw']");
+  await expect(corner).toBeVisible({ timeout: 3_000 });
+  // Press the corner — must NOT clear the multi-selection.
+  await corner.dispatchEvent("pointerdown", { bubbles: true });
+  await page.waitForTimeout(50);
+  await expect(page.getByTestId("multi-selection-overlay")).toBeVisible();
+  const stillTwo = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveVm?: { itemSelection: { state: { get: () => unknown } } };
+    };
+    const s = w.__weaveVm?.itemSelection.state.get() as { kind: string; ids?: unknown };
+    return s?.kind === "multi";
+  });
+  expect(stillTwo).toBe(true);
+});
+
 test("WI-036 — multi-selection mounts a bounding-box marquee + 4 corner handles; single selection does not", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-overlay" });
   await addFrame(page, "frame", {

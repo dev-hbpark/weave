@@ -1752,30 +1752,48 @@ function MultiSelectionOverlay({ selectedIds }: MultiSelectionOverlayProps): Rea
       }}
       data-testid="multi-selection-overlay"
     >
-      {(["nw", "ne", "sw", "se"] as const).map((corner) => (
-        // WI-036 follow-up — square handle (matches SelectionHandle's
-        // kind="corner" 10×10 px). The offset is -16 px so the handle
-        // sits clearly OUTSIDE the bounding-box corner and never
-        // overlaps the underlying frame's own single-frame corner
-        // handle (which is at offset -5 px). Visible range: outer.NW
-        // -16 to outer.NW -6 (no overlap with inner.NW -5 to +5).
-        <div
-          key={corner}
-          data-multi-corner={corner}
-          style={{
-            position: "absolute",
-            width: 10,
-            height: 10,
-            background: "#ffffff",
-            border: "1.5px solid var(--accent)",
-            borderRadius: 0,
-            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.18)",
-            boxSizing: "border-box",
-            ...(corner.includes("n") ? { top: -16 } : { bottom: -16 }),
-            ...(corner.includes("w") ? { left: -16 } : { right: -16 }),
-          }}
-        />
-      ))}
+      {(["nw", "ne", "sw", "se"] as const).map((corner) => {
+        const cursor =
+          corner === "nw" || corner === "se" ? "nwse-resize" : "nesw-resize";
+        return (
+          // WI-036 follow-up — square handle (matches SelectionHandle's
+          // kind="corner" 10×10 px). Offset -16 px so the handle sits
+          // clearly OUTSIDE the bounding-box corner and never overlaps
+          // the underlying frame's own single-frame corner handle (at
+          // offset -5 px). Visible range: outer.NW -16 to outer.NW -6
+          // (no overlap with inner.NW -5 to +5).
+          //
+          // pointerEvents: "auto" overrides the parent wrap's
+          // `pointer-events: none` (the wrap is non-interactive so the
+          // underlying frame body still receives clicks). The
+          // pointerdown handler `stopPropagation`s so the press
+          // doesn't bubble to the design plane's clear-selection
+          // handler. v1 has no drag-resize implementation; the
+          // affordance is purely visual + selection-preserving.
+          <div
+            key={corner}
+            data-multi-corner={corner}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            style={{
+              position: "absolute",
+              width: 10,
+              height: 10,
+              background: "#ffffff",
+              border: "1.5px solid var(--accent)",
+              borderRadius: 0,
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.18)",
+              boxSizing: "border-box",
+              pointerEvents: "auto",
+              cursor,
+              ...(corner.includes("n") ? { top: -16 } : { bottom: -16 }),
+              ...(corner.includes("w") ? { left: -16 } : { right: -16 }),
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
