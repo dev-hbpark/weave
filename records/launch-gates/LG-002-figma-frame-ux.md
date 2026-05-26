@@ -180,6 +180,14 @@ T-0 (제안: 2026-06-08) 직전 24h 안에 다음 모두 close 확인:
 
 ---
 
+## Follow-up Work Items (post-2026-05-26)
+
+| Item | Status | 영향 |
+|---|---|---|
+| WI-034 (Alt+drag frame-in-frame) | Done — adapter rebase + ratio 재변환 | user-visible gap close |
+| WI-035 P1+P2+P3 (R/T/F hotkey + QuickActionBar "+" + DropdownMenu drag) | Done — IME-safe sidecar + 4 follow-up fix | 4 entry points active |
+| WI-036 (QuickActionBar UX 재설계) | Done — anchored mount + hover target union + 200ms grace | **P2 UX conditional CLOSE** |
+
 ## Links
 
 - Triggering Work Item: `records/work-items/WI-033-figma-frame-ux-adoption.md`

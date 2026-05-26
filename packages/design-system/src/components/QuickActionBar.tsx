@@ -32,6 +32,14 @@ export interface QuickActionBarProps {
   readonly renderItem: (commandId: string) => ReactNode;
   /** Render when zero commands match. Default: render nothing. */
   readonly emptyFallback?: ReactNode;
+  /** WI-036 / DR-design-012 — hover target union. When true, the root
+   *  div carries `data-quick-actions-bar="true"` so a host's hover
+   *  tracker can treat pointer-over-the-bar as a continuation of the
+   *  underlying frame's hover. Without this, moving the mouse from a
+   *  frame to a floating bar crosses an empty gap, fires `mouseleave`
+   *  on the frame, and the bar's visible commands collapse before the
+   *  click. Default: true. */
+  readonly hoverTargetUnion?: boolean;
   readonly className?: string;
   readonly "data-testid"?: string;
 }
@@ -42,6 +50,7 @@ export function QuickActionBar({
   maxItems = 6,
   renderItem,
   emptyFallback = null,
+  hoverTargetUnion = true,
   className,
   "data-testid": testid = "quick-action-bar",
 }: QuickActionBarProps): ReactNode {
@@ -80,6 +89,7 @@ export function QuickActionBar({
         className,
       )}
       data-testid={testid}
+      {...(hoverTargetUnion ? { "data-quick-actions-bar": "true" } : {})}
       role="toolbar"
       aria-label="Quick actions"
     >

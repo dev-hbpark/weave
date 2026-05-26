@@ -67,6 +67,21 @@ const PROBES: ReadonlyArray<MatchProbe> = [
 
 function readHoverInfo(target: EventTarget | null): HoverContext {
   if (!(target instanceof Element)) return EMPTY;
+  // WI-036 — QuickActionBar hover target union. When the pointer
+  // lands on the anchor wrap (or the bar inside it, or any descendant
+  // of either), report the underlying frame's hover so the visible
+  // commands don't collapse mid-gesture. The wrap carries
+  // `data-quick-actions-frame-id="<id>"` plus an invisible padding
+  // that extends the hit-area into the frame ↔ bar gap; the wrap is
+  // therefore the single source for both the anchor id AND the union
+  // hit-test.
+  const anchor = target.closest("[data-quick-actions-frame-id]");
+  if (anchor !== null) {
+    const id = anchor.getAttribute("data-quick-actions-frame-id") ?? undefined;
+    if (id !== undefined) {
+      return { hoveredKind: "frame", hoveredId: id, hoveredRole: "frame" };
+    }
+  }
   for (const probe of PROBES) {
     const el = target.closest(`[${probe.attr}]`);
     if (el === null) continue;
@@ -90,6 +105,12 @@ function readHoverInfo(target: EventTarget | null): HoverContext {
   return EMPTY;
 }
 
+/** WI-036 grace window. Mouse leaving a frame and crossing a pixel-
+ *  gap to the floating QuickActionBar is a common gesture; without a
+ *  grace the bar collapses mid-trajectory and the click is lost. 200ms
+ *  matches Figma / Radix HoverCard defaults. */
+const HOVER_GRACE_MS = 200;
+
 /** Subscribe to hover state under `hostRef`. Returns the current
  *  context as React state so re-renders happen on transitions. Designed
  *  to be cheap: one listener on the host, no per-element wiring,
@@ -99,10 +120,18 @@ export function useHoverContext(
 ): HoverContext {
   const [ctx, setCtx] = useState<HoverContext>(EMPTY);
   const lastRef = useRef<HoverContext>(EMPTY);
+  const graceTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
     if (host === null) return;
+
+    const cancelGrace = (): void => {
+      if (graceTimerRef.current !== null) {
+        window.clearTimeout(graceTimerRef.current);
+        graceTimerRef.current = null;
+      }
+    };
 
     const update = (next: HoverContext): void => {
       const prev = lastRef.current;
@@ -116,18 +145,39 @@ export function useHoverContext(
     };
 
     const onMove = (e: PointerEvent): void => {
-      update(readHoverInfo(e.target));
+      // WI-036 — window-level pointermove so the hover state
+      // correctly tracks the pointer when it lands on the QuickAction-
+      // Bar that's mounted outside the canvas host (fixed-position
+      // anchored mount). Without this, the bar's element fires no
+      // host-scoped pointermove and the bar collapses.
+      cancelGrace();
+      const info = readHoverInfo(e.target);
+      // Limit the publish to surfaces we own (frame / bar / shape /
+      // hotspot / handle). Anything outside the canvas host (toolbar,
+      // header, body) should not poison the hover state.
+      if (info.hoveredKind === "none") {
+        const t = e.target;
+        const insideHost = t instanceof Node ? host.contains(t) : false;
+        const onBar =
+          t instanceof Element ? t.closest("[data-quick-actions-bar]") !== null : false;
+        if (!insideHost && !onBar) {
+          // Mouse left both the canvas host and the bar — start the
+          // grace window the same way `pointerleave` would.
+          graceTimerRef.current = window.setTimeout(() => {
+            graceTimerRef.current = null;
+            update(EMPTY);
+          }, HOVER_GRACE_MS);
+          return;
+        }
+      }
+      update(info);
     };
-    const onLeave = (): void => update(EMPTY);
 
-    host.addEventListener("pointermove", onMove, { passive: true });
-    host.addEventListener("pointerleave", onLeave, { passive: true });
+    window.addEventListener("pointermove", onMove, { passive: true, capture: true });
     return () => {
-      host.removeEventListener("pointermove", onMove);
-      host.removeEventListener("pointerleave", onLeave);
+      cancelGrace();
+      window.removeEventListener("pointermove", onMove, { capture: true });
     };
-    // host is read via ref; we only re-subscribe when the ref's element
-    // identity changes via remount, which the caller handles by remount.
   }, [hostRef]);
 
   return ctx;

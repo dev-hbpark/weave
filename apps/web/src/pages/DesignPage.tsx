@@ -1570,35 +1570,18 @@ function DesignPageBody() {
                         }}
                       />
                       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-                      {/* WI-027 — hover-driven QuickActionBar. Sits fixed near the top-
-                right of the workspace and reflects whatever the pointer is
-                currently over. New commands with `visibleWhen` light up
-                here automatically; no edit to DesignPage required. */}
-                      <div className="fixed top-16 right-4 z-30 pointer-events-none">
-                        <QuickActionBar
-                          data-testid="hover-quick-actions"
-                          renderItem={(id) => {
-                            // Host-owned icon mapping. Keep tiny — the metadata
-                            // already carries label/aria/disabled; we just pick
-                            // a glyph here.
-                            const glyph =
-                              id === "frame.addChild"
-                                ? "+"
-                                : id === "frame.duplicate"
-                                  ? "⊕"
-                                  : id === "frame.delete"
-                                    ? "✕"
-                                    : id === "image.replaceSrc" || id === "video.replaceSrc"
-                                      ? "↻"
-                                      : "•";
-                            return (
-                              <CommandIconButton commandId={id} size="sm">
-                                <span className="text-[13px]">{glyph}</span>
-                              </CommandIconButton>
-                            );
-                          }}
-                        />
-                      </div>
+                      {/* WI-036 — QuickActionBar anchored to the hovered
+                          frame's viewport top-left (8px gap above the
+                          frame edge). The bar carries
+                          `data-quick-actions-frame-id` so
+                          useHoverContext can treat pointer-over-bar as a
+                          continuation of the underlying frame's hover
+                          (hover target union). Position follows the
+                          frame via RAF while hover is active. */}
+                      <QuickActionBarAnchored
+                        hoveredKind={hoverContext.hoveredKind}
+                        hoveredId={hoverContext.hoveredId}
+                      />
                     </div>
                   </EditorProvider>
                 </ModeAwareAITooltipProvider>
@@ -1610,3 +1593,82 @@ function DesignPageBody() {
     </EditorVMProvider>
   );
 }
+
+interface QuickActionBarAnchoredProps {
+  readonly hoveredKind: string;
+  readonly hoveredId: string | undefined;
+}
+
+function QuickActionBarAnchored({ hoveredKind, hoveredId }: QuickActionBarAnchoredProps): React.ReactElement | null {
+  const [anchor, setAnchor] = useState<
+    { top: number; left: number; frameId: string } | null
+  >(null);
+  useEffect(() => {
+    const id = hoveredKind === "frame" ? hoveredId : undefined;
+    if (id === undefined) {
+      setAnchor(null);
+      return;
+    }
+    let raf = 0;
+    const tick = (): void => {
+      const el = document.querySelector(`[data-frame-id="${CSS.escape(id)}"]`);
+      if (el instanceof HTMLElement) {
+        const r = el.getBoundingClientRect();
+        // 8px gap above the frame edge so the bar sits clear of the
+        // frame's selection outline; QuickActionBar's own height is
+        // ~32px, so its baseline lands ~40px above the frame top.
+        const nextTop = r.top - 40;
+        const nextLeft = r.left;
+        setAnchor((prev) => {
+          if (
+            prev !== null
+            && prev.frameId === id
+            && Math.abs(prev.top - nextTop) < 0.5
+            && Math.abs(prev.left - nextLeft) < 0.5
+          ) return prev;
+          return { top: nextTop, left: nextLeft, frameId: id };
+        });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [hoveredKind, hoveredId]);
+
+  if (anchor === null) return null;
+  // The outer wrap carries an invisible 12px padding so the bar's
+  // hover hit-area extends past the visible bar boundary into the
+  // gap above the frame edge. Without this, a mouse that crosses
+  // from the frame to the bar on a near-pixel-perfect trajectory
+  // briefly lands on neither surface and the hover state collapses
+  // before the grace period can absorb it.
+  return (
+    <div
+      className="fixed z-30 p-3"
+      style={{ top: anchor.top - 12, left: anchor.left - 12 }}
+      data-quick-actions-frame-id={anchor.frameId}
+    >
+      <QuickActionBar
+        data-testid="hover-quick-actions"
+        renderItem={(id) => {
+          const glyph =
+            id === "frame.addChild"
+              ? "+"
+              : id === "frame.duplicate"
+                ? "⊕"
+                : id === "frame.delete"
+                  ? "✕"
+                  : id === "image.replaceSrc" || id === "video.replaceSrc"
+                    ? "↻"
+                    : "•";
+          return (
+            <CommandIconButton commandId={id} size="sm">
+              <span className="text-[13px]">{glyph}</span>
+            </CommandIconButton>
+          );
+        }}
+      />
+    </div>
+  );
+}
+
