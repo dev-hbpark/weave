@@ -1,5 +1,6 @@
 import {
   type Document as AgocraftDocument,
+  type Item as AgocraftItem,
   defaultShapeSubAttrs,
   type ShapeSubKind,
 } from "@agocraft/core";
@@ -718,6 +719,23 @@ function DesignPageBody() {
   // registry.isEnabled(id, context); QuickActionBar calls
   // registry.listVisible(context). Reference equality on `context`
   // controls re-renders.
+  // WI-036 follow-up — selection-driven QuickActionBar. The bar's
+  // commands now read `selectedKind` / `selectedId` instead of
+  // `hoveredKind` / `hoveredId`. Resolve the selected frame's kind
+  // by walking the doc once per selection change.
+  const selectedKind = useMemo<string | undefined>(() => {
+    if (selectedFrameId === undefined) return undefined;
+    function walk(item: AgocraftItem): string | undefined {
+      if (String(item.id) === selectedFrameId) return item.kind;
+      for (const c of item.children) {
+        const r = walk(c);
+        if (r !== undefined) return r;
+      }
+      return undefined;
+    }
+    return walk(docInAgocraft.root);
+  }, [docInAgocraft, selectedFrameId]);
+
   const commandContext = useMemo<Readonly<Record<string, unknown>>>(
     () => ({
       canUndo,
@@ -730,6 +748,8 @@ function DesignPageBody() {
       // hotkeys).
       hasFrameSelection: selectedFrameId !== undefined,
       selectedFrameId,
+      selectedKind,
+      selectedId: selectedFrameId,
       hoveredKind: hoverContext.hoveredKind,
       hoveredId: hoverContext.hoveredId,
       hoveredRole: hoverContext.hoveredRole,
@@ -739,6 +759,7 @@ function DesignPageBody() {
       canRedo,
       selectedIds.size,
       selectedFrameId,
+      selectedKind,
       hoverContext.hoveredKind,
       hoverContext.hoveredId,
       hoverContext.hoveredRole,
@@ -753,14 +774,15 @@ function DesignPageBody() {
   // their target via the host slots registered below.
   const dispatchCommand = useCallback(
     (id: string) => {
-      dispatchEditorCommand(
-        id,
-        { editor },
-        hoverContext as unknown as Readonly<Record<string, unknown>>,
-      );
+      // WI-036 follow-up — pass the full commandContext (hover +
+      // selection) so the host slot dispatcher can resolve the
+      // target from whichever paradigm the command uses. The bar
+      // commands prefer selection now; legacy hover-scoped ones
+      // (none today) would still see hoverContext keys.
+      dispatchEditorCommand(id, { editor }, commandContext);
       bumpHistoryTick();
     },
-    [editor, bumpHistoryTick, hoverContext],
+    [editor, bumpHistoryTick, commandContext],
   );
 
   // WI-026 Phase 6 — command palette state. The hotkey "palette.open"
@@ -1579,19 +1601,25 @@ function DesignPageBody() {
                           (hover target union). Position follows the
                           frame via RAF while hover is active. */}
                       <QuickActionBarAnchored
-                        hoveredKind={hoverContext.hoveredKind}
-                        hoveredId={hoverContext.hoveredId}
+                        selectedFrameId={selectedFrameId ?? undefined}
                         onInsertInFrame={(containerId, kind, sub) => {
                           // WI-036 follow-up — hover-open submenu of
                           // the `+` button. Shares the same
                           // `weave.item.add` SSOT as the hotkey /
                           // Alt+drag / DropdownMenu add paths.
+                          //
+                          // The bar is selection-driven: after the
+                          // submenu inserts a child we deliberately
+                          // KEEP the parent selected (don't follow
+                          // the new item) so the bar stays anchored
+                          // to the same frame and the user can add
+                          // multiple children in a row.
                           const attrsOverride: Record<string, unknown> = {};
                           if (kind === "shape" && sub && sub !== "rectangle") {
                             attrsOverride.shape = sub;
                             attrsOverride.subAttrs = defaultShapeSubAttrs(sub);
                           }
-                          const result = editor.exec<unknown, string>("weave.item.add", {
+                          editor.exec<unknown, string>("weave.item.add", {
                             kind,
                             containerId,
                             frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
@@ -1599,8 +1627,6 @@ function DesignPageBody() {
                               ? { attrsOverride }
                               : {}),
                           });
-                          if (!result.ok) return;
-                          setSelectedFrameIdRef.current?.(result.value);
                         }}
                       />
                     </div>
@@ -1616,13 +1642,16 @@ function DesignPageBody() {
 }
 
 interface QuickActionBarAnchoredProps {
-  readonly hoveredKind: string;
-  readonly hoveredId: string | undefined;
-  /** WI-036 follow-up — host-owned insert dispatch. The `+` button's
-   *  hover submenu lists every domain × sub-kind add and dispatches
-   *  through this callback (which routes the same `weave.item.add`
-   *  SSOT all other paths use). Receives the container frame id from
-   *  the anchored bar's current target. */
+  /** WI-036 follow-up — selection-driven QuickActionBar. The bar
+   *  mounts when a frame is selected (not when one is hovered), so
+   *  it stays put while the user moves the mouse to the submenu or
+   *  off the canvas. Undefined → no bar. */
+  readonly selectedFrameId: string | undefined;
+  /** Host-owned insert dispatch. The `+` button's hover submenu
+   *  lists every domain × sub-kind add and dispatches through this
+   *  callback (which routes the same `weave.item.add` SSOT all other
+   *  paths use). Receives the container frame id from the anchored
+   *  bar's current target. */
   readonly onInsertInFrame: (
     containerId: string,
     kind: DomainKind,
@@ -1630,12 +1659,12 @@ interface QuickActionBarAnchoredProps {
   ) => void;
 }
 
-function QuickActionBarAnchored({ hoveredKind, hoveredId, onInsertInFrame }: QuickActionBarAnchoredProps): React.ReactElement | null {
+function QuickActionBarAnchored({ selectedFrameId, onInsertInFrame }: QuickActionBarAnchoredProps): React.ReactElement | null {
   const [anchor, setAnchor] = useState<
     { top: number; left: number; frameId: string } | null
   >(null);
   useEffect(() => {
-    const id = hoveredKind === "frame" ? hoveredId : undefined;
+    const id = selectedFrameId;
     if (id === undefined) {
       setAnchor(null);
       return;
@@ -1670,7 +1699,7 @@ function QuickActionBarAnchored({ hoveredKind, hoveredId, onInsertInFrame }: Qui
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [hoveredKind, hoveredId]);
+  }, [selectedFrameId]);
 
   if (anchor === null) return null;
   // The outer wrap carries an invisible 12px padding so the bar's

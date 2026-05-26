@@ -341,10 +341,14 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     label: { en: "Add child frame", ko: "자식 프레임 추가" },
     hint: { en: "Insert a default-sized frame here.", ko: "이 프레임 안에 새 프레임을 추가합니다." },
     category: "frame",
-    visibleWhen: (ctx) => ctx.hoveredKind === "frame",
-    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+    // WI-036 follow-up — QuickActionBar pivoted from hover-driven to
+    // selection-driven. visibleWhen / enabledWhen read the SELECTED
+    // frame's kind / id instead of the hovered one.
+    visibleWhen: (ctx) => ctx.selectedKind === "frame",
+    enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
-      // Dispatched via hoverFrameChildAdder slot.
+      // Dispatched via hoverFrameChildAdder slot (still named after
+      // the original hover origin; the slot itself is paradigm-blind).
     },
   },
   {
@@ -353,12 +357,12 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     hint: { en: "Remove this frame.", ko: "이 프레임을 삭제합니다." },
     category: "frame",
     visibleWhen: (ctx) =>
-      ctx.hoveredKind === "frame"
-      || ctx.hoveredKind === "image"
-      || ctx.hoveredKind === "video"
-      || ctx.hoveredKind === "shape"
-      || ctx.hoveredKind === "text",
-    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+      ctx.selectedKind === "frame"
+      || ctx.selectedKind === "image"
+      || ctx.selectedKind === "video"
+      || ctx.selectedKind === "shape"
+      || ctx.selectedKind === "text",
+    enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
       // Dispatched via frameDeleter slot.
     },
@@ -368,8 +372,8 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     label: { en: "Replace image", ko: "이미지 교체" },
     hint: { en: "Open the media picker.", ko: "이미지 소스를 변경합니다." },
     category: "image",
-    visibleWhen: (ctx) => ctx.hoveredKind === "image",
-    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+    visibleWhen: (ctx) => ctx.selectedKind === "image",
+    enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
       // Dispatched via mediaSrcOpener slot.
     },
@@ -379,8 +383,8 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     label: { en: "Replace video", ko: "비디오 교체" },
     hint: { en: "Open the media picker.", ko: "비디오 소스를 변경합니다." },
     category: "video",
-    visibleWhen: (ctx) => ctx.hoveredKind === "video",
-    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+    visibleWhen: (ctx) => ctx.selectedKind === "video",
+    enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
       // Dispatched via mediaSrcOpener slot.
     },
@@ -394,42 +398,45 @@ function tryHostSlot(
   id: string,
   ctx: Readonly<Record<string, unknown>> | undefined,
 ): boolean {
-  const hoveredId =
-    typeof ctx?.hoveredId === "string" ? ctx.hoveredId : undefined;
-  const hoveredKind =
-    typeof ctx?.hoveredKind === "string" ? ctx.hoveredKind : undefined;
-  if (id === "frame.duplicate" && frameDuplicator !== undefined && hoveredId !== undefined) {
-    frameDuplicator(hoveredId);
+  // WI-036 follow-up — QuickActionBar now reads SELECTION state, not
+  // hover. The slot dispatch mirrors: pull `selectedId` /
+  // `selectedKind` from the host's commandContext.
+  const selectedId =
+    typeof ctx?.selectedId === "string" ? ctx.selectedId : undefined;
+  const selectedKind =
+    typeof ctx?.selectedKind === "string" ? ctx.selectedKind : undefined;
+  if (id === "frame.duplicate" && frameDuplicator !== undefined && selectedId !== undefined) {
+    frameDuplicator(selectedId);
     return true;
   }
-  if (id === "frame.delete" && frameDeleter !== undefined && hoveredId !== undefined) {
-    frameDeleter(hoveredId);
+  if (id === "frame.delete" && frameDeleter !== undefined && selectedId !== undefined) {
+    frameDeleter(selectedId);
     return true;
   }
   if (
     id === "frame.addChild"
     && hoverFrameChildAdder !== undefined
-    && hoveredId !== undefined
+    && selectedId !== undefined
   ) {
-    hoverFrameChildAdder(hoveredId);
+    hoverFrameChildAdder(selectedId);
     return true;
   }
   if (
     id === "image.replaceSrc"
     && mediaSrcOpener !== undefined
-    && hoveredId !== undefined
-    && hoveredKind === "image"
+    && selectedId !== undefined
+    && selectedKind === "image"
   ) {
-    mediaSrcOpener("image", hoveredId);
+    mediaSrcOpener("image", selectedId);
     return true;
   }
   if (
     id === "video.replaceSrc"
     && mediaSrcOpener !== undefined
-    && hoveredId !== undefined
-    && hoveredKind === "video"
+    && selectedId !== undefined
+    && selectedKind === "video"
   ) {
-    mediaSrcOpener("video", hoveredId);
+    mediaSrcOpener("video", selectedId);
     return true;
   }
   return false;
