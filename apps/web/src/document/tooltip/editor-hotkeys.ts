@@ -324,23 +324,13 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
   // These commands have `visibleWhen` so they appear in the hovered
   // frame's QuickActionBar. They do NOT have a global hotkey — the bar
   // is the discovery surface. Adding a new command here = new affordance.
-  {
-    id: "frame.duplicate",
-    label: { en: "Duplicate", ko: "복제" },
-    hint: { en: "Copy this frame.", ko: "이 프레임을 복제합니다." },
-    category: "frame",
-    visibleWhen: (ctx) =>
-      ctx.hoveredKind === "frame"
-      || ctx.hoveredKind === "image"
-      || ctx.hoveredKind === "video"
-      || ctx.hoveredKind === "shape"
-      || ctx.hoveredKind === "text",
-    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
-    action: () => {
-      // No-op at module level — dispatched via the frameDuplicator slot
-      // since the closure captures useDesign's addItem.
-    },
-  },
+  //
+  // WI-036 follow-up — `frame.duplicate` was retired after user
+  // testing surfaced that its action dispatched a fresh `addItem` of
+  // the same kind (no attrs copy), which behaved indistinguishably
+  // from `frame.addChild`. A real duplicate (deep-clone of attrs +
+  // children) is a separate WI; until then the command is gone so
+  // the QuickActionBar shows only `+` and `✕` (add + delete).
   // WI-035 P2 — "+" QuickActionBar button on hovered frames. Click
   // inserts a default-sized child frame; the closure (DesignPage) owns
   // the actual `weave.item.add` exec via the `hoverFrameChildAdder`

@@ -1581,6 +1581,27 @@ function DesignPageBody() {
                       <QuickActionBarAnchored
                         hoveredKind={hoverContext.hoveredKind}
                         hoveredId={hoverContext.hoveredId}
+                        onInsertInFrame={(containerId, kind, sub) => {
+                          // WI-036 follow-up — hover-open submenu of
+                          // the `+` button. Shares the same
+                          // `weave.item.add` SSOT as the hotkey /
+                          // Alt+drag / DropdownMenu add paths.
+                          const attrsOverride: Record<string, unknown> = {};
+                          if (kind === "shape" && sub && sub !== "rectangle") {
+                            attrsOverride.shape = sub;
+                            attrsOverride.subAttrs = defaultShapeSubAttrs(sub);
+                          }
+                          const result = editor.exec<unknown, string>("weave.item.add", {
+                            kind,
+                            containerId,
+                            frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
+                            ...(Object.keys(attrsOverride).length > 0
+                              ? { attrsOverride }
+                              : {}),
+                          });
+                          if (!result.ok) return;
+                          setSelectedFrameIdRef.current?.(result.value);
+                        }}
                       />
                     </div>
                   </EditorProvider>
@@ -1597,9 +1618,19 @@ function DesignPageBody() {
 interface QuickActionBarAnchoredProps {
   readonly hoveredKind: string;
   readonly hoveredId: string | undefined;
+  /** WI-036 follow-up — host-owned insert dispatch. The `+` button's
+   *  hover submenu lists every domain × sub-kind add and dispatches
+   *  through this callback (which routes the same `weave.item.add`
+   *  SSOT all other paths use). Receives the container frame id from
+   *  the anchored bar's current target. */
+  readonly onInsertInFrame: (
+    containerId: string,
+    kind: DomainKind,
+    shapeSubKind?: ShapeSubKind,
+  ) => void;
 }
 
-function QuickActionBarAnchored({ hoveredKind, hoveredId }: QuickActionBarAnchoredProps): React.ReactElement | null {
+function QuickActionBarAnchored({ hoveredKind, hoveredId, onInsertInFrame }: QuickActionBarAnchoredProps): React.ReactElement | null {
   const [anchor, setAnchor] = useState<
     { top: number; left: number; frameId: string } | null
   >(null);
@@ -1612,23 +1643,29 @@ function QuickActionBarAnchored({ hoveredKind, hoveredId }: QuickActionBarAnchor
     let raf = 0;
     const tick = (): void => {
       const el = document.querySelector(`[data-frame-id="${CSS.escape(id)}"]`);
-      if (el instanceof HTMLElement) {
-        const r = el.getBoundingClientRect();
-        // 8px gap above the frame edge so the bar sits clear of the
-        // frame's selection outline; QuickActionBar's own height is
-        // ~32px, so its baseline lands ~40px above the frame top.
-        const nextTop = r.top - 40;
-        const nextLeft = r.left;
-        setAnchor((prev) => {
-          if (
-            prev !== null
-            && prev.frameId === id
-            && Math.abs(prev.top - nextTop) < 0.5
-            && Math.abs(prev.left - nextLeft) < 0.5
-          ) return prev;
-          return { top: nextTop, left: nextLeft, frameId: id };
-        });
+      if (!(el instanceof HTMLElement)) {
+        // WI-036 follow-up — the hovered frame was deleted (Cmd+Z
+        // / `frame.delete` / migration). Clear the stale anchor so
+        // the bar disappears even though the upstream hover state
+        // hasn't yet transitioned to EMPTY (the pointer is still
+        // over the bar's last viewport position, but the source
+        // item is gone). Stop polling — a fresh hover restarts
+        // this effect.
+        setAnchor(null);
+        return;
       }
+      const r = el.getBoundingClientRect();
+      const nextTop = r.top - 40;
+      const nextLeft = r.left;
+      setAnchor((prev) => {
+        if (
+          prev !== null
+          && prev.frameId === id
+          && Math.abs(prev.top - nextTop) < 0.5
+          && Math.abs(prev.left - nextLeft) < 0.5
+        ) return prev;
+        return { top: nextTop, left: nextLeft, frameId: id };
+      });
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -1651,16 +1688,26 @@ function QuickActionBarAnchored({ hoveredKind, hoveredId }: QuickActionBarAnchor
       <QuickActionBar
         data-testid="hover-quick-actions"
         renderItem={(id) => {
+          // WI-036 follow-up — the `+` button doubles as a hover-
+          // open submenu listing every add option (frame / text /
+          // 9 shape variants). Single-click dispatches the default
+          // (a child frame, matching the original `frame.addChild`);
+          // hover opens the submenu so the user can pick any kind
+          // without learning a separate path.
+          if (id === "frame.addChild") {
+            return (
+              <FrameAddSubmenu
+                frameId={anchor.frameId}
+                onInsert={onInsertInFrame}
+              />
+            );
+          }
           const glyph =
-            id === "frame.addChild"
-              ? "+"
-              : id === "frame.duplicate"
-                ? "⊕"
-                : id === "frame.delete"
-                  ? "✕"
-                  : id === "image.replaceSrc" || id === "video.replaceSrc"
-                    ? "↻"
-                    : "•";
+            id === "frame.delete"
+              ? "✕"
+              : id === "image.replaceSrc" || id === "video.replaceSrc"
+                ? "↻"
+                : "•";
           return (
             <CommandIconButton commandId={id} size="sm">
               <span className="text-[13px]">{glyph}</span>
@@ -1669,6 +1716,103 @@ function QuickActionBarAnchored({ hoveredKind, hoveredId }: QuickActionBarAnchor
         }}
       />
     </div>
+  );
+}
+
+interface FrameAddSubmenuProps {
+  readonly frameId: string;
+  readonly onInsert: (
+    containerId: string,
+    kind: DomainKind,
+    shapeSubKind?: ShapeSubKind,
+  ) => void;
+}
+
+function FrameAddSubmenu({ frameId, onInsert }: FrameAddSubmenuProps): React.ReactElement {
+  const [open, setOpen] = useState(false);
+  const leaveTimerRef = useRef<number | null>(null);
+  const cancelLeave = useCallback(() => {
+    if (leaveTimerRef.current !== null) {
+      window.clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+  }, []);
+  const scheduleClose = useCallback(() => {
+    cancelLeave();
+    leaveTimerRef.current = window.setTimeout(() => {
+      leaveTimerRef.current = null;
+      setOpen(false);
+    }, 200);
+  }, [cancelLeave]);
+  const handleEnter = useCallback(() => {
+    cancelLeave();
+    setOpen(true);
+  }, [cancelLeave]);
+  useEffect(() => {
+    return () => cancelLeave();
+  }, [cancelLeave]);
+
+  const insertHandler = (kind: DomainKind, sub?: ShapeSubKind) => () => {
+    onInsert(frameId, kind, sub);
+    setOpen(false);
+  };
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <span onMouseEnter={handleEnter} onMouseLeave={scheduleClose}>
+        <DropdownMenuTrigger asChild>
+          <CommandIconButton commandId="frame.addChild" size="sm">
+            <span className="text-[13px]">+</span>
+          </CommandIconButton>
+        </DropdownMenuTrigger>
+      </span>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        onMouseEnter={handleEnter}
+        onMouseLeave={scheduleClose}
+        data-testid="frame-add-submenu"
+      >
+        <DropdownMenuLabel>프레임</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={insertHandler("frame")} data-testid="frame-add-frame">
+          ▢&nbsp;&nbsp;프레임
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>텍스트</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={insertHandler("text")} data-testid="frame-add-text">
+          T&nbsp;&nbsp;텍스트
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>도형</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={insertHandler("shape", "rectangle")} data-testid="frame-add-shape-rectangle">
+          ▭&nbsp;&nbsp;사각형
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={insertHandler("shape", "ellipse")}>
+          ◯&nbsp;&nbsp;원
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={insertHandler("shape", "line")}>
+          ─&nbsp;&nbsp;선
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={insertHandler("shape", "arrow")}>
+          →&nbsp;&nbsp;화살표
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={insertHandler("shape", "triangle")}>
+          △&nbsp;&nbsp;삼각형
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={insertHandler("shape", "star")}>
+          ★&nbsp;&nbsp;별
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={insertHandler("shape", "polygon")}>
+          ⬡&nbsp;&nbsp;다각형
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={insertHandler("shape", "heart")}>
+          ♥&nbsp;&nbsp;하트
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={insertHandler("shape", "speech-bubble")}>
+          💬&nbsp;&nbsp;말풍선
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
