@@ -51,6 +51,16 @@ async function clearSelection(page: Page): Promise<void> {
   });
 }
 
+async function selectFrames(page: Page, ids: ReadonlyArray<string>): Promise<void> {
+  await page.evaluate((arr) => {
+    const w = window as unknown as {
+      __weaveVm?: { itemSelection: { setMany: (ids: Iterable<string>) => void } };
+    };
+    w.__weaveVm?.itemSelection.setMany(arr);
+  }, [...ids]);
+  await page.waitForTimeout(50);
+}
+
 test("WI-036 — selecting a frame surfaces the bar; clicking + adds a child frame", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-select" });
   await addFrame(page, "frame", {
@@ -159,6 +169,44 @@ test("WI-036 — `+` button hover opens submenu; clicking 'text' inserts a text 
     return (parent?.children ?? []).map((c) => c.kind);
   }, parentId);
   expect(kinds).toContain("text");
+});
+
+test("WI-036 — multi-selection surfaces the `multi.delete` command and clearing the selection removes the bar", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-036-multi" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
+  });
+  await addFrame(page, "frame", {
+    frame: { x: 0.5, y: 0.5, width: 0.3, height: 0.3, rotation: 0 },
+  });
+  const ids = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => String(c.id));
+  });
+  expect(ids.length).toBe(2);
+
+  await selectFrames(page, ids);
+  // Multi-mode surfaces the `multi.delete` command (✕).
+  await expect(page.getByTestId("cmd-multi-delete")).toBeVisible({ timeout: 3_000 });
+  // The single-frame `frame.addChild` is hidden (selectedKind === "multi").
+  await expect(page.getByTestId("cmd-frame-addChild")).toHaveCount(0);
+
+  // Click ✕ — every selected item is removed.
+  await page.getByTestId("cmd-multi-delete").click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const w = window as unknown as {
+          __weaveDoc?: { root: { children: ReadonlyArray<unknown> } };
+        };
+        return w.__weaveDoc?.root.children?.length ?? 0;
+      }),
+    )
+    .toBe(0);
+  // Bar disappears.
+  await expect(page.getByTestId("cmd-multi-delete")).toHaveCount(0);
 });
 
 test("WI-036 — deleting the selected frame clears the bar (no stale menu)", async ({ page }) => {

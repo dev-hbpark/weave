@@ -75,6 +75,7 @@ import {
   type ItemAdderKind,
   type SelectionNavDir,
   setFrameDeleter,
+  setMultiDeleter,
   setFrameDuplicator,
   setHoverFrameChildAdder,
   setItemAdder,
@@ -723,7 +724,12 @@ function DesignPageBody() {
   // commands now read `selectedKind` / `selectedId` instead of
   // `hoveredKind` / `hoveredId`. Resolve the selected frame's kind
   // by walking the doc once per selection change.
+  //
+  // Multi-selection (size > 1) reports `selectedKind = "multi"` so
+  // visibleWhen filters surface the `multi.*` command set instead
+  // of per-kind ones. Single selection keeps the per-kind kind.
   const selectedKind = useMemo<string | undefined>(() => {
+    if (selectedIds.size > 1) return "multi";
     if (selectedFrameId === undefined) return undefined;
     function walk(item: AgocraftItem): string | undefined {
       if (String(item.id) === selectedFrameId) return item.kind;
@@ -734,7 +740,7 @@ function DesignPageBody() {
       return undefined;
     }
     return walk(docInAgocraft.root);
-  }, [docInAgocraft, selectedFrameId]);
+  }, [docInAgocraft, selectedFrameId, selectedIds]);
 
   const commandContext = useMemo<Readonly<Record<string, unknown>>>(
     () => ({
@@ -871,6 +877,24 @@ function DesignPageBody() {
     return setFrameDeleter((frameId) => removeItem(frameId));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- removeItem
     // closes over `rawRemoveItem` from useDesign which is stable.
+  }, []);
+  // WI-036 follow-up — multi-selection delete. Iterates the live
+  // `selectedIds` (via ref to avoid re-registering on every selection
+  // change) and dispatches `weave.item.remove` for each. After the
+  // batch the editor's history records each as a separate undo step;
+  // a future `weave.items.removeBatch` macro can collapse them into
+  // a single inverse patch.
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
+  useEffect(() => {
+    return setMultiDeleter(() => {
+      const ids = Array.from(selectedIdsRef.current);
+      for (const id of ids) removeItem(id);
+      // Drop the selection — the items are gone.
+      selectFrame(null);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- removeItem
+    // / selectFrame are stable from useDesign / useSelection.
   }, []);
   useEffect(() => {
     return setFrameDuplicator((frameId) => {
@@ -1602,6 +1626,7 @@ function DesignPageBody() {
                           frame via RAF while hover is active. */}
                       <QuickActionBarAnchored
                         selectedFrameId={selectedFrameId ?? undefined}
+                        selectedIds={selectedIds}
                         onInsertInFrame={(containerId, kind, sub) => {
                           // WI-036 follow-up — hover-open submenu of
                           // the `+` button. Shares the same
@@ -1647,6 +1672,11 @@ interface QuickActionBarAnchoredProps {
    *  it stays put while the user moves the mouse to the submenu or
    *  off the canvas. Undefined → no bar. */
   readonly selectedFrameId: string | undefined;
+  /** Multi-selection — every id renders a selected outline. When
+   *  `size > 1` the bar's anchor switches to the bounding box of the
+   *  selected items, and `selectedKind === "multi"` (set by the host
+   *  in commandContext) surfaces the `multi.*` command set. */
+  readonly selectedIds: ReadonlySet<string>;
   /** Host-owned insert dispatch. The `+` button's hover submenu
    *  lists every domain × sub-kind add and dispatches through this
    *  callback (which routes the same `weave.item.add` SSOT all other
@@ -1659,47 +1689,67 @@ interface QuickActionBarAnchoredProps {
   ) => void;
 }
 
-function QuickActionBarAnchored({ selectedFrameId, onInsertInFrame }: QuickActionBarAnchoredProps): React.ReactElement | null {
+function QuickActionBarAnchored({ selectedFrameId, selectedIds, onInsertInFrame }: QuickActionBarAnchoredProps): React.ReactElement | null {
+  const isMulti = selectedIds.size > 1;
   const [anchor, setAnchor] = useState<
     { top: number; left: number; frameId: string } | null
   >(null);
+  // Stable key for the multi-select case so the effect re-mounts
+  // whenever the selection set changes (sorted ids joined).
+  const multiKey = useMemo(
+    () => (isMulti ? Array.from(selectedIds).sort().join("|") : ""),
+    [isMulti, selectedIds],
+  );
   useEffect(() => {
-    const id = selectedFrameId;
-    if (id === undefined) {
+    const ids = isMulti
+      ? Array.from(selectedIds)
+      : selectedFrameId !== undefined
+        ? [selectedFrameId]
+        : [];
+    if (ids.length === 0) {
       setAnchor(null);
       return;
     }
     let raf = 0;
     const tick = (): void => {
-      const el = document.querySelector(`[data-frame-id="${CSS.escape(id)}"]`);
-      if (!(el instanceof HTMLElement)) {
-        // WI-036 follow-up — the hovered frame was deleted (Cmd+Z
-        // / `frame.delete` / migration). Clear the stale anchor so
-        // the bar disappears even though the upstream hover state
-        // hasn't yet transitioned to EMPTY (the pointer is still
-        // over the bar's last viewport position, but the source
-        // item is gone). Stop polling — a fresh hover restarts
-        // this effect.
+      let minLeft = Number.POSITIVE_INFINITY;
+      let minTop = Number.POSITIVE_INFINITY;
+      let found = false;
+      for (const id of ids) {
+        const el = document.querySelector(`[data-frame-id="${CSS.escape(id)}"]`);
+        if (!(el instanceof HTMLElement)) continue;
+        const r = el.getBoundingClientRect();
+        if (r.left < minLeft) minLeft = r.left;
+        if (r.top < minTop) minTop = r.top;
+        found = true;
+      }
+      if (!found) {
+        // Every selected frame was deleted — clear the anchor and
+        // stop polling. A fresh selection restarts this effect.
         setAnchor(null);
         return;
       }
-      const r = el.getBoundingClientRect();
-      const nextTop = r.top - 40;
-      const nextLeft = r.left;
+      const nextTop = minTop - 40;
+      const nextLeft = minLeft;
+      // `frameId` is repurposed for the data-attribute payload — for
+      // a multi-selection we expose the primary id (first selected)
+      // so the bar still routes single-frame commands through
+      // commandContext.selectedId.
+      const tagId = isMulti ? (ids[0] ?? "multi") : ids[0]!;
       setAnchor((prev) => {
         if (
           prev !== null
-          && prev.frameId === id
+          && prev.frameId === tagId
           && Math.abs(prev.top - nextTop) < 0.5
           && Math.abs(prev.left - nextLeft) < 0.5
         ) return prev;
-        return { top: nextTop, left: nextLeft, frameId: id };
+        return { top: nextTop, left: nextLeft, frameId: tagId };
       });
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [selectedFrameId]);
+  }, [selectedFrameId, isMulti, selectedIds, multiKey]);
 
   if (anchor === null) return null;
   // The outer wrap carries an invisible 12px padding so the bar's
@@ -1732,7 +1782,7 @@ function QuickActionBarAnchored({ selectedFrameId, onInsertInFrame }: QuickActio
             );
           }
           const glyph =
-            id === "frame.delete"
+            id === "frame.delete" || id === "multi.delete"
               ? "✕"
               : id === "image.replaceSrc" || id === "video.replaceSrc"
                 ? "↻"

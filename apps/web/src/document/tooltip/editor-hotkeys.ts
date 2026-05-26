@@ -79,6 +79,17 @@ export function setMediaSrcOpener(
   };
 }
 
+/** WI-036 follow-up — multi-selection bulk action slot. The host
+ *  registers a single callback that consumes every currently-selected
+ *  item id. Today the only `multi.*` command is `multi.delete`. */
+let multiDeleter: (() => void) | undefined;
+export function setMultiDeleter(fn: () => void): () => void {
+  multiDeleter = fn;
+  return () => {
+    if (multiDeleter === fn) multiDeleter = undefined;
+  };
+}
+
 let paletteOpener: (() => void) | undefined;
 
 /** Host registration — DesignPage calls this so the `palette.open`
@@ -389,6 +400,27 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       // Dispatched via mediaSrcOpener slot.
     },
   },
+  // WI-036 follow-up — multi-selection commands. visibleWhen reads
+  // `selectedKind === "multi"` (the host sets this when selection
+  // size > 1). Only `multi.delete` ships in v1; align / distribute
+  // / group are v1.x backlog.
+  {
+    id: "multi.delete",
+    label: { en: "Delete selected", ko: "선택 항목 삭제" },
+    hint: {
+      en: "Remove every item in the current multi-selection.",
+      ko: "현재 다중 선택한 모든 항목을 삭제합니다.",
+    },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: (ctx) => {
+      const count = ctx.selectionCount;
+      return typeof count === "number" && count > 1;
+    },
+    action: () => {
+      // Dispatched via multiDeleter slot.
+    },
+  },
 ];
 
 /** Bridge between dispatchEditorCommand and host-supplied action slots.
@@ -419,6 +451,10 @@ function tryHostSlot(
     && selectedId !== undefined
   ) {
     hoverFrameChildAdder(selectedId);
+    return true;
+  }
+  if (id === "multi.delete" && multiDeleter !== undefined) {
+    multiDeleter();
     return true;
   }
   if (
