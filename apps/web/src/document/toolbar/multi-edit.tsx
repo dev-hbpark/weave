@@ -5,8 +5,13 @@
 // committing a new value applies it to every selected item via `updateAll`,
 // after which the badge clears (because the values now agree).
 
+import { type StyleRef, ref as styleRef } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import type { JSX } from "react";
+import { findItemDeep } from "../agocraft-mirror.js";
+import { resolveStoredColor } from "../style/resolver.js";
+import { useDocumentForResolution } from "../style/resolver-context.js";
+import { parseVarRef } from "../style/theme-tokens.js";
 
 export type ItemSnapshot = {
   readonly id: string;
@@ -37,6 +42,61 @@ export function isMixed<T>(v: MixedOr<T>): v is typeof MIXED {
   return v === MIXED;
 }
 
+// ─── WI-040 — theme cascade integration for color toolbar sections ──────
+//
+// Two helpers shared by `frame-background-section`, `text-section`, and
+// `shape-section` so every color picker:
+//
+//   • on **read** — resolves any `StyleRef` value (or `var(--*)` literal)
+//     into a CSS string the picker can display, walking the agocraft
+//     style.provider cascade from the item upward.
+//   • on **commit** — converts a `var(--<token>)` literal emit from the
+//     ColorPicker theme swatch into a `StyleRef` (`{$ref: "color.accent"}`)
+//     so the cascade keeps semantic identity and any intermediate
+//     `style.provider` Unit can override the token.
+
+/** Picker → command value translator. When the user picked a theme swatch
+ *  the ColorPicker emits `var(--accent)` (string); convert to a `StyleRef`
+ *  object so the agocraft StyleResolver cascade can walk ancestor
+ *  `style.provider` Units on read. Custom hex / rgb / arbitrary var
+ *  strings round-trip verbatim. */
+export function pickerValueToStored(v: string): string | StyleRef {
+  const tokenInfo = parseVarRef(v);
+  return tokenInfo !== null ? styleRef(tokenInfo.tokenName) : v;
+}
+
+/** Multi-item shared-value helper that resolves `StyleRef` values via the
+ *  agocraft cascade into CSS strings BEFORE running through `sharedValue`.
+ *  Two reasons resolution must happen before the equality check:
+ *
+ *    1. The ColorPicker's `value` prop expects a CSS string; passing a
+ *       raw `StyleRef` object renders `"[object Object]"` on the trigger
+ *       and breaks `parseColor` inside the popover.
+ *    2. `sharedValue`'s default `Object.is` equality reports two distinct
+ *       `StyleRef` references pointing at the same token as "Mixed" even
+ *       when they're semantically identical. Resolving to the underlying
+ *       CSS string first collapses identity to semantic equality.
+ *
+ *  Falls back to the raw value (when string) when no provider context is
+ *  mounted (standalone tests / preview hosts). */
+export function useResolveSharedColor(
+  items: ReadonlyArray<ItemSnapshot>,
+  read: (item: ItemSnapshot) => unknown,
+): MixedOr<string | undefined> {
+  const doc = useDocumentForResolution();
+  return sharedValue<string | undefined>(items, (it) => {
+    const raw = read(it);
+    if (doc === null) {
+      return typeof raw === "string" ? raw : undefined;
+    }
+    const item = findItemDeep(doc, it.id);
+    if (item === undefined) {
+      return typeof raw === "string" ? raw : undefined;
+    }
+    return resolveStoredColor(doc, raw, item, undefined);
+  });
+}
+
 /** Apply the same attrs patcher to every selected item id. Goes through the
  *  command pipeline so each item gets a real Patch and the history sees one
  *  transaction per item (the editor's TransactionRunner coalesces adjacent
@@ -53,11 +113,7 @@ export function updateAll(
   }
 }
 
-export function MixedBadge({
-  visible,
-}: {
-  readonly visible: boolean;
-}): JSX.Element | null {
+export function MixedBadge({ visible }: { readonly visible: boolean }): JSX.Element | null {
   if (!visible) return null;
   return (
     <span

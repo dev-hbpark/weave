@@ -1,18 +1,3 @@
-import {
-  Button,
-  ColorPicker,
-  ContextualToolbar as Bar,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  NumberSlider,
-  SegmentedControl,
-  Tooltip,
-} from "@weave/design-system";
-import { useState } from "react";
-import { TextOnboardingHint } from "../../../launch/TextOnboardingHint.js";
-import { fontSizeTooltipCopy } from "../../../launch/text-v1-copy.js";
 import type {
   TextAlign,
   TextAlignVertical,
@@ -25,10 +10,27 @@ import type {
   TextWeight,
 } from "@agocraft/core";
 import {
+  ContextualToolbar as Bar,
+  Button,
+  ColorPicker,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  NumberSlider,
+  SegmentedControl,
+  Tooltip,
+} from "@weave/design-system";
+import { useState } from "react";
+import { TextOnboardingHint } from "../../../launch/TextOnboardingHint.js";
+import { fontSizeTooltipCopy } from "../../../launch/text-v1-copy.js";
+import {
   isMixed,
   MixedBadge,
+  pickerValueToStored,
   sharedValue,
   updateAll,
+  useResolveSharedColor,
 } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
@@ -37,28 +39,23 @@ import type { ToolbarSectionComponent } from "./types.js";
  *  text renders even if the named family hasn't downloaded yet. */
 const FONT_FAMILY_PRESETS = [
   {
-    value:
-      "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    value: "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
     label: "Inter",
   },
   {
-    value:
-      "'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif",
+    value: "'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif",
     label: "Noto Sans KR",
   },
   {
-    value:
-      "'Playfair Display', Georgia, 'Times New Roman', Times, serif",
+    value: "'Playfair Display', Georgia, 'Times New Roman', Times, serif",
     label: "Playfair",
   },
   {
-    value:
-      "'Noto Serif KR', 'Source Han Serif K', Georgia, 'Apple SD Gothic Neo', serif",
+    value: "'Noto Serif KR', 'Source Han Serif K', Georgia, 'Apple SD Gothic Neo', serif",
     label: "Noto Serif KR",
   },
   {
-    value:
-      "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    value: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     label: "JetBrains Mono",
   },
   {
@@ -74,19 +71,12 @@ function fontFamilyLabel(stack: string): string {
   return first;
 }
 
-export const TextSection: ToolbarSectionComponent = ({
-  editor,
-  items,
-  ids,
-}) => {
+export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
   const fontFamily = sharedValue<string>(
     items,
     (it) => (it.attrs as unknown as TextAttrs).fontFamily,
   );
-  const fontSize = sharedValue<number>(
-    items,
-    (it) => (it.attrs as unknown as TextAttrs).fontSize,
-  );
+  const fontSize = sharedValue<number>(items, (it) => (it.attrs as unknown as TextAttrs).fontSize);
   const fontWeight = sharedValue<TextWeight>(
     items,
     (it) => (it.attrs as unknown as TextAttrs).fontWeight,
@@ -95,11 +85,12 @@ export const TextSection: ToolbarSectionComponent = ({
     items,
     (it) => (it.attrs as unknown as TextAttrs).fontStyle,
   );
-  const color = sharedValue<string>(
-    items,
-    (it) => (it.attrs as unknown as TextAttrs).color,
-  );
-  const background = sharedValue<string | undefined>(
+  // WI-040 — color / background may be a `StyleRef` after a theme swatch
+  // pick. `useResolveSharedColor` resolves via the cascade walker BEFORE
+  // shared-value equality so the picker sees CSS strings and equality
+  // detection works on semantic identity rather than object reference.
+  const color = useResolveSharedColor(items, (it) => (it.attrs as unknown as TextAttrs).color);
+  const background = useResolveSharedColor(
     items,
     (it) => (it.attrs as unknown as TextAttrs).background,
   );
@@ -107,10 +98,7 @@ export const TextSection: ToolbarSectionComponent = ({
     items,
     (it) => (it.attrs as unknown as TextAttrs).textAlign,
   );
-  const opacity = sharedValue<number>(
-    items,
-    (it) => (it.attrs as unknown as TextAttrs).opacity,
-  );
+  const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as TextAttrs).opacity);
   // Phase 1 (WI-029) — Figma-equivalent additive fields
   const textAutoResize = sharedValue<TextAutoResize>(
     items,
@@ -150,8 +138,7 @@ export const TextSection: ToolbarSectionComponent = ({
   );
   // Mode + truncation gating: Truncate toggle + maxLines only show in Fixed.
   const isFixedMode = !isMixed(textAutoResize) && textAutoResize === "NONE";
-  const isTruncateEnding =
-    isFixedMode && !isMixed(textTruncation) && textTruncation === "ENDING";
+  const isTruncateEnding = isFixedMode && !isMixed(textTruncation) && textTruncation === "ENDING";
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
   const linkValue = linkDraft ?? (isMixed(hyperlink) ? "" : hyperlink);
   const bgHasValue = !isMixed(background) && background !== undefined;
@@ -207,9 +194,7 @@ export const TextSection: ToolbarSectionComponent = ({
                   fontFamily: isMixed(fontFamily) ? undefined : fontFamily,
                 }}
               >
-                {isMixed(fontFamily)
-                  ? "여러 폰트"
-                  : fontFamilyLabel(fontFamily)}
+                {isMixed(fontFamily) ? "여러 폰트" : fontFamilyLabel(fontFamily)}
                 &nbsp;▾
               </Button>
             </DropdownMenuTrigger>
@@ -396,13 +381,15 @@ export const TextSection: ToolbarSectionComponent = ({
       <Bar.Section label="Color">
         <div className="inline-flex items-center">
           <ColorPicker
-            value={isMixed(color) ? "#cccccc" : color}
+            value={isMixed(color) ? "#cccccc" : (color ?? "#1f2933")}
             onValueCommit={(v) =>
               updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, color: v },
+                attrs: { ...prev.attrs, color: pickerValueToStored(v) },
               }))
             }
-            onValueChange={() => { /* commit-only */ }}
+            onValueChange={() => {
+              /* commit-only */
+            }}
           />
           <MixedBadge visible={isMixed(color)} />
         </div>
@@ -410,15 +397,15 @@ export const TextSection: ToolbarSectionComponent = ({
       <Bar.Section label="Background">
         <div className="inline-flex items-center gap-1.5">
           <ColorPicker
-            value={
-              isMixed(background) ? "#cccccc" : (background ?? "#ffffff")
-            }
+            value={isMixed(background) ? "#cccccc" : (background ?? "#ffffff")}
             onValueCommit={(v) =>
               updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, background: v },
+                attrs: { ...prev.attrs, background: pickerValueToStored(v) },
               }))
             }
-            onValueChange={() => { /* commit-only */ }}
+            onValueChange={() => {
+              /* commit-only */
+            }}
           />
           <MixedBadge visible={isMixed(background)} />
           {bgHasValue ? (
@@ -517,9 +504,7 @@ export const TextSection: ToolbarSectionComponent = ({
             <Bar.Section label="Max lines">
               <div className="inline-flex items-center">
                 <NumberSlider
-                  value={
-                    isMixed(maxLines) || maxLines == null ? 3 : maxLines
-                  }
+                  value={isMixed(maxLines) || maxLines == null ? 3 : maxLines}
                   onValueChange={(v) =>
                     updateAll(editor, ids, (prev) => ({
                       attrs: { ...prev.attrs, maxLines: Math.max(1, Math.round(v)) },

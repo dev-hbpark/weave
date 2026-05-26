@@ -15,17 +15,18 @@
 // items, the user can only set the WIDTH manually (edge or corner) and
 // the height always follows the wrapped content.
 
-import type { TextRun } from "@agocraft/core";
+import type { Item as AgocraftItem, TextRun } from "@agocraft/core";
 import {
   type CSSProperties,
+  lazy,
   type ReactNode,
   Suspense,
-  lazy,
   useEffect,
   useRef,
   useState,
 } from "react";
 import { useSelection } from "../interactions/selection-context.js";
+import { useResolveColor } from "../style/resolver-context.js";
 import type { AgoItem, ItemFrame, TextAttrs } from "../types.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
@@ -44,6 +45,15 @@ interface TextBlockProps {
 export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const a = item.attrs;
   const editable = onUpdate !== undefined;
+
+  // WI-040 — color / background may be a `StyleRef` (theme token) written
+  // by the text-section picker when the user picked a theme swatch.
+  // Resolve via the cascade hook so ancestor `style.provider` Units could
+  // override the token; falls back to the raw string when no provider
+  // context is mounted (tests / preview).
+  const itemRef = item as unknown as AgocraftItem;
+  const resolvedColor = useResolveColor(a.color, itemRef, undefined);
+  const resolvedBg = useResolveColor(a.background, itemRef, undefined);
 
   // Auto-height plumbing. The OUTER container fills the frame box; the
   // INNER content div is what we measure. We must use the inner div (not
@@ -135,11 +145,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     return a.lineHeight;
   })();
   const justifyContent =
-    verticalAlign === "CENTER"
-      ? "center"
-      : verticalAlign === "BOTTOM"
-        ? "flex-end"
-        : "flex-start";
+    verticalAlign === "CENTER" ? "center" : verticalAlign === "BOTTOM" ? "flex-end" : "flex-start";
   const isFixed = a.textAutoResize === "NONE";
   const truncate = isFixed && a.textTruncation === "ENDING";
   const containerStyle: CSSProperties = {
@@ -159,7 +165,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
           ? "flex-end"
           : "stretch",
     padding: 4,
-    ...(a.background !== undefined ? { background: a.background } : {}),
+    ...(resolvedBg !== undefined ? { background: resolvedBg } : {}),
     opacity: a.opacity,
   };
   const decoration = (() => {
@@ -201,7 +207,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     fontSize: `${a.fontSize}px`,
     fontWeight: a.fontWeight,
     fontStyle: a.fontStyle,
-    color: a.color,
+    color: resolvedColor,
     textAlign: horizontalAlign,
     lineHeight: lineHeightValue,
     letterSpacing: `${a.letterSpacing}px`,
@@ -262,33 +268,33 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       document.removeEventListener("keydown", onKey);
     };
   }, [isEditing, isFrameSelected]);
-  const inner = editable && isEditing ? (
-    <Suspense fallback={<>{renderReadOnly(a.text, a.textRuns)}</>}>
-      <LexicalTextEditor
-        anchorId={String(item.id)}
-        value={a.text}
-        {...(a.textRuns !== undefined ? { initialTextRuns: a.textRuns } : {})}
-        onChange={(snapshot) =>
-          onUpdate?.({ text: snapshot.text, textRuns: snapshot.textRuns })
-        }
-        editable={editable}
-      />
-    </Suspense>
-  ) : (
-    <>{renderReadOnly(a.text, a.textRuns)}</>
-  );
-  const linked = !editable && a.hyperlink != null && a.hyperlink.url.length > 0 ? (
-    <a
-      href={a.hyperlink.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{ color: "inherit", textDecoration: "inherit" }}
-    >
-      {inner}
-    </a>
-  ) : (
-    inner
-  );
+  const inner =
+    editable && isEditing ? (
+      <Suspense fallback={<>{renderReadOnly(a.text, a.textRuns)}</>}>
+        <LexicalTextEditor
+          anchorId={String(item.id)}
+          value={a.text}
+          {...(a.textRuns !== undefined ? { initialTextRuns: a.textRuns } : {})}
+          onChange={(snapshot) => onUpdate?.({ text: snapshot.text, textRuns: snapshot.textRuns })}
+          editable={editable}
+        />
+      </Suspense>
+    ) : (
+      <>{renderReadOnly(a.text, a.textRuns)}</>
+    );
+  const linked =
+    !editable && a.hyperlink != null && a.hyperlink.url.length > 0 ? (
+      <a
+        href={a.hyperlink.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: "inherit", textDecoration: "inherit" }}
+      >
+        {inner}
+      </a>
+    ) : (
+      inner
+    );
 
   return (
     <div
@@ -316,10 +322,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
  *  UNDERLINE wins over STRIKETHROUGH when both attributes are applied
  *  (CSS `text-decoration` slot is shared). The block-level `textDecoration`
  *  on TextAttrs is applied at the container; per-run overrides win locally. */
-function renderReadOnly(
-  text: string,
-  textRuns: ReadonlyArray<TextRun> | undefined,
-): ReactNode {
+function renderReadOnly(text: string, textRuns: ReadonlyArray<TextRun> | undefined): ReactNode {
   if (textRuns === undefined || textRuns.length === 0) return text;
   return textRuns.map((run, i) => {
     if (run.insert === "\n") return <br key={`br-${i}`} />;
@@ -333,11 +336,9 @@ function renderReadOnly(
     if (attrs.color !== undefined) style.color = attrs.color;
     if (attrs.fontSize !== undefined) style.fontSize = `${attrs.fontSize}px`;
     if (attrs.fontFamily !== undefined) style.fontFamily = attrs.fontFamily;
-    if (attrs.letterSpacing !== undefined)
-      style.letterSpacing = `${attrs.letterSpacing}px`;
+    if (attrs.letterSpacing !== undefined) style.letterSpacing = `${attrs.letterSpacing}px`;
     if (attrs.textDecoration === "UNDERLINE") style.textDecoration = "underline";
-    else if (attrs.textDecoration === "STRIKETHROUGH")
-      style.textDecoration = "line-through";
+    else if (attrs.textDecoration === "STRIKETHROUGH") style.textDecoration = "line-through";
     if (attrs.textCase === "UPPER") style.textTransform = "uppercase";
     else if (attrs.textCase === "LOWER") style.textTransform = "lowercase";
     else if (attrs.textCase === "TITLE") style.textTransform = "capitalize";

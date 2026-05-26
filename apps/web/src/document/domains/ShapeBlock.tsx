@@ -5,14 +5,16 @@
 // `paintToSvgFill` so gradients land in `<defs>`. Arrow markers also live
 // in `<defs>`.
 
+import type { Item as AgocraftItem } from "@agocraft/core";
 import {
-  paintToSvgFill,
-  shapeToSvgGeometry,
-  shadowToCss,
-  strokeToSvgAttrs,
   type ArrowHeadStyle,
+  paintToSvgFill,
+  shadowToCss,
+  shapeToSvgGeometry,
+  strokeToSvgAttrs,
 } from "@agocraft/core";
-import { useEffect, useId, useRef, useState, type SVGAttributes } from "react";
+import { type SVGAttributes, useEffect, useId, useRef, useState } from "react";
+import { useResolveColor } from "../style/resolver-context.js";
 import type { AgoItem, ShapeAttrs } from "../types.js";
 
 interface ShapeBlockProps {
@@ -22,8 +24,16 @@ interface ShapeBlockProps {
 
 // Marker geometry definitions for arrow heads (DR-024).
 function ArrowMarker({
-  id, style, size, orient,
-}: { id: string; style: ArrowHeadStyle; size: number; orient: "auto" | "auto-start-reverse" }): JSX.Element | null {
+  id,
+  style,
+  size,
+  orient,
+}: {
+  id: string;
+  style: ArrowHeadStyle;
+  size: number;
+  orient: "auto" | "auto-start-reverse";
+}): JSX.Element | null {
   // marker uses viewBox 0..size, refX = size to anchor to line endpoint.
   switch (style) {
     case "none":
@@ -53,7 +63,12 @@ function ArrowMarker({
           orient={orient}
           markerUnits="userSpaceOnUse"
         >
-          <path d={`M 0 0 L ${size} ${size / 2} L 0 ${size}`} fill="none" stroke="currentColor" strokeWidth={1.5} />
+          <path
+            d={`M 0 0 L ${size} ${size / 2} L 0 ${size}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+          />
         </marker>
       );
     case "diamond":
@@ -67,7 +82,10 @@ function ArrowMarker({
           orient={orient}
           markerUnits="userSpaceOnUse"
         >
-          <path d={`M 0 ${size / 2} L ${size / 2} 0 L ${size} ${size / 2} L ${size / 2} ${size} z`} fill="currentColor" />
+          <path
+            d={`M 0 ${size / 2} L ${size / 2} 0 L ${size} ${size / 2} L ${size / 2} ${size} z`}
+            fill="currentColor"
+          />
         </marker>
       );
     case "circle":
@@ -97,13 +115,20 @@ function renderGeometryElement(
 ): JSX.Element {
   const merged = { ...props, ...fillProps, ...strokeProps };
   switch (element) {
-    case "rect":     return <rect    {...(merged as SVGAttributes<SVGRectElement>)} />;
-    case "ellipse":  return <ellipse {...(merged as SVGAttributes<SVGEllipseElement>)} />;
-    case "line":     return <line    {...(merged as SVGAttributes<SVGLineElement>)} />;
-    case "polygon":  return <polygon {...(merged as SVGAttributes<SVGPolygonElement>)} />;
-    case "polyline": return <polyline {...(merged as SVGAttributes<SVGPolylineElement>)} />;
-    case "path":     return <path    {...(merged as SVGAttributes<SVGPathElement>)} />;
-    default:         return <path    {...(merged as SVGAttributes<SVGPathElement>)} />;
+    case "rect":
+      return <rect {...(merged as SVGAttributes<SVGRectElement>)} />;
+    case "ellipse":
+      return <ellipse {...(merged as SVGAttributes<SVGEllipseElement>)} />;
+    case "line":
+      return <line {...(merged as SVGAttributes<SVGLineElement>)} />;
+    case "polygon":
+      return <polygon {...(merged as SVGAttributes<SVGPolygonElement>)} />;
+    case "polyline":
+      return <polyline {...(merged as SVGAttributes<SVGPolylineElement>)} />;
+    case "path":
+      return <path {...(merged as SVGAttributes<SVGPathElement>)} />;
+    default:
+      return <path {...(merged as SVGAttributes<SVGPathElement>)} />;
   }
 }
 
@@ -118,9 +143,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
   // squashed when the frame is non-square because the viewBox would be
   // fixed at 100×100 and `preserveAspectRatio="none"` would stretch.
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [bbox, setBbox] = useState<{ width: number; height: number }>(
-    { width: 100, height: 100 },
-  );
+  const [bbox, setBbox] = useState<{ width: number; height: number }>({ width: 100, height: 100 });
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return undefined;
@@ -137,13 +160,33 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
   }, []);
   const geom = shapeToSvgGeometry(a, bbox);
 
+  // WI-040 — `fill.color` and `stroke.paint.color` may be `StyleRef`
+  // objects (theme tokens) after the shape-section picker commit. Resolve
+  // via the cascade hook so the SVG fill/stroke gets a CSS string. For
+  // non-solid paints the resolver call is a no-op (returns the original
+  // type-erased value), and the substitution only touches the `.color`
+  // field when present.
+  const itemRef = item as unknown as AgocraftItem;
+  const fillColorRaw = a.fill.type === "solid" ? (a.fill as { color?: unknown }).color : undefined;
+  const resolvedFillColor = useResolveColor(fillColorRaw, itemRef, undefined);
+  const resolvedFill =
+    a.fill.type === "solid" && resolvedFillColor !== undefined
+      ? { ...a.fill, color: resolvedFillColor }
+      : a.fill;
+  const strokeColorRaw =
+    a.stroke?.paint.type === "solid" ? (a.stroke.paint as { color?: unknown }).color : undefined;
+  const resolvedStrokeColor = useResolveColor(strokeColorRaw, itemRef, undefined);
+  const resolvedStroke =
+    a.stroke?.paint.type === "solid" && resolvedStrokeColor !== undefined
+      ? { ...a.stroke, paint: { ...a.stroke.paint, color: resolvedStrokeColor } }
+      : a.stroke;
+
   const fillId = `${uid}-fill`;
-  const fill = paintToSvgFill(a.fill, fillId);
+  const fill = paintToSvgFill(resolvedFill, fillId);
   const strokeId = `${uid}-stroke`;
-  const strokeFill = a.stroke ? paintToSvgFill(a.stroke.paint, strokeId) : null;
-  const strokeAttrs = a.stroke && strokeFill
-    ? strokeToSvgAttrs(a.stroke, strokeFill.value)
-    : null;
+  const strokeFill = resolvedStroke ? paintToSvgFill(resolvedStroke.paint, strokeId) : null;
+  const strokeAttrs =
+    resolvedStroke && strokeFill ? strokeToSvgAttrs(resolvedStroke, strokeFill.value) : null;
 
   const fillProps: SVGAttributes<SVGElement> = { fill: fill.value };
   const strokeProps: SVGAttributes<SVGElement> = strokeAttrs
@@ -170,9 +213,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
             <linearGradient
               id={fill.defs.id}
               gradientTransform={
-                fill.defs.angle !== undefined
-                  ? `rotate(${fill.defs.angle} 0.5 0.5)`
-                  : undefined
+                fill.defs.angle !== undefined ? `rotate(${fill.defs.angle} 0.5 0.5)` : undefined
               }
             >
               {fill.defs.stops.map((s, i) => (
@@ -181,12 +222,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
             </linearGradient>
           ) : null}
           {fill.defs && fill.defs.type === "radial" ? (
-            <radialGradient
-              id={fill.defs.id}
-              cx={fill.defs.cx}
-              cy={fill.defs.cy}
-              r={0.5}
-            >
+            <radialGradient id={fill.defs.id} cx={fill.defs.cx} cy={fill.defs.cy} r={0.5}>
               {fill.defs.stops.map((s, i) => (
                 <stop key={i} offset={`${s.offset * 100}%`} stopColor={s.color} />
               ))}
@@ -196,12 +232,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
               pattern fills its bounding box; preserveAspectRatio on the
               inner <image> emulates CSS object-fit. */}
           {fill.defs && fill.defs.type === "image-pattern" ? (
-            <pattern
-              id={fill.defs.id}
-              patternUnits="objectBoundingBox"
-              width="1"
-              height="1"
-            >
+            <pattern id={fill.defs.id} patternUnits="objectBoundingBox" width="1" height="1">
               <image
                 href={fill.defs.src}
                 x={0}
@@ -236,13 +267,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
             </linearGradient>
           ) : null}
           {geom.markers?.map((m) => (
-            <ArrowMarker
-              key={m.id}
-              id={m.id}
-              style={m.style}
-              size={m.size}
-              orient={m.orient}
-            />
+            <ArrowMarker key={m.id} id={m.id} style={m.style} size={m.size} orient={m.orient} />
           ))}
         </defs>
         {/* Shape geometry — filled with the resolved paint (solid /

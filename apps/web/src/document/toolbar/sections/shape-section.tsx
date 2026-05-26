@@ -1,17 +1,19 @@
+import type { ShapeAttrs, ShapeSubKind } from "@agocraft/core";
 import {
+  ContextualToolbar as Bar,
   Button,
   ColorPicker,
-  ContextualToolbar as Bar,
   NumberSlider,
   SegmentedControl,
 } from "@weave/design-system";
-import type { ShapeAttrs, ShapeSubKind } from "@agocraft/core";
 import {
   isMixed,
   MixedBadge,
+  pickerValueToStored,
   sharedValue,
   truncateUrl,
   updateAll,
+  useResolveSharedColor,
 } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
@@ -59,34 +61,26 @@ function defaultSubAttrsForKind(
   }
 }
 
-export const ShapeSection: ToolbarSectionComponent = ({
-  editor,
-  items,
-  ids,
-  onEditShapeFill,
-}) => {
-  const shape = sharedValue<ShapeSubKind>(
-    items,
-    (it) => (it.attrs as unknown as ShapeAttrs).shape,
-  );
+export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEditShapeFill }) => {
+  const shape = sharedValue<ShapeSubKind>(items, (it) => (it.attrs as unknown as ShapeAttrs).shape);
   const fillType = sharedValue<string>(
     items,
     (it) => (it.attrs as unknown as ShapeAttrs).fill.type,
   );
-  const fillColor = sharedValue<string>(items, (it) => {
+  // WI-040 — fill.color / stroke.paint.color may be `StyleRef` after a
+  // theme swatch pick. `useResolveSharedColor` walks the cascade per item
+  // before equality, so the picker receives CSS strings and "Mixed"
+  // detection works on semantic identity.
+  const fillColor = useResolveSharedColor(items, (it) => {
     const f = (it.attrs as unknown as ShapeAttrs).fill;
     return f.type === "solid" ? f.color : "#000000";
   });
-  const strokeColor = sharedValue<string>(items, (it) => {
+  const strokeColor = useResolveSharedColor(items, (it) => {
     const s = (it.attrs as unknown as ShapeAttrs).stroke;
     return s?.paint.type === "solid" ? s.paint.color : "#000000";
   });
-  const opacity = sharedValue<number>(
-    items,
-    (it) => (it.attrs as unknown as ShapeAttrs).opacity,
-  );
-  const fillIsMediaUniform =
-    !isMixed(fillType) && (fillType === "image" || fillType === "video");
+  const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as ShapeAttrs).opacity);
+  const fillIsMediaUniform = !isMixed(fillType) && (fillType === "image" || fillType === "video");
   const fillMediaSrc = sharedValue<string>(items, (it) => {
     const f = (it.attrs as unknown as ShapeAttrs).fill;
     return f.type === "image" || f.type === "video" ? f.src : "";
@@ -110,10 +104,12 @@ export const ShapeSection: ToolbarSectionComponent = ({
                 };
               })
             }
-            options={SHAPE_SUB_KIND_OPTIONS as unknown as ReadonlyArray<{
-              value: ShapeSubKind;
-              label: string;
-            }>}
+            options={
+              SHAPE_SUB_KIND_OPTIONS as unknown as ReadonlyArray<{
+                value: ShapeSubKind;
+                label: string;
+              }>
+            }
             aria-label="Shape sub-kind"
           />
           <MixedBadge visible={isMixed(shape)} />
@@ -126,16 +122,9 @@ export const ShapeSection: ToolbarSectionComponent = ({
             <Button
               variant="ghost"
               size="md"
-              onClick={() =>
-                onEditShapeFill?.(
-                  fillType as "image" | "video",
-                  fillMediaSrc,
-                )
-              }
+              onClick={() => onEditShapeFill?.(fillType as "image" | "video", fillMediaSrc)}
               data-testid="shape-fill-media-edit"
-              aria-label={
-                fillType === "image" ? "이미지 채우기 편집" : "비디오 채우기 편집"
-              }
+              aria-label={fillType === "image" ? "이미지 채우기 편집" : "비디오 채우기 편집"}
             >
               {fillType === "image" ? "🖼" : "▶"}&nbsp;
               {truncateUrl(fillMediaSrc)}
@@ -160,16 +149,18 @@ export const ShapeSection: ToolbarSectionComponent = ({
         ) : (
           <div className="inline-flex items-center gap-1.5">
             <ColorPicker
-              value={isMixed(fillColor) ? "#cccccc" : fillColor}
+              value={isMixed(fillColor) ? "#cccccc" : (fillColor ?? "#000000")}
               onValueCommit={(v) =>
                 updateAll(editor, ids, (prev) => ({
                   attrs: {
                     ...prev.attrs,
-                    fill: { type: "solid", color: v },
+                    fill: { type: "solid", color: pickerValueToStored(v) },
                   } as unknown as Readonly<Record<string, unknown>>,
                 }))
               }
-              onValueChange={() => { /* commit-only */ }}
+              onValueChange={() => {
+                /* commit-only */
+              }}
             />
             <MixedBadge visible={isMixed(fillColor) || isMixed(fillType)} />
             <Button
@@ -198,12 +189,13 @@ export const ShapeSection: ToolbarSectionComponent = ({
       <Bar.Section label="Stroke">
         <div className="inline-flex items-center">
           <ColorPicker
-            value={isMixed(strokeColor) ? "#cccccc" : strokeColor}
+            value={isMixed(strokeColor) ? "#cccccc" : (strokeColor ?? "#000000")}
             onValueCommit={(v) =>
               updateAll(editor, ids, (prev) => {
                 const prevAttrs = prev.attrs as unknown as ShapeAttrs;
+                const storedColor = pickerValueToStored(v);
                 const existingStroke = prevAttrs.stroke ?? {
-                  paint: { type: "solid" as const, color: v },
+                  paint: { type: "solid" as const, color: storedColor },
                   width: 2,
                 };
                 return {
@@ -211,13 +203,15 @@ export const ShapeSection: ToolbarSectionComponent = ({
                     ...prev.attrs,
                     stroke: {
                       ...existingStroke,
-                      paint: { type: "solid", color: v },
+                      paint: { type: "solid", color: storedColor },
                     },
                   } as unknown as Readonly<Record<string, unknown>>,
                 };
               })
             }
-            onValueChange={() => { /* commit-only */ }}
+            onValueChange={() => {
+              /* commit-only */
+            }}
           />
           <MixedBadge visible={isMixed(strokeColor)} />
         </div>
