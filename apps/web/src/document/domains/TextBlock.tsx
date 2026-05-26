@@ -25,6 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useSelection } from "../interactions/selection-context.js";
 import type { AgoItem, ItemFrame, TextAttrs } from "../types.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
@@ -229,34 +230,38 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // Present mode renders textRuns directly (with <span> styling) when
   // available — preserves bold/italic/underline/strikethrough that the
   // user applied in edit mode.
-  // WI-029 follow-up — text edit mode is gated by double-click. A
-  // single click on a text item now leaves the contenteditable
-  // un-mounted, so the click propagates to NestedFrame for frame
-  // selection (matches every other domain item's single-click =>
-  // select semantics). Double-click flips `isEditing = true`, which
-  // mounts LexicalTextEditor + grabs the caret. An outside click
-  // (anywhere outside the text element) or Escape exits edit mode
-  // and commits the latest textRuns via the same onChange callback.
+  // WI-029 follow-up — text edit mode is gated by double-click + tied
+  // to FRAME selection (not pointer location). A single click on the
+  // text item selects the frame (no edit). Double-click flips
+  // `isEditing = true`, mounting LexicalTextEditor + grabbing the
+  // caret. Edit mode exits only when:
+  //   (a) the frame is deselected (click on empty design plane / other
+  //       frame), OR
+  //   (b) the Escape key is pressed.
+  // Clicks on PropertiesPanel / ContextualToolbar / submenu keep
+  // selection AND edit mode alive — the old document-pointerdown
+  // dismissal was too aggressive (Cmd+B menu, range selection +
+  // format click were all falsely dismissing).
   const [isEditing, setIsEditing] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const { selection } = useSelection();
+  const selfId = String(item.id);
+  const isFrameSelected =
+    selection !== null && selection.kind === "frame" && selection.id === selfId;
   useEffect(() => {
     if (!isEditing) return;
-    const onDocPointer = (e: PointerEvent): void => {
-      const target = e.target;
-      if (!(target instanceof Node)) return;
-      if (wrapRef.current?.contains(target) === true) return;
+    if (!isFrameSelected) {
       setIsEditing(false);
-    };
+      return;
+    }
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") setIsEditing(false);
     };
-    document.addEventListener("pointerdown", onDocPointer, true);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("pointerdown", onDocPointer, true);
       document.removeEventListener("keydown", onKey);
     };
-  }, [isEditing]);
+  }, [isEditing, isFrameSelected]);
   const inner = editable && isEditing ? (
     <Suspense fallback={<>{renderReadOnly(a.text, a.textRuns)}</>}>
       <LexicalTextEditor

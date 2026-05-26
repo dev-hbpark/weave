@@ -300,7 +300,24 @@ export const TextSection: ToolbarSectionComponent = ({
             value={isMixed(textAlign) ? "left" : textAlign}
             onValueChange={(v) =>
               updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, textAlign: v },
+                attrs: {
+                  ...prev.attrs,
+                  // WI-029 follow-up — write BOTH the canonical
+                  // Phase 1.5 UPPERCASE field AND the legacy lowercase
+                  // alias. TextBlock reads `textAlignHorizontal` first
+                  // and falls back to `textAlign`; new docs are seeded
+                  // with the UPPERCASE value set to "LEFT" so updating
+                  // only the lowercase field had no visible effect.
+                  textAlign: v,
+                  textAlignHorizontal:
+                    v === "left"
+                      ? "LEFT"
+                      : v === "center"
+                        ? "CENTER"
+                        : v === "right"
+                          ? "RIGHT"
+                          : "JUSTIFIED",
+                },
               }))
             }
             options={[
@@ -434,7 +451,17 @@ export const TextSection: ToolbarSectionComponent = ({
             value={isMixed(lineHeight) ? 1.4 : lineHeight}
             onValueChange={(v) =>
               updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, lineHeight: v },
+                attrs: {
+                  ...prev.attrs,
+                  // WI-029 follow-up — write BOTH the canonical Phase
+                  // 1.5 `lineHeightSpec` AND the legacy `lineHeight`.
+                  // TextBlock reads `lineHeightSpec` first and falls
+                  // back to `lineHeight`; new docs are seeded with a
+                  // multiplier spec so updating only the legacy number
+                  // had no visible effect.
+                  lineHeight: v,
+                  lineHeightSpec: { value: v, unit: "multiplier" },
+                },
               }))
             }
             min={0.8}

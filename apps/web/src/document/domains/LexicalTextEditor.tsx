@@ -24,6 +24,7 @@ import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import type { PartialTextStyle, TextRun } from "@agocraft/core";
 import {
   $createParagraphNode,
@@ -31,8 +32,11 @@ import {
   $getRoot,
   $isParagraphNode,
   $isTextNode,
+  COMMAND_PRIORITY_NORMAL,
+  FORMAT_TEXT_COMMAND,
+  KEY_DOWN_COMMAND,
 } from "lexical";
-import { type CSSProperties, useMemo, useRef } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef } from "react";
 
 // Lexical TextNode format bitmask (from lexical's `LexicalConstants`).
 // We snapshot the bits here rather than import the constants — Lexical's
@@ -218,6 +222,7 @@ export function LexicalTextEditor({
         ErrorBoundary={LexicalErrorBoundary}
       />
       <HistoryPlugin />
+      <FormatHotkeysPlugin />
       <OnChangePlugin
         onChange={(editorState) => {
           editorState.read(() => {
@@ -232,4 +237,45 @@ export function LexicalTextEditor({
       />
     </LexicalComposer>
   );
+}
+
+/** WI-029 follow-up — Lexical v0.44's RichTextPlugin / `registerRichText`
+ *  binds `FORMAT_TEXT_COMMAND` handlers but does NOT register the
+ *  Cmd+B / Cmd+I / Cmd+U keyboard shortcuts. Each app installs them
+ *  per editor. We listen to `KEY_DOWN_COMMAND` (priority NORMAL so
+ *  text input still wins for plain typing) and dispatch the format
+ *  command when the modifier-letter combo matches. Returning `true`
+ *  preventDefaults the browser's own shortcut (Cmd+B → bookmark
+ *  sidebar etc.). */
+function FormatHotkeysPlugin(): null {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    return editor.registerCommand(
+      KEY_DOWN_COMMAND,
+      (event: KeyboardEvent) => {
+        const mod = event.metaKey || event.ctrlKey;
+        if (!mod) return false;
+        if (event.altKey || event.shiftKey) return false;
+        const key = event.key.toLowerCase();
+        if (key === "b") {
+          event.preventDefault();
+          editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold");
+          return true;
+        }
+        if (key === "i") {
+          event.preventDefault();
+          editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic");
+          return true;
+        }
+        if (key === "u") {
+          event.preventDefault();
+          editor.dispatchCommand(FORMAT_TEXT_COMMAND, "underline");
+          return true;
+        }
+        return false;
+      },
+      COMMAND_PRIORITY_NORMAL,
+    );
+  }, [editor]);
+  return null;
 }
