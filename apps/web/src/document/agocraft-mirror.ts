@@ -89,11 +89,9 @@ export function toAgocraftDocument(doc: WeaveDocument): AgocraftDocument {
       updatedAt: doc.updatedAt,
       schemaVersion: SCHEMA_VERSION,
       schemaRefs: [
+        // WI-032 Phase 3 — single canvas container + primitives.
         { kind: "weave-doc", schemaVersion: SCHEMA_VERSION },
-        { kind: "slide", schemaVersion: SCHEMA_VERSION },
-        { kind: "canvas-design", schemaVersion: SCHEMA_VERSION },
-        { kind: "block-doc", schemaVersion: SCHEMA_VERSION },
-        { kind: "media", schemaVersion: SCHEMA_VERSION },
+        { kind: "frame", schemaVersion: SCHEMA_VERSION },
       ],
       // weave doc.id is preserved via userMeta so the agocraft Serializer
       // round-trip keeps it — agocraft's DocumentMeta has no top-level `id`
@@ -220,11 +218,76 @@ export function applyChangeToDocument(
       }));
       return next === doc.root ? doc : withRoot(doc, next);
     }
-    case "item.units":
-      // Not handled by the reducer in this phase — the direct-setter path
-      // (addChild / removeChild) owns these. Returning `doc` makes the
-      // reducer idempotent for these change types.
-      return doc;
+    case "item.units": {
+      // WI-029 R2 — apply unit add/remove through the patch path so
+      // weave.item.addBehavior / removeBehavior become history-aware.
+      // Same side-channel contract as `item.children`: the command stages
+      // the *full Item* (with new units appended for add, or with the
+      // to-be-removed unit still present for remove); the reducer reads
+      // back the staged shape to graft the right Unit body.
+      const targetItemId = String(change.itemId);
+      const removedIds = new Set(change.removed.map((id) => String(id)));
+      const addedUnits: ReadonlyArray<AgocraftUnit> = (() => {
+        if (change.added.length === 0 || pending === undefined) return [];
+        const stagedItem = pending.lookup(targetItemId);
+        if (stagedItem === undefined) return [];
+        const wantedIds = new Set(change.added.map((id) => String(id)));
+        return stagedItem.units.filter((u) => wantedIds.has(String(u.id)));
+      })();
+      const next = mapItemDeep(doc.root, targetItemId, (item) => {
+        const existingById = new Set(item.units.map((u) => String(u.id)));
+        const filtered = item.units.filter(
+          (u) => !removedIds.has(String(u.id)),
+        );
+        const nextUnits = [...filtered];
+        for (const added of addedUnits) {
+          if (existingById.has(String(added.id))) continue;
+          nextUnits.push(added);
+        }
+        return {
+          ...item,
+          units: nextUnits,
+          meta: { ...item.meta, updatedAt: nowIso() },
+        };
+      });
+      return next === doc.root ? doc : withRoot(doc, next);
+    }
+    // ─── WI-029 / HANDOFF-007 — design-level patch variants ─────────────
+    case "document.attrs": {
+      // Replace the root document.attrs Record with `change.after`. Host's
+      // wrapper-level mirrors (design.background / design.presentationOrder)
+      // are kept in sync in `use-design.ts` (follow-up PR will fold those
+      // wrapper fields into doc.attrs entirely).
+      return { ...doc, attrs: change.after };
+    }
+    case "item.children.reorder": {
+      // Reorder a container's children to match `change.after` (permutation
+      // of `change.before`). The reducer trusts the patch was validated by
+      // its emitter (commands.ts) and does a lookup+map.
+      const containerId = String(change.itemId);
+      const targetOrder = change.after.map(String);
+      const next = mapItemDeep(doc.root, containerId, (container) => {
+        const byId = new Map(container.children.map((c) => [String(c.id), c]));
+        const reordered: AgocraftItem[] = [];
+        for (const id of targetOrder) {
+          const item = byId.get(id);
+          if (item !== undefined) reordered.push(item);
+        }
+        // Preserve any children that weren't in the order (defensive — should
+        // not happen for valid patches, but keeps reducer idempotent).
+        if (reordered.length !== container.children.length) {
+          for (const c of container.children) {
+            if (!targetOrder.includes(String(c.id))) reordered.push(c);
+          }
+        }
+        return {
+          ...container,
+          children: reordered,
+          meta: { ...container.meta, updatedAt: nowIso() },
+        };
+      });
+      return next === doc.root ? doc : withRoot(doc, next);
+    }
     default:
       return doc;
   }
@@ -469,12 +532,10 @@ export function updateUnitAttrs(
 import type { DomainKind, ItemAttrsByKind } from "./types.js";
 
 function isDomainKind(kind: string): kind is DomainKind {
-  return (
-    kind === "slide" ||
-    kind === "canvas-design" ||
-    kind === "block-doc" ||
-    kind === "media"
-  );
+  // WI-032 Phase 3 — single canvas container kind. Primitive kinds
+  // (image / video / shape / text) are not weave-domain items in the
+  // legacy sense — they're leaf primitives drawn inside frames.
+  return kind === "frame";
 }
 
 /** Project an agocraft Item's units back to weave InteractionBehaviors.
@@ -499,11 +560,11 @@ export function getBehaviors(item: {
  *  render in FrameStage and participate in selection / drill flows. */
 export function isDomainItem(item: AgocraftItem): boolean {
   const k = item.kind;
+  // WI-032 Phase 3 — frame (container) + 4 primitives (image / video /
+  // shape / text). FrameStage filters root.children by this predicate to
+  // skip the synthetic "weave-doc" root + any unknown kinds.
   return (
-    k === "slide" ||
-    k === "canvas-design" ||
-    k === "block-doc" ||
-    k === "media" ||
+    k === "frame" ||
     k === "image" ||
     k === "video" ||
     k === "shape" ||

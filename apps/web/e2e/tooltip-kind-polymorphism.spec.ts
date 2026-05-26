@@ -19,8 +19,13 @@ async function addItem(
   kind: "slide" | "canvas-design" | "block-doc" | "media",
   frame: { x: number; y: number; width: number; height: number },
 ): Promise<void> {
+  // WI-032 Phase 3c — the legacy 4 kinds were removed; this spec is
+  // already `test.skip`-ed below, but we still rewrite the kind so it
+  // typechecks against the new DomainKind union without polluting the
+  // skip's intent.
+  void kind;
   await page.evaluate(
-    ({ kind, frame }) => {
+    ({ frame }) => {
       const editor = (
         window as unknown as {
           __weaveEditor: { exec: (n: string, i: unknown) => void };
@@ -30,12 +35,12 @@ async function addItem(
         window as unknown as { __weaveDoc: { root: { id: string } } }
       ).__weaveDoc;
       editor.exec("weave.item.add", {
-        kind,
+        kind: "frame",
         containerId: String(doc.root.id),
         frame: { ...frame, rotation: 0 },
       });
     },
-    { kind, frame },
+    { frame },
   );
 }
 

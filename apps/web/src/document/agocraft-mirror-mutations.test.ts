@@ -26,6 +26,9 @@ const META: ItemMeta = {
 };
 
 function makeDoc(): ReturnType<typeof toAgocraftDocument> {
+  // WI-032 Phase 3 — legacy slide Item retained as test data; `unknown`
+  // cast bypasses the post-Phase-3 DomainKind union so the reducer +
+  // mutation helpers can still be exercised against pre-migration shapes.
   const weave: WeaveDocument = {
     id: "test-doc",
     title: "Mutation harness",
@@ -36,7 +39,7 @@ function makeDoc(): ReturnType<typeof toAgocraftDocument> {
         attrs: { frame: FULL_FRAME, title: "Original", bullets: ["a"] },
         behaviors: [],
         createdAt: META.createdAt,
-      },
+      } as unknown as WeaveDocument["items"][number],
     ],
     updatedAt: META.updatedAt,
     schemaVersion: 3,

@@ -33,13 +33,14 @@ const hotspot: HotspotBehavior = {
   action: { type: "next-camera" },
 };
 
-const slideItem: WeaveItem = {
+// WI-032 Phase 3 — legacy slide Item retained as round-trip fixture.
+const slideItem = {
   id: "slide-1",
   kind: "slide",
   attrs: { frame: FULL_FRAME, title: "Hello", bullets: ["a", "b"] },
   behaviors: [camBehavior, hotspot],
   createdAt: META_DATE,
-};
+} as unknown as WeaveItem;
 
 const doc: WeaveDocument = {
   id: "demo",
@@ -90,29 +91,69 @@ describe("toAgocraftItem", () => {
 });
 
 describe("fromAgocraftDocument — inverse mirror (Phase 3)", () => {
-  it("round-trips a weave Document → agocraft → weave preserving id / title / items", () => {
+  it("round-trips id / title and filters legacy non-frame kinds out", () => {
     const ago = toAgocraftDocument(doc);
     const back = fromAgocraftDocument(ago);
     expect(back.id).toBe("demo");
     expect(back.title).toBe("Demo doc");
-    expect(back.items).toHaveLength(1);
-    expect(back.items[0]?.id).toBe("slide-1");
-    expect(back.items[0]?.kind).toBe("slide");
-    expect(back.items[0]?.attrs).toEqual({ frame: FULL_FRAME, title: "Hello", bullets: ["a", "b"] });
+    // WI-032 Phase 3 — `slide` (and the rest of the legacy 4) is no longer
+    // a weave-domain kind; `fromAgocraftItem` returns undefined for them so
+    // the round-trip drops the legacy slide. The migration helper
+    // (`migrate-frame-only.ts`) rewrites persisted legacy data into
+    // `frame` + primitives before it ever reaches this projection.
+    expect(back.items).toHaveLength(0);
   });
 
-  it("round-trips behaviors via units", () => {
+  it("behaviors are dropped together with their legacy host item", () => {
     const ago = toAgocraftDocument(doc);
     const back = fromAgocraftDocument(ago);
-    expect(back.items[0]?.behaviors).toHaveLength(2);
-    const kinds = back.items[0]?.behaviors.map((b) => b.kind).sort();
-    expect(kinds).toEqual(["camera-target", "hotspot"]);
+    // Same reason as above — the legacy slide doesn't survive the inverse
+    // mirror, so the camera / hotspot behaviors travel with it.
+    expect(back.items).toHaveLength(0);
   });
 
   it("skips agocraft Items whose kind is not a known weave domain (e.g., root)", () => {
     const ago = toAgocraftDocument(doc);
     // root kind = "weave-doc" — should be filtered out.
     expect(fromAgocraftItem(ago.root)).toBeUndefined();
+  });
+});
+
+// ── WI-032 Phase 1 — `frame` kind sanity ─────────────────────────────────
+//
+// `frame` is the canvas container of the new paradigm. Phase 1 only ensures
+// that the kind is recognized end-to-end (createDefaultItem produces it,
+// `isDomainItem` accepts it) — Phase 2 introduces the migration helper that
+// rewrites legacy 4 domains as `frame` + primitive children.
+
+import { isDomainItem } from "./agocraft-mirror.js";
+import { createDefaultItem } from "./seed.js";
+
+describe("WI-032 Phase 1 — frame kind", () => {
+  it("createDefaultItem('frame', 0) produces a domain item with an empty container", () => {
+    const item = createDefaultItem("frame", 0);
+    expect(item.kind).toBe("frame");
+    expect(item.attrs.frame).toEqual(FULL_FRAME);
+    expect(item.behaviors).toHaveLength(1); // default camera-target
+  });
+
+  it("isDomainItem accepts a `frame` AgocraftItem", () => {
+    const item = createDefaultItem("frame", 0);
+    const ag = toAgocraftItem(item, META_DATE);
+    expect(isDomainItem(ag)).toBe(true);
+  });
+
+  it("frame attrs accept optional background / cornerRadius / label", () => {
+    const item = createDefaultItem("frame", 0);
+    const next = {
+      ...item.attrs,
+      background: "var(--accent)",
+      cornerRadius: 0.1,
+      label: "표지",
+    };
+    expect(next.background).toBe("var(--accent)");
+    expect(next.cornerRadius).toBe(0.1);
+    expect(next.label).toBe("표지");
   });
 });
 

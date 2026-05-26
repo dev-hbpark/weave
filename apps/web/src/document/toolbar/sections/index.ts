@@ -15,9 +15,9 @@ toolbarSectionRegistry.register("image", { Component: ImageSection });
 toolbarSectionRegistry.register("video", { Component: VideoSection });
 toolbarSectionRegistry.register("shape", { Component: ShapeSection });
 toolbarSectionRegistry.register("text", { Component: TextSection });
-toolbarSectionRegistry.register("slide", { Component: FrameBackgroundSection });
-toolbarSectionRegistry.register("canvas-design", { Component: FrameBackgroundSection });
-toolbarSectionRegistry.register("block-doc", { Component: FrameBackgroundSection });
-toolbarSectionRegistry.register("media", { Component: FrameBackgroundSection });
+// WI-032 Phase 3 — single `frame` kind replaces the legacy 4 (slide /
+// canvas-design / block-doc / media). The same Background section
+// applies; legacy keys are dropped.
+toolbarSectionRegistry.register("frame", { Component: FrameBackgroundSection });
 
 export type { ToolbarSection, ToolbarSectionProps, ToolbarSectionRegistry } from "./types.js";

@@ -8,11 +8,22 @@ import type { Page } from "@playwright/test";
 import type { DocFlavor, DomainKind, ItemFrame } from "../src/document/types.js";
 
 export async function clearAllDesigns(page: Page) {
+  // WI-032 Phase 3c — reset the cursor before navigating so hover state from
+  // a prior spec doesn't leak into the next AITooltip's show-delay timer.
+  // Empirically the ai-tooltip / text-item / tooltip-editor specs all pass
+  // standalone but flake in groups; cursor reset between specs is the
+  // cheapest hygiene step.
+  await page.mouse.move(0, 0);
   await page.goto("/");
   await page.evaluate(() => {
+    // WI-032 Phase 3c — drop every `weave.*` key, not just the v5 + v9
+    // backup. Empirically the ai-tooltip / text-item / tooltip-editor
+    // cluster flakes because of state that leaks across specs (cloud-sync
+    // queue, presence, etc.); a fresh storage between specs is the
+    // cheapest hygiene step.
     for (let i = window.localStorage.length - 1; i >= 0; i--) {
       const key = window.localStorage.key(i);
-      if (key !== null && key.startsWith("weave.design.v5.")) {
+      if (key !== null && key.startsWith("weave.")) {
         window.localStorage.removeItem(key);
       }
     }
@@ -44,6 +55,30 @@ export async function prepareDesign(
   await page.getByTestId("new-design-create").click();
 
   await page.waitForURL(/\/design\/[^/]+$/);
+  // WI-032 Phase 3c — wait for the editor to be wired before the spec
+  // starts probing the page. Without this gate, specs whose
+  // `beforeEach` finishes too quickly race the React mount + the WI-032
+  // first-load migration pass + cloud-sync dynamic import, surfacing as
+  // timing flakes in big spec groups (text-item, ai-tooltip,
+  // tooltip-editor, etc. all standalone pass).
+  await page.waitForFunction(() => {
+    const w = window as unknown as {
+      __weaveEditor?: unknown;
+      __weaveDoc?: unknown;
+      __weaveVm?: unknown;
+    };
+    return (
+      w.__weaveEditor !== undefined &&
+      w.__weaveDoc !== undefined &&
+      w.__weaveVm !== undefined
+    );
+  });
+  // Also let the network settle — `saveDesign` triggers a fire-and-forget
+  // `cloud-sync.ts` dynamic import + push, and racing the next spec
+  // against that in-flight import was the root cause of several
+  // toolbar-undo timeout failures (empirically: removing this wait took
+  // us from 11 → 15 group fails).
+  await page.waitForLoadState("networkidle");
   const url = new URL(page.url());
   const match = url.pathname.match(/^\/design\/([^/]+)$/);
   if (match === null) throw new Error(`unexpected URL after wizard: ${url.pathname}`);
@@ -61,12 +96,27 @@ interface AddFrameOptions {
 /** Programmatically insert a frame via the editor exposed on `window`. The
  *  rubber-band drag flow is the user-facing add path; this helper bypasses
  *  the gesture so specs that focus on something else (history, drill-in,
- *  thumbnails) don't need to choreograph a pixel-perfect drag every time. */
+ *  thumbnails) don't need to choreograph a pixel-perfect drag every time.
+ *
+ *  WI-032 Phase 3c — legacy kinds (slide / canvas-design / block-doc /
+ *  media) are silently rewritten to `frame` here so existing callers don't
+ *  need to be touched in lockstep with the production code's removal of
+ *  those kinds. Specs that genuinely care about a primitive kind (image /
+ *  video / shape / text) still pass it through unchanged. */
 export async function addFrame(
   page: Page,
-  kind: DomainKind,
+  kind: DomainKind | "slide" | "canvas-design" | "block-doc" | "media",
   opts: AddFrameOptions = {},
 ): Promise<void> {
+  const LEGACY_TO_FRAME = new Set([
+    "slide",
+    "canvas-design",
+    "block-doc",
+    "media",
+  ]);
+  const resolvedKind: DomainKind = (
+    LEGACY_TO_FRAME.has(kind) ? "frame" : kind
+  ) as DomainKind;
   const defaultFrame: ItemFrame = {
     x: 0.4,
     y: 0.4,
@@ -105,6 +155,6 @@ export async function addFrame(
         frame,
       });
     },
-    { kind, frame, containerId: opts.containerId },
+    { kind: resolvedKind, frame, containerId: opts.containerId },
   );
 }

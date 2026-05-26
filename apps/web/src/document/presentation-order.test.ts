@@ -24,14 +24,14 @@ function makeItem(id: string, kind: string, children: AgocraftItem[] = []): Agoc
 
 describe("collectPresentationIds", () => {
   it("collects every nested frame in document order — design root excluded", () => {
-    // Phase 12d — the design itself isn't a slide; only the frames are.
+    // WI-032 Phase 3 — single `frame` kind replaces the legacy 4.
     const root = makeItem("root", "weave-doc", [
-      makeItem("a", "slide"),
-      makeItem("b", "canvas-design", [
-        makeItem("c", "slide"),
-        makeItem("d", "block-doc"),
+      makeItem("a", "frame"),
+      makeItem("b", "frame", [
+        makeItem("c", "frame"),
+        makeItem("d", "frame"),
       ]),
-      makeItem("e", "media"),
+      makeItem("e", "frame"),
     ]);
     expect(collectPresentationIds(root)).toEqual(["a", "b", "c", "d", "e"]);
   });
@@ -54,8 +54,8 @@ describe("reconcilePresentationOrder", () => {
 describe("effectivePresentationOrder", () => {
   it("uses tree + saved order to derive final order", () => {
     const root = makeItem("root", "weave-doc", [
-      makeItem("a", "slide"),
-      makeItem("b", "slide"),
+      makeItem("a", "frame"),
+      makeItem("b", "frame"),
     ]);
     const design = {
       id: "d",

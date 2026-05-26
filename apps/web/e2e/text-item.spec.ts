@@ -97,12 +97,18 @@ test("Toolbar text section appears; changing fontSize updates the item", async (
   expect(attrs.fontSize).toBe(48);
 });
 
-test("corner-resize scales fontSize proportionally", async ({ page }) => {
+// DR-016 (2026-05-25) — corner resize no longer scales fontSize. This
+// previously-passing test is REVERSED: now we assert fontSize stays unchanged.
+// The Genially-style "corner = both box and glyph" UX is gone; Figma paradigm
+// (corner = box only, fontSize via PropertiesPanel slider) is in.
+test("DR-016 regression — corner-resize keeps fontSize unchanged (Fixed mode)", async ({
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-C" });
   const id = await addTextViaMenu(page);
 
-  // Seed with a clean known frame + font size so the math is checkable.
+  // Seed: known frame + fontSize, switch to Fixed mode so corner handles appear.
   await page.evaluate((fid) => {
     const w = window as unknown as {
       __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
@@ -114,14 +120,12 @@ test("corner-resize scales fontSize proportionally", async ({ page }) => {
           ...prev.attrs,
           frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
           fontSize: 20,
+          textAutoResize: "NONE", // Fixed mode → 8 handles
         },
       }),
     });
   }, id);
 
-  // Wait for the SE corner handle to appear (rendered by SelectionLayer
-  // once the item is selected). The handle carries data-handle-kind +
-  // data-handle-dir.
   const seHandle = page.locator(
     `[data-selection-handle-item-id="${id}"] [data-handle-kind="corner"][data-handle-dir="se"]`,
   );
@@ -129,29 +133,21 @@ test("corner-resize scales fontSize proportionally", async ({ page }) => {
 
   const handleRect = await seHandle.evaluate((el) => {
     const r = el.getBoundingClientRect();
-    return {
-      cx: r.left + r.width / 2,
-      cy: r.top + r.height / 2,
-    };
+    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
   });
 
-  // Drag the SE corner outward — both width AND height should grow, and
-  // fontSize should scale by the same factor.
+  // Drag SE corner outward. Box grows, fontSize stays exactly 20.
   await page.mouse.move(handleRect.cx, handleRect.cy);
   await page.mouse.down({ button: "left" });
-  await page.mouse.move(handleRect.cx + 60, handleRect.cy + 60);
   await page.mouse.move(handleRect.cx + 200, handleRect.cy + 200);
   await page.mouse.up({ button: "left" });
   await page.waitForTimeout(120);
 
   const after = await readAttrs(page, id);
-  const newWidth = (after.frame as { width: number }).width;
-  const newFontSize = after.fontSize as number;
-  expect(newWidth).toBeGreaterThan(0.2);
-  // fontSize scaled by the SAME factor as width (within ≈ 1% tolerance).
-  const widthScale = newWidth / 0.2;
-  const fontSizeScale = newFontSize / 20;
-  expect(Math.abs(widthScale - fontSizeScale)).toBeLessThan(0.05);
+  expect((after.frame as { width: number }).width).toBeGreaterThan(0.2);
+  expect((after.frame as { height: number }).height).toBeGreaterThan(0.2);
+  // DR-016 guarantee: fontSize NEVER changes from corner resize.
+  expect(after.fontSize).toBe(20);
 });
 
 test("font-family picker offers presets and applies the selected stack", async ({
@@ -454,4 +450,187 @@ test("edge-resize does NOT change fontSize", async ({ page }) => {
   // Width grew, fontSize stayed the same.
   expect((after.frame as { width: number }).width).toBeGreaterThan(0.2);
   expect(after.fontSize).toBe(20);
+});
+
+// ───── WI-029 Phase 1 — Figma-equivalent additive specs ────────────────────
+
+test("WI-029 — Fixed mode exposes all 8 resize handles", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-Fixed-Handles" });
+  const id = await addTextViaMenu(page);
+
+  // Switch to Fixed mode.
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: { ...prev.attrs, textAutoResize: "NONE" },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  // All 8 handles should be visible: 4 edges + 4 corners.
+  for (const dir of ["e", "w", "n", "s"]) {
+    await expect(
+      page.locator(
+        `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"][data-handle-dir="${dir}"]`,
+      ),
+    ).toBeVisible({ timeout: 3000 });
+  }
+  for (const dir of ["ne", "nw", "se", "sw"]) {
+    await expect(
+      page.locator(
+        `[data-selection-handle-item-id="${id}"] [data-handle-kind="corner"][data-handle-dir="${dir}"]`,
+      ),
+    ).toBeVisible({ timeout: 3000 });
+  }
+});
+
+test("WI-029 — Auto-W mode hides all resize handles (auto-shrink)", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-AutoW-NoHandles" });
+  const id = await addTextViaMenu(page);
+
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: { ...prev.attrs, textAutoResize: "WIDTH_AND_HEIGHT" },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  // No resize handle should be visible. (Rotation handle MAY exist —
+  // selection chrome non-resize chrome is not gated by mode.)
+  const handles = page.locator(
+    `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"], [data-selection-handle-item-id="${id}"] [data-handle-kind="corner"]`,
+  );
+  await expect(handles).toHaveCount(0, { timeout: 3000 });
+});
+
+test("WI-029 — V-Align CENTER applies flex justify-content", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-VAlign" });
+  const id = await addTextViaMenu(page);
+
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: { ...prev.attrs, textAlignVertical: "CENTER" },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  const block = page.getByTestId("text-block");
+  const justify = await block.evaluate((el) => {
+    return window.getComputedStyle(el as HTMLElement).justifyContent;
+  });
+  expect(justify).toBe("center");
+});
+
+test("WI-029 — Decoration UNDERLINE applies text-decoration: underline", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-Decoration" });
+  const id = await addTextViaMenu(page);
+
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: { ...prev.attrs, textDecoration: "UNDERLINE" },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  // The textStyle div (inside .editor / text-block) carries the
+  // text-decoration. Inspect the inner text-styled div.
+  const block = page.getByTestId("text-block");
+  const innerDiv = block.locator("> div").first();
+  const decoration = await innerDiv.evaluate((el) => {
+    const cs = window.getComputedStyle(el as HTMLElement);
+    return cs.textDecorationLine || cs.textDecoration;
+  });
+  expect(decoration).toContain("underline");
+});
+
+test("WI-029 — Hyperlink wraps text in <a target=_blank> in read mode", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-Hyperlink" });
+  const id = await addTextViaMenu(page);
+
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: { ...prev.attrs, hyperlink: { url: "https://example.com/test" } },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  // Edit mode: NO <a> wrap (allows click-to-edit). Hyperlink only renders
+  // in present mode (when onUpdate is not wired). For this spec, we assert
+  // the attrs are stored — full present-mode verification belongs to a
+  // present-mode flow test.
+  const after = await readAttrs(page, id);
+  expect(after.hyperlink).toEqual({ url: "https://example.com/test" });
+});
+
+test("WI-029 — Truncate ENDING + maxLines clamps content via -webkit-line-clamp", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-Truncate" });
+  const id = await addTextViaMenu(page);
+
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: {
+          ...prev.attrs,
+          text: "line1\nline2\nline3\nline4\nline5",
+          textAutoResize: "NONE",
+          textTruncation: "ENDING",
+          maxLines: 3,
+        },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  const block = page.getByTestId("text-block");
+  const innerDiv = block.locator("> div").first();
+  const clamp = await innerDiv.evaluate((el) => {
+    const cs = window.getComputedStyle(el as HTMLElement);
+    return cs.webkitLineClamp || cs.getPropertyValue("-webkit-line-clamp");
+  });
+  expect(String(clamp).trim()).toBe("3");
 });

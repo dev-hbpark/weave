@@ -1,15 +1,17 @@
 // WI-017 Phase D — InsertableCapability for the root design canvas.
 //
-// User spec maps aspect buckets to "AI-style" recommendations. Here those map
-// concretely to the 4 DomainKinds, ordered per bucket:
+// User spec maps aspect buckets to "AI-style" recommendations. Each
+// recommendation maps to one primitive DomainKind:
 //
-//   wide  (≥ 1.6) — media (wide banner) > canvas-design (wide layout) > slide
-//   tall  (≤ 0.6) — block-doc (long form) > slide (vertical bullets)
-//   square        — slide (card) > canvas-design (square layout) > block-doc
+//   wide  (≥ 1.6) — frame banner > image (banner photo) > text (long header)
+//   tall  (≤ 0.6) — text (long-form column) > frame (column container)
+//   square        — frame (card) > image (square photo) > text (paragraph)
 //
-// Adding a new DomainKind to this recommendation tree = add an entry to the
-// switch + a kindMap entry. Adding a new ContainerKind = a new
-// `*.insertable.ts` file + one register line in `default-registry.ts`.
+// WI-032 Phase 3 — the legacy 4 domains (slide/canvas-design/block-doc/
+// media) collapsed into the single `frame` container; the wide/square
+// "slide" / "canvas" recommendations are now "frame" with the same drag
+// rectangle. Drop a preset inside the frame after-the-fact via the
+// preset picker.
 
 import { createElement } from "react";
 import type { DomainKind } from "../types.js";
@@ -19,21 +21,18 @@ import type {
 } from "./types.js";
 
 const KIND_MAP: Record<string, DomainKind> = {
-  "wide-media": "media",
-  "wide-canvas": "canvas-design",
-  "wide-slide": "slide",
-  "tall-block-doc": "block-doc",
-  "tall-slide": "slide",
-  "square-slide": "slide",
-  "square-canvas": "canvas-design",
-  "square-block-doc": "block-doc",
+  "wide-frame": "frame",
+  "wide-image": "image",
+  "wide-text": "text",
+  "tall-text": "text",
+  "tall-frame": "frame",
+  "square-frame": "frame",
+  "square-image": "image",
+  "square-text": "text",
 };
 
 const KIND_GLYPHS: Record<DomainKind, string> = {
-  slide: "▭",
-  "canvas-design": "◇",
-  "block-doc": "≡",
-  media: "▤",
+  frame: "▢",
   image: "◉",
   video: "▶",
   shape: "▲",
@@ -48,65 +47,65 @@ export const designRootInsertable: InsertableCapability<"design"> = {
       case "wide":
         return [
           {
-            id: "wide-media",
-            label: "와이드 미디어",
-            description: "넓은 이미지·동영상 배너",
-            icon: KIND_GLYPHS.media,
+            id: "wide-frame",
+            label: "와이드 프레임",
+            description: "큰 배너용 컨테이너 — 안에 자유 배치",
+            icon: KIND_GLYPHS.frame,
             priority: 1,
           },
           {
-            id: "wide-canvas",
-            label: "가로 캔버스",
-            description: "도형으로 구성된 가로 레이아웃",
-            icon: KIND_GLYPHS["canvas-design"],
+            id: "wide-image",
+            label: "와이드 이미지",
+            description: "넓은 사진 / 일러스트",
+            icon: KIND_GLYPHS.image,
             priority: 2,
           },
           {
-            id: "wide-slide",
-            label: "가로 슬라이드",
-            description: "와이드 타이틀 + 글머리",
-            icon: KIND_GLYPHS.slide,
+            id: "wide-text",
+            label: "와이드 텍스트",
+            description: "긴 헤드라인 / 인용",
+            icon: KIND_GLYPHS.text,
             priority: 3,
           },
         ];
       case "tall":
         return [
           {
-            id: "tall-block-doc",
-            label: "세로 문서",
-            description: "긴 본문에 적합한 텍스트 블록",
-            icon: KIND_GLYPHS["block-doc"],
+            id: "tall-text",
+            label: "세로 텍스트",
+            description: "긴 본문 — 한 컬럼",
+            icon: KIND_GLYPHS.text,
             priority: 1,
           },
           {
-            id: "tall-slide",
-            label: "세로 슬라이드",
-            description: "긴 글머리 목록형 슬라이드",
-            icon: KIND_GLYPHS.slide,
+            id: "tall-frame",
+            label: "세로 프레임",
+            description: "세로 컨테이너 — 안에 자유 배치",
+            icon: KIND_GLYPHS.frame,
             priority: 2,
           },
         ];
       case "square":
         return [
           {
-            id: "square-slide",
-            label: "기본 슬라이드 카드",
-            description: "타이틀 + 핵심 글머리 3개",
-            icon: KIND_GLYPHS.slide,
+            id: "square-frame",
+            label: "정사각 프레임",
+            description: "카드 컨테이너",
+            icon: KIND_GLYPHS.frame,
             priority: 1,
           },
           {
-            id: "square-canvas",
-            label: "정사각 캔버스",
-            description: "도형 자유 배치",
-            icon: KIND_GLYPHS["canvas-design"],
+            id: "square-image",
+            label: "정사각 이미지",
+            description: "사진 / 일러스트",
+            icon: KIND_GLYPHS.image,
             priority: 2,
           },
           {
-            id: "square-block-doc",
-            label: "정사각 문서 블록",
-            description: "헤딩 + 단락",
-            icon: KIND_GLYPHS["block-doc"],
+            id: "square-text",
+            label: "정사각 텍스트",
+            description: "단락 텍스트",
+            icon: KIND_GLYPHS.text,
             priority: 3,
           },
         ];
@@ -115,13 +114,13 @@ export const designRootInsertable: InsertableCapability<"design"> = {
 
   /**
    * Skeleton silhouettes are intentionally low-fidelity — a few token-colored
-   * strokes evoking the domain's typical shape. The aim is "this is roughly
+   * strokes evoking the kind's typical shape. The aim is "this is roughly
    * what will appear here," not pixel-perfect preview.
    */
   renderSkeleton: (rec) => {
     const kind = KIND_MAP[rec.id];
     if (kind === undefined) return null;
-    return createElement(DomainSkeleton, { kind });
+    return createElement(KindSkeleton, { kind });
   },
 
   commit: (rec, rect, ctx) => {
@@ -144,20 +143,20 @@ export const designRootInsertable: InsertableCapability<"design"> = {
     title: "프레임 추가",
     hint: "드래그 — 새 프레임. ⌥ 드래그 — 위에 겹쳐 추가.",
     kinds: [
-      { id: "slide", label: "슬라이드", icon: KIND_GLYPHS.slide },
-      { id: "canvas-design", label: "캔버스", icon: KIND_GLYPHS["canvas-design"] },
-      { id: "block-doc", label: "문서", icon: KIND_GLYPHS["block-doc"] },
-      { id: "media", label: "미디어", icon: KIND_GLYPHS.media },
+      { id: "frame", label: "프레임", icon: KIND_GLYPHS.frame },
+      { id: "text", label: "텍스트", icon: KIND_GLYPHS.text },
+      { id: "image", label: "이미지", icon: KIND_GLYPHS.image },
+      { id: "shape", label: "도형", icon: KIND_GLYPHS.shape },
     ],
   }),
 };
 
-interface DomainSkeletonProps {
+interface KindSkeletonProps {
   readonly kind: DomainKind;
 }
 
 /** Inline skeleton — token-only, no domain renderer (cheap to render on hover). */
-function DomainSkeleton({ kind }: DomainSkeletonProps) {
+function KindSkeleton({ kind }: KindSkeletonProps) {
   return createElement(
     "div",
     {
@@ -166,14 +165,11 @@ function DomainSkeleton({ kind }: DomainSkeletonProps) {
       className: "flex flex-col gap-1.5",
     },
     [
-      // Header stripe — token-colored mock title bar.
       createElement("div", {
         key: "h",
         style: { height: 8, width: "55%" },
-        className:
-          "rounded-[var(--radius-sm)] bg-[color:var(--accent)]",
+        className: "rounded-[var(--radius-sm)] bg-[color:var(--accent)]",
       }),
-      // 3 body lines of decreasing width — universal "content placeholder" look.
       createElement("div", {
         key: "b1",
         style: { height: 5, width: "90%" },

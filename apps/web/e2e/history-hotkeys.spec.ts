@@ -8,7 +8,10 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("Cmd+Z undoes a slide title commit; Cmd+Shift+Z redoes it", async ({ page }) => {
+// WI-032 Phase 3c — slide title EditableText retired. Cmd+Z over a text
+// primitive's Lexical edit follows a different surface (textRuns patch);
+// covered by `text-item.spec.ts` once the paradigm follow-up lands.
+test.skip("Cmd+Z undoes a slide title commit; Cmd+Shift+Z redoes it", async ({ page }) => {
   // slide-deck flavor seeds a single slide at FULL_FRAME — perfect for this test.
   await prepareDesign(page, { flavor: "slide-deck" });
 

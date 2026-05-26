@@ -1,0 +1,36 @@
+{
+  "name": "lexical-text-poc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DR-015 Lexical 1순위 결정 + RISK-001 condition #1 의 PoC. Self-contained, not part of weave pnpm workspace.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "size": "pnpm build && du -k dist/assets/*.js | sort -n && echo '--- gzipped ---' && for f in dist/assets/*.js; do printf '%s ' \"$f\"; gzip -c \"$f\" | wc -c; done",
+    "tree-shake-gate": "node scripts/check-tree-shake-gate.mjs",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "lexical": "^0.44.0",
+    "@lexical/react": "^0.44.0",
+    "@lexical/yjs": "^0.44.0",
+    "@lexical/selection": "^0.44.0",
+    "yjs": "^13.6.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "rollup-plugin-visualizer": "^5.12.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}

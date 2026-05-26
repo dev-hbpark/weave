@@ -56,8 +56,8 @@ import {
   registerWeaveCommands,
   type WeaveCommandTargets,
 } from "./commands.js";
-import { bridgeCanvasShapeIntoAgocraft } from "./manipulation/agocraft-bridge.js";
-import { createCanvasShapeCapability } from "./manipulation/capabilities/canvas-shape.js";
+// WI-032 Phase 3b — canvas-shape capability + agocraft-bridge removed
+// alongside the legacy `canvas-design` kind.
 import { attachIndexedDbPersistence } from "./sync/offline-persistence.js";
 
 export interface UseWeaveEditorDeps {
@@ -393,9 +393,8 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
   useEffect(() => {
     if (deps.commandTargets === undefined) return;
     // Indirect via ref so re-registers aren't needed when callbacks change.
-    // Phase 4b+ — patch-emitting mutations (updateItem / updateBehavior /
-    // updateShape / removeShape) route through `editor.exec` so the bridge
-    // (canvas-shape move/resize/rotate) and any plugin caller goes through
+    // Phase 4b+ — patch-emitting mutations (updateItem / updateBehavior)
+    // route through `editor.exec` so any plugin caller goes through
     // ChangeStream → History. Direct setters (add/remove/reset) stay on the
     // targetsRef path; addItem is event-sourced via the pending side-channel.
     const proxy: WeaveCommandTargets = {
@@ -407,29 +406,15 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       updateBehavior: (id, bid, patch) => {
         editor.exec("weave.behavior.update", { itemId: id, behaviorId: bid, patch });
       },
-      updateShape: (id, sid, patch) => {
-        editor.exec("weave.shape.update", { itemId: id, shapeId: sid, patch });
-      },
-      removeShape: (id, sid) => {
-        editor.exec("weave.shape.remove", { itemId: id, shapeId: sid });
-      },
       reset: () => targetsRef.current?.reset(),
     };
     const offCommands = registerWeaveCommands(editor, proxy, pendingCreationsRef.current);
 
-    // WI-013 Phase 3 (manipulation dispatch swap) — bridge canvas-shape into
-    // agocraft.manipulations. The bridge's update/commit callbacks fan out to
-    // the same weave-local apply functions used by SelectionLayer, so plugins
-    // resolving via `editor.manipulations.resolve("canvas-shape", "move")` see
-    // the live capability without a parallel implementation.
-    const weaveCanvasShapeCap = createCanvasShapeCapability({
-      updateShape: proxy.updateShape,
-      removeShape: proxy.removeShape,
-    });
-    const offBridge = bridgeCanvasShapeIntoAgocraft({
-      weaveCanvasShape: weaveCanvasShapeCap,
-      agocraftRegistry: editor.manipulations,
-    });
+    // WI-032 Phase 3b — `bridgeCanvasShapeIntoAgocraft` lived here under
+    // legacy DR-010; with canvas-design removed there's no longer a
+    // weave-local capability to mirror. Future capability bridges (e.g.
+    // frame manipulation) attach in the same shape.
+    const offBridge = () => undefined;
     // Phase 4b — subscribe to the editor's changeStream and apply emitted
     // Changes to useDocument's state via `applyChange`. The filter restricts
     // to user-command + system origins (the latter for History.undo() replay);

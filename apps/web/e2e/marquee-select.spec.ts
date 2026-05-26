@@ -48,16 +48,11 @@ async function selectedIds(page: Page): Promise<string[]> {
   });
 }
 
-/** All top-level domain-frame ids in the current doc. The mixed flavor
- *  seeds four — slide / canvas-design / block-doc / media. */
+/** All top-level domain-frame ids in the current doc. WI-032 Phase 3 —
+ *  the legacy 4 collapsed into a single `frame` kind. */
 async function allTopLevelFrameIds(page: Page): Promise<string[]> {
   return await page.evaluate(() => {
-    const FRAME_KINDS = new Set([
-      "slide",
-      "canvas-design",
-      "block-doc",
-      "media",
-    ]);
+    const FRAME_KINDS = new Set(["frame"]);
     const w = window as unknown as {
       __weaveDoc?: {
         root: { children: ReadonlyArray<{ id: unknown; kind: string }> };

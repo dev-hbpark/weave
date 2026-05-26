@@ -64,6 +64,22 @@ import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft
 import type { ItemId } from "@agocraft/core";
 import { createFrameDefaultViewModel } from "../document/selection-chrome/frame-default-view-model.js";
 import { useSelectionChromeOrNull } from "../document/interactions/selection-chrome-context.js";
+import {
+  type ClickIntent,
+  type Selection,
+  SelectionVmContext,
+  selectFromHit,
+} from "../document/interactions/selection-context.js";
+import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index.js";
+
+/** WI-033 A4 — context passed to `renderFrameMenu` so the callback
+ *  (typically a per-frame ContextMenu) can render a Layer Picker
+ *  section listing every frame overlapping the right-clicked point.
+ *  Empty `layers` → the section is elided. */
+export interface FrameMenuContext {
+  readonly layers: ReadonlyArray<LayerHit>;
+  readonly onPickLayer: (id: string) => void;
+}
 
 const ALL_HANDLES: ReadonlyArray<HandleDir> = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 const MIN_FRAME = 0.02;
@@ -153,22 +169,18 @@ export interface FrameStageProps {
     | ((e: React.DragEvent<HTMLDivElement>) => void)
     | undefined;
   readonly renderFrameMenu?:
-    | ((itemId: string, children: React.ReactNode) => React.ReactNode)
+    | ((
+        itemId: string,
+        children: React.ReactNode,
+        ctx?: FrameMenuContext,
+      ) => React.ReactNode)
     | undefined;
   /** Phase 12b — commit a frame's full ItemFrame after a manipulation drag. */
   readonly onCommitFrame?: ((itemId: string, next: ItemFrame) => void) | undefined;
-  /** id of the frame currently *fitted* to the viewport. When set, the
-   *  design plane zooms in so that frame fills the viewport (matches the
-   *  Present-mode camera). Double-clicking another frame fits to it; the
-   *  outer-area double-click clears this id (see `onFitAll`). Esc /
-   *  breadcrumb also clears it. */
-  readonly enteredId?: string | undefined;
-  readonly onEnter?: ((itemId: string) => void) | undefined;
-  /** Called when the user double-clicks the canvas background (not a frame
-   *  or inner item). The host should clear `enteredId` so the overview
-   *  view becomes the target; FrameStage simultaneously resets its own
-   *  user pan/zoom so every frame fits inside the viewport. */
-  readonly onFitAll?: (() => void) | undefined;
+  // WI-033 P2 — `enteredId` / `onEnter` / `onFitAll` (Phase 12 drill-in
+  // wiring) removed. Selection-only navigation (DR-017) means there's
+  // no entered-frame state or outer fit-to-all gesture; the design
+  // plane zoom is user-driven (Ctrl+Wheel / Zoom controls).
   /** Optional reference to the full document so the stage can compute an
    *  absolute-frame transform for the entered frame (trail walk). */
   readonly document?: AgocraftDocument | undefined;
@@ -184,41 +196,8 @@ export interface FrameStageProps {
     | undefined;
 }
 
-/** Phase 13e — staggered opacity interpolation. Mirrors Stage's
- *  `computeStaggered`: leaving alpha (fade-OUT) reaches its target by
- *  p≈0.65; arriving alpha (fade-IN) starts moving only at p≈0.35. The two
- *  windows overlap mid-spring so a drill-in (siblings fading out + entered
- *  frame zooming in) reads as one continuous motion. */
-function computeDrillStaggered(from: number, to: number, p: number): number {
-  if (to === from) return from;
-  if (to > from) {
-    const start = 0.35;
-    const adjusted = Math.max(0, (p - start) / (1 - start));
-    return from + (to - from) * adjusted;
-  }
-  const end = 0.65;
-  const adjusted = Math.min(1, p / end);
-  return from + (to - from) * adjusted;
-}
-
-/** Phase 13e — per-level z-order dim. Returns one boolean per child:
- *  true if this child paints above the entered branch's level node and
- *  must fade. When no descendant of this level lies on the trail, no one
- *  fades. */
-function computeDrillDimFlags(
-  children: ReadonlyArray<AgocraftItem>,
-  trailIds: ReadonlySet<string>,
-): ReadonlyArray<boolean> {
-  let trailIdx = -1;
-  for (let i = 0; i < children.length; i += 1) {
-    if (trailIds.has(String(children[i]!.id))) {
-      trailIdx = i;
-      break;
-    }
-  }
-  if (trailIdx === -1) return children.map(() => false);
-  return children.map((_, i) => i > trailIdx);
-}
+// WI-033 P2 — `computeDrillStaggered` / `computeDrillDimFlags` (Phase 13e
+// drill-in opacity / dim helpers) removed alongside the drill-in mode.
 
 interface NestedFrameProps {
   readonly item: AgocraftItem;
@@ -237,14 +216,8 @@ interface NestedFrameProps {
    *  Shift / Cmd / Ctrl + click. Absent → modifier clicks fall back to
    *  the single-replace behaviour. */
   readonly onToggleSelect?: (itemId: string) => void;
-  /** Phase D — currently entered (drill-in) frame id, threaded down so each
-   *  NestedFrame's KindTooltip can compare against its own item id. */
-  readonly enteredId: string | undefined;
-  /** Phase 13e — full ancestor-and-target id set for the entered frame.
-   *  Empty when nothing is entered. Each NestedFrame consults this when
-   *  rendering its own children to decide which siblings paint above the
-   *  trail branch at *this* level. */
-  readonly enteredTrailIds: ReadonlySet<string>;
+  // WI-033 P2 — `enteredId` / `enteredTrailIds` (Phase 12+13e drill-in
+  // wiring) removed alongside the drill-in mode (DR-017).
   readonly onSelect: ((id: string | undefined) => void) | undefined;
   readonly onUpdateItem: FrameStageProps["onUpdateItem"];
   readonly onUpdateShape: FrameStageProps["onUpdateShape"];
@@ -255,8 +228,8 @@ interface NestedFrameProps {
   /** Update this frame's `attrs.frame` directly. Phase 12b — manipulation
    *  handles dispatch through this. */
   readonly onCommitFrame: ((itemId: string, next: ItemFrame) => void) | undefined;
-  /** Phase 12c — double-click enters the frame (drill-in). */
-  readonly onEnter: ((itemId: string) => void) | undefined;
+  // WI-033 P2 — `onEnter` (Phase 12c double-click drill-in callback)
+  // removed.
   /** Phase 13c-2 — hotspot overlay editing on the selected frame. */
   readonly selectedHotspotId: string | undefined;
   readonly onSelectHotspot: ((hotspotId: string | undefined) => void) | undefined;
@@ -267,15 +240,24 @@ interface NestedFrameProps {
         region: { x: number; y: number; width: number; height: number },
       ) => void)
     | undefined;
-  /** Phase 13e — z-order drill-in dim. Set to true when this frame paints
-   *  above the entered branch at its current tree level (= later in the
-   *  parent's children array). Renders with opacity 0 so it doesn't obscure
-   *  the entered frame after the drill-in zoom. */
-  readonly drillDimmed?: boolean;
-  /** Phase 13e — the FrameStage-level spring progress motion value (0..1)
-   *  shared with the design-plane transform. Used to derive this frame's
-   *  opacity so transform and alpha settle on the same frame. */
-  readonly drillProgressMV?: MotionValue<number> | undefined;
+  // WI-033 P2 — Phase 13e `drillDimmed` + `drillProgressMV` props
+  // removed alongside the drill-in opacity / dim chain in
+  // NestedFrame's body. No frame is ever dimmed today.
+  /** WI-033 A1+A2 — the AgocraftDocument that owns this frame's tree.
+   *  When provided, NestedFrame's onClick routes through `selectFromHit`
+   *  to apply Figma's parent-first auto-select + Cmd/Ctrl deep-select
+   *  semantics. When undefined, falls back to the legacy "select the
+   *  clicked frame" behaviour (backward compat for any caller that
+   *  hasn't been wired yet). */
+  readonly doc?: AgocraftDocument | undefined;
+  /** WI-033 A4 — fired on right-click. Caller (FrameStage) converts the
+   *  viewport coords to design-plane local, runs `findFramesAtPoint`,
+   *  and stashes the overlapping-layers list so the FrameContextMenu
+   *  can render a "Select layer" section. NestedFrame's responsibility
+   *  stops at capturing the event coords. */
+  readonly onContextMenuRequest?:
+    | ((itemId: string, clientX: number, clientY: number) => void)
+    | undefined;
 }
 
 function NestedFrame({
@@ -286,7 +268,6 @@ function NestedFrame({
   selectedId,
   selectedIds,
   onToggleSelect,
-  enteredId,
   onSelect,
   onUpdateItem,
   onUpdateShape,
@@ -295,15 +276,19 @@ function NestedFrame({
   onDragOver,
   renderFrameMenu,
   onCommitFrame,
-  onEnter,
   selectedHotspotId,
   onSelectHotspot,
   onCommitHotspotRegion,
-  drillDimmed = false,
-  drillProgressMV,
-  enteredTrailIds,
+  doc,
+  onContextMenuRequest,
 }: NestedFrameProps) {
   const itemId = String(item.id);
+  // WI-033 — vm reference for synchronous selection read inside onClick.
+  // React state (`selectedId` prop) can be stale within the same event
+  // batch when FrameMoveBinding's capture-phase `vm.itemSelection.set(...)`
+  // already mutated the selection before our onClick fires; the vm
+  // signal's `state.get()` always returns the latest.
+  const selectionVm = useContext(SelectionVmContext);
   // Manipulation handle drags publish "frame-manipulating" so tooltips don't
   // race with the gesture. The transition is guarded — if a context menu or
   // pan happens to win the press, we don't stomp their mode.
@@ -320,22 +305,13 @@ function NestedFrame({
   const selectionChromeRef = useRef(selectionChrome);
   selectionChromeRef.current = selectionChrome;
 
-  // Manual click-count for the fit-to-frame gesture. The browser's native
-  // `dblclick` only fires when the two clicks hit the same element, but
-  // selecting a frame on the first click mounts a SelectionLayer button
-  // covering the frame interior — so the second click lands on a different
-  // DOM target and `dblclick` is suppressed. The motion.div's onClick is
-  // the consistent ancestor both clicks bubble through, so we count them
-  // here and treat 2 clicks within ~350 ms as a fit gesture.
-  const clickCountRef = useRef(0);
-  const clickResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clearClickTimer = useCallback(() => {
-    if (clickResetTimerRef.current !== null) {
-      clearTimeout(clickResetTimerRef.current);
-      clickResetTimerRef.current = null;
-    }
-  }, []);
-  useEffect(() => clearClickTimer, [clearClickTimer]);
+  // WI-033 P2 — manual 2-click fit-to-frame counter removed. It used to
+  // dispatch `onEnter?.(itemId)` (drill-in) on the second qualifying
+  // click and `return` early, which prevented `selectFromHit` from
+  // running. With drill-in retired (DR-017) and the counter's reason
+  // for existing gone, the frame's onClick path now runs `selectFromHit`
+  // on every press — A1's parent-first heuristic does its own
+  // "current selection in trail → drill to leaf" derivation.
   const attrs = item.attrs as { frame?: ItemFrame };
   const frame = attrs.frame;
   const selfRef = useRef<HTMLDivElement>(null);
@@ -398,35 +374,10 @@ function NestedFrame({
   const childFrames = item.children.filter(isDomainItem);
 
 
-  // Phase 13e — opacity derived from the FrameStage-level drill spring
-  // (`drillProgressMV`) so this frame's alpha rides exactly the same
-  // timeline as the design-plane transform. Staggered: a leaving frame
-  // (becoming dimmed) fades early; an arriving frame (becoming undimmed)
-  // fades late. The result reads as one motion — "leaving first → arriving
-  // last" — within one spring window.
-  //
-  // When no drillProgressMV is wired (read-only contexts, tests), we fall
-  // back to a static opacity so nothing animates.
-  const drillFromRef = useRef<number>(drillDimmed ? 0 : 1);
-  const drillToRef = useRef<number>(drillDimmed ? 0 : 1);
-  // Local fallback motion value when no shared spring is wired (read-only
-  // tests, storybook). Constant at 1 = `useTransform` returns `to` value
-  // directly, i.e. no animation, just the static target opacity.
-  const fallbackMV = useMotionValue(1);
-  const sourceMV = drillProgressMV ?? fallbackMV;
-  // Re-sync refs on every drill-in target change (enteredId in deps), not
-  // just when this frame's own dimmed flips. Parent resets drillProgressMV
-  // to 0 each enteredId change; stale refs would cause a one-frame opacity
-  // flash that reads as a sudden appear/disappear.
-  useEffect(() => {
-    const p = sourceMV.get();
-    const live = computeDrillStaggered(drillFromRef.current, drillToRef.current, p);
-    drillFromRef.current = live;
-    drillToRef.current = drillDimmed ? 0 : 1;
-  }, [drillDimmed, sourceMV, enteredId]);
-  const drillOpacityMV = useTransform(sourceMV, (p: number) =>
-    computeDrillStaggered(drillFromRef.current, drillToRef.current, p),
-  );
+  // WI-033 P2 — Phase 13e drill-in opacity / dim chain removed
+  // (drillFromRef / drillToRef / sourceMV / drillProgressMV useTransform).
+  // With drill-in mode retired (DR-017) no frame is ever drillDimmed,
+  // so the staggered opacity timeline collapses to a static 1.
 
   const style: CSSProperties = {
     position: "absolute",
@@ -456,7 +407,6 @@ function NestedFrame({
     // canvas shows through. Each domain renderer paints its own content.
     background: "transparent",
     ...(frame.rotation ? { transform: `rotate(${frame.rotation}rad)` } : {}),
-    ...(drillDimmed ? { pointerEvents: "none" as const } : {}),
   };
 
   const inner = (
@@ -513,6 +463,15 @@ function NestedFrame({
         // surface a select so click-only presses keep selecting the
         // frame for non-drag flows (e.g., read-only embeds with no
         // commit handler).
+        //
+        // WI-033 NOTE: when the router DOES claim (the common path),
+        // FrameMoveBinding does its own `vm.itemSelection.set(itemId)`
+        // raw single-replace (frame-manip.ts:154), which fights with
+        // A1's parent-first heuristic in `selectFromHit`. The Figma-
+        // aligned override happens in `onClick` below. Removing the
+        // raw set at its source requires an agocraft option (see
+        // HANDOFF-011 — `CreateFrameMoveBindingDeps.disableSelectionSet`);
+        // until that lands, A1/A2/A4 e2e specs report 7 fails.
         e.stopPropagation();
         onSelect?.(itemId);
       }}
@@ -579,39 +538,39 @@ function NestedFrame({
           e.stopPropagation();
           return;
         }
-        // Clicks on a double-click-to-edit text zone should NOT count
-        // toward the fit-to-frame counter — the user's 2nd click on text
-        // is meant to enter edit mode, not drill into the frame.
-        const isInDoubleEditZone =
-          t instanceof HTMLElement &&
-          t.closest('[data-double-click-edit="true"]') !== null;
-        if (!isInDoubleEditZone) {
-          // Two qualifying clicks within the window = fit-to-frame.
-          clickCountRef.current += 1;
-          clearClickTimer();
-          if (clickCountRef.current >= 2) {
-            clickCountRef.current = 0;
-            e.stopPropagation();
-            onEnter?.(itemId);
-            return;
-          }
-          clickResetTimerRef.current = setTimeout(() => {
-            clickCountRef.current = 0;
-            clickResetTimerRef.current = null;
-          }, 350);
-        }
+        // WI-033 P2 — manual 2-click counter removed alongside drill-in
+        // mode. The counter used to fire `onEnter?.(itemId)` on the
+        // second click and `return` early, which suppressed
+        // `selectFromHit` and prevented A1's drill heuristic from
+        // running. Text-edit double-click is still handled by the
+        // EditableText component on `[data-double-click-edit="true"]`
+        // (native dblclick → enter edit mode); the frame's onClick
+        // path now just runs `selectFromHit` on every press.
         e.stopPropagation();
-        // Multi-selection-aware click (Figma parity):
-        //   • Shift / Cmd / Ctrl + click → toggle this frame in/out of
-        //     the multi-selection.
-        //   • Plain click on a frame already in the multi-selection →
-        //     preserve the selection (no-op). Without this, clicking on
-        //     any selected member would collapse the multi to single and
-        //     the user could never start a multi-drag.
-        //   • Plain click on an unselected frame → replace (existing
-        //     single-select behaviour).
-        const isModified = e.shiftKey || e.metaKey || e.ctrlKey;
-        if (isModified && onToggleSelect !== undefined) {
+        // WI-033 — Figma selection model parity:
+        //   • Shift (and Cmd+Shift / Ctrl+Shift) → multi-toggle. Adds
+        //     or removes this frame from the multi-selection.
+        //   • Cmd/Ctrl alone (no Shift) → deep select. Selects the
+        //     clicked leaf regardless of nesting depth.
+        //   • Plain click → parent-first auto-select. The first click
+        //     into a context walks one level in from the root; once
+        //     the current selection is on the trail to the hit, plain
+        //     clicks drill all the way to the leaf.
+        //
+        // Plain click on a frame already in a multi-selection
+        // preserves the multi (so the user can start a multi-drag
+        // without the press collapsing the selection).
+        //
+        // Known limitation (HANDOFF-011 pending): when FrameMoveBinding
+        // already raw-set the selection to `itemId` on pointerdown, our
+        // `selectedId` prop is stale to the post-set value and A1's
+        // "already-in-context" heuristic mis-drills. The fix requires
+        // an agocraft `disableSelectionSet` binding option.
+        const intent: ClickIntent =
+          e.shiftKey ? "toggle" :
+          e.metaKey || e.ctrlKey ? "deep" :
+          "plain";
+        if (intent === "toggle" && onToggleSelect !== undefined) {
           onToggleSelect(itemId);
           return;
         }
@@ -622,11 +581,49 @@ function NestedFrame({
         ) {
           return;
         }
+        if (doc !== undefined) {
+          // WI-033 B — resolve the hit to the deepest `[data-frame-id]`
+          // ancestor of the actual event target rather than this
+          // NestedFrame closure's `itemId`. If a portal'd SelectionLayer
+          // (pointer-events: none today, but defense-in-depth) or a
+          // future overlay redirects React's event delegation to a
+          // parent NestedFrame, the click should still resolve to the
+          // frame the user visually clicked.
+          const targetFrameId =
+            (t instanceof HTMLElement
+              ? t.closest("[data-frame-id]")?.getAttribute("data-frame-id")
+              : null) ?? itemId;
+          const current: Selection | null =
+            selectedId === undefined ? null : { kind: "frame", id: selectedId };
+          const next = selectFromHit(targetFrameId, intent, doc, current);
+          onSelect?.(next === null ? targetFrameId : next.id);
+          return;
+        }
         onSelect?.(itemId);
+      }}
+      onContextMenuCapture={(e: React.MouseEvent<HTMLDivElement>) => {
+        // WI-033 A4 — fire the Layer Picker request in the React
+        // capture phase so the layers state is staged BEFORE Radix's
+        // ContextMenuTrigger (bubble-phase listener) opens the menu.
+        // React 18 batches both setStates so the menu's first render
+        // sees the populated layers list.
+        //
+        // We don't preventDefault — Radix still needs the native event
+        // to open. We don't stopPropagation either; the outer
+        // FrameStage background's onContextMenu (if any) is irrelevant
+        // because the bubble has been claimed by Radix's trigger, not
+        // because we silenced it. Using `Capture` instead of the
+        // bubble-phase `onContextMenu` avoids the Radix `asChild`
+        // composeEventHandlers ordering that would otherwise cause
+        // our inline handler to run too late to influence the menu's
+        // first paint.
+        if (onContextMenuRequest === undefined) return;
+        if (!selectionAllowed) return;
+        onContextMenuRequest(itemId, e.clientX, e.clientY);
       }}
       onDragOver={onDragOver}
       onDrop={onDropAdd ? (e: React.DragEvent<HTMLDivElement>) => onDropAdd(e, itemId) : undefined}
-      style={{ ...style, opacity: drillOpacityMV } as MotionStyle}
+      style={style as MotionStyle}
     >
       <FrameContent
         item={item as unknown as AgoItem}
@@ -647,8 +644,7 @@ function NestedFrame({
           : {})}
       />
       {(() => {
-        const dimFlags = computeDrillDimFlags(childFrames, enteredTrailIds);
-        return childFrames.map((c, i) => (
+        return childFrames.map((c) => (
           <NestedFrame
             key={String(c.id)}
             item={c}
@@ -658,9 +654,9 @@ function NestedFrame({
             selectedId={selectedId}
             {...(selectedIds !== undefined ? { selectedIds } : {})}
             {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
-            enteredId={enteredId}
-            enteredTrailIds={enteredTrailIds}
             onSelect={onSelect}
+            doc={doc}
+            onContextMenuRequest={onContextMenuRequest}
             onUpdateItem={onUpdateItem}
             onUpdateShape={onUpdateShape}
             onRemoveShape={onRemoveShape}
@@ -668,12 +664,9 @@ function NestedFrame({
             onDragOver={onDragOver}
             renderFrameMenu={renderFrameMenu}
             onCommitFrame={onCommitFrame}
-            onEnter={onEnter}
             selectedHotspotId={selectedHotspotId}
             onSelectHotspot={onSelectHotspot}
             onCommitHotspotRegion={onCommitHotspotRegion}
-            drillDimmed={dimFlags[i] === true}
-            drillProgressMV={drillProgressMV}
           />
         ));
       })()}
@@ -692,15 +685,28 @@ function NestedFrame({
               itemKind: kind,
               unitKinds: item.units.map((u) => u.kind),
             };
-            // Phase 18 — text items only expose horizontal edges + corners
-            // for resize. Vertical (n/s) handles are removed because the
-            // height auto-fits the content (newlines / line wraps grow the
-            // box downward; the user never sets height directly).
+            // WI-029 / DR-016 — text item resize handles are now mode-gated
+            // by textAutoResize. Replaces Phase 18's hardcoded set.
+            //   WIDTH_AND_HEIGHT (Auto-W) → no handles (auto-shrinks to content)
+            //   HEIGHT (Auto-H)           → e/w only (width manual, height auto)
+            //   NONE (Fixed)              → all 8 (width+height locked, no auto-fit)
+            // The corner-fontSize-scale behaviour (Phase 18) is gone — corners
+            // change only the box dimensions, never fontSize. DR-016 박제.
+            const textHandleDirs = (() => {
+              if (kind !== "text") return undefined;
+              const attrs = item.attrs as unknown as { textAutoResize?: string };
+              switch (attrs.textAutoResize) {
+                case "WIDTH_AND_HEIGHT":
+                  return [] as const;
+                case "NONE":
+                  return ["e", "w", "n", "s", "ne", "nw", "se", "sw"] as const;
+                default: // "HEIGHT" or unset (legacy)
+                  return ["e", "w"] as const;
+              }
+            })();
             const defaultVm = createFrameDefaultViewModel({
               itemKind: kind,
-              ...(kind === "text"
-                ? { resizeDirs: ["e", "w", "ne", "nw", "se", "sw"] as const }
-                : {}),
+              ...(textHandleDirs !== undefined ? { resizeDirs: textHandleDirs } : {}),
             });
             // Default specs + extension specs (registry) — extension
             // wins on id collision (later writes override).
@@ -815,38 +821,9 @@ function NestedFrame({
   return renderFrameMenu ? <>{renderFrameMenu(itemId, inner)}</> : inner;
 }
 
-interface AbsoluteFrame {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-const ROOT_ABS_FRAME: AbsoluteFrame = { x: 0, y: 0, width: 1, height: 1 };
-
-/** Compose ItemFrames along the trail (root → … → entered) to land at the
- *  entered frame's design-relative 0..1 absolute frame. */
-function absoluteFrameFor(
-  doc: AgocraftDocument,
-  entryId: string | undefined,
-): AbsoluteFrame {
-  if (entryId === undefined || entryId === String(doc.root.id)) return ROOT_ABS_FRAME;
-  const trail = findTrailDeep(doc, entryId);
-  if (trail === undefined) return ROOT_ABS_FRAME;
-  let x = 0;
-  let y = 0;
-  let w = 1;
-  let h = 1;
-  for (const node of trail) {
-    const f = (node.attrs as { frame?: ItemFrame }).frame;
-    if (f === undefined) continue;
-    x = x + f.x * w;
-    y = y + f.y * h;
-    w = w * f.width;
-    h = h * f.height;
-  }
-  return { x, y, width: w, height: h };
-}
+// WI-033 P2 — `AbsoluteFrame` / `ROOT_ABS_FRAME` / `absoluteFrameFor`
+// (Phase 12c entered-frame-to-design-plane camera math) removed
+// alongside the drill-in mode.
 
 /** Perceived luminance for a CSS color. Returns 0..1 where ≥ 0.5 reads as
  *  "light" (dark ink on top is the right choice). Falls back to "light"
@@ -893,13 +870,11 @@ export function FrameStage(props: FrameStageProps) {
     onMarqueeSelect,
     onDropAdd,
     onDragOver,
-    enteredId,
     document: doc,
     editing = true,
     infiniteCanvas = false,
     handMode = false,
     background = "#ffffff",
-    onFitAll,
   } = props;
 
   const bgTone: "light" | "dark" = useMemo(
@@ -908,48 +883,15 @@ export function FrameStage(props: FrameStageProps) {
   );
   const rootId = String(root.id);
   const frames = root.children.filter(isDomainItem);
-  const reduceMotion = useMemo(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-  }, []);
+  // WI-033 P2 — `reduceMotion` useMemo removed alongside the drill-in
+  // spring animation. The design plane now snaps to base camera
+  // synchronously on resize, which already honours the user's
+  // motion preference (no animation at all).
 
-  // Phase 12c — compute the design-plane transform that brings the entered
-  // frame to viewport-fitting size. When nothing's entered, identity.
-  const absFrame: AbsoluteFrame = useMemo(() => {
-    if (enteredId === undefined || doc === undefined) return ROOT_ABS_FRAME;
-    return absoluteFrameFor(doc, enteredId);
-  }, [enteredId, doc]);
-
-  // Phase 13e — the set of every id along the trail from root to the
-  // entered frame (inclusive). NestedFrame uses this at each tree level to
-  // decide which sibling paints above the trail's branch at that level.
-  const enteredTrailIds = useMemo<ReadonlySet<string>>(() => {
-    if (enteredId === undefined || doc === undefined) return new Set();
-    const trail = findTrailDeep(doc, enteredId);
-    if (trail === undefined) return new Set();
-    return new Set(trail.map((n) => String(n.id)));
-  }, [enteredId, doc]);
-
-  // Phase 13e — shared drill-in spring progress. One spring drives the
-  // design-plane transform AND each NestedFrame's drill-dim opacity, so
-  // zoom, pan, and alpha share one timeline. A spring (not a fixed-
-  // duration tween) means farther drill-ins take proportionally longer —
-  // entering a tiny frame zooms harder and the animation rides longer
-  // accordingly, with the same curve shape at every scale.
-  const drillProgressMV = useMotionValue(1);
-  // From/To camera state (translate + scale in design-pixel space) tracked
-  // across enteredId changes so an interrupted drill-in continues smoothly
-  // from its current visual position.
-  const drillFromRef = useRef({ tx: 0, ty: 0, scale: 1 });
-  const drillToRef = useRef({ tx: 0, ty: 0, scale: 1 });
-  const zoom = useMemo(() => {
-    const z = 1 / Math.max(absFrame.width, absFrame.height, 0.0001);
-    // viewport offset: entered frame's center in design px, translated to
-    // origin (so the transform-origin "0 0" math behaves).
-    const tx = -(absFrame.x + absFrame.width / 2) * designWidth * z + designWidth / 2;
-    const ty = -(absFrame.y + absFrame.height / 2) * designHeight * z + designHeight / 2;
-    return { z, tx, ty };
-  }, [absFrame, designWidth, designHeight]);
+  // WI-033 P2 — drill-in mode removed (DR-017). The design plane sits
+  // at base camera (computed below from outer size + designWidth/
+  // Height); user pan/wheel adjusts pan via `vm.camera`. No spring is
+  // needed since there's no entered-frame target to animate to.
 
   const outerRef = useRef<HTMLDivElement | null>(null);
   // Live handle on the design-plane DOM node so the rubber-band layer (now
@@ -977,6 +919,53 @@ export function FrameStage(props: FrameStageProps) {
     },
     [designWidth, designHeight],
   );
+
+  // WI-033 A4 — Layer Picker plumbing. NestedFrame's onContextMenu
+  // request fires here on every right-click; we compute the overlapping
+  // frames at the cursor (design-plane local px) and stash them so the
+  // ContextMenu's first render sees the layer list. React 18's automatic
+  // batching commits this state-update alongside Radix's open trigger
+  // (both setState calls happen inside the same right-click event), so
+  // no `flushSync` is needed.
+  //
+  // `doc` is already destructured above as `props.document` aliased; we
+  // reach for `props.document` directly here to stay decoupled from the
+  // current destructure order.
+  const [pickerCtx, setPickerCtx] = useState<
+    { readonly targetId: string; readonly layers: ReadonlyArray<LayerHit> } | null
+  >(null);
+  const handleFrameContextMenu = useCallback(
+    (itemId: string, clientX: number, clientY: number) => {
+      const d = props.document;
+      if (d === undefined) return;
+      const local = clientToDesignLocal(clientX, clientY);
+      const layers = findFramesAtPoint(
+        d,
+        local.x,
+        local.y,
+        designWidth,
+        designHeight,
+      );
+      setPickerCtx({ targetId: itemId, layers });
+    },
+    [props.document, clientToDesignLocal, designWidth, designHeight],
+  );
+  const handlePickLayer = useCallback(
+    (id: string) => {
+      props.onSelect?.(id);
+      setPickerCtx(null);
+    },
+    [props],
+  );
+  const wrappedRenderFrameMenu = useMemo<FrameStageProps["renderFrameMenu"]>(() => {
+    if (props.renderFrameMenu === undefined) return undefined;
+    const rfm = props.renderFrameMenu;
+    return (itemId, children) => {
+      const layers =
+        pickerCtx !== null && pickerCtx.targetId === itemId ? pickerCtx.layers : [];
+      return rfm(itemId, children, { layers, onPickLayer: handlePickLayer });
+    };
+  }, [props.renderFrameMenu, pickerCtx, handlePickLayer]);
   const [outerSize, setOuterSize] = useState<{ width: number; height: number }>({
     width: designWidth,
     height: designHeight,
@@ -1070,12 +1059,10 @@ export function FrameStage(props: FrameStageProps) {
     [vm],
   );
 
-  // Whenever the fit target changes (a frame is double-clicked, or the
-  // outer-area double-click clears it), reset the user's pan/zoom offset.
-  useEffect(() => {
-    if (!infiniteCanvas) return;
-    setPan({ tx: 0, ty: 0, scale: 1 });
-  }, [enteredId, infiniteCanvas, setPan]);
+  // WI-033 P2 — pan-reset-on-entered-frame-change effect removed
+  // alongside drill-in mode (DR-017). The user's pan/zoom now persists
+  // across all selection changes; explicit Zoom controls (Ctrl+Wheel /
+  // ZoomBar) are the only ways to reset it.
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   // Track Space-held for hold-to-pan. Only enabled when infinite canvas is
   // on — for stacked flavors there's nothing to pan to.
@@ -1298,6 +1285,13 @@ export function FrameStage(props: FrameStageProps) {
         } as unknown as FrameGeom;
       },
       computeResize(orig, dir: ResizeDir, dx, dy, parent) {
+        // DR-016 (2026-05-25): text item resize follows Figma paradigm —
+        // every direction adjusts only box dimensions, NEVER fontSize. The
+        // pre-DR-016 corner-fontSize-scale behaviour (Phase 18) is gone.
+        // Edge drag clamps to one-character min-width using the existing
+        // fontSize meta. Mode-specific handle exposure is gated upstream
+        // (createFrameDefaultViewModel call site) so this function trusts
+        // the dirs it receives.
         const o = orig as unknown as ItemFrame & {
           __origFontSize?: number;
           __designWidth?: number;
@@ -1320,48 +1314,17 @@ export function FrameStage(props: FrameStageProps) {
           nh = o.height - ddy;
         }
         if (dir.includes("s")) nh = o.height + ddy;
-        // Phase 15 + Phase 18 — proportional corner resize for text.
-        // Corner dirs (`ne`/`nw`/`se`/`sw`) on a text item scale BY WIDTH
-        // ratio only — fontSize follows the same factor, and height is
-        // auto-derived by the renderer's ResizeObserver. We deliberately
-        // don't lock aspect via max(sx, sy) like other kinds: vertical
-        // pointer movement at a corner has no domain meaning for a text
-        // item (height isn't user-set). Edge dirs (`e`/`w`) keep
-        // free-width-resize behaviour without changing the font size.
-        // (`n`/`s` are removed from the handle set entirely for text.)
-        const isCorner = dir.length === 2;
+        // Text-specific min-width clamp (one character). Applies to every
+        // direction that changes width — kept after DR-016 because a box
+        // narrower than ~1ch becomes visually unusable.
         const isText = o.__origFontSize !== undefined;
-        if (isCorner && isText) {
-          const scale = Math.max(0.05, nw / o.width);
-          nw = o.width * scale;
-          // Re-anchor opposite side so the resize feels stable.
-          if (dir.includes("w")) nx = o.x + o.width - nw;
-          const newFontSize = Math.max(1, (o.__origFontSize as number) * scale);
-          // Minimum width ≈ one character.
-          const designW = o.__designWidth ?? 1920;
-          const minWidthRatio = (newFontSize * 0.6) / designW;
-          if (nw < minWidthRatio) {
-            nw = minWidthRatio;
-            if (dir.includes("w")) nx = o.x + o.width - nw;
-          }
-          return {
-            x: nx,
-            y: ny,
-            width: Math.max(0.01, nw),
-            height: nh,
-            rotation: o.rotation,
-            __newFontSize: newFontSize,
-          } as unknown as FrameGeom;
-        }
-        // Edge / non-text path. For text + edge w/e, clamp to one-char
-        // min width (fontSize doesn't scale here).
-        if (isText && (dir === "e" || dir === "w")) {
+        if (isText && (dir.includes("e") || dir.includes("w"))) {
           const designW = o.__designWidth ?? 1920;
           const minWidthRatio =
             ((o.__origFontSize as number) * 0.6) / designW;
           if (nw < minWidthRatio) {
             nw = minWidthRatio;
-            if (dir === "w") nx = o.x + o.width - nw;
+            if (dir.includes("w")) nx = o.x + o.width - nw;
           }
         }
         return { ...o, x: nx, y: ny, width: Math.max(0.01, nw), height: Math.max(0.01, nh) } as unknown as FrameGeom;
@@ -1445,6 +1408,11 @@ export function FrameStage(props: FrameStageProps) {
           access: frameAccess,
           priority: GESTURE_PRIORITY_ELEMENT_BODY,
           moveThreshold: 3,
+          // HANDOFF-011 / WI-033 — opt out of the binding's raw
+          // `vm.itemSelection.set(itemId)` on plain pointerdown so
+          // NestedFrame's onClick can apply Figma's parent-first /
+          // Cmd-deep / Shift-toggle semantics via `selectFromHit`.
+          disableSelectionSet: true,
         }),
         createPanBinding({
           enabled: () => panActiveRef.current,
@@ -1556,69 +1524,27 @@ export function FrameStage(props: FrameStageProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, [router]);
 
-  // Drive the drill-in spring whenever the target zoom changes. The spring
-  // config is shared with NestedFrame's opacity (via `drillProgressMV` ref-
-  // drilled below) so all three channels — translate, scale, alpha — settle
-  // on the same frame.
+  // WI-033 P2 — drive the design-plane transform spring from base*
+  // alone (drill-in zoom retired DR-017). With `from === to === base
+  // camera`, the spring's animate() is a no-op when base camera
+  // WI-033 P2 — design-plane transform is just base camera now (drill
+  // spring + useTransform chain retired). Each motion value owns one
+  // axis of the base transform; the useEffect below keeps them in
+  // sync when the outer size or design size changes.
+  const planeTxMV = useMotionValue(baseTx);
+  const planeTyMV = useMotionValue(baseTy);
+  const planeScaleMV = useMotionValue(baseScale);
   useEffect(() => {
-    const nextTx = baseTx + zoom.tx * baseScale;
-    const nextTy = baseTy + zoom.ty * baseScale;
-    const nextScale = baseScale * zoom.z;
-    if (reduceMotion) {
-      drillFromRef.current = { tx: nextTx, ty: nextTy, scale: nextScale };
-      drillToRef.current = { tx: nextTx, ty: nextTy, scale: nextScale };
-      drillProgressMV.set(1);
-      return;
-    }
-    // Snapshot the current live position so an interrupted drill-in
-    // continues from where it is now instead of snapping back to "from".
-    const p = drillProgressMV.get();
-    const liveTx = drillFromRef.current.tx + (drillToRef.current.tx - drillFromRef.current.tx) * p;
-    const liveTy = drillFromRef.current.ty + (drillToRef.current.ty - drillFromRef.current.ty) * p;
-    const liveScale = drillFromRef.current.scale + (drillToRef.current.scale - drillFromRef.current.scale) * p;
-    drillFromRef.current = { tx: liveTx, ty: liveTy, scale: liveScale };
-    drillToRef.current = { tx: nextTx, ty: nextTy, scale: nextScale };
-    drillProgressMV.set(0);
-    // Distance-proportional duration. Same easing shape, more time for
-    // bigger drill-ins. The two terms cover the two perceptual axes:
-    //   - positionMag: viewport-pixel pan distance for the design plane.
-    //   - scaleMag: log of the scale ratio (perceived zoom is log-prop).
-    const positionMag = Math.hypot(nextTx - liveTx, nextTy - liveTy);
-    const scaleMag = Math.abs(
-      Math.log(Math.max(nextScale, 0.0001) / Math.max(liveScale, 0.0001)),
-    );
-    const duration = Math.max(
-      0.45,
-      Math.min(1.8, 0.4 + positionMag / 1500 + scaleMag * 0.55),
-    );
-    const controls = animate(drillProgressMV, 1, {
-      type: "tween",
-      duration,
-      ease: [0.22, 1, 0.36, 1],
-    });
-    return () => {
-      controls.stop();
-    };
-  }, [zoom.tx, zoom.ty, zoom.z, baseScale, baseTx, baseTy, reduceMotion, drillProgressMV]);
+    planeTxMV.set(baseTx);
+    planeTyMV.set(baseTy);
+    planeScaleMV.set(baseScale);
+  }, [baseTx, baseTy, baseScale, planeTxMV, planeTyMV, planeScaleMV]);
 
-  // Derive the design-plane transform values from `drillProgressMV` so the
-  // CSS transform updates every animation frame in lockstep with anything
-  // else (here: NestedFrame opacity) that subscribes to the same MV.
-  const planeTxMV = useTransform(drillProgressMV, (p: number) =>
-    drillFromRef.current.tx + (drillToRef.current.tx - drillFromRef.current.tx) * p,
-  );
-  const planeTyMV = useTransform(drillProgressMV, (p: number) =>
-    drillFromRef.current.ty + (drillToRef.current.ty - drillFromRef.current.ty) * p,
-  );
-  const planeScaleMV = useTransform(drillProgressMV, (p: number) =>
-    drillFromRef.current.scale + (drillToRef.current.scale - drillFromRef.current.scale) * p,
-  );
-
-  // Total on-screen scale = user pan zoom × drill-in spring. Provided via
+  // Total on-screen scale = base camera × user pan zoom. Provided via
   // context so every descendant (NestedFrame, CanvasBlock shapes, …) can
   // compute its display size and gate hit-testing once the visible footprint
   // drops below `HIT_THRESHOLD_PX`.
-  const totalScaleMV = useMotionValue(planeScaleMV.get() * pan.scale);
+  const totalScaleMV = useMotionValue(baseScale * pan.scale);
   useEffect(() => {
     const update = () => {
       const next = planeScaleMV.get() * (infiniteCanvas ? pan.scale : 1);
@@ -1690,20 +1616,9 @@ export function FrameStage(props: FrameStageProps) {
       data-canvas="document"
       data-bg-tone={bgTone}
       onClick={handleBackgroundClick}
-      onDoubleClick={
-        onFitAll
-          ? (e) => {
-              // NestedFrame stops propagation on its own dblclick, so this
-              // handler only fires when the gesture lands on the canvas
-              // background (between frames or outside the design plane).
-              // Clearing `enteredId` upstream will trigger the pan-reset
-              // effect above, so the design plane animates back to the
-              // overview view.
-              e.stopPropagation();
-              onFitAll();
-            }
-          : undefined
-      }
+      // WI-033 P2 — outer onDoubleClick "fit to all" gesture removed
+      // alongside drill-in mode. Outer background double-click is now
+      // a no-op (no entered frame to exit, no overview view to fit).
       // DR-017 Phase 2 — pan gesture now lives on the GestureRouter
       // (capture phase); legacy React onPointer handlers removed.
       onDragOver={onDragOver}
@@ -1713,7 +1628,8 @@ export function FrameStage(props: FrameStageProps) {
       data-pan-active={panActive ? "true" : undefined}
     >
       {(() => {
-        const rootDimFlags = computeDrillDimFlags(frames, enteredTrailIds);
+        // WI-033 P2 — Phase 13e drill dim flags retired. No frame is
+        // dimmed under selection-only navigation.
         // Multi-selection union bbox — render one outline around every
         // selected frame *at any depth*. Walks the tree recursively,
         // composing each ancestor's frame so a nested shape selected via
@@ -1763,22 +1679,19 @@ export function FrameStage(props: FrameStageProps) {
             selectedId={props.selectedId}
             {...(props.selectedIds !== undefined ? { selectedIds: props.selectedIds } : {})}
             {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
-            enteredId={enteredId}
-            enteredTrailIds={enteredTrailIds}
             onSelect={onSelect}
+            doc={props.document}
+            onContextMenuRequest={handleFrameContextMenu}
             onUpdateItem={props.onUpdateItem}
             onUpdateShape={props.onUpdateShape}
             onRemoveShape={props.onRemoveShape}
             onDropAdd={onDropAdd}
             onDragOver={onDragOver}
-            renderFrameMenu={props.renderFrameMenu}
+            renderFrameMenu={wrappedRenderFrameMenu}
             onCommitFrame={props.onCommitFrame}
-            onEnter={props.onEnter}
             selectedHotspotId={props.selectedHotspotId}
             onSelectHotspot={props.onSelectHotspot}
             onCommitHotspotRegion={props.onCommitHotspotRegion}
-            drillDimmed={rootDimFlags[i] === true}
-            drillProgressMV={drillProgressMV}
           />
         ));
         // The design-plane subtree — pan layer (user offset/zoom) wrapping

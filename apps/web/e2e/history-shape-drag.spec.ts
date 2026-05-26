@@ -74,7 +74,13 @@ test.fixme("Cmd+Z reverts a shape drag-move as one undo step", async ({ page }) 
   expect(Math.abs(redoneShape.y - movedShape.y)).toBeLessThan(0.01);
 });
 
-test("Cmd+Z reverts a canvas-shape resize-SE as one undo step", async ({ page }) => {
+// WI-032 Phase 3c — canvas-shape lived inside canvas-design.attrs.shapes[]
+// and was edited via weave.shape.update / .remove. With the legacy kind +
+// commands gone, shape primitives flow through weave.item.update; the
+// equivalent resize-as-one-undo-step coverage is the responsibility of
+// `frame-handles.spec.ts` / `frame-manipulation.spec.ts` (already running
+// against the new model).
+test.skip("Cmd+Z reverts a canvas-shape resize-SE as one undo step", async ({ page }) => {
   await prepareDesign(page, { flavor: "canvas-board" });
   const shape = page.locator('[data-shape-id^="shape"]').first();
   await expect(shape).toBeVisible();

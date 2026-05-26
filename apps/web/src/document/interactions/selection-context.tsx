@@ -19,6 +19,7 @@
 
 import { useEditorVM } from "@agocraft/editor/react";
 import type { EditorViewModel } from "@agocraft/editor";
+import type { Document as AgocraftDocument } from "@agocraft/core";
 import {
   type ReactNode,
   createContext,
@@ -28,6 +29,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { findItemDeep, findTrailDeep } from "../agocraft-mirror.js";
 
 export type Selection =
   | { readonly kind: "frame"; readonly id: string }
@@ -36,6 +38,131 @@ export type Selection =
       readonly frameId: string;
       readonly shapeId: string;
     };
+
+/** Intent of a frame click — surfaces the user's modifier keys to the
+ *  selection state machine. Figma's selection model: plain clicks walk
+ *  one level deeper through nested frames (parent-first), Cmd/Ctrl
+ *  bypasses depth entirely (deep), and Shift toggles multi-frame.
+ *
+ *  Closed list, frozen by the Figma model. Single dispatch site inside
+ *  `selectFromHit` — kept file-internal so future modes go through the
+ *  helper's signature, not a registry. */
+export type ClickIntent = "plain" | "deep" | "toggle";
+
+/** WI-033 A1 + A2 — pure resolver from a frame click hit to the next
+ *  selection state. Caller is responsible for applying the result via
+ *  `selectionContext.selectFrame(result.id)` (or equivalent vm setter
+ *  for multi-frame toggle paths).
+ *
+ *  Algorithm (FIGMA_SELECTION_MODEL_SPEC §2.1):
+ *  - `intent: "deep"` (Cmd/Ctrl-click) — return the leaf hit, depth-blind.
+ *  - `intent: "toggle"` (Shift-click) — caller routes to multi-frame
+ *    toggleFrames; this helper still returns the hit as the
+ *    representative leaf so single-selection consumers stay coherent.
+ *  - `intent: "plain"` — "already-in-context" heuristic. If the current
+ *    selection is anywhere on the trail down to the hit, the user is
+ *    drilling deeper within the same context → return the leaf hit. If
+ *    the current selection is in a different branch, only walk one
+ *    level in from the root → return the top-level frame on the trail.
+ *
+ *  Pure: no React, no vm, no DOM. Doc + current + hit + intent in,
+ *  Selection|null out. Testable in isolation. */
+export function selectFromHit(
+  hitId: string,
+  intent: ClickIntent,
+  doc: AgocraftDocument,
+  current: Selection | null,
+): { readonly kind: "frame"; readonly id: string } | null {
+  if (intent === "deep" || intent === "toggle") {
+    return { kind: "frame", id: hitId };
+  }
+  const trail = findTrailDeep(doc, hitId);
+  if (trail === undefined || trail.length === 0) {
+    // hitId is the root itself or not in the doc — nothing to select.
+    return null;
+  }
+  const currentId = current?.kind === "frame" ? current.id : undefined;
+  const inCurrentContext =
+    currentId !== undefined && trail.some((item) => String(item.id) === currentId);
+  if (inCurrentContext) {
+    // Same context — let the click drill all the way to the leaf hit.
+    return { kind: "frame", id: hitId };
+  }
+  // Different context — A1 parent-first: walk one level in from the root.
+  const topLevel = trail[0];
+  return topLevel === undefined ? null : { kind: "frame", id: String(topLevel.id) };
+}
+
+/** WI-033 A3 — keyboard navigation helpers (`Enter`, `Shift+Enter`, `Tab`,
+ *  `Shift+Tab`). Pure functions; caller routes the result to
+ *  `selectionContext.selectFrame(...)`. Return `undefined` when navigation
+ *  is a no-op (leaf has no children; root has no parent). Sibling
+ *  navigation wraps around — last → first → last per Figma. */
+
+export function firstChildOf(
+  fromId: string,
+  doc: AgocraftDocument,
+): string | undefined {
+  const item = findItemDeep(doc, fromId);
+  if (item === undefined) return undefined;
+  const first = item.children[0];
+  return first === undefined ? undefined : String(first.id);
+}
+
+export function parentOf(
+  fromId: string,
+  doc: AgocraftDocument,
+): string | undefined {
+  const trail = findTrailDeep(doc, fromId);
+  if (trail === undefined || trail.length === 0) return undefined;
+  // trail is [topLevel, ..., fromId]. Parent of the last element is the
+  // second-to-last, or the root (excluded from trail) when fromId is itself
+  // a top-level frame. Top-level frames have no selectable parent — return
+  // undefined so Shift+Enter is a no-op at the top.
+  if (trail.length === 1) return undefined;
+  const parent = trail[trail.length - 2];
+  return parent === undefined ? undefined : String(parent.id);
+}
+
+function siblingsOf(
+  fromId: string,
+  doc: AgocraftDocument,
+): { readonly siblings: ReadonlyArray<{ readonly id: string }>; readonly index: number } | undefined {
+  const trail = findTrailDeep(doc, fromId);
+  if (trail === undefined || trail.length === 0) return undefined;
+  // Parent's children: if trail.length === 1, the frame is a top-level
+  // and its siblings are root.children.
+  const parent = trail.length === 1 ? doc.root : trail[trail.length - 2];
+  if (parent === undefined) return undefined;
+  const siblings = parent.children.map((c) => ({ id: String(c.id) }));
+  const index = siblings.findIndex((s) => s.id === fromId);
+  if (index === -1) return undefined;
+  return { siblings, index };
+}
+
+export function nextSiblingOf(
+  fromId: string,
+  doc: AgocraftDocument,
+): string | undefined {
+  const found = siblingsOf(fromId, doc);
+  if (found === undefined) return undefined;
+  const { siblings, index } = found;
+  if (siblings.length === 0) return undefined;
+  const next = siblings[(index + 1) % siblings.length];
+  return next?.id;
+}
+
+export function prevSiblingOf(
+  fromId: string,
+  doc: AgocraftDocument,
+): string | undefined {
+  const found = siblingsOf(fromId, doc);
+  if (found === undefined) return undefined;
+  const { siblings, index } = found;
+  if (siblings.length === 0) return undefined;
+  const prev = siblings[(index - 1 + siblings.length) % siblings.length];
+  return prev?.id;
+}
 
 interface SelectionContextValue {
   readonly selection: Selection | null;
@@ -54,7 +181,13 @@ interface SelectionContextValue {
   readonly clear: () => void;
 }
 
-const SelectionVmContext = createContext<EditorViewModel | undefined>(undefined);
+// Exported for WI-033 — NestedFrame onClick needs to query the vm's
+// current selection synchronously (rather than reading the React-state
+// `selectedId` prop, which may be stale within the same event batch
+// when FrameMoveBinding's capture-phase `vm.itemSelection.set(...)`
+// already mutated it). The vm signal's `state.get()` always returns
+// the latest value regardless of React commit timing.
+export const SelectionVmContext = createContext<EditorViewModel | undefined>(undefined);
 
 /** Provider — wires the editor vm into the context so `useSelection()` can
  *  read selection state without touching `window`. PresentPage and other

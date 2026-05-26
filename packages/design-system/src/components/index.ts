@@ -12,6 +12,12 @@ export {
 } from "./AITooltip.js";
 export { AuroraBg } from "./AuroraBg.js";
 export { Badge, type BadgeProps, type BadgeSize, type BadgeVariant } from "./Badge.js";
+export {
+  Banner,
+  type BannerAction,
+  type BannerProps,
+  type BannerTone,
+} from "./Banner.js";
 export { Button } from "./Button.js";
 export {
   CommandButton,
@@ -43,8 +49,10 @@ export { Card, CardEyebrow, CardTitle } from "./Card.js";
 export {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   type ContextMenuItemProps,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "./ContextMenu.js";
@@ -148,4 +156,9 @@ export { Stage, type StageScene } from "./Stage.js";
 export { Switch, type SwitchProps } from "./Switch.js";
 export { FieldGroup, TextField } from "./TextField.js";
 export { ThemeSwitcher } from "./ThemeSwitcher.js";
+export { Tooltip, type TooltipProps } from "./Tooltip.js";
 export { Toolbar, ToolbarDivider } from "./Toolbar.js";
+export {
+  OnboardingCoachmark,
+  type OnboardingCoachmarkProps,
+} from "./OnboardingCoachmark.js";

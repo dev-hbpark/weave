@@ -39,7 +39,7 @@ test("Redo tooltip — single Slot layer (AITooltip → IconButton)", async ({
     const editor = (window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }).__weaveEditor;
     const doc = (window as unknown as { __weaveDoc: { root: { id: string } } }).__weaveDoc;
     editor.exec("weave.item.add", {
-      kind: "slide",
+      kind: "frame",
       containerId: String(doc.root.id),
       frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.15, rotation: 0 },
     });
@@ -89,7 +89,7 @@ test("Undo tooltip — hotkeyId resolves from the editor hotkey table", async ({
     const editor = (window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }).__weaveEditor;
     const doc = (window as unknown as { __weaveDoc: { root: { id: string } } }).__weaveDoc;
     editor.exec("weave.item.add", {
-      kind: "slide",
+      kind: "frame",
       containerId: String(doc.root.id),
       frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.15, rotation: 0 },
     });
@@ -121,7 +121,7 @@ test("Cmd+Z hotkey still triggers undo (regression after useHistoryHotkeys remov
     const editor = (window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }).__weaveEditor;
     const doc = (window as unknown as { __weaveDoc: { root: { id: string } } }).__weaveDoc;
     editor.exec("weave.item.add", {
-      kind: "slide",
+      kind: "frame",
       containerId: String(doc.root.id),
       frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.15, rotation: 0 },
     });

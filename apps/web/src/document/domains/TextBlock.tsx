@@ -15,9 +15,24 @@
 // items, the user can only set the WIDTH manually (edge or corner) and
 // the height always follows the wrapped content.
 
-import { EditableText } from "@weave/design-system";
-import { type CSSProperties, useEffect, useRef } from "react";
+import type { TextRun } from "@agocraft/core";
+import {
+  type CSSProperties,
+  type ReactNode,
+  Suspense,
+  lazy,
+  useEffect,
+  useRef,
+} from "react";
 import type { AgoItem, ItemFrame, TextAttrs } from "../types.js";
+
+// R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
+// need it in present mode — and even in edit mode, defer until the user
+// actually focuses a text box. Suspense's fallback is a transparent stub
+// that matches the inner div's dimensions, so layout doesn't jump.
+const LexicalTextEditor = lazy(() =>
+  import("./LexicalTextEditor.js").then((m) => ({ default: m.LexicalTextEditor })),
+);
 
 interface TextBlockProps {
   readonly item: AgoItem<"text">;
@@ -38,11 +53,19 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   frameRef.current = a.frame;
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
+  // WI-029 / DR-016 — Fixed mode locks both dimensions. The ResizeObserver
+  // must NOT auto-fit height in NONE; otherwise the user-set height would
+  // be overwritten by content fit.
+  const autoResizeMode = a.textAutoResize ?? "HEIGHT";
+  const autoResizeRef = useRef(autoResizeMode);
+  autoResizeRef.current = autoResizeMode;
 
   useEffect(() => {
     const el = innerRef.current;
     if (el === null) return;
     const ro = new ResizeObserver(() => {
+      // Fixed mode: user controls width + height. Do not auto-update.
+      if (autoResizeRef.current === "NONE") return;
       const measured = el.scrollHeight + 8;
       const frameEl = el.closest("[data-frame-id]");
       const parent = frameEl?.parentElement ?? null;
@@ -64,27 +87,112 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     return () => ro.disconnect();
   }, []);
 
+  // Phase 1 (WI-029) — Figma-equivalent text attrs:
+  //   textAlignVertical → flex justify-content
+  //   textDecoration → CSS text-decoration
+  //   textCase → CSS text-transform (SMALL_CAPS degrades to lowercase + font-variant)
+  //   paragraphSpacing / paragraphIndent → margin-top on \n-split paragraphs (best-effort
+  //     until Phase 2 rich text editor renders runs)
+  //   textTruncation = "ENDING" + maxLines → -webkit-line-clamp
+  //   hyperlink → wrap content in <a> when set
+  //   textAutoResize = "NONE" (Fixed) → overflow: hidden (auto-height ResizeObserver no-ops)
+  const verticalAlign = a.textAlignVertical ?? "TOP";
+  // Phase 1.5 Phase A — prefer the UPPERCASE `textAlignHorizontal` (Figma-
+  // convention) and fall back to legacy lowercase `textAlign` for v6
+  // docs that haven't been migrated. Always map back to the lowercase
+  // CSS `text-align` value at the render boundary.
+  const horizontalAlign: "left" | "center" | "right" | "justify" = (() => {
+    if (a.textAlignHorizontal !== undefined) {
+      switch (a.textAlignHorizontal) {
+        case "LEFT":
+          return "left";
+        case "CENTER":
+          return "center";
+        case "RIGHT":
+          return "right";
+        case "JUSTIFIED":
+          return "justify";
+      }
+    }
+    return a.textAlign;
+  })();
+  // Phase 1.5 Phase B — prefer `lineHeightSpec` (explicit unit) over the
+  // legacy `lineHeight: number` (always a multiplier). The CSS line-height
+  // value is unit-aware: `multiplier` becomes a plain number, `px` becomes
+  // a `${n}px` string.
+  const lineHeightValue: string | number = (() => {
+    const spec = a.lineHeightSpec;
+    if (spec !== undefined) {
+      switch (spec.unit) {
+        case "multiplier":
+          return spec.value;
+        case "px":
+          return `${spec.value}px`;
+      }
+    }
+    return a.lineHeight;
+  })();
+  const justifyContent =
+    verticalAlign === "CENTER"
+      ? "center"
+      : verticalAlign === "BOTTOM"
+        ? "flex-end"
+        : "flex-start";
+  const isFixed = a.textAutoResize === "NONE";
+  const truncate = isFixed && a.textTruncation === "ENDING";
   const containerStyle: CSSProperties = {
     width: "100%",
     height: "100%",
     boxSizing: "border-box",
-    // overflow: visible so the content can spill briefly during the
-    // frame-height catch-up tick; the user never sees this in practice
-    // because the ResizeObserver pushes the new height within one frame.
-    overflow: "visible",
+    // Fixed-mode + truncate: clip overflow. Auto-W/H: visible (ResizeObserver
+    // catches up within one frame).
+    overflow: isFixed ? "hidden" : "visible",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "flex-start",
+    justifyContent,
     alignItems:
-      a.textAlign === "center"
+      horizontalAlign === "center"
         ? "center"
-        : a.textAlign === "right"
+        : horizontalAlign === "right"
           ? "flex-end"
           : "stretch",
     padding: 4,
     ...(a.background !== undefined ? { background: a.background } : {}),
     opacity: a.opacity,
   };
+  const decoration = (() => {
+    switch (a.textDecoration) {
+      case "UNDERLINE":
+        return "underline";
+      case "STRIKETHROUGH":
+        return "line-through";
+      default:
+        return "none";
+    }
+  })();
+  const textTransform = (() => {
+    switch (a.textCase) {
+      case "UPPER":
+        return "uppercase";
+      case "LOWER":
+        return "lowercase";
+      case "TITLE":
+        return "capitalize";
+      case "SMALL_CAPS":
+        return "lowercase"; // graceful — font-variant adds small-caps glyphs below
+      default:
+        return "none";
+    }
+  })();
+  const truncateStyles: CSSProperties = truncate
+    ? {
+        display: "-webkit-box",
+        WebkitLineClamp: a.maxLines ?? 1,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }
+    : {};
   const textStyle: CSSProperties = {
     width: "100%",
     fontFamily: a.fontFamily,
@@ -92,36 +200,108 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     fontWeight: a.fontWeight,
     fontStyle: a.fontStyle,
     color: a.color,
-    textAlign: a.textAlign,
-    lineHeight: a.lineHeight,
+    textAlign: horizontalAlign,
+    lineHeight: lineHeightValue,
     letterSpacing: `${a.letterSpacing}px`,
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
+    textDecoration: decoration,
+    textTransform,
+    ...(a.textCase === "SMALL_CAPS" ? { fontVariantCaps: "small-caps" } : {}),
     // Don't allow the rendered content to be narrower than one character
     // visually — caps how aggressively width can collapse. The frame box's
     // width is set by frame.width; this just stops the inner text from
     // dropping below a 1ch ribbon.
     minWidth: "1ch",
+    ...truncateStyles,
   };
+
+  // Phase 1 (WI-029): if hyperlink is set and we're in present mode (not
+  // editable), wrap the text in <a target=_blank>. Edit mode never wraps so
+  // the user can still click into the box to edit.
+  //
+  // Phase 2 (DR-015 Accepted 2026-05-25): Lexical RichTextPlugin replaces
+  // design-system EditableText. Cmd+B / Cmd+I / Cmd+U work via Lexical's
+  // native shortcuts. Per-range formatting captured into textRuns +
+  // mirrored to attrs (host writes both text + textRuns on every change).
+  //
+  // Present mode renders textRuns directly (with <span> styling) when
+  // available — preserves bold/italic/underline/strikethrough that the
+  // user applied in edit mode.
+  const inner = editable ? (
+    <Suspense fallback={<>{renderReadOnly(a.text, a.textRuns)}</>}>
+      <LexicalTextEditor
+        anchorId={String(item.id)}
+        value={a.text}
+        {...(a.textRuns !== undefined ? { initialTextRuns: a.textRuns } : {})}
+        onChange={(snapshot) =>
+          onUpdate?.({ text: snapshot.text, textRuns: snapshot.textRuns })
+        }
+        editable={editable}
+      />
+    </Suspense>
+  ) : (
+    <>{renderReadOnly(a.text, a.textRuns)}</>
+  );
+  const linked = !editable && a.hyperlink != null && a.hyperlink.url.length > 0 ? (
+    <a
+      href={a.hyperlink.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: "inherit", textDecoration: "inherit" }}
+    >
+      {inner}
+    </a>
+  ) : (
+    inner
+  );
 
   return (
     <div style={containerStyle} data-testid="text-block">
       <div ref={innerRef} style={textStyle}>
-        {editable ? (
-          <EditableText
-            as="div"
-            multiline
-            clickToEdit="double"
-            value={a.text}
-            ariaLabel="Text content"
-            placeholder="텍스트 입력…"
-            className="outline-none w-full"
-            onCommit={(next) => onUpdate?.({ text: next })}
-          />
-        ) : (
-          <>{a.text}</>
-        )}
+        {linked}
       </div>
     </div>
   );
+}
+
+/** Present-mode rich-text renderer. When `textRuns` is present, map each
+ *  run to a `<span>` with inline style from PartialTextStyle. Otherwise
+ *  fall back to the plain `text` projection (Phase 1 attrs shape).
+ *
+ *  Format precedence in present mode mirrors LexicalTextEditor's bitmask:
+ *  UNDERLINE wins over STRIKETHROUGH when both attributes are applied
+ *  (CSS `text-decoration` slot is shared). The block-level `textDecoration`
+ *  on TextAttrs is applied at the container; per-run overrides win locally. */
+function renderReadOnly(
+  text: string,
+  textRuns: ReadonlyArray<TextRun> | undefined,
+): ReactNode {
+  if (textRuns === undefined || textRuns.length === 0) return text;
+  return textRuns.map((run, i) => {
+    if (run.insert === "\n") return <br key={`br-${i}`} />;
+    const attrs = run.attributes;
+    if (attrs === undefined) {
+      return <span key={i}>{run.insert}</span>;
+    }
+    const style: CSSProperties = {};
+    if (attrs.fontWeight === "bold") style.fontWeight = "bold";
+    if (attrs.fontStyle === "italic") style.fontStyle = "italic";
+    if (attrs.color !== undefined) style.color = attrs.color;
+    if (attrs.fontSize !== undefined) style.fontSize = `${attrs.fontSize}px`;
+    if (attrs.fontFamily !== undefined) style.fontFamily = attrs.fontFamily;
+    if (attrs.letterSpacing !== undefined)
+      style.letterSpacing = `${attrs.letterSpacing}px`;
+    if (attrs.textDecoration === "UNDERLINE") style.textDecoration = "underline";
+    else if (attrs.textDecoration === "STRIKETHROUGH")
+      style.textDecoration = "line-through";
+    if (attrs.textCase === "UPPER") style.textTransform = "uppercase";
+    else if (attrs.textCase === "LOWER") style.textTransform = "lowercase";
+    else if (attrs.textCase === "TITLE") style.textTransform = "capitalize";
+    return (
+      <span key={i} style={style}>
+        {run.insert}
+      </span>
+    );
+  });
 }

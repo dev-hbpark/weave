@@ -7,6 +7,7 @@ import {
   itemId,
 } from "@agocraft/core";
 import { toAgocraftDocument } from "./agocraft-mirror.js";
+import { migrateLegacyKindsToFrame } from "./migrate-frame-only.js";
 import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME } from "./types.js";
 import type { CanvasShape, Design, Document, Item, ItemFrame } from "./types.js";
 
@@ -24,6 +25,19 @@ import type { CanvasShape, Design, Document, Item, ItemFrame } from "./types.js"
 
 const KEY_PREFIX_V5 = "weave.design.v5.";
 const KEY_PREFIX_V4 = "weave.doc.v4.";
+// WI-032 — pre-migration backup. Saved before `migrateLegacyKindsToFrame`
+// rewrites a legacy 4-domain doc. Kept for `BACKUP_TTL_MS` (1 week), then
+// silently evicted by `evictStaleBackups()` on the next `loadDesign` call.
+// RISK-004 condition #1 — guarantees a rollback path if the migration
+// disagrees with the user's expectation.
+const KEY_PREFIX_V9_BACKUP = "weave.design.v9-backup.";
+const BACKUP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// WI-032 — Phase 3c — `migrateLegacyKindsToFrame` is now active. The first
+// load of any persisted legacy 4-domain doc rewrites it in memory; the next
+// `saveDesign` persists the new shape, and the pre-migration v9 blob is
+// stashed under `weave.design.v9-backup.<id>` for 1 week (RISK-004 §1).
+const WI032_MIGRATE_ENABLED = true;
 const LEGACY_PREFIX_V3 = "weave.doc.v3.";
 const LEGACY_PREFIX_V2 = "weave.doc.v2.";
 const LEGACY_PREFIX_V1 = "weave.doc.v1.";
@@ -128,13 +142,19 @@ function migrateV2ToV3(legacy: LegacyDocumentV2): Document {
         rotation: 0,
         hue: s.hue,
       }));
+      // WI-032 Phase 3 — `canvas-design` is no longer a weave-domain kind;
+      // we keep the legacy v2→v3 migration shape intact so old localStorage
+      // blobs still parse, then `migrateLegacyKindsToFrame` (Phase 2)
+      // rewrites the canvas-design Item into a `frame` + shape children on
+      // the way out. The intermediate object has to be `unknown`-cast
+      // because the post-migration DomainKind union no longer includes it.
       return {
         id: it.id,
         kind: "canvas-design",
         attrs: { frame: FULL_FRAME, summary: oldAttrs.summary, shapes },
         behaviors: it.behaviors as Item["behaviors"],
         createdAt: it.createdAt,
-      } as Item;
+      } as unknown as Item;
     }
     return {
       id: it.id,
@@ -187,7 +207,9 @@ function deepNormalizeItem(item: AgocraftItem, designWidth: number, designHeight
   // attrs.height drop in favor of the universal frame.
   let nextKind = item.kind;
   if (nextKind === "sub-doc") {
-    nextKind = "slide";
+    // WI-032 Phase 3 — sub-doc → frame (the new canvas container). Legacy
+    // sub-doc width/height/flavor are dropped; the universal frame stays.
+    nextKind = "frame";
     const a = nextAttrs as { width?: unknown; height?: unknown; flavor?: unknown };
     if (a.width !== undefined || a.height !== undefined || a.flavor !== undefined) {
       const {
@@ -196,7 +218,7 @@ function deepNormalizeItem(item: AgocraftItem, designWidth: number, designHeight
         flavor: _f,
         ...rest
       } = nextAttrs as Record<string, unknown>;
-      nextAttrs = { ...rest, bullets: [], title: (a as { title?: string }).title ?? "Slide" };
+      nextAttrs = rest;
     }
   }
   // Camera-target units — absolute → ratio.
@@ -261,25 +283,59 @@ function wrapDocumentInDesign(doc: AgocraftDocument): Design {
 export function loadDesign(id: string): Design | undefined {
   if (typeof window === "undefined") return undefined;
 
+  // WI-032 — sweep stale v9 backups (older than 1 week) before any read.
+  evictStaleBackups();
+
   // v5 — canonical Design wrapper.
   const rawV5 = window.localStorage.getItem(KEY_PREFIX_V5 + id);
   if (rawV5 !== null) {
     try {
       const parsed = JSON.parse(rawV5) as SerializedDesignV5;
       if (parsed.meta?.schemaVersion === 5) {
-        const result = serializer.fromJSON(parsed.document, {
+        // WI-032 critical fix — run the legacy → frame migration on the
+        // raw JSON BEFORE `serializer.fromJSON`. The agocraft schema no
+        // longer registers slide / canvas-design / block-doc / media, and
+        // `onUnknown: "preserve"` only protects unknown attrs — not whole
+        // Items with unknown kinds. Migrating the raw doc first means
+        // every Item that reaches fromJSON already has a known kind, so
+        // no user data is dropped during validation. `AgocraftDocument`
+        // and the serialized v5 doc shape are structurally compatible
+        // (id is a brand string), making the cast safe.
+        let documentJson = parsed.document;
+        if (WI032_MIGRATE_ENABLED) {
+          const rawAsAgo = documentJson as unknown as AgocraftDocument;
+          const migrated = migrateLegacyKindsToFrame(rawAsAgo);
+          if (migrated !== rawAsAgo) {
+            // Save the v9 backup before the migrated shape is persisted
+            // (RISK-004 §1 — rollback path).
+            saveBackupBlob(id, rawV5);
+            documentJson = migrated as unknown as typeof documentJson;
+          }
+        }
+        const result = serializer.fromJSON(documentJson, {
           schema: createSchema(),
           features: createFeatureRegistry(),
           onUnknown: "preserve",
         });
         if (result.ok) {
+          // Migration already ran above (or was no-op for frame-only
+          // docs). Pass through directly.
+          let document = result.document;
+          if (WI032_MIGRATE_ENABLED) {
+            // Defensive second pass — covers nested legacy Items that
+            // somehow survived the raw-JSON pass (shouldn't happen in
+            // practice, but kept for safety; no-op on frame-only docs).
+            const migrated = migrateLegacyKindsToFrame(document);
+            if (migrated !== document) saveBackupBlob(id, rawV5);
+            document = migrated;
+          }
           return {
             id: parsed.id,
             title: parsed.title,
             width: parsed.width,
             height: parsed.height,
             background: parsed.background ?? DEFAULT_DESIGN_BACKGROUND,
-            document: result.document,
+            document,
             presentationOrder: parsed.presentationOrder ?? [],
             meta: parsed.meta,
           };
@@ -292,9 +348,72 @@ export function loadDesign(id: string): Design | undefined {
 
   // v4 → v5 migration.
   const v4Doc = readV4Document(id);
-  if (v4Doc !== undefined) return wrapDocumentInDesign(v4Doc);
+  if (v4Doc !== undefined) {
+    const wrapped = wrapDocumentInDesign(v4Doc);
+    // v4 docs predate WI-032 paradigm — apply the same frame migration
+    // when the WI-032 flag is enabled.
+    return WI032_MIGRATE_ENABLED
+      ? { ...wrapped, document: migrateLegacyKindsToFrame(wrapped.document) }
+      : wrapped;
+  }
 
   return undefined;
+}
+
+// ── WI-032 v9 backup helpers ──────────────────────────────────────────────
+
+interface V9BackupBlob {
+  /** Raw V5 serialized doc — the exact bytes that lived at
+   *  `weave.design.v5.<id>` before the WI-032 migration rewrote it. */
+  readonly v5: string;
+  /** ISO timestamp the backup was saved. Used for TTL eviction. */
+  readonly savedAt: string;
+}
+
+function saveBackupBlob(id: string, rawV5: string): void {
+  // Skip if a backup already exists — the first migration wins so a re-load
+  // after schema-only field changes doesn't overwrite the original snapshot.
+  const key = KEY_PREFIX_V9_BACKUP + id;
+  if (window.localStorage.getItem(key) !== null) return;
+  const blob: V9BackupBlob = { v5: rawV5, savedAt: new Date().toISOString() };
+  try {
+    window.localStorage.setItem(key, JSON.stringify(blob));
+  } catch {
+    // localStorage quota — backup is best-effort, do not fail the load.
+  }
+}
+
+function evictStaleBackups(): void {
+  const now = Date.now();
+  const toDelete: string[] = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (key === null || !key.startsWith(KEY_PREFIX_V9_BACKUP)) continue;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw === null) continue;
+      const blob = JSON.parse(raw) as V9BackupBlob;
+      const age = now - Date.parse(blob.savedAt);
+      if (Number.isFinite(age) && age > BACKUP_TTL_MS) toDelete.push(key);
+    } catch {
+      toDelete.push(key); // corrupt entry — drop
+    }
+  }
+  for (const k of toDelete) window.localStorage.removeItem(k);
+}
+
+/** Test-only — peek the backup blob for a given design id. Returns undefined
+ *  when no backup exists. Exported so the migration unit test can assert
+ *  RISK-004 condition #1 (a backup gets written when migration fires). */
+export function readV9Backup(id: string): V9BackupBlob | undefined {
+  if (typeof window === "undefined") return undefined;
+  const raw = window.localStorage.getItem(KEY_PREFIX_V9_BACKUP + id);
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw) as V9BackupBlob;
+  } catch {
+    return undefined;
+  }
 }
 
 export function saveDesign(design: Design): void {
@@ -492,11 +611,9 @@ export function createBlankDesign(input: {
       updatedAt: now,
       schemaVersion: 5,
       schemaRefs: [
+        // WI-032 Phase 3 — single canvas container + primitives.
         { kind: "weave-doc", schemaVersion: 5 },
-        { kind: "slide", schemaVersion: 5 },
-        { kind: "canvas-design", schemaVersion: 5 },
-        { kind: "block-doc", schemaVersion: 5 },
-        { kind: "media", schemaVersion: 5 },
+        { kind: "frame", schemaVersion: 5 },
       ],
       userMeta: { title: input.title, weaveDocId: input.id },
     },

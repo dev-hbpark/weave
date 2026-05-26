@@ -19,26 +19,26 @@
 // Callbacks signature (`WeaveCommandTargets`) stays the same so the host
 // (`useWeaveEditor`) can register both flavors uniformly.
 
-import type { Item as AgocraftItem } from "@agocraft/core";
+import type { Item as AgocraftItem, Unit as AgocraftUnit } from "@agocraft/core";
 import {
   type Command,
   type CommandContext,
   fail,
   itemId as makeItemId,
+  unitId as makeUnitId,
   ok,
   type Patch,
-  unitId as makeUnitId,
 } from "@agocraft/core";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import { findItemDeep, toAgocraftItem } from "./agocraft-mirror.js";
+import { defaultPresetRegistry } from "./presets/default-registry.js";
+import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
 import type {
-  CanvasAttrs,
-  CanvasShape,
   DomainKind,
   InteractionBehavior,
-  Item as WeaveItem,
   ItemFrame,
+  Item as WeaveItem,
 } from "./types.js";
 
 /** Side-channel — per-editor map of Item shapes referenced by `item.children`
@@ -72,7 +72,11 @@ export function createPendingCreations(): PendingCreations {
 }
 
 /** Slice of useDocument's callback surface used by the *direct* commands
- *  (add / remove / reset). In-place commands no longer call into this. */
+ *  (add / remove / reset). In-place commands no longer call into this.
+ *
+ *  WI-032 Phase 3b — `updateShape` / `removeShape` were removed alongside
+ *  the legacy `canvas-design.attrs.shapes[]` data shape. Shape primitives
+ *  are now first-class Items; their attrs flow through `updateItem`. */
 export interface WeaveCommandTargets {
   readonly addItem: (kind: DomainKind) => void;
   readonly removeItem: (itemId: string) => void;
@@ -82,12 +86,6 @@ export interface WeaveCommandTargets {
     behaviorId: string,
     patch: (b: InteractionBehavior) => InteractionBehavior,
   ) => void;
-  readonly updateShape: (
-    itemId: string,
-    shapeId: string,
-    patch: Partial<CanvasShape>,
-  ) => void;
-  readonly removeShape: (itemId: string, shapeId: string) => void;
   readonly reset: () => void;
 }
 
@@ -122,14 +120,16 @@ export interface UpdateBehaviorInput {
   readonly behaviorId: string;
   readonly patch: (b: InteractionBehavior) => InteractionBehavior;
 }
-export interface UpdateShapeInput {
-  readonly itemId: string;
-  readonly shapeId: string;
-  readonly patch: Partial<CanvasShape>;
-}
-export interface RemoveShapeInput {
-  readonly itemId: string;
-  readonly shapeId: string;
+
+/** WI-030 — `weave.preset.insertSlide` input. */
+export interface InsertPresetSlideInput {
+  /** Preset id from the registry (e.g. `"cover.bold"`). */
+  readonly presetId: string;
+  /** Container Item id — defaults to the document root. */
+  readonly containerId?: string;
+  /** UI locale used to resolve the preset's `LocalizedText` strings into
+   *  the seeded child Items. Defaults to `"ko"`. */
+  readonly locale?: "ko" | "en";
 }
 
 /** Find any Item in the tree (root.children, grandchildren, …). Phase 10a
@@ -143,6 +143,7 @@ function findChild(doc: CommandContext["document"], itemId: string) {
 export function buildWeaveCommands(
   targets: WeaveCommandTargets,
   pending?: PendingCreations,
+  presetRegistry: PresetRegistry = defaultPresetRegistry(),
 ): ReadonlyArray<Command> {
   // ── lifecycle commands (Phase 5/9/10a) — event-sourced via PendingCreations ──
   //
@@ -155,7 +156,12 @@ export function buildWeaveCommands(
   const findContainer = (
     doc: CommandContext["document"],
     containerId: string | undefined,
-  ): { id: import("@agocraft/core").ItemId; children: ReadonlyArray<import("@agocraft/core").Item> } | undefined => {
+  ):
+    | {
+        id: import("@agocraft/core").ItemId;
+        children: ReadonlyArray<import("@agocraft/core").Item>;
+      }
+    | undefined => {
     const rootId = String(doc.root.id);
     if (containerId === undefined || containerId === rootId) {
       return { id: doc.root.id, children: doc.root.children };
@@ -170,7 +176,10 @@ export function buildWeaveCommands(
     run: (ctx: CommandContext, input: AddItemInput) => {
       const container = findContainer(ctx.document, input.containerId);
       if (container === undefined) {
-        return fail("container-not-found", `weave.item.add: container ${input.containerId} not in doc`);
+        return fail(
+          "container-not-found",
+          `weave.item.add: container ${input.containerId} not in doc`,
+        );
       }
       // Compute next camera-target order by scanning current units in scope.
       let maxOrder = -1;
@@ -221,7 +230,10 @@ export function buildWeaveCommands(
     run: (ctx: CommandContext, input: RemoveItemInput) => {
       const container = findContainer(ctx.document, input.containerId);
       if (container === undefined) {
-        return fail("container-not-found", `weave.item.remove: container ${input.containerId} not in doc`);
+        return fail(
+          "container-not-found",
+          `weave.item.remove: container ${input.containerId} not in doc`,
+        );
       }
       if (pending !== undefined) {
         const target = container.children.find((c) => String(c.id) === input.itemId);
@@ -294,56 +306,11 @@ export function buildWeaveCommands(
     },
   };
 
-  const updateShape: Command<UpdateShapeInput, void> = {
-    name: "weave.shape.update",
-    run: (ctx, input) => {
-      const child = findChild(ctx.document, input.itemId);
-      if (child === undefined) {
-        return fail("item-not-found", `weave.shape.update: no item with id "${input.itemId}"`);
-      }
-      if (child.kind !== "canvas-design") {
-        return fail("kind-mismatch", `weave.shape.update: item ${input.itemId} is not a canvas-design`);
-      }
-      const attrs = child.attrs as unknown as CanvasAttrs;
-      const nextShapes = attrs.shapes.map((s) =>
-        s.id === input.shapeId ? { ...s, ...input.patch } : s,
-      );
-      const nextAttrs = { ...attrs, shapes: nextShapes };
-      // DR-017 ADR-D — same auto-merge story as `weave.item.update`.
-      // Per-shape merge isolation would require an explicit merge
-      // namespace on the patch; left for a follow-up iteration.
-      const patch: Patch = {
-        type: "item.attrs",
-        itemId: child.id,
-        before: child.attrs,
-        after: nextAttrs as unknown as Readonly<Record<string, unknown>>,
-      };
-      return ok(undefined, [patch]);
-    },
-  };
+  // WI-032 Phase 3 — `weave.shape.update` / `weave.shape.remove` previously
+  // edited entries in `canvas-design.attrs.shapes[]`. With the legacy
+  // canvas-design kind removed, individual shapes are first-class `shape`
+  // primitive Items; their attrs flow through `weave.item.update` instead.
 
-  const removeShape: Command<RemoveShapeInput, void> = {
-    name: "weave.shape.remove",
-    run: (ctx, input) => {
-      const child = findChild(ctx.document, input.itemId);
-      if (child === undefined) {
-        return fail("item-not-found", `weave.shape.remove: no item with id "${input.itemId}"`);
-      }
-      if (child.kind !== "canvas-design") {
-        return fail("kind-mismatch", `weave.shape.remove: item ${input.itemId} is not a canvas-design`);
-      }
-      const attrs = child.attrs as unknown as CanvasAttrs;
-      const nextShapes = attrs.shapes.filter((s) => s.id !== input.shapeId);
-      const nextAttrs = { ...attrs, shapes: nextShapes };
-      const patch: Patch = {
-        type: "item.attrs",
-        itemId: child.id,
-        before: child.attrs,
-        after: nextAttrs as unknown as Readonly<Record<string, unknown>>,
-      };
-      return ok(undefined, [patch]);
-    },
-  };
 
   const updateBehavior: Command<UpdateBehaviorInput, void> = {
     name: "weave.behavior.update",
@@ -361,7 +328,10 @@ export function buildWeaveCommands(
       }
       const before = unit.attrs.behavior as InteractionBehavior | undefined;
       if (before === undefined) {
-        return fail("missing-behavior", `weave.behavior.update: unit ${input.behaviorId} carries no behavior payload`);
+        return fail(
+          "missing-behavior",
+          `weave.behavior.update: unit ${input.behaviorId} carries no behavior payload`,
+        );
       }
       const after = input.patch(before);
       const patch: Patch = {
@@ -377,14 +347,245 @@ export function buildWeaveCommands(
     },
   };
 
+  // ─── WI-029 — design-level commands via HANDOFF-007 patch variants ────
+  //
+  // These produce real Patches (`document.attrs` / `item.children.reorder`)
+  // so Cmd+Z works on design-level mutations. The host's `applyChange`
+  // reducer applies the patch to `design.document.attrs` and child-order.
+  //
+  // Migration note: the legacy wrapper-level fields (`design.background`,
+  // `design.presentationOrder`) are scheduled to be folded into
+  // `document.attrs` in a follow-up PR; until then `use-design.ts` also
+  // mirrors these mutations to the wrapper for backward-compat readers.
+
+  const setBackground: Command<{ readonly color: string | null }, void> = {
+    name: "weave.design.setBackground",
+    run: (ctx, input) => {
+      const before = (ctx.document.attrs ?? {}) as Readonly<Record<string, unknown>>;
+      const after: Record<string, unknown> = { ...before };
+      if (input.color === null) delete after.background;
+      else after.background = input.color;
+      return ok(undefined, [{ type: "document.attrs", before, after }]);
+    },
+  };
+
+  const setPresentationOrder: Command<{ readonly order: ReadonlyArray<string> }, void> = {
+    name: "weave.design.setPresentationOrder",
+    run: (ctx, input) => {
+      const before = (ctx.document.attrs ?? {}) as Readonly<Record<string, unknown>>;
+      const after: Record<string, unknown> = {
+        ...before,
+        presentationOrder: [...input.order],
+      };
+      return ok(undefined, [{ type: "document.attrs", before, after }]);
+    },
+  };
+
+  // ─── WI-029 R2 — behavior commands via item.units patch ─────────────
+  //
+  // addBehavior: stage the full item (with the new Unit appended) into
+  // PendingCreations; emit `item.units` patch with `added: [unitId]`.
+  // The reducer's `item.units` case (extended in WI-029 R2) looks up the
+  // staged item by itemId, finds the newly-added unit, and appends.
+  //
+  // removeBehavior: stage the current item (with the to-be-removed Unit
+  // still present) so undo's inverse `added: [unitId]` can restore the
+  // Unit body. Emit `item.units` patch with `removed: [unitId]`.
+
+  const addBehavior: Command<
+    { readonly itemId: string; readonly behavior: InteractionBehavior },
+    string
+  > = {
+    name: "weave.item.addBehavior",
+    run: (ctx, input) => {
+      const item = findItemDeep(ctx.document, input.itemId);
+      if (item === undefined) {
+        return fail("item-not-found", `weave.item.addBehavior: no item with id "${input.itemId}"`);
+      }
+      const ts = new Date().toISOString();
+      const newUnit: AgocraftUnit = {
+        id: makeUnitId(input.behavior.id),
+        kind: input.behavior.kind,
+        attrs: {
+          behavior: input.behavior as unknown as Readonly<Record<string, unknown>>,
+        },
+        meta: { createdAt: ts, updatedAt: ts, schemaVersion: 1 } as AgocraftUnit["meta"],
+      };
+      if (pending !== undefined) {
+        // Stage the full item with the new Unit appended — reducer's item.units
+        // case looks it up by itemId and grafts the new unit into the live item.
+        const stagedItem: AgocraftItem = {
+          ...item,
+          units: [...item.units, newUnit],
+          meta: { ...item.meta, updatedAt: ts } as AgocraftItem["meta"],
+        };
+        pending.stage(stagedItem);
+      }
+      const patch: Patch = {
+        type: "item.units",
+        itemId: item.id,
+        added: [newUnit.id],
+        removed: [],
+      };
+      return ok(input.behavior.id, [patch]);
+    },
+  };
+
+  const removeBehavior: Command<{ readonly itemId: string; readonly behaviorId: string }, void> = {
+    name: "weave.item.removeBehavior",
+    run: (ctx, input) => {
+      const item = findItemDeep(ctx.document, input.itemId);
+      if (item === undefined) {
+        return fail(
+          "item-not-found",
+          `weave.item.removeBehavior: no item with id "${input.itemId}"`,
+        );
+      }
+      const unitToRemove = item.units.find((u) => String(u.id) === input.behaviorId);
+      if (unitToRemove === undefined) {
+        return fail(
+          "unit-not-found",
+          `weave.item.removeBehavior: no unit ${input.behaviorId} on ${input.itemId}`,
+        );
+      }
+      if (pending !== undefined) {
+        // Stage the *current* item (with the to-be-removed Unit still present)
+        // — undo's inverse `added: [unitId]` will look up here to restore.
+        pending.stage(item);
+      }
+      const patch: Patch = {
+        type: "item.units",
+        itemId: item.id,
+        added: [],
+        removed: [unitToRemove.id],
+      };
+      return ok(undefined, [patch]);
+    },
+  };
+
+  const reorderChildren: Command<
+    { readonly containerId?: string; readonly order: ReadonlyArray<string> },
+    void
+  > = {
+    name: "weave.design.reorderChildren",
+    run: (ctx, input) => {
+      const container = findContainer(ctx.document, input.containerId);
+      if (container === undefined) {
+        return fail(
+          "container-not-found",
+          `weave.design.reorderChildren: container ${input.containerId} not in doc`,
+        );
+      }
+      const before = container.children.map((c) => c.id);
+      // Validate: `input.order` must be a permutation of current children
+      const beforeSet = new Set(before.map(String));
+      const afterSet = new Set(input.order);
+      if (beforeSet.size !== afterSet.size || [...beforeSet].some((id) => !afterSet.has(id))) {
+        return fail(
+          "order-mismatch",
+          `weave.design.reorderChildren: order ${JSON.stringify(input.order)} is not a permutation of current children`,
+        );
+      }
+      const after = input.order.map((s) => {
+        const found = before.find((id) => String(id) === s);
+        if (found === undefined) {
+          throw new Error(`unreachable: validated above`);
+        }
+        return found;
+      });
+      return ok(undefined, [
+        {
+          type: "item.children.reorder",
+          itemId: container.id,
+          before,
+          after,
+        },
+      ]);
+    },
+  };
+
+  // WI-030 — Slide preset batch insert.
+  //
+  // The preset factory returns a fully populated slide AgocraftItem whose
+  // `children` already carry the layout's text / shape items. We stage that
+  // single Item via PendingCreations (FR-003 §F1: the reducer's
+  // `item.children` case grafts the staged subtree wholesale), then emit ONE
+  // `item.children` patch on the container. Result: one history entry,
+  // `Cmd+Z` reverts the entire preset in one step.
+  //
+  // Falls back to a host-side mutation when `pending` is undefined — same
+  // contract as `weave.item.add` for tests / non-event-sourced contexts.
+  const insertPresetSlide: Command<InsertPresetSlideInput, string> = {
+    name: "weave.preset.insertSlide",
+    run: (ctx: CommandContext, input: InsertPresetSlideInput) => {
+      const preset = presetRegistry.getPreset(input.presetId);
+      if (preset === undefined) {
+        return fail(
+          "preset-not-found",
+          `weave.preset.insertSlide: no preset with id "${input.presetId}"`,
+        );
+      }
+      const container = findContainer(ctx.document, input.containerId);
+      if (container === undefined) {
+        return fail(
+          "container-not-found",
+          `weave.preset.insertSlide: container ${input.containerId} not in doc`,
+        );
+      }
+
+      const now = new Date().toISOString();
+      // Same shape as seed.ts:nextId — `<prefix>-<base36-ts>-<base36-rand>` —
+      // so preset-emitted ids visually match commands that build items via
+      // `createDefaultItem`. Counter starts at 1 per preset insert so siblings
+      // get monotonically increasing ids.
+      let counter = 0;
+      const newId = (prefix: string): string => {
+        counter += 1;
+        const ts = Date.now().toString(36);
+        const rand = Math.random().toString(36).slice(2, 6);
+        return `${prefix}-${ts}-${counter.toString(36)}${rand}`;
+      };
+
+      const slide = preset.factory({
+        locale: input.locale ?? "ko",
+        newId,
+        now,
+      });
+
+      if (pending !== undefined) {
+        pending.stage(slide);
+      } else {
+        // Host fallback — useDocument.addItem can't carry the pre-built
+        // subtree, so degrade gracefully to a single empty frame. Tests
+        // that need the full subtree should provide `pending`.
+        targets.addItem("frame");
+        return ok(String(slide.id), []);
+      }
+
+      const patches: Patch[] = [
+        {
+          type: "item.children",
+          itemId: container.id,
+          added: [slide.id],
+          removed: [],
+        },
+      ];
+      return ok(String(slide.id), patches);
+    },
+  };
+
   return [
     addItem as Command,
     removeItem as Command,
     updateItem as Command,
     updateBehavior as Command,
-    updateShape as Command,
-    removeShape as Command,
     reset as Command,
+    setBackground as Command,
+    setPresentationOrder as Command,
+    reorderChildren as Command,
+    addBehavior as Command,
+    removeBehavior as Command,
+    insertPresetSlide as Command,
   ];
 }
 
@@ -397,8 +598,9 @@ export function registerWeaveCommands(
   editor: Editor,
   targets: WeaveCommandTargets,
   pending?: PendingCreations,
+  presetRegistry?: PresetRegistry,
 ): () => void {
-  const commands = buildWeaveCommands(targets, pending);
+  const commands = buildWeaveCommands(targets, pending, presetRegistry);
   const registry = editor.container.resolve(CommandRegistryToken);
   const offs: Array<() => void> = [];
   for (const cmd of commands) {

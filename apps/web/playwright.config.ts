@@ -9,7 +9,14 @@ export default defineConfig({
   expect: { timeout: 5_000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // WI-033 — single retry on flaky specs. WI-032 Phase 3c's hygiene
+  // pass (cursor reset + networkidle + .vite cache cold start) covers
+  // the common cluster, but the group run still sees occasional
+  // single-spec races (e.g. A3 Tab wrap-around in figma-keyboard-
+  // selection-nav passes alone, fails ~1/N in groups). retries: 1
+  // absorbs those without papering over real regressions — a stable
+  // failure still bubbles up after the second attempt.
+  retries: 1,
   reporter: process.env.CI ? "line" : "list",
   use: {
     baseURL: "http://localhost:5179",

@@ -79,6 +79,27 @@ export function setPaletteOpener(opener: () => void): () => void {
   };
 }
 
+/** WI-033 A3 — keyboard selection navigation. The host (DesignPage)
+ *  registers a single navigator that owns the selection-context wiring
+ *  (current selection + doc + selectFrame setter). The four hotkey
+ *  actions (selection.drillDown / drillUp / nextSibling / prevSibling)
+ *  dispatch through this slot — keeps this module pure and lets the
+ *  navigator close over React state without exporting it. */
+export type SelectionNavDir =
+  | "drillDown"
+  | "drillUp"
+  | "nextSibling"
+  | "prevSibling";
+let selectionNavigator: ((dir: SelectionNavDir) => void) | undefined;
+export function setSelectionNavigator(
+  fn: (dir: SelectionNavDir) => void,
+): () => void {
+  selectionNavigator = fn;
+  return () => {
+    if (selectionNavigator === fn) selectionNavigator = undefined;
+  };
+}
+
 /** EDITOR_COMMANDS entries combine the user-facing metadata (used by
  *  tooltips / buttons / palette) with the runtime action (used by the
  *  hotkey registry). The metadata is the same shape consumers see via
@@ -136,6 +157,68 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     category: "view",
     action: () => {
       paletteOpener?.();
+    },
+  },
+  // ── Selection navigation (WI-033 A3) ──────────────────────────────────
+  // Figma's keyboard model: Enter drills into the selection, Shift+Enter
+  // walks back up, Tab/Shift+Tab cycle siblings (with wrap-around). The
+  // hotkey registry already skips bindings when the event target is a
+  // text-editing surface (see `isTextEditingTarget`), so Lexical /
+  // contenteditable / input / textarea retain native key handling.
+  {
+    id: "selection.drillDown",
+    label: { en: "Select first child", ko: "자식 선택" },
+    description: {
+      en: "Move the selection to the first child of the currently selected frame.",
+      ko: "현재 선택된 프레임의 첫 번째 자식으로 선택을 이동합니다.",
+    },
+    hotkey: { keys: "↵", binding: "Enter", scope: "editor" },
+    category: "selection",
+    enabledWhen: (ctx) => Boolean(ctx.hasFrameSelection),
+    action: () => {
+      selectionNavigator?.("drillDown");
+    },
+  },
+  {
+    id: "selection.drillUp",
+    label: { en: "Select parent", ko: "부모 선택" },
+    description: {
+      en: "Move the selection one level up to the parent frame.",
+      ko: "선택을 한 단계 위 부모 프레임으로 이동합니다.",
+    },
+    hotkey: { keys: "⇧ + ↵", binding: "Shift+Enter", scope: "editor" },
+    category: "selection",
+    enabledWhen: (ctx) => Boolean(ctx.hasFrameSelection),
+    action: () => {
+      selectionNavigator?.("drillUp");
+    },
+  },
+  {
+    id: "selection.nextSibling",
+    label: { en: "Select next sibling", ko: "다음 형제 선택" },
+    description: {
+      en: "Move the selection to the next sibling within the same parent (wraps around).",
+      ko: "같은 부모 안의 다음 형제 프레임으로 선택을 이동합니다 (순환).",
+    },
+    hotkey: { keys: "⇥", binding: "Tab", scope: "editor" },
+    category: "selection",
+    enabledWhen: (ctx) => Boolean(ctx.hasFrameSelection),
+    action: () => {
+      selectionNavigator?.("nextSibling");
+    },
+  },
+  {
+    id: "selection.prevSibling",
+    label: { en: "Select previous sibling", ko: "이전 형제 선택" },
+    description: {
+      en: "Move the selection to the previous sibling within the same parent (wraps around).",
+      ko: "같은 부모 안의 이전 형제 프레임으로 선택을 이동합니다 (순환).",
+    },
+    hotkey: { keys: "⇧ + ⇥", binding: "Shift+Tab", scope: "editor" },
+    category: "selection",
+    enabledWhen: (ctx) => Boolean(ctx.hasFrameSelection),
+    action: () => {
+      selectionNavigator?.("prevSibling");
     },
   },
   // ── Hover-visible commands (WI-027) ────────────────────────────────────

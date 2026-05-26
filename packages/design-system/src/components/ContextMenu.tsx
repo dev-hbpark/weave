@@ -10,7 +10,12 @@ import { cn } from "../cn.js";
  *      <div>... right-click me</div>
  *    </ContextMenuTrigger>
  *    <ContextMenuContent>
- *      <ContextMenuItem onSelect={...}>Duplicate</ContextMenuItem>
+ *      <ContextMenuLabel>Select layer</ContextMenuLabel>
+ *      <ContextMenuGroup aria-label="Select layer">
+ *        <ContextMenuItem icon={<Swatch/>} tagline="320 × 180" onSelect={...}>
+ *          Frame 3
+ *        </ContextMenuItem>
+ *      </ContextMenuGroup>
  *      <ContextMenuSeparator />
  *      <ContextMenuItem onSelect={...} variant="danger">Delete</ContextMenuItem>
  *    </ContextMenuContent>
@@ -48,21 +53,28 @@ export function ContextMenuContent({
 export interface ContextMenuItemProps extends ContextMenuPrimitive.ContextMenuItemProps {
   readonly variant?: "default" | "danger";
   readonly shortcut?: ReactNode;
+  readonly icon?: ReactNode;
+  readonly tagline?: ReactNode;
 }
 
 export function ContextMenuItem({
   className,
   variant = "default",
   shortcut,
+  icon,
+  tagline,
   children,
   ...rest
 }: ContextMenuItemProps) {
+  const hasMultiLineSlots = icon !== undefined || tagline !== undefined;
   return (
     <ContextMenuPrimitive.Item
       {...rest}
       className={cn(
-        "flex items-center justify-between gap-3",
-        "px-2.5 py-1.5 rounded-[var(--radius-sm)]",
+        hasMultiLineSlots
+          ? "flex items-start gap-2.5 px-2.5 py-2"
+          : "flex items-center justify-between gap-3 px-2.5 py-1.5",
+        "rounded-[var(--radius-sm)]",
         "text-[13px] text-[color:var(--text-overlay)]",
         "outline-none cursor-pointer select-none",
         "data-[highlighted]:bg-[color:var(--surface-overlay-2)]",
@@ -72,12 +84,38 @@ export function ContextMenuItem({
         className,
       )}
     >
-      <span>{children}</span>
-      {shortcut !== undefined ? (
-        <span className="text-[11px] text-[color:var(--text-overlay-muted)] tracking-[0.06em]">
-          {shortcut}
-        </span>
-      ) : null}
+      {hasMultiLineSlots ? (
+        <>
+          {icon !== undefined ? (
+            <span
+              aria-hidden
+              className="mt-0.5 inline-flex w-4 h-4 items-center justify-center text-[color:var(--text-overlay-soft)]"
+            >
+              {icon}
+            </span>
+          ) : null}
+          <span className="flex-1 grid">
+            <span>{children}</span>
+            {tagline !== undefined ? (
+              <span className="text-[12px] text-[color:var(--text-overlay-muted)]">{tagline}</span>
+            ) : null}
+          </span>
+          {shortcut !== undefined ? (
+            <span className="text-[11px] text-[color:var(--text-overlay-muted)] tracking-[0.06em] self-center">
+              {shortcut}
+            </span>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <span>{children}</span>
+          {shortcut !== undefined ? (
+            <span className="text-[11px] text-[color:var(--text-overlay-muted)] tracking-[0.06em]">
+              {shortcut}
+            </span>
+          ) : null}
+        </>
+      )}
     </ContextMenuPrimitive.Item>
   );
 }
@@ -90,5 +128,40 @@ export function ContextMenuSeparator({ className }: { readonly className?: strin
         className,
       )}
     />
+  );
+}
+
+export function ContextMenuLabel({
+  className,
+  children,
+}: {
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <ContextMenuPrimitive.Label
+      className={cn(
+        "px-2.5 py-1.5 text-[11px] uppercase tracking-[0.16em] text-[color:var(--text-overlay-soft)]",
+        className,
+      )}
+    >
+      {children}
+    </ContextMenuPrimitive.Label>
+  );
+}
+
+export function ContextMenuGroup({
+  className,
+  children,
+  ...rest
+}: {
+  readonly className?: string;
+  readonly children: ReactNode;
+  readonly "aria-label"?: string;
+}) {
+  return (
+    <ContextMenuPrimitive.Group {...rest} className={cn(className)}>
+      {children}
+    </ContextMenuPrimitive.Group>
   );
 }

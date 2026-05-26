@@ -1,9 +1,24 @@
 import { expect, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
-// Phase 12c — right-click → "Enter frame" drills in. The design plane zooms
-// so that frame fills the viewport, the breadcrumb gains a trailing
-// segment, and Esc / breadcrumb-segment-click exits.
+// WI-033 P2 — Phase 12c drill-in mode (right-click "Enter frame" +
+// breadcrumb + zoom transition) is DEPRECATED. DR-017 supersedes the
+// paradigm; selection-only navigation (parent-first auto-select +
+// Cmd-click deep + Enter/Tab keyboard nav + Layer Picker) is the
+// replacement.
+//
+// All 4 specs in this file exercise behaviour that no longer exists:
+//   • `ctx-enter-frame` ContextMenuItem (removed)
+//   • `breadcrumb-entered-title` / `breadcrumb-exit-entered` (removed)
+//   • drill-in zoom transition (chain dead-code, pending P2 cleanup)
+//
+// They are kept here as a paper trail of what got retired, so the
+// next maintainer doesn't accidentally re-introduce the wiring under
+// a different name. Re-write as Figma-aligned selection specs
+// (covered by `figma-*-select.spec.ts` already) or delete after the
+// final P2 dead-code cleanup PR. RISK-005 R4.
+
+test.describe.skip("Phase 12 drill-in mode (deprecated — WI-033 P2)", () => {
 
 test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
@@ -53,7 +68,7 @@ test("entered frame routes Toolbar Add into its children", async ({ page }) => {
     const grand = rootChildren[0]?.children ?? [];
     return {
       root: rootChildren.length,
-      grand: grand.filter((c) => ["slide", "canvas-design", "block-doc", "media"].includes(c.kind))
+      grand: grand.filter((c) => ["frame"].includes(c.kind))
         .length,
     };
   });
@@ -68,4 +83,6 @@ test("breadcrumb segment click exits the entered frame", async ({ page }) => {
 
   await page.getByTestId("breadcrumb-exit-entered").click();
   await expect(page.getByTestId("breadcrumb-entered-title")).toHaveCount(0);
+});
+
 });

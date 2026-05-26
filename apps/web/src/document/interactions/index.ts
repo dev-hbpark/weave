@@ -22,8 +22,14 @@ export {
   useTooltipsAllowed,
 } from "./interaction-mode.js";
 export {
+  type ClickIntent,
+  firstChildOf,
+  nextSiblingOf,
+  parentOf,
+  prevSiblingOf,
   type Selection,
   SelectionProvider,
+  selectFromHit,
   useSelection,
 } from "./selection-context.js";
 

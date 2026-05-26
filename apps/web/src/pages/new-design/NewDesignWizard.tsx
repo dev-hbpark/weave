@@ -45,12 +45,17 @@ const FLAVOR_ICONS: Readonly<Record<DocFlavor, ReactNode>> = {
 const CUSTOM_PRESET_ID = "custom";
 
 /** Default first child kind per flavor. `mixed` is intentionally empty — that
- *  flavor's Figma-style canvas opens blank for the user to drop anything. */
+ *  flavor's Figma-style canvas opens blank for the user to drop anything.
+ *
+ *  WI-032 Phase 3 — every other flavor now seeds a `frame` (the canvas
+ *  container of the frame-only paradigm). The flavor metadata still drives
+ *  the wizard's recommended primitives + ThumbnailPanel iconography, but
+ *  the underlying document model is uniform. */
 const FIRST_CHILD_BY_FLAVOR: Readonly<Record<DocFlavor, DomainKind | undefined>> = {
   mixed: undefined,
-  "slide-deck": "slide",
-  "canvas-board": "canvas-design",
-  "doc-page": "block-doc",
+  "slide-deck": "frame",
+  "canvas-board": "frame",
+  "doc-page": "frame",
 };
 
 function makeDesignId(): string {

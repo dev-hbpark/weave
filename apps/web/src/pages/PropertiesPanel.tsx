@@ -214,19 +214,15 @@ interface AttrRow {
 }
 
 function attrsByKind(kind: DomainKind, attrs: Record<string, unknown>): ReadonlyArray<AttrRow> {
-  const t = (v: unknown) => (typeof v === "string" ? v : "");
-  switch (kind) {
-    case "slide":
-      return [{ key: "title", label: "Title", value: t(attrs.title) }];
-    case "canvas-design":
-      return [{ key: "summary", label: "Summary", value: t(attrs.summary) }];
-    case "block-doc":
-      return [{ key: "heading", label: "Heading", value: t(attrs.heading) }];
-    case "media":
-      return [{ key: "caption", label: "Caption", value: t(attrs.caption) }];
-    default:
-      return [];
-  }
+  // WI-032 Phase 3 — the legacy 4 domains carried single-string attrs
+  // (title / summary / heading / caption); the new `frame` paradigm
+  // exposes those via primitive text children inside the frame, so
+  // PropertiesPanel no longer needs per-kind attr rows here. Primitive
+  // kinds have richer sections rendered elsewhere (text section,
+  // shape section, …).
+  void kind;
+  void attrs;
+  return [];
 }
 
 function InteractionsList({

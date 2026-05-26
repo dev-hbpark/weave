@@ -25,11 +25,12 @@
 // nesting. The choice of visual (slide layout, canvas freeform, doc blocks,
 // media tone) is orthogonal to whether the frame has child frames inside.
 export type DomainKind =
-  | "slide"
-  | "canvas-design"
-  | "block-doc"
-  | "media"
-  // WI-020 — new top-level kinds backed by agocraft DR-023 schema.
+  // WI-032 Phase 3 — `frame` is the canvas container of weave's
+  // frame-only paradigm. Legacy `slide` / `canvas-design` / `block-doc` /
+  // `media` were removed; persisted instances of those kinds are rewritten
+  // on load by `migrate-frame-only.ts`.
+  | "frame"
+  // WI-020 — top-level kinds backed by agocraft DR-023 schema.
   | "image"
   | "video"
   | "shape"
@@ -69,29 +70,11 @@ export interface DomainMeta {
 }
 
 export const DOMAIN_REGISTRY: Readonly<Record<DomainKind, DomainMeta>> = {
-  slide: {
-    kind: "slide",
-    label: "Slide",
-    tagline: "Sequential presentation page",
-    accentVar: "--domain-slide-accent",
-  },
-  "canvas-design": {
-    kind: "canvas-design",
-    label: "Canvas",
-    tagline: "Free-form design surface",
-    accentVar: "--domain-canvas-accent",
-  },
-  "block-doc": {
-    kind: "block-doc",
-    label: "Doc",
-    tagline: "Block-based text document",
-    accentVar: "--domain-block-accent",
-  },
-  media: {
-    kind: "media",
-    label: "Media",
-    tagline: "Image or video block",
-    accentVar: "--domain-media-accent",
+  frame: {
+    kind: "frame",
+    label: "Frame",
+    tagline: "Empty canvas container — drop primitives inside",
+    accentVar: "--accent",
   },
   image: {
     kind: "image",
@@ -119,16 +102,30 @@ export const DOMAIN_REGISTRY: Readonly<Record<DomainKind, DomainMeta>> = {
   },
 };
 
-export const DOMAIN_KINDS: ReadonlyArray<DomainKind> = [
-  "slide",
-  "canvas-design",
-  "block-doc",
-  "media",
-];
+export const DOMAIN_KINDS: ReadonlyArray<DomainKind> = ["frame"];
 
 // agocraft mirror: an Item has a kind + attrs + units. Units are typed payloads
 // that the renderer interprets. For WI-003 mock the payload is intentionally
 // thin — text + optional list of bullet points — and grows with M2 editing.
+
+// WI-032 — `frame` is the canvas container of the new paradigm. No own
+// visual content: the only renderable is an optional background + corner
+// radius. All visible elements live as primitive children (text / shape /
+// image / video / nested frame).
+export interface FrameAttrs {
+  readonly frame: ItemFrame;
+  /** Frame background — any CSS color string (`#hex`, `rgb(…)`, `var(--…)`).
+   *  `undefined` = transparent. Plain string for v1; full `PaintSpec` is v2
+   *  (a gradient / image fill makes sense once the toolbar adopts it). */
+  readonly background?: string;
+  /** Optional border-radius as 0..1 ratio of `min(width, height)`. Default 0
+   *  = sharp corners. Mirrors `image.attrs.borderRadius` so WI-031's corner
+   *  radius direct-drag works uniformly. */
+  readonly cornerRadius?: number;
+  /** Optional human-friendly label — ThumbnailPanel / outline display it
+   *  next to the frame's position. NOT rendered inside the frame. */
+  readonly label?: string;
+}
 
 export interface SlideAttrs {
   readonly frame: ItemFrame;
@@ -196,10 +193,7 @@ export type ShapeAttrs = AgocraftShapeAttrs;
 export type TextAttrs = AgocraftTextAttrs;
 
 export type ItemAttrsByKind = {
-  slide: SlideAttrs;
-  "canvas-design": CanvasAttrs;
-  "block-doc": BlockDocAttrs;
-  media: MediaAttrs;
+  frame: FrameAttrs;
   image: ImageAttrs;
   video: VideoAttrs;
   shape: ShapeAttrs;
@@ -224,35 +218,46 @@ export interface DocFlavorMeta {
   readonly suggestedKinds: ReadonlyArray<DomainKind>;
 }
 
+// WI-032 Phase 3 — flavor metadata still drives the wizard's marketing
+// copy + ThumbnailPanel iconography, but the underlying document model is
+// uniform. `suggestedKinds` is now the same primitive set per flavor; the
+// flavor only nudges the wizard's hero copy. v2 will revive data-driven
+// flavor that infers from preset history.
+const PRIMITIVE_SUGGESTIONS: ReadonlyArray<DomainKind> = [
+  "frame",
+  "text",
+  "image",
+  "shape",
+];
+
 export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
   mixed: {
     flavor: "mixed",
     label: "Mixed canvas",
-    tagline: "Slides + canvas + doc + media in one place",
+    tagline: "Frames + primitives in one place",
     accentVar: "--accent",
-    // Every domain is a Frame post-Phase-11; suggest all four.
-    suggestedKinds: ["slide", "canvas-design", "block-doc", "media"],
+    suggestedKinds: PRIMITIVE_SUGGESTIONS,
   },
   "slide-deck": {
     flavor: "slide-deck",
     label: "Slide deck",
-    tagline: "Sequential slides for presenting",
+    tagline: "Sequential frames for presenting",
     accentVar: "--domain-slide-accent",
-    suggestedKinds: ["slide", "canvas-design", "block-doc", "media"],
+    suggestedKinds: PRIMITIVE_SUGGESTIONS,
   },
   "canvas-board": {
     flavor: "canvas-board",
     label: "Canvas board",
-    tagline: "Free-form spatial canvases",
+    tagline: "Free-form spatial canvas",
     accentVar: "--domain-canvas-accent",
-    suggestedKinds: ["canvas-design", "media", "slide", "block-doc"],
+    suggestedKinds: PRIMITIVE_SUGGESTIONS,
   },
   "doc-page": {
     flavor: "doc-page",
     label: "Block document",
-    tagline: "Text-first blocks (Notion-style)",
+    tagline: "Text-first frames",
     accentVar: "--domain-block-accent",
-    suggestedKinds: ["block-doc", "media", "slide", "canvas-design"],
+    suggestedKinds: PRIMITIVE_SUGGESTIONS,
   },
 };
 

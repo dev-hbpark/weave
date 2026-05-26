@@ -85,57 +85,10 @@ export function createDefaultItem<K extends DomainKind>(
   const now = new Date().toISOString();
   const id = nextId(kind);
   const attrsByKind: ItemAttrsByKind = {
-    slide: {
+    // WI-032 — `frame` is the canvas container of the new paradigm. No
+    // built-in content; primitive children carry every visible element.
+    frame: {
       frame: FULL_FRAME,
-      title: "New slide",
-      bullets: ["Headline point", "Supporting detail", "Closing thought"],
-    },
-    "canvas-design": {
-      frame: FULL_FRAME,
-      summary: "Free canvas — drop shapes, images, sticky notes here.",
-      // x/y/width/height in 0..1 ratio of the canvas item's frame. Rotation in radians.
-      shapes: [
-        {
-          id: nextId("shape"),
-          x: 0.18,
-          y: 0.24,
-          width: 0.18,
-          height: 0.18,
-          rotation: 0,
-          hue: "var(--domain-canvas-accent)",
-        },
-        {
-          id: nextId("shape"),
-          x: 0.5,
-          y: 0.5,
-          width: 0.22,
-          height: 0.22,
-          rotation: 0,
-          hue: "var(--domain-slide-accent)",
-        },
-        {
-          id: nextId("shape"),
-          x: 0.76,
-          y: 0.1,
-          width: 0.12,
-          height: 0.12,
-          rotation: 0,
-          hue: "var(--domain-media-accent)",
-        },
-      ],
-    },
-    "block-doc": {
-      frame: FULL_FRAME,
-      heading: "Untitled section",
-      paragraphs: [
-        "Block-doc captures the narrative — context, decisions, summary.",
-        "It lives next to the slides and canvases that visualize the same story.",
-      ],
-    },
-    media: {
-      frame: FULL_FRAME,
-      caption: "Untitled media",
-      tone: "image",
     },
     // WI-020 — seeds for image / video / shape kinds. Hosts that need a
     // specific source override via the `add` command's input.
@@ -173,9 +126,11 @@ export function createDefaultItem<K extends DomainKind>(
       opacity: 1,
       subAttrs: { shape: "rectangle", cornerRadii: { tl: 0, tr: 0, br: 0, bl: 0 } },
     },
-    // Phase 15 — text primitive default. Hosts can override via the
-    // `weave.item.add` command's `attrsOverride` (font / color / text
-    // content) when seeding via UI.
+    // Phase 15 — text primitive default. Phase 1 (WI-016 / WI-029) adds
+    // Figma-equivalent optional fields with sensible defaults: HEIGHT-mode
+    // resize, no truncation, TOP vertical align, no decoration, ORIGINAL
+    // case, paragraph spacing/indent 0, no hyperlink. Existing fields
+    // unchanged (Phase 1.5 will rename textAlign / lineHeight unit).
     text: {
       frame: FULL_FRAME,
       text: "텍스트",
@@ -190,6 +145,23 @@ export function createDefaultItem<K extends DomainKind>(
       letterSpacing: 0,
       opacity: 1,
       shadow: null,
+      // ─── Phase 1 (WI-016) additive defaults ─────────────────────────
+      textAutoResize: "HEIGHT",
+      textTruncation: "DISABLED",
+      maxLines: null,
+      textAlignVertical: "TOP",
+      textDecoration: "NONE",
+      textCase: "ORIGINAL",
+      paragraphSpacing: 0,
+      paragraphIndent: 0,
+      hyperlink: null,
+      // Phase 1.5 Phase A — UPPERCASE Figma-convention horizontal align
+      // populated alongside legacy `textAlign`. weave readers prefer the
+      // new field; legacy lowercase remains for backward compat.
+      textAlignHorizontal: "LEFT",
+      // Phase 1.5 Phase B — explicit-unit line height alongside legacy
+      // `lineHeight: 1.4` (multiplier). New readers prefer this.
+      lineHeightSpec: { value: 1.4, unit: "multiplier" },
     },
   };
   return {
@@ -203,22 +175,18 @@ export function createDefaultItem<K extends DomainKind>(
 
 export function createDemoDocument(): Document {
   const now = new Date().toISOString();
-  // Two items get a hotspot so the demo shows both A (camera nav) and B (hotspot click).
+  // WI-032 Phase 3 — the legacy 4-domain demo is collapsed to a single
+  // frame container; the demo's "one doc, four worlds" narrative now plays
+  // through nested primitive children once a real preset / drag-add is run
+  // against this surface.
   return {
     id: DEMO_DOC_ID,
-    title: "Demo: one doc, four worlds",
+    title: "Demo document",
     items: [
-      createDefaultItem("slide", 0, [
-        defaultHotspot({ type: "next-camera" }, "Continue to the canvas"),
+      createDefaultItem("frame", 0, [
+        defaultHotspot({ type: "next-camera" }, "Continue"),
+        revealOnStep(1, "Reveal at step 1"),
       ]),
-      createDefaultItem("block-doc", 1),
-      // The canvas reveals only after step 2 — Phase 2 demo of the reveal-on-step
-      // adapter. Audience sees the doc narrative first, then the canvas appears.
-      createDefaultItem("canvas-design", 2, [
-        defaultHotspot({ type: "next-camera" }, "Continue to media"),
-        revealOnStep(2, "Reveal canvas at step 2"),
-      ]),
-      createDefaultItem("media", 3, [revealOnStep(3, "Reveal media at step 3")]),
     ],
     updatedAt: now,
     schemaVersion: 3,

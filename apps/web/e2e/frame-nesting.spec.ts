@@ -50,7 +50,7 @@ test("selecting a frame routes Toolbar Add into that frame's children", async ({
     const rootChildren = doc.root.children;
     const grandchildren =
       rootChildren[0]?.children.filter((c) =>
-        ["slide", "canvas-design", "block-doc", "media"].includes(c.kind),
+        ["frame"].includes(c.kind),
       ) ?? [];
     return { rootCount: rootChildren.length, grandCount: grandchildren.length };
   });

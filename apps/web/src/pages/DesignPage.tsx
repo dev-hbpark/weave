@@ -1,4 +1,13 @@
-import { defaultShapeSubAttrs, type ShapeSubKind } from "@agocraft/core";
+import {
+  type Document as AgocraftDocument,
+  defaultShapeSubAttrs,
+  type ShapeSubKind,
+} from "@agocraft/core";
+import {
+  findFramesAtPoint,
+  type LayerHit,
+  LayerPickerMenu,
+} from "../document/layer-picker/index.js";
 import { EditorProvider, useEditorVM } from "@agocraft/editor/react";
 import {
   AITooltip,
@@ -36,8 +45,12 @@ import { Link, useParams } from "react-router-dom";
 import {
   type DocFlavor,
   type DomainKind,
+  firstChildOf,
   InteractionModeProvider,
   type ItemFrame,
+  nextSiblingOf,
+  parentOf,
+  prevSiblingOf,
   SelectionProvider,
   useDesign,
   useInteractionMode,
@@ -58,15 +71,20 @@ import { CursorTooltip } from "../document/tooltip/CursorTooltip.js";
 import {
   dispatchEditorCommand,
   editorCommandMetadata,
+  type SelectionNavDir,
   setFrameDeleter,
   setFrameDuplicator,
   setMediaSrcOpener,
   setPaletteOpener,
+  setSelectionNavigator,
   useEditorHotkeys,
 } from "../document/tooltip/editor-hotkeys.js";
 import { useWeaveEditor } from "../document/use-weave-editor.js";
 import { registerZOrderAdapters } from "../document/zorder/register.js";
+import { FigmaSelectionLaunchBanner } from "../launch/FigmaSelectionLaunchBanner.js";
+import { TextV1LaunchBanner } from "../launch/TextV1LaunchBanner.js";
 import { FrameStage } from "./FrameStage.js";
+import { SlidePresetPicker } from "./new-design/SlidePresetPicker.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
 
 /** AITooltipProvider that mirrors the editor-wide interaction mode. Reads
@@ -92,19 +110,34 @@ function ModeAwareAITooltipProvider({
 /** Per-frame context menu — wires the Radix open/close into the editor's
  *  interaction mode so other sources (rubber-band, tooltips, frame-click
  *  selection) stand down while the menu is on screen. Lives in this file
- *  because the menu's actions close over DesignPage's editor handles. */
+ *  because the menu's actions close over DesignPage's editor handles.
+ *
+ *  WI-033 A4 — also hosts the Layer Picker section at the top when the
+ *  caller supplies `layers` (frames overlapping the right-clicked point,
+ *  deepest-first). Empty `layers` → the section is elided so frames
+ *  with no overlap render the legacy menu unchanged. */
 function FrameContextMenu({
   itemId,
-  onEnter,
   onDelete,
   children,
+  layers,
+  onPickLayer,
+  onHoverPreview,
 }: {
   readonly itemId: string;
-  readonly onEnter: () => void;
   readonly onDelete: () => void;
   readonly children: ReactNodeAlias;
+  readonly layers?: ReadonlyArray<LayerHit>;
+  readonly onPickLayer?: (id: string) => void;
+  readonly onHoverPreview?: (id: string | null) => void;
 }) {
   const { setMode, restoreIdleFrom } = useInteractionMode();
+  // WI-033 A4 — Layer Picker is elided when there's fewer than 2
+  // overlapping frames at the cursor. A list of one (the frame the
+  // user already right-clicked) is pure noise; Figma elides on the
+  // same condition.
+  const hasLayers =
+    layers !== undefined && layers.length >= 2 && onPickLayer !== undefined;
   return (
     <ContextMenu
       key={itemId}
@@ -115,10 +148,21 @@ function FrameContextMenu({
     >
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={onEnter} shortcut="⏎" data-testid="ctx-enter-frame">
-          화면에 맞춤
-        </ContextMenuItem>
-        <ContextMenuSeparator />
+        {hasLayers && (
+          <>
+            <LayerPickerMenu
+              layers={layers!}
+              onPickLayer={onPickLayer!}
+              {...(onHoverPreview !== undefined ? { onHoverPreview } : {})}
+            />
+            <ContextMenuSeparator />
+          </>
+        )}
+        {/* WI-033 P2 — "Enter frame" / drill-in entry was removed
+            (Phase 12 drill-in mode is being deprecated, DR-017).
+            Selection-only navigation is the Figma-aligned paradigm;
+            cursor / Enter hotkey / Layer Picker cover the deeper
+            navigation cases. */}
         <ContextMenuItem
           onSelect={onDelete}
           variant="danger"
@@ -165,8 +209,6 @@ function DesignPageBody() {
     removeItem: rawRemoveItem,
     updateBehavior: rawUpdateBehavior,
     updateItem: rawUpdateItem,
-    updateShape: rawUpdateShape,
-    removeShape: rawRemoveShape,
     reset: rawReset,
     applyChange,
     replaceDocument,
@@ -182,8 +224,6 @@ function DesignPageBody() {
       removeItem: rawRemoveItem,
       updateItem: rawUpdateItem,
       updateBehavior: rawUpdateBehavior,
-      updateShape: rawUpdateShape,
-      removeShape: rawRemoveShape,
       reset: rawReset,
     },
     applyChange,
@@ -198,6 +238,32 @@ function DesignPageBody() {
   });
   void sync; // host-visible bundle; consumed by Phase 4 (presence UI).
   const editorHotkeyTable = useEditorHotkeys(editor);
+
+  // WI-029 R1 Step 2 — design-level mutations route through editor.exec so
+  // Cmd+Z / collaborative-sync work. The legacy useDesign setters
+  // (setDesignBackground / setPresentationOrder / reorderRootChildren) stay
+  // available but bypass history; new call sites should use these wrapped
+  // versions. The wrapper-mirror in useDesign's applyChange (R1 Step 1)
+  // syncs the wrapper-level fields whenever the patch lands, so legacy
+  // readers (design.background / design.presentationOrder) keep working.
+  const setDesignBackgroundViaEditor = useCallback(
+    (color: string) => {
+      editor.exec("weave.design.setBackground", { color });
+    },
+    [editor],
+  );
+  const setPresentationOrderViaEditor = useCallback(
+    (order: ReadonlyArray<string>) => {
+      editor.exec("weave.design.setPresentationOrder", { order });
+    },
+    [editor],
+  );
+  const reorderRootChildrenViaEditor = useCallback(
+    (order: ReadonlyArray<string>) => {
+      editor.exec("weave.design.reorderChildren", { order });
+    },
+    [editor],
+  );
 
   // DR-018 PoC — register slide-only "add bullet" handle. Demonstrates
   // the extension story: a domain view-model contributes a kind-
@@ -223,7 +289,7 @@ function DesignPageBody() {
   const peek = usePeekMode({
     design,
     subscribeToChanges: (h) => editor.changeStream.subscribe(h),
-    onReorderRoot: reorderRootChildren,
+    onReorderRoot: reorderRootChildrenViaEditor,
   });
 
   // Expose peek controller for e2e diagnostics + dev tools only — never read
@@ -490,6 +556,10 @@ function DesignPageBody() {
       };
   const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
 
+  // WI-030 — Slide preset picker open state. The Add menu's "슬라이드" item
+  // opens this dialog instead of immediately inserting a blank slide.
+  const [slidePickerOpen, setSlidePickerOpen] = useState(false);
+
   const swatchFor = useCallback(
     (id: string) => {
       const it = docInAgocraft.root.children.find((c) => String(c.id) === id);
@@ -538,10 +608,9 @@ function DesignPageBody() {
   const removeItem = (itemId: string) => editor.exec("weave.item.remove", { itemId, containerId });
   const updateItem: typeof rawUpdateItem = (itemId, patch) =>
     void editor.exec("weave.item.update", { itemId, patch });
-  const updateShape: typeof rawUpdateShape = (itemId, shapeId, patch) =>
-    void editor.exec("weave.shape.update", { itemId, shapeId, patch });
-  const removeShape: typeof rawRemoveShape = (itemId, shapeId) =>
-    void editor.exec("weave.shape.remove", { itemId, shapeId });
+  // WI-032 Phase 3b — `weave.shape.update` / `weave.shape.remove` were
+  // removed alongside the legacy `canvas-design` kind; shape primitives
+  // flow through `updateItem` now.
 
   // DR-017 — view-state via vm (single source). Previously 5 useState
   // (selection, enteredFrameId, handMode, historyTick) + SelectionContext.
@@ -577,23 +646,13 @@ function DesignPageBody() {
   // Mirror into the ref the add-menu callback uses (declaration-order safe).
   setSelectedFrameIdRef.current = (id) => setSelectedFrameId(id ?? undefined);
 
-  // enteredFrameId — last entry on vm's drill-in trail (single React
-  // subscription via signal-aware adapter).
-  const enteredFrameStack = useEditorVM(vm, (v) => v.enteredFrameStack.get());
-  const enteredFrameId: string | undefined =
-    enteredFrameStack.length > 0 ? enteredFrameStack[enteredFrameStack.length - 1] : undefined;
-  const setEnteredFrameId = useCallback(
-    (id: string | undefined) => {
-      if (id === undefined) {
-        vm.enteredFrameStack.set([]);
-      } else {
-        // ItemId is branded `string & { …}`; weave's frame ids round-
-        // trip from `String(item.id)` so the cast is structurally safe.
-        vm.enteredFrameStack.set([id as never]);
-      }
-    },
-    [vm],
-  );
+  // WI-033 P2 dead-code cleanup — `enteredFrameStack` consumer +
+  // `setEnteredFrameId` callback removed. Phase 12 drill-in mode is
+  // deprecated (DR-017); the vm slot itself stays on agocraft until
+  // a follow-up HANDOFF retires it, but weave no longer reads or
+  // writes it. The breadcrumb, FrameContextMenu "Enter frame" item,
+  // and NestedFrame enteredId/onEnter prop wiring were all removed
+  // in the same WI-033 P2 step.
 
   // V / H tool toggle (Figma parity). Stored on vm.handTool so the
   // FrameStage pan binding consults a single flag.
@@ -605,20 +664,10 @@ function DesignPageBody() {
     [vm],
   );
 
-  // Esc exits the entered frame (zoom out) when one is active.
-  useEffect(() => {
-    if (enteredFrameId === undefined) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      const tgt = e.target;
-      if (tgt instanceof HTMLElement) {
-        if (tgt.matches('input, textarea, [contenteditable="true"]')) return;
-      }
-      setEnteredFrameId(undefined);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [enteredFrameId, setEnteredFrameId]);
+  // WI-033 P2 — Esc-exits-entered-frame effect removed alongside the
+  // drill-in mode. Selection deselect on Esc remains an open question
+  // (P3 follow-up); for now the standard browser focus model handles
+  // Esc inside text inputs natively.
 
   // V / H hotkeys for select / hand modes (Figma parity).
   useEffect(() => {
@@ -667,6 +716,12 @@ function DesignPageBody() {
       canRedo,
       hasSelection: selectedIds.size > 0,
       selectionCount: selectedIds.size,
+      // WI-033 A3 — selection.* hotkeys read this to enable Enter / Tab
+      // only when a frame is currently selected (shape sub-selection is
+      // navigated through the shape's own SelectionLayer, not these
+      // hotkeys).
+      hasFrameSelection: selectedFrameId !== undefined,
+      selectedFrameId,
       hoveredKind: hoverContext.hoveredKind,
       hoveredId: hoverContext.hoveredId,
       hoveredRole: hoverContext.hoveredRole,
@@ -675,6 +730,7 @@ function DesignPageBody() {
       canUndo,
       canRedo,
       selectedIds.size,
+      selectedFrameId,
       hoverContext.hoveredKind,
       hoverContext.hoveredId,
       hoverContext.hoveredRole,
@@ -705,6 +761,32 @@ function DesignPageBody() {
   // as a header click.
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => setPaletteOpener(() => setPaletteOpen(true)), []);
+
+  // WI-033 A3 — register a host-side selection navigator so the four
+  // `selection.*` hotkeys (Enter / Shift+Enter / Tab / Shift+Tab) can
+  // route through React state without this module owning a vm reference.
+  // Latest selection is captured via ref so the navigator closure always
+  // reads the current frame without re-registering on every selection
+  // change (cheap, but keeps the registration site stable).
+  const selectedFrameIdRef = useRef<string | undefined>(selectedFrameId);
+  selectedFrameIdRef.current = selectedFrameId;
+  useEffect(() => {
+    const NAV_HELPERS: Readonly<
+      Record<SelectionNavDir, (id: string, doc: AgocraftDocument) => string | undefined>
+    > = {
+      drillDown: firstChildOf,
+      drillUp: parentOf,
+      nextSibling: nextSiblingOf,
+      prevSibling: prevSiblingOf,
+    };
+    return setSelectionNavigator((dir) => {
+      const currentId = selectedFrameIdRef.current;
+      const doc = docInAgocraftRef.current;
+      if (currentId === undefined || doc === undefined) return;
+      const nextId = NAV_HELPERS[dir](currentId, doc);
+      if (nextId !== undefined) selectFrame(nextId);
+    });
+  }, [selectFrame]);
 
   // WI-027 Phase D — register host action slots for hover-scope commands.
   // The slots receive the hovered frame id from the dispatcher and run
@@ -781,43 +863,17 @@ function DesignPageBody() {
                           >
                             /
                           </span>
+                          {/* WI-033 P2 — Breadcrumb (Phase 12 drill-in trail
+                              indicator) removed. Figma-aligned selection
+                              navigation has no entered-frame state, so the
+                              header only shows the design title. */}
                           <nav
                             className="flex items-center gap-1 text-[12px] text-[color:var(--text-muted)] min-w-0"
                             aria-label="Breadcrumb"
                           >
-                            {enteredFrameId === undefined ? (
-                              <span className="text-[color:var(--text-strong)] truncate max-w-[280px]">
-                                {design.title}
-                              </span>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  className="hover:text-[color:var(--text-strong)] truncate max-w-[160px] bg-transparent border-0 p-0 cursor-pointer"
-                                  onClick={() => setEnteredFrameId(undefined)}
-                                  data-testid="breadcrumb-exit-entered"
-                                >
-                                  {design.title}
-                                </button>
-                                <span aria-hidden className="text-[color:var(--text-muted)]">
-                                  /
-                                </span>
-                                <span
-                                  className="text-[color:var(--text-strong)] truncate max-w-[200px]"
-                                  data-testid="breadcrumb-entered-title"
-                                >
-                                  {(() => {
-                                    const found = docInAgocraft.root.children.find(
-                                      (c) => String(c.id) === enteredFrameId,
-                                    );
-                                    return (
-                                      (found?.attrs as { title?: string } | undefined)?.title ??
-                                      "Frame"
-                                    );
-                                  })()}
-                                </span>
-                              </>
-                            )}
+                            <span className="text-[color:var(--text-strong)] truncate max-w-[280px]">
+                              {design.title}
+                            </span>
                           </nav>
                         </div>
 
@@ -917,6 +973,14 @@ function DesignPageBody() {
                               </DropdownMenuTrigger>
                             </AITooltip>
                             <DropdownMenuContent align="start" sideOffset={6}>
+                              <DropdownMenuLabel>슬라이드</DropdownMenuLabel>
+                              <DropdownMenuItem
+                                onSelect={() => setSlidePickerOpen(true)}
+                                data-testid="add-slide"
+                              >
+                                ▭&nbsp;&nbsp;슬라이드 시작점…
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               <DropdownMenuLabel>미디어</DropdownMenuLabel>
                               <DropdownMenuItem
                                 onSelect={() => setPendingMedia({ action: "add", kind: "image" })}
@@ -1024,6 +1088,16 @@ function DesignPageBody() {
                         </div>
                       </header>
 
+                      {/* WI-029 R5 + WI-033 P3 — text item v1 +
+                          Figma frame selection launch announcements
+                          (LG-001 / RISK-001 #6 + RISK-005 #5). Both
+                          auto-show during the launch week and fall
+                          silent on dismiss / outside the window. */}
+                      <div className="px-4 pt-2 flex flex-col gap-2">
+                        <TextV1LaunchBanner />
+                        <FigmaSelectionLaunchBanner />
+                      </div>
+
                       <main
                         className="relative flex-1 overflow-hidden"
                         data-testid="design-canvas-host"
@@ -1054,14 +1128,16 @@ function DesignPageBody() {
                             editing={true}
                             infiniteCanvas={infiniteCanvas}
                             handMode={handMode}
+                            // WI-033 P2 — enteredId / onEnter / onFitAll were
+                            // the drill-in mode wiring (Phase 12); removed
+                            // alongside the breadcrumb + Enter frame menu
+                            // item. FrameStage falls back to "no entered
+                            // frame" (undefined).
                             selectedId={selectedFrameId ?? undefined}
                             selectedIds={selectedIds}
                             onSelect={setSelectedFrameId}
                             onToggleSelect={(id) => toggleFrames([id])}
                             onMarqueeSelect={onMarqueeSelect}
-                            enteredId={enteredFrameId ?? undefined}
-                            onEnter={setEnteredFrameId}
-                            onFitAll={() => setEnteredFrameId(undefined)}
                             onUpdateItem={(itemId, patcher) =>
                               updateItem(itemId, (prev) => ({
                                 ...prev,
@@ -1070,27 +1146,29 @@ function DesignPageBody() {
                                 ) as never,
                               }))
                             }
-                            onUpdateShape={(itemId, shapeId, patch) =>
-                              updateShape(itemId, shapeId, patch)
-                            }
-                            onRemoveShape={(itemId, shapeId) => removeShape(itemId, shapeId)}
+                            // WI-032 Phase 3b — onUpdateShape / onRemoveShape
+                            // edited `canvas-design.attrs.shapes[]`; with that
+                            // kind removed, shape primitives flow through
+                            // `onUpdateItem` instead.
                             onCommitFrame={(itemId, nextFrame: ItemFrame) =>
                               updateItem(itemId, (prev) => ({
                                 ...prev,
                                 attrs: { ...prev.attrs, frame: nextFrame } as typeof prev.attrs,
                               }))
                             }
-                            renderFrameMenu={(itemId, children) => (
+                            renderFrameMenu={(itemId, children, ctx) => (
                               <FrameContextMenu
                                 itemId={itemId}
-                                onEnter={() => {
-                                  setEnteredFrameId(itemId);
-                                  bumpHistoryTick();
-                                }}
                                 onDelete={() => {
                                   removeItem(itemId);
                                   bumpHistoryTick();
                                 }}
+                                {...(ctx !== undefined
+                                  ? {
+                                      layers: ctx.layers,
+                                      onPickLayer: ctx.onPickLayer,
+                                    }
+                                  : {})}
                               >
                                 {children}
                               </FrameContextMenu>
@@ -1276,7 +1354,7 @@ function DesignPageBody() {
                                 });
                               }}
                               designBackground={design.background}
-                              onChangeDesignBackground={setDesignBackground}
+                              onChangeDesignBackground={setDesignBackgroundViaEditor}
                             />
                           </div>
                         ) : null}
@@ -1293,7 +1371,7 @@ function DesignPageBody() {
 
                       <ThumbnailPanel
                         design={design}
-                        setPresentationOrder={setPresentationOrder}
+                        setPresentationOrder={setPresentationOrderViaEditor}
                         selectedId={selectedFrameId}
                         onSelect={setSelectedFrameId}
                       />
@@ -1366,6 +1444,24 @@ function DesignPageBody() {
                           addNewItem(pending.kind, undefined, src);
                         }}
                         onCancel={() => setPendingMedia(null)}
+                      />
+                      {/* WI-030 Phase 1 — slide preset picker. Add menu →
+                          "슬라이드 시작점…" opens this Dialog. Picking a
+                          preset dispatches a single `weave.preset.insertSlide`
+                          which stages the slide + child Items as one history
+                          entry; Cmd+Z reverts the whole subtree. */}
+                      <SlidePresetPicker
+                        open={slidePickerOpen}
+                        onOpenChange={setSlidePickerOpen}
+                        onPick={(presetId) => {
+                          const result = editor.exec<unknown, string>("weave.preset.insertSlide", {
+                            presetId,
+                            containerId: String(docInAgocraft.root.id),
+                          });
+                          if (result.ok) {
+                            setSelectedFrameIdRef.current?.(result.value);
+                          }
+                        }}
                       />
                       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
                       {/* WI-027 — hover-driven QuickActionBar. Sits fixed near the top-

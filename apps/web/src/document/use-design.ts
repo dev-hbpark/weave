@@ -40,8 +40,6 @@ interface UseDesignResult {
     patch: (b: InteractionBehavior) => InteractionBehavior,
   ) => void;
   readonly updateItem: (itemId: string, patch: (it: Item) => Item) => void;
-  readonly updateShape: (itemId: string, shapeId: string, patch: Partial<CanvasShape>) => void;
-  readonly removeShape: (itemId: string, shapeId: string) => void;
   readonly reset: () => void;
   readonly applyChange: (change: Change, pending?: PendingCreationLookup) => void;
   /** WI-028 Phase 3b — replace the entire Document with a CRDT-derived one
@@ -179,36 +177,9 @@ export function useDesign(id: string): UseDesignResult {
     );
   }, []);
 
-  const updateShape = useCallback(
-    (itemId: string, shapeId: string, patch: Partial<CanvasShape>) => {
-      setDesign((prev) =>
-        withDocument(
-          prev,
-          updateChild(prev.document, itemId, (item) => {
-            if (item.kind !== "canvas-design") return item;
-            const attrs = item.attrs as unknown as CanvasAttrs;
-            const nextShapes = attrs.shapes.map((s) => (s.id === shapeId ? { ...s, ...patch } : s));
-            return updateAttrs(item, { shapes: nextShapes });
-          }),
-        ),
-      );
-    },
-    [],
-  );
-
-  const removeShape = useCallback((itemId: string, shapeId: string) => {
-    setDesign((prev) =>
-      withDocument(
-        prev,
-        updateChild(prev.document, itemId, (item) => {
-          if (item.kind !== "canvas-design") return item;
-          const attrs = item.attrs as unknown as CanvasAttrs;
-          const nextShapes = attrs.shapes.filter((s) => s.id !== shapeId);
-          return updateAttrs(item, { shapes: nextShapes });
-        }),
-      ),
-    );
-  }, []);
+  // WI-032 Phase 3b — `updateShape` / `removeShape` callbacks edited the
+  // legacy `canvas-design.attrs.shapes[]` payload. Shape primitives are
+  // first-class Items now; their attrs flow through `updateItem`.
 
   const reset = useCallback(() => {
     setDesign((prev) =>
@@ -216,9 +187,60 @@ export function useDesign(id: string): UseDesignResult {
     );
   }, []);
 
+  // WI-029 R1 Step 1 — wrapper-mirror from doc.attrs.
+  //
+  // The new HANDOFF-007 patches (`document.attrs`, `item.children.reorder`)
+  // write to the agocraft Document; for Cmd+Z and remote-sync coherence the
+  // wrapper-level fields (`design.background`, `design.presentationOrder`)
+  // must mirror what's in `doc.attrs`. Reading from doc.attrs every render
+  // would scatter the lookup; this single mirror in `applyChange` keeps the
+  // wrapper authoritative for legacy readers without forcing every caller
+  // to migrate today.
+  //
+  // Step 2 (use-weave-editor proxy that wires `setDesignBackground` →
+  // `editor.exec("weave.design.setBackground")` so the legacy setters
+  // become history-aware) lands in a follow-up PR with the Phase 1.5
+  // schema migration. Until then, direct setter calls still bypass history;
+  // editor.exec-driven calls flow through this mirror and undo correctly.
   const applyChange = useCallback((change: Change, pending?: PendingCreationLookup) => {
-    setDesign((prev) => withDocument(prev, applyChangeToDocument(prev.document, change, pending)));
+    setDesign((prev) => {
+      const nextDoc = applyChangeToDocument(prev.document, change, pending);
+      const docAttrs = (nextDoc.attrs ?? {}) as Readonly<Record<string, unknown>>;
+      const bg = docAttrs.background;
+      const order = docAttrs.presentationOrder;
+      const mirroredBg =
+        typeof bg === "string" && bg !== prev.background ? bg : prev.background;
+      const mirroredOrder =
+        Array.isArray(order) &&
+        order.every((s) => typeof s === "string") &&
+        !shallowEqualStringArray(
+          order as ReadonlyArray<string>,
+          prev.presentationOrder,
+        )
+          ? (order as ReadonlyArray<string>)
+          : prev.presentationOrder;
+      return {
+        ...withDocument(prev, nextDoc),
+        background: mirroredBg,
+        presentationOrder: mirroredOrder,
+      };
+    });
   }, []);
+
+  // Wrapper helper — narrow shallow equality for the presentationOrder
+  // mirror guard above. Avoids React state churn when the patched array
+  // is identical to the wrapper's current array.
+  function shallowEqualStringArray(
+    a: ReadonlyArray<string>,
+    b: ReadonlyArray<string>,
+  ): boolean {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  }
 
   // WI-028 Phase 3b — replace the entire Document from a remote source
   // (CRDT-derived Y.Doc). The Document mutation rule (editor.exec → ChangeStream
@@ -281,8 +303,6 @@ export function useDesign(id: string): UseDesignResult {
     removeItem,
     updateBehavior,
     updateItem,
-    updateShape,
-    removeShape,
     reset,
     applyChange,
     replaceDocument,

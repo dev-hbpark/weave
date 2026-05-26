@@ -35,13 +35,14 @@ const hotspot: HotspotBehavior = {
   trigger: "click",
   action: { type: "next-camera" },
 };
-const slideItem: Item = {
+// WI-032 Phase 3 — legacy slide Item retained for round-trip coverage.
+const slideItem = {
   id: "slide-1",
   kind: "slide",
   attrs: { frame: FULL_FRAME, title: "Hello", bullets: ["a", "b"] },
   behaviors: [camBehavior, hotspot],
   createdAt: META_DATE,
-};
+} as unknown as Item;
 const doc: Document = {
   id: "test-doc",
   title: "Storage round-trip",
@@ -78,7 +79,7 @@ describe("WI-013 Phase 3 — agocraft Serializer round-trip", () => {
     expect(child?.attrs.title).toBe("Hello");
   });
 
-  it("projects re-hydrated agocraft Document back to weave shape losslessly", () => {
+  it("projects re-hydrated agocraft Document back to weave shape", () => {
     const serializer = createSerializer();
     const ago = toAgocraftDocument(doc);
     const serialized = serializer.toJSON(ago);
@@ -91,13 +92,18 @@ describe("WI-013 Phase 3 — agocraft Serializer round-trip", () => {
     const back = fromAgocraftDocument(result.document);
     expect(back.id).toBe("test-doc");
     expect(back.title).toBe("Storage round-trip");
-    expect(back.items).toHaveLength(1);
-    expect(back.items[0]?.id).toBe("slide-1");
-    expect(back.items[0]?.attrs).toEqual({ frame: FULL_FRAME, title: "Hello", bullets: ["a", "b"] });
-    expect(back.items[0]?.behaviors).toHaveLength(2);
+    // WI-032 Phase 3 — `fromAgocraftDocument` only round-trips `frame`
+    // Items now; the legacy slide fixture used here gets filtered out at
+    // the projection boundary. End-to-end persistence with frame Items
+    // is covered by the e2e suite + `migrate-frame-only.test.ts`.
+    expect(back.items).toHaveLength(0);
   });
 
-  it("preserves the camera-target behavior payload through full JSON round-trip", () => {
+  it("agocraft preserves camera-target unit attrs through full JSON round-trip", () => {
+    // WI-032 Phase 3 — fixture uses a legacy slide kind that no longer
+    // survives the weave-level projection; we inspect the underlying
+    // agocraft Item directly to confirm the unit payload (camera-target
+    // attrs) round-trips through the serializer regardless.
     const serializer = createSerializer();
     const ago = toAgocraftDocument(doc);
     const json = JSON.parse(JSON.stringify(serializer.toJSON(ago)));
@@ -107,13 +113,18 @@ describe("WI-013 Phase 3 — agocraft Serializer round-trip", () => {
       onUnknown: "preserve",
     });
     if (!result.ok) throw new Error("expected fromJSON to succeed");
-    const back = fromAgocraftDocument(result.document);
-    const cam = back.items[0]?.behaviors.find((b) => b.kind === "camera-target");
-    expect(cam).toBeDefined();
-    if (cam === undefined || cam.kind !== "camera-target") return;
-    expect(cam.id).toBe("cam-1");
-    expect(cam.position).toEqual({ x: 0, y: 0 });
-    expect(cam.scale).toBe(1);
-    expect(cam.order).toBe(0);
+    const firstChild = result.document.root.children[0];
+    const unit = firstChild?.units.find((u) => u.kind === "camera-target");
+    expect(unit).toBeDefined();
+    const carried = (unit?.attrs.behavior ?? {}) as {
+      readonly id?: string;
+      readonly position?: { readonly x: number; readonly y: number };
+      readonly scale?: number;
+      readonly order?: number;
+    };
+    expect(carried.id).toBe("cam-1");
+    expect(carried.position).toEqual({ x: 0, y: 0 });
+    expect(carried.scale).toBe(1);
+    expect(carried.order).toBe(0);
   });
 });
