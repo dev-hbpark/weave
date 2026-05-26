@@ -349,6 +349,83 @@ test("WI-036 — dragging a multi-selection corner handle resizes every selected
   }
 });
 
+test("WI-036 — multi-resize is a single undoable step (Cmd+Z reverts every frame in one stroke)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-036-undo" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
+  });
+  await addFrame(page, "frame", {
+    frame: { x: 0.5, y: 0.5, width: 0.2, height: 0.2, rotation: 0 },
+  });
+  const ids = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => String(c.id));
+  });
+  await selectFrames(page, ids);
+
+  const before = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: {
+        root: {
+          children: ReadonlyArray<{
+            id: unknown;
+            attrs: { frame?: { x: number; y: number; width: number; height: number } };
+          }>;
+        };
+      };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => ({
+      id: String(c.id),
+      ...(c.attrs.frame as { x: number; y: number; width: number; height: number }),
+    }));
+  });
+
+  const se = page.locator("[data-multi-corner='se']");
+  await expect(se).toBeVisible({ timeout: 3_000 });
+  const seBox = await se.boundingBox();
+  expect(seBox).not.toBeNull();
+  if (seBox === null) return;
+  await page.mouse.move(seBox.x + seBox.width / 2, seBox.y + seBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(seBox.x + 80, seBox.y + 80, { steps: 8 });
+  await page.mouse.up();
+
+  // One Cmd+Z should fully revert. (Per-frame `weave.item.update`
+  // would have required N undos; `weave.items.resizeMulti` collapses
+  // to a single transaction.)
+  await page.keyboard.press("ControlOrMeta+z");
+
+  const after = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: {
+        root: {
+          children: ReadonlyArray<{
+            id: unknown;
+            attrs: { frame?: { x: number; y: number; width: number; height: number } };
+          }>;
+        };
+      };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => ({
+      id: String(c.id),
+      ...(c.attrs.frame as { x: number; y: number; width: number; height: number }),
+    }));
+  });
+
+  // Every frame matches its pre-drag value.
+  for (const b of before) {
+    const a = after.find((x) => x.id === b.id);
+    expect(a).not.toBeUndefined();
+    if (a === undefined) continue;
+    expect(a.x).toBeCloseTo(b.x, 3);
+    expect(a.y).toBeCloseTo(b.y, 3);
+    expect(a.width).toBeCloseTo(b.width, 3);
+    expect(a.height).toBeCloseTo(b.height, 3);
+  }
+});
+
 test("WI-036 — deleting the selected frame clears the bar (no stale menu)", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-stale" });
   await addFrame(page, "frame", {

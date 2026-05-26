@@ -1628,25 +1628,18 @@ function DesignPageBody() {
                         selectedIds={selectedIds}
                         onResize={(updates) => {
                           // WI-036 follow-up — multi-selection resize.
-                          // The overlay computed each item's new frame
-                          // (ratio relative to its parent). Dispatch a
-                          // batch of `weave.item.update`s — the editor
-                          // collapses them within `historyMergeWindowMs`
-                          // when they share a mergeKey, so the gesture
-                          // commits as a single undoable step.
-                          for (const u of updates) {
-                            editor.exec("weave.item.update", {
+                          // Dispatch a SINGLE `weave.items.resizeMulti`
+                          // command that emits N patches in one Change,
+                          // so the editor's history records the entire
+                          // drag as ONE undoable step (per-frame
+                          // updates would be N separate entries).
+                          if (updates.length === 0) return;
+                          editor.exec("weave.items.resizeMulti", {
+                            updates: updates.map((u) => ({
                               itemId: u.id,
-                              patch: (item: { attrs: Record<string, unknown> }) => ({
-                                ...item,
-                                attrs: {
-                                  ...item.attrs,
-                                  frame: { ...(item.attrs.frame as object), ...u.frame },
-                                },
-                              }),
-                              mergeKey: "multi-resize",
-                            });
-                          }
+                              frame: u.frame,
+                            })),
+                          });
                         }}
                       />
                       <QuickActionBarAnchored

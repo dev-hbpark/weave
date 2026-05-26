@@ -311,6 +311,50 @@ export function buildWeaveCommands(
   // canvas-design kind removed, individual shapes are first-class `shape`
   // primitive Items; their attrs flow through `weave.item.update` instead.
 
+  // WI-036 follow-up — multi-selection corner-drag resize. A single
+  // batch command emits N patches in one Change so the editor's
+  // history records the entire gesture as ONE undoable step (instead
+  // of N individual weave.item.update entries, which require N Cmd+Z
+  // presses to fully undo). Input carries the resolved frame for each
+  // item; the command computes the before/after patch for each.
+  const resizeMultiInput = (
+    input: {
+      readonly updates: ReadonlyArray<{
+        readonly itemId: string;
+        readonly frame: {
+          readonly x: number;
+          readonly y: number;
+          readonly width: number;
+          readonly height: number;
+        };
+      }>;
+    },
+  ) => input;
+  type ResizeMultiInput = ReturnType<typeof resizeMultiInput>;
+
+  const resizeMulti: Command<ResizeMultiInput, void> = {
+    name: "weave.items.resizeMulti",
+    run: (ctx, input) => {
+      const patches: Patch[] = [];
+      for (const u of input.updates) {
+        const child = findChild(ctx.document, u.itemId);
+        if (child === undefined) continue;
+        const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
+        const prevFrame = (prevAttrs.frame ?? {}) as Readonly<Record<string, unknown>>;
+        const nextAttrs: Readonly<Record<string, unknown>> = {
+          ...prevAttrs,
+          frame: { ...prevFrame, ...u.frame },
+        };
+        patches.push({
+          type: "item.attrs",
+          itemId: child.id,
+          before: child.attrs,
+          after: nextAttrs,
+        });
+      }
+      return ok(undefined, patches);
+    },
+  };
 
   const updateBehavior: Command<UpdateBehaviorInput, void> = {
     name: "weave.behavior.update",
@@ -578,6 +622,7 @@ export function buildWeaveCommands(
     addItem as Command,
     removeItem as Command,
     updateItem as Command,
+    resizeMulti as Command,
     updateBehavior as Command,
     reset as Command,
     setBackground as Command,
