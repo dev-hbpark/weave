@@ -30,6 +30,7 @@ import type {
   NormalizedDragRect as WeaveRect,
 } from "../insertable/types.js";
 import { bucketize } from "../insertable/types.js";
+import type { AbsoluteFrame } from "../layer-picker/hit-test.js";
 import { findFramesAtPoint } from "../layer-picker/hit-test.js";
 
 export interface RubberBandHitTestContext {
@@ -41,6 +42,40 @@ export interface RubberBandHitTestContext {
    *  state. Read at commit time so a paint between recommend and
    *  commit still resolves correctly. */
   readonly getDocument: () => AgocraftDocument | undefined;
+}
+
+/** Re-ratio an agocraft drag rect from design-plane local to a specific
+ *  container's local frame. When the user Alt-drags inside a nested
+ *  frame, the rect's `ratio` is 0..1 of the *design plane*, but the new
+ *  item's `frame` must be 0..1 of the *container frame*. Without this
+ *  conversion, a small drag inside a 0.5×0.5 nested frame would create
+ *  an item at the design-plane-relative ratio — wrong position, wrong
+ *  size, possibly overflowing the frame.
+ *
+ *  When `box` is undefined the rect is already container-local (or the
+ *  container is root, which IS the design plane) — passthrough. */
+function rebaseWeaveRect(weave: WeaveRect, ago: AgoRect, box: AbsoluteFrame | undefined, designWidth: number, designHeight: number): WeaveRect {
+  if (box === undefined) return weave;
+  // Drag rect's absolute design-plane px (left, top, width, height).
+  const absLeft = ago.left;
+  const absTop = ago.top;
+  const absW = ago.width;
+  const absH = ago.height;
+  // Re-base into container-local px.
+  const localLeft = absLeft - box.x;
+  const localTop = absTop - box.y;
+  // Convert container-local px → container-local 0..1 ratio.
+  const cw = Math.max(box.width, 0.0001);
+  const ch = Math.max(box.height, 0.0001);
+  void designWidth;
+  void designHeight;
+  return {
+    ...weave,
+    x: localLeft / cw,
+    y: localTop / ch,
+    width: absW / cw,
+    height: absH / ch,
+  };
 }
 
 function toWeaveRect(ago: AgoRect): WeaveRect {
@@ -79,14 +114,16 @@ export function adaptWeaveCapabilityToAgocraft(
    *  - hit-test context is missing (caller didn't pass dimensions),
    *  - no frame covers the point (drag in pure root background),
    *  - the deepest hit IS the static container itself. */
-  function resolveContainerId(agoRect: AgoRect, fallback: string): string {
-    if (hitTest === undefined) return fallback;
+  function resolveContainer(agoRect: AgoRect, fallback: string): { id: string; box: AbsoluteFrame | undefined } {
+    if (hitTest === undefined) return { id: fallback, box: undefined };
     const doc = hitTest.getDocument();
-    if (doc === undefined) return fallback;
+    if (doc === undefined) return { id: fallback, box: undefined };
     const cx = agoRect.left + agoRect.width / 2;
     const cy = agoRect.top + agoRect.height / 2;
     const hits = findFramesAtPoint(doc, cx, cy, hitTest.designWidth, hitTest.designHeight);
-    return hits[0]?.id ?? fallback;
+    const top = hits[0];
+    if (top === undefined) return { id: fallback, box: undefined };
+    return { id: top.id, box: top.box };
   }
   return {
     recommend(agoRect, { containerId }) {
@@ -94,21 +131,42 @@ export function adaptWeaveCapabilityToAgocraft(
       // minimal shape doesn't declare — the cast is safe because the
       // SAME object round-trips through commit (below), so the runtime
       // shape is consistent end-to-end.
-      const weaveRecs = weaveCap.recommend(toWeaveRect(agoRect), {
-        containerId: resolveContainerId(agoRect, containerId),
-        canUndo: editor.history.canUndo(),
-        canRedo: editor.history.canRedo(),
-      });
+      const c = resolveContainer(agoRect, containerId);
+      const weaveRecs = weaveCap.recommend(
+        rebaseWeaveRect(
+          toWeaveRect(agoRect),
+          agoRect,
+          c.box,
+          hitTest?.designWidth ?? 0,
+          hitTest?.designHeight ?? 0,
+        ),
+        {
+          containerId: c.id,
+          canUndo: editor.history.canUndo(),
+          canRedo: editor.history.canRedo(),
+        },
+      );
       return weaveRecs as unknown as ReadonlyArray<AgoRec>;
     },
     commit(rec, agoRect, { containerId, editor: e }) {
       // Mirror cast — the rec object was originally returned by
       // weaveCap.recommend so it actually carries the WeaveRec fields
       // (priority, …) at runtime; agocraft just opaque-typed it.
-      weaveCap.commit(rec as unknown as WeaveRec, toWeaveRect(agoRect), {
-        containerId: resolveContainerId(agoRect, containerId),
-        editor: e,
-      });
+      const c = resolveContainer(agoRect, containerId);
+      weaveCap.commit(
+        rec as unknown as WeaveRec,
+        rebaseWeaveRect(
+          toWeaveRect(agoRect),
+          agoRect,
+          c.box,
+          hitTest?.designWidth ?? 0,
+          hitTest?.designHeight ?? 0,
+        ),
+        {
+          containerId: c.id,
+          editor: e,
+        },
+      );
     },
   };
 }

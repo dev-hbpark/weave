@@ -288,13 +288,18 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     },
   },
   {
+    // WI-035 bug fix — `L` collided with an existing layer-move
+    // affordance in the user's session. The Line tool stays in the
+    // command registry (palette + Toolbar add menu can dispatch it)
+    // but loses its single-key shortcut. A non-conflicting binding
+    // will be assigned in a follow-up after the conflict source is
+    // identified.
     id: "tool.addLine",
     label: { en: "Add line", ko: "선 추가" },
     description: {
       en: "Insert a default line into the current frame.",
       ko: "현재 프레임에 기본 선을 추가합니다.",
     },
-    hotkey: { keys: "L", binding: "L", scope: "editor" },
     category: "tool",
     enabledWhen: (ctx) => !ctx.isTextEditing,
     action: () => {
@@ -514,6 +519,13 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
           label: koLabel,
           action: (ctx) => {
             if (isTextEditingTarget(ctx.event.target)) return;
+            if (import.meta.env.DEV) {
+              // WI-035 diagnostic — confirm the hotkey path fires in
+              // real browsers. Remove once R/T/F bug is verified
+              // closed in user testing.
+              // eslint-disable-next-line no-console
+              console.debug("[editor-hotkey]", cmd.id, "fired");
+            }
             action({ editor: editorRef.current });
           },
         }),

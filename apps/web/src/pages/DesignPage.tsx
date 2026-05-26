@@ -531,9 +531,15 @@ function DesignPageBody() {
       if ((kind === "image" || kind === "video") && srcOverride) {
         attrsOverride.src = srcOverride;
       }
+      // WI-035 bug fix — DropdownMenu single-click add now respects the
+      // current frame selection (was: always root). Selected frame
+      // becomes the parent; falling back to root when nothing is
+      // selected keeps the empty-design entry point working.
+      const containerId =
+        selectedFrameIdRef.current ?? String(docInAgocraft.root.id);
       const result = editor.exec<unknown, string>("weave.item.add", {
         kind,
-        containerId: String(docInAgocraft.root.id),
+        containerId,
         frame,
         ...(Object.keys(attrsOverride).length > 0 ? { attrsOverride } : {}),
       });

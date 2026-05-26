@@ -622,7 +622,16 @@ function NestedFrame({
         onContextMenuRequest(itemId, e.clientX, e.clientY);
       }}
       onDragOver={onDragOver}
-      onDrop={onDropAdd ? (e: React.DragEvent<HTMLDivElement>) => onDropAdd(e, itemId) : undefined}
+      onDrop={onDropAdd
+        ? (e: React.DragEvent<HTMLDivElement>) => {
+            // The deepest hit-frame already handled the drop; stop the
+            // event from bubbling to ancestor frames (each one would
+            // otherwise dispatch `weave.item.add` again — WI-035 bug
+            // "Toolbar drag → 중첩 frame 에 중복 add").
+            e.stopPropagation();
+            onDropAdd(e, itemId);
+          }
+        : undefined}
       style={style as MotionStyle}
     >
       <FrameContent

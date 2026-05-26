@@ -69,7 +69,11 @@ test("T hotkey adds a text item to the selected frame", async ({ page }) => {
   await expect.poll(() => childCountOf(page, parentId)).toBe(before + 1);
 });
 
-test("L hotkey adds a shape (line) to the selected frame", async ({ page }) => {
+test.skip("L hotkey adds a shape (line) to the selected frame", async ({ page }) => {
+  // WI-035 bug fix — L binding removed (user-reported conflict with a
+  // layer-move affordance). Skip until a non-conflicting binding is
+  // re-assigned in a follow-up. The command (tool.addLine) is still
+  // registered and dispatchable via palette / Toolbar add menu.
   const parentId = await setupParent(page);
   await preselect(page, parentId);
   const before = await childCountOf(page, parentId);

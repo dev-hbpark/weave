@@ -31,9 +31,14 @@ export interface LayerHit {
    *  sort deepest-first (the user typically wants the leaf they clicked
    *  on at the top of the picker). */
   readonly depth: number;
+  /** Absolute bbox in design-plane px (unrounded). Used by the rubber-
+   *  band adapter to re-ratio drag rects into the container's local
+   *  frame coords so a drag inside a nested frame produces a child
+   *  whose frame ratios are container-local (not design-plane-local). */
+  readonly box: AbsoluteFrame;
 }
 
-interface AbsoluteFrame {
+export interface AbsoluteFrame {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -120,6 +125,7 @@ export function findFramesAtPoint(
           widthPx: Math.round(cBox.width),
           heightPx: Math.round(cBox.height),
           depth,
+          box: cBox,
           _depth: depth,
         });
       }
