@@ -1749,15 +1749,21 @@ function MultiSelectionOverlay({ selectedIds }: MultiSelectionOverlayProps): Rea
       data-testid="multi-selection-overlay"
     >
       {(["nw", "ne", "sw", "se"] as const).map((corner) => (
+        // WI-036 follow-up — square handle (matches SelectionHandle's
+        // kind="corner" 10×10 px). The offset is -16 px so the handle
+        // sits clearly OUTSIDE the bounding-box corner and never
+        // overlaps the underlying frame's own single-frame corner
+        // handle (which is at offset -5 px). Visible range: outer.NW
+        // -16 to outer.NW -6 (no overlap with inner.NW -5 to +5).
         <div
           key={corner}
           data-multi-corner={corner}
-          className="absolute rounded-full bg-[color:var(--surface-0)] border border-[color:var(--accent)]"
+          className="absolute bg-[color:var(--surface-0)] border border-[color:var(--accent)]"
           style={{
-            width: 8,
-            height: 8,
-            ...(corner.includes("n") ? { top: -4 } : { bottom: -4 }),
-            ...(corner.includes("w") ? { left: -4 } : { right: -4 }),
+            width: 10,
+            height: 10,
+            ...(corner.includes("n") ? { top: -16 } : { bottom: -16 }),
+            ...(corner.includes("w") ? { left: -16 } : { right: -16 }),
           }}
         />
       ))}
