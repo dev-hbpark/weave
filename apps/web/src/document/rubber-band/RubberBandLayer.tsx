@@ -68,6 +68,12 @@ export interface RubberBandLayerProps {
    *  space (e.g. design pixels), and `containerSize` should match. */
   readonly containerSize: { readonly width: number; readonly height: number };
   readonly editor: Editor;
+  /** WI-034 — live document snapshot accessor for the adapter's
+   *  hit-test (drag → deepest-frame containerId). When omitted, the
+   *  adapter falls back to the binding's static `containerId` and the
+   *  new item lands at root.children. Host (FrameStage / DesignPage)
+   *  passes a closure over the latest `useDocument` state. */
+  readonly getDocument?: () => import("@agocraft/core").Document | undefined;
   readonly snapSize?: number;
   readonly minDragSize?: number;
   /** Override the host-based viewport→local conversion. */
@@ -122,6 +128,7 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
       containerId,
       containerSize,
       editor,
+      getDocument,
       snapSize,
       minDragSize,
       clientToLocal,
@@ -145,13 +152,26 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
   const hostElementRef = useRef<HTMLDivElement | null>(null);
 
   // Adapt weave's product-specific capability to agocraft's minimal contract
-  // before handing it to the binding (DR-017 bridge).
+  // before handing it to the binding (DR-017 bridge). WI-034 — the adapter
+  // also runs a deepest-frame hit-test on the drag rect's center so an
+  // Alt+drag inside a nested frame creates the new item as that frame's
+  // child instead of the binding's static `containerId` (root).
   const adaptedCapability = useMemo(
     () =>
       capability === undefined
         ? undefined
-        : adaptWeaveCapabilityToAgocraft(capability, editor),
-    [capability, editor],
+        : adaptWeaveCapabilityToAgocraft(
+            capability,
+            editor,
+            getDocument === undefined
+              ? undefined
+              : {
+                  designWidth: containerSize.width,
+                  designHeight: containerSize.height,
+                  getDocument,
+                },
+          ),
+    [capability, editor, getDocument, containerSize.width, containerSize.height],
   );
 
   // Stable refs so the binding closure observes the latest clientToLocal

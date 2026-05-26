@@ -45,6 +45,18 @@ interface EditorActionDeps {
 let frameDuplicator: ((frameId: string) => void) | undefined;
 let frameDeleter: ((frameId: string) => void) | undefined;
 let mediaSrcOpener: ((kind: "image" | "video", frameId: string) => void) | undefined;
+/** WI-035 P2 — hover-scope "add child frame" action. Distinct from the
+ *  selection-scope `setItemAdder` (hotkey path) because QuickActionBar
+ *  dispatches with the hovered frame id, not the selected one. */
+let hoverFrameChildAdder: ((parentFrameId: string) => void) | undefined;
+export function setHoverFrameChildAdder(
+  fn: (parentFrameId: string) => void,
+): () => void {
+  hoverFrameChildAdder = fn;
+  return () => {
+    if (hoverFrameChildAdder === fn) hoverFrameChildAdder = undefined;
+  };
+}
 
 export function setFrameDuplicator(fn: (frameId: string) => void): () => void {
   frameDuplicator = fn;
@@ -97,6 +109,26 @@ export function setSelectionNavigator(
   selectionNavigator = fn;
   return () => {
     if (selectionNavigator === fn) selectionNavigator = undefined;
+  };
+}
+
+/** WI-035 P1 — tool hotkey (R/T/L/F) host slot. The host registers a
+ *  single adder that knows the current selection / design size and
+ *  produces a default-sized item of the requested kind. Hotkey actions
+ *  dispatch through this slot so the editor-hotkeys module stays
+ *  React-agnostic. */
+export type ItemAdderKind =
+  | "addRect"
+  | "addText"
+  | "addLine"
+  | "addFrame";
+let itemAdder: ((kind: ItemAdderKind) => void) | undefined;
+export function setItemAdder(
+  fn: (kind: ItemAdderKind) => void,
+): () => void {
+  itemAdder = fn;
+  return () => {
+    if (itemAdder === fn) itemAdder = undefined;
   };
 }
 
@@ -221,6 +253,68 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       selectionNavigator?.("prevSibling");
     },
   },
+  // ── Tool hotkey (WI-035 P1) ───────────────────────────────────────────
+  // Figma parity: single press inserts a default-sized item of the
+  // requested kind into the current selected frame's center (or root if
+  // nothing is selected). The hotkey registry already skips text-edit
+  // surfaces, and `enabledWhen` adds the explicit `isTextEditing`
+  // guard so the four shortcuts never fire while the user is typing.
+  {
+    id: "tool.addRect",
+    label: { en: "Add rectangle", ko: "직사각형 추가" },
+    description: {
+      en: "Insert a default-sized rectangle into the current frame.",
+      ko: "현재 프레임에 기본 크기 직사각형을 추가합니다.",
+    },
+    hotkey: { keys: "R", binding: "R", scope: "editor" },
+    category: "tool",
+    enabledWhen: (ctx) => !ctx.isTextEditing,
+    action: () => {
+      itemAdder?.("addRect");
+    },
+  },
+  {
+    id: "tool.addText",
+    label: { en: "Add text", ko: "텍스트 추가" },
+    description: {
+      en: "Insert a default text item into the current frame.",
+      ko: "현재 프레임에 기본 텍스트를 추가합니다.",
+    },
+    hotkey: { keys: "T", binding: "T", scope: "editor" },
+    category: "tool",
+    enabledWhen: (ctx) => !ctx.isTextEditing,
+    action: () => {
+      itemAdder?.("addText");
+    },
+  },
+  {
+    id: "tool.addLine",
+    label: { en: "Add line", ko: "선 추가" },
+    description: {
+      en: "Insert a default line into the current frame.",
+      ko: "현재 프레임에 기본 선을 추가합니다.",
+    },
+    hotkey: { keys: "L", binding: "L", scope: "editor" },
+    category: "tool",
+    enabledWhen: (ctx) => !ctx.isTextEditing,
+    action: () => {
+      itemAdder?.("addLine");
+    },
+  },
+  {
+    id: "tool.addFrame",
+    label: { en: "Add frame", ko: "프레임 추가" },
+    description: {
+      en: "Insert a default-sized frame into the current frame.",
+      ko: "현재 프레임에 기본 크기 프레임을 추가합니다.",
+    },
+    hotkey: { keys: "F", binding: "F", scope: "editor" },
+    category: "tool",
+    enabledWhen: (ctx) => !ctx.isTextEditing,
+    action: () => {
+      itemAdder?.("addFrame");
+    },
+  },
   // ── Hover-visible commands (WI-027) ────────────────────────────────────
   // These commands have `visibleWhen` so they appear in the hovered
   // frame's QuickActionBar. They do NOT have a global hotkey — the bar
@@ -240,6 +334,22 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     action: () => {
       // No-op at module level — dispatched via the frameDuplicator slot
       // since the closure captures useDesign's addItem.
+    },
+  },
+  // WI-035 P2 — "+" QuickActionBar button on hovered frames. Click
+  // inserts a default-sized child frame; the closure (DesignPage) owns
+  // the actual `weave.item.add` exec via the `hoverFrameChildAdder`
+  // host slot. visibleWhen restricts to `frame` kind only (primitives
+  // can't host children).
+  {
+    id: "frame.addChild",
+    label: { en: "Add child frame", ko: "자식 프레임 추가" },
+    hint: { en: "Insert a default-sized frame here.", ko: "이 프레임 안에 새 프레임을 추가합니다." },
+    category: "frame",
+    visibleWhen: (ctx) => ctx.hoveredKind === "frame",
+    enabledWhen: (ctx) => typeof ctx.hoveredId === "string",
+    action: () => {
+      // Dispatched via hoverFrameChildAdder slot.
     },
   },
   {
@@ -299,6 +409,14 @@ function tryHostSlot(
   }
   if (id === "frame.delete" && frameDeleter !== undefined && hoveredId !== undefined) {
     frameDeleter(hoveredId);
+    return true;
+  }
+  if (
+    id === "frame.addChild"
+    && hoverFrameChildAdder !== undefined
+    && hoveredId !== undefined
+  ) {
+    hoverFrameChildAdder(hoveredId);
     return true;
   }
   if (

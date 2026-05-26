@@ -17,6 +17,7 @@
 // popover layer is still weave-local (subscribes to vm.rubberBand) —
 // agocraft 's binding only owns the gesture lifecycle.
 
+import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import type {
   InsertableCapability as AgoCapability,
@@ -29,6 +30,18 @@ import type {
   NormalizedDragRect as WeaveRect,
 } from "../insertable/types.js";
 import { bucketize } from "../insertable/types.js";
+import { findFramesAtPoint } from "../layer-picker/hit-test.js";
+
+export interface RubberBandHitTestContext {
+  /** Design plane size in design-pixel units — needed for the hit-test
+   *  to compose item.attrs.frame ratios into absolute design coords. */
+  readonly designWidth: number;
+  readonly designHeight: number;
+  /** Live document snapshot — closure over weave's `useDocument`
+   *  state. Read at commit time so a paint between recommend and
+   *  commit still resolves correctly. */
+  readonly getDocument: () => AgocraftDocument | undefined;
+}
 
 function toWeaveRect(ago: AgoRect): WeaveRect {
   // `weave.NormalizedDragRect.{x, y, width, height}` are 0..1 ratios
@@ -57,7 +70,24 @@ function toWeaveRect(ago: AgoRect): WeaveRect {
 export function adaptWeaveCapabilityToAgocraft(
   weaveCap: WeaveCapability,
   editor: Editor,
+  hitTest?: RubberBandHitTestContext,
 ): AgoCapability {
+  /** WI-034 — resolve the *deepest* frame whose absolute bbox contains
+   *  the drag rect's center, so an Alt+drag that lands inside a nested
+   *  frame creates the new item as that frame's child (not root's).
+   *  Falls back to the binding's static `containerId` when:
+   *  - hit-test context is missing (caller didn't pass dimensions),
+   *  - no frame covers the point (drag in pure root background),
+   *  - the deepest hit IS the static container itself. */
+  function resolveContainerId(agoRect: AgoRect, fallback: string): string {
+    if (hitTest === undefined) return fallback;
+    const doc = hitTest.getDocument();
+    if (doc === undefined) return fallback;
+    const cx = agoRect.left + agoRect.width / 2;
+    const cy = agoRect.top + agoRect.height / 2;
+    const hits = findFramesAtPoint(doc, cx, cy, hitTest.designWidth, hitTest.designHeight);
+    return hits[0]?.id ?? fallback;
+  }
   return {
     recommend(agoRect, { containerId }) {
       // Weave recs carry an extra `priority` field that agocraft's
@@ -65,7 +95,7 @@ export function adaptWeaveCapabilityToAgocraft(
       // SAME object round-trips through commit (below), so the runtime
       // shape is consistent end-to-end.
       const weaveRecs = weaveCap.recommend(toWeaveRect(agoRect), {
-        containerId,
+        containerId: resolveContainerId(agoRect, containerId),
         canUndo: editor.history.canUndo(),
         canRedo: editor.history.canRedo(),
       });
@@ -76,7 +106,7 @@ export function adaptWeaveCapabilityToAgocraft(
       // weaveCap.recommend so it actually carries the WeaveRec fields
       // (priority, …) at runtime; agocraft just opaque-typed it.
       weaveCap.commit(rec as unknown as WeaveRec, toWeaveRect(agoRect), {
-        containerId,
+        containerId: resolveContainerId(agoRect, containerId),
         editor: e,
       });
     },

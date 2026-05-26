@@ -1413,6 +1413,10 @@ export function FrameStage(props: FrameStageProps) {
           // NestedFrame's onClick can apply Figma's parent-first /
           // Cmd-deep / Shift-toggle semantics via `selectFromHit`.
           disableSelectionSet: true,
+          // WI-034 — Alt+drag on a frame is reserved for
+          // RubberBandLayer's "add child" gesture; frame-move declines
+          // so the lower-priority alt-rubber-band binding can claim.
+          modifiers: { alt: "forbidden", button: 0 },
         }),
         createPanBinding({
           enabled: () => panActiveRef.current,
@@ -1807,8 +1811,14 @@ export function FrameStage(props: FrameStageProps) {
           // must not start under any of those modes.
           if (!selectionAllowedOuter) return false;
           if (!(target instanceof HTMLElement)) return true;
+          // WI-034 — frame body 의 빈 영역도 OK. RubberBand 의
+          // commit adapter (`adaptWeaveCapabilityToAgocraft`) 가
+          // drag rect 의 center 좌표로 hit-test → deepest frame 을
+          // containerId 로 사용. 즉 frame 안 Alt+drag → 그 frame
+          // 의 child 로 추가. 단 frame 의 child element (shape /
+          // handle / contenteditable / hotspot) 는 여전히 reject
+          // — 그쪽 element 의 own pointer flow 가 우선.
           return (
-            target.closest("[data-frame-id]") === null &&
             target.closest("[data-shape-id]") === null &&
             target.closest("[data-selection-layer]") === null &&
             target.closest("[data-selection-handle-item-id]") === null &&
@@ -1851,6 +1861,10 @@ export function FrameStage(props: FrameStageProps) {
               containerId={String(root.id)}
               containerSize={{ width: designWidth, height: designHeight }}
               editor={editor}
+              // WI-034 — adapter 의 deepest-frame hit-test 가 live
+              // doc snapshot read. docRef 의 mutation 은 docInAgocraft
+              // 의 매 render assignment.
+              getDocument={() => docRef.current}
               snapSize={20}
               clientToLocal={clientToDesignLocal}
               visualHost={designPlaneRef}

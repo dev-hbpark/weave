@@ -3,11 +3,6 @@ import {
   defaultShapeSubAttrs,
   type ShapeSubKind,
 } from "@agocraft/core";
-import {
-  findFramesAtPoint,
-  type LayerHit,
-  LayerPickerMenu,
-} from "../document/layer-picker/index.js";
 import { EditorProvider, useEditorVM } from "@agocraft/editor/react";
 import {
   AITooltip,
@@ -61,6 +56,11 @@ import { EditorVMProvider } from "../document/interactions/editor-vm-context.js"
 import { RouterProvider } from "../document/interactions/router-context.js";
 import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
+import {
+  findFramesAtPoint,
+  type LayerHit,
+  LayerPickerMenu,
+} from "../document/layer-picker/index.js";
 import { PeekOverlay, PointStackInspector, usePeekMode } from "../document/peek-mode/index.js";
 import { PresenceCursors } from "../document/presence/PresenceCursors.js";
 import { usePresenceLocalCursor } from "../document/presence/use-presence-local-cursor.js";
@@ -71,9 +71,12 @@ import { CursorTooltip } from "../document/tooltip/CursorTooltip.js";
 import {
   dispatchEditorCommand,
   editorCommandMetadata,
+  type ItemAdderKind,
   type SelectionNavDir,
   setFrameDeleter,
   setFrameDuplicator,
+  setHoverFrameChildAdder,
+  setItemAdder,
   setMediaSrcOpener,
   setPaletteOpener,
   setSelectionNavigator,
@@ -136,8 +139,7 @@ function FrameContextMenu({
   // overlapping frames at the cursor. A list of one (the frame the
   // user already right-clicked) is pure noise; Figma elides on the
   // same condition.
-  const hasLayers =
-    layers !== undefined && layers.length >= 2 && onPickLayer !== undefined;
+  const hasLayers = layers !== undefined && layers.length >= 2 && onPickLayer !== undefined;
   return (
     <ContextMenu
       key={itemId}
@@ -788,6 +790,51 @@ function DesignPageBody() {
     });
   }, [selectFrame]);
 
+  // WI-035 P1 — tool hotkey (R / T / L / F) handler. Insert a
+  // default-sized item of the requested kind into the currently
+  // selected frame (or root.children when nothing is selected). The
+  // resulting frame ratio is parent-local: 20% × 20% box at center
+  // for rectangle / text, 40%-wide line at vertical middle, 40% × 40%
+  // for nested frame. Drag-tuned sizing is the user's job — these
+  // are merely sensible starting points so the press-and-place flow
+  // remains predictable.
+  useEffect(() => {
+    const ITEM_ADDER_SPEC: Readonly<
+      Record<ItemAdderKind, { readonly kind: DomainKind; readonly frame: ItemFrame }>
+    > = {
+      addRect: {
+        kind: "shape",
+        frame: { x: 0.4, y: 0.4, width: 0.2, height: 0.2, rotation: 0 },
+      },
+      addText: {
+        kind: "text",
+        frame: { x: 0.4, y: 0.45, width: 0.2, height: 0.1, rotation: 0 },
+      },
+      addLine: {
+        kind: "shape",
+        frame: { x: 0.3, y: 0.5, width: 0.4, height: 0.01, rotation: 0 },
+      },
+      addFrame: {
+        kind: "frame",
+        frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
+      },
+    };
+    return setItemAdder((kind) => {
+      const spec = ITEM_ADDER_SPEC[kind];
+      const containerId =
+        selectedFrameIdRef.current ??
+        (docInAgocraftRef.current?.root.id !== undefined
+          ? String(docInAgocraftRef.current.root.id)
+          : undefined);
+      if (containerId === undefined) return;
+      editor.exec("weave.item.add", {
+        kind: spec.kind,
+        containerId,
+        frame: spec.frame,
+      });
+    });
+  }, [editor]);
+
   // WI-027 Phase D — register host action slots for hover-scope commands.
   // The slots receive the hovered frame id from the dispatcher and run
   // the appropriate weave action (delete / duplicate / open media src
@@ -808,6 +855,18 @@ function DesignPageBody() {
       rawAddItem(kind as DomainKind);
     });
   }, [rawAddItem, hoverContext.hoveredKind]);
+  // WI-035 P2 — QuickActionBar "+" button on hovered frame. Inserts a
+  // default-sized child frame directly without a sub-menu (single-
+  // click affordance; tool hotkeys + drag-to-add tile cover other kinds).
+  useEffect(() => {
+    return setHoverFrameChildAdder((parentFrameId) => {
+      editor.exec("weave.item.add", {
+        kind: "frame",
+        containerId: parentFrameId,
+        frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
+      });
+    });
+  }, [editor]);
   useEffect(() => {
     return setMediaSrcOpener((mediaKind) => {
       // The "edit" action targets the currently-selected media item.
@@ -999,6 +1058,11 @@ function DesignPageBody() {
                               <DropdownMenuItem
                                 onSelect={() => addNewItem("text")}
                                 data-testid="add-text"
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData("application/x-weave-add-kind", "text");
+                                  e.dataTransfer.effectAllowed = "copy";
+                                }}
                               >
                                 T&nbsp;&nbsp;텍스트
                               </DropdownMenuItem>
@@ -1007,6 +1071,11 @@ function DesignPageBody() {
                               <DropdownMenuItem
                                 onSelect={() => addNewItem("shape", "rectangle")}
                                 data-testid="add-shape-rectangle"
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData("application/x-weave-add-kind", "shape");
+                                  e.dataTransfer.effectAllowed = "copy";
+                                }}
                               >
                                 ▭&nbsp;&nbsp;사각형
                               </DropdownMenuItem>
@@ -1138,6 +1207,37 @@ function DesignPageBody() {
                             onSelect={setSelectedFrameId}
                             onToggleSelect={(id) => toggleFrames([id])}
                             onMarqueeSelect={onMarqueeSelect}
+                            // WI-035 P3 — Toolbar drag-to-add. The
+                            // DropdownMenu add-items set the mime
+                            // `application/x-weave-add-kind` on
+                            // dragstart; FrameStage routes the drop's
+                            // `containerId` (root or hovered frame).
+                            // This handler dispatches the same
+                            // `weave.item.add` SSOT.
+                            onDragOver={(e) => {
+                              if (e.dataTransfer.types.includes("application/x-weave-add-kind")) {
+                                e.preventDefault();
+                              }
+                            }}
+                            onDropAdd={(e, containerId) => {
+                              const kindRaw = e.dataTransfer.getData(
+                                "application/x-weave-add-kind",
+                              );
+                              if (kindRaw === "") return;
+                              e.preventDefault();
+                              const kind = kindRaw as DomainKind;
+                              editor.exec("weave.item.add", {
+                                kind,
+                                containerId,
+                                frame: {
+                                  x: 0.3,
+                                  y: 0.3,
+                                  width: 0.4,
+                                  height: 0.4,
+                                  rotation: 0,
+                                },
+                              });
+                            }}
                             onUpdateItem={(itemId, patcher) =>
                               updateItem(itemId, (prev) => ({
                                 ...prev,
@@ -1476,13 +1576,15 @@ function DesignPageBody() {
                             // already carries label/aria/disabled; we just pick
                             // a glyph here.
                             const glyph =
-                              id === "frame.duplicate"
-                                ? "⊕"
-                                : id === "frame.delete"
-                                  ? "✕"
-                                  : id === "image.replaceSrc" || id === "video.replaceSrc"
-                                    ? "↻"
-                                    : "•";
+                              id === "frame.addChild"
+                                ? "+"
+                                : id === "frame.duplicate"
+                                  ? "⊕"
+                                  : id === "frame.delete"
+                                    ? "✕"
+                                    : id === "image.replaceSrc" || id === "video.replaceSrc"
+                                      ? "↻"
+                                      : "•";
                             return (
                               <CommandIconButton commandId={id} size="sm">
                                 <span className="text-[13px]">{glyph}</span>
