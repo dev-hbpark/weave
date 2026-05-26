@@ -1702,6 +1702,7 @@ export function FrameStage(props: FrameStageProps) {
           >
             <motion.div
               ref={designPlaneRef}
+              data-design-plane="true"
               style={{
                 position: "absolute",
                 left: 0,

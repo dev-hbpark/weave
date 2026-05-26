@@ -274,6 +274,81 @@ test("WI-036 — multi-selection mounts a bounding-box marquee + 4 corner handle
   await expect(overlay).toHaveCount(0, { timeout: 1_000 });
 });
 
+test("WI-036 — dragging a multi-selection corner handle resizes every selected frame proportionally", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-036-resize" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
+  });
+  await addFrame(page, "frame", {
+    frame: { x: 0.5, y: 0.5, width: 0.2, height: 0.2, rotation: 0 },
+  });
+  const ids = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => String(c.id));
+  });
+  await selectFrames(page, ids);
+
+  // Capture pre-drag frames.
+  const before = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: {
+        root: {
+          children: ReadonlyArray<{
+            id: unknown;
+            attrs: { frame?: { x: number; y: number; width: number; height: number } };
+          }>;
+        };
+      };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => ({
+      id: String(c.id),
+      ...(c.attrs.frame as { x: number; y: number; width: number; height: number }),
+    }));
+  });
+
+  // Drag the SE corner outward by ~80 px → bounding box grows; all
+  // selected frames should scale up proportionally.
+  const se = page.locator("[data-multi-corner='se']");
+  await expect(se).toBeVisible({ timeout: 3_000 });
+  const seBox = await se.boundingBox();
+  expect(seBox).not.toBeNull();
+  if (seBox === null) return;
+  const startX = seBox.x + seBox.width / 2;
+  const startY = seBox.y + seBox.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY + 80, { steps: 8 });
+  await page.mouse.up();
+
+  const after = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: {
+        root: {
+          children: ReadonlyArray<{
+            id: unknown;
+            attrs: { frame?: { x: number; y: number; width: number; height: number } };
+          }>;
+        };
+      };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => ({
+      id: String(c.id),
+      ...(c.attrs.frame as { x: number; y: number; width: number; height: number }),
+    }));
+  });
+
+  // Each frame's width + height should have GROWN (SE drag enlarges).
+  for (const a of after) {
+    const b = before.find((x) => x.id === a.id);
+    expect(b).not.toBeUndefined();
+    if (b === undefined) continue;
+    expect(a.width).toBeGreaterThan(b.width);
+    expect(a.height).toBeGreaterThan(b.height);
+  }
+});
+
 test("WI-036 — deleting the selected frame clears the bar (no stale menu)", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-stale" });
   await addFrame(page, "frame", {

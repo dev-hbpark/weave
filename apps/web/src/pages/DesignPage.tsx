@@ -1624,7 +1624,31 @@ function DesignPageBody() {
                           continuation of the underlying frame's hover
                           (hover target union). Position follows the
                           frame via RAF while hover is active. */}
-                      <MultiSelectionOverlay selectedIds={selectedIds} />
+                      <MultiSelectionOverlay
+                        selectedIds={selectedIds}
+                        onResize={(updates) => {
+                          // WI-036 follow-up — multi-selection resize.
+                          // The overlay computed each item's new frame
+                          // (ratio relative to its parent). Dispatch a
+                          // batch of `weave.item.update`s — the editor
+                          // collapses them within `historyMergeWindowMs`
+                          // when they share a mergeKey, so the gesture
+                          // commits as a single undoable step.
+                          for (const u of updates) {
+                            editor.exec("weave.item.update", {
+                              itemId: u.id,
+                              patch: (item: { attrs: Record<string, unknown> }) => ({
+                                ...item,
+                                attrs: {
+                                  ...item.attrs,
+                                  frame: { ...(item.attrs.frame as object), ...u.frame },
+                                },
+                              }),
+                              mergeKey: "multi-resize",
+                            });
+                          }
+                        }}
+                      />
                       <QuickActionBarAnchored
                         selectedFrameId={selectedFrameId ?? undefined}
                         selectedIds={selectedIds}
@@ -1669,6 +1693,18 @@ function DesignPageBody() {
 
 interface MultiSelectionOverlayProps {
   readonly selectedIds: ReadonlySet<string>;
+  /** WI-036 follow-up — corner drag callback. Receives the new frame
+   *  ratios (relative to each item's parent) computed by scaling the
+   *  bounding box around the anchor corner. Fires repeatedly during
+   *  drag and once on pointerup. The host applies them via a single
+   *  `weave.item.update` per item with a shared mergeKey so history
+   *  records the gesture as one undoable step. */
+  readonly onResize: (
+    updates: ReadonlyArray<{
+      readonly id: string;
+      readonly frame: { x: number; y: number; width: number; height: number };
+    }>,
+  ) => void;
 }
 
 /** WI-036 follow-up v2 — multi-selection bounding box overlay.
@@ -1677,7 +1713,7 @@ interface MultiSelectionOverlayProps {
  *  (visual placeholders; multi-frame resize is v1.x backlog). Each
  *  individual frame still mounts its own per-frame handle set
  *  (FrameStage.SelectionLayer), so the overlay is purely additive. */
-function MultiSelectionOverlay({ selectedIds }: MultiSelectionOverlayProps): React.ReactElement | null {
+function MultiSelectionOverlay({ selectedIds, onResize }: MultiSelectionOverlayProps): React.ReactElement | null {
   const isMulti = selectedIds.size > 1;
   const [box, setBox] = useState<
     { left: number; top: number; width: number; height: number } | null
@@ -1764,18 +1800,104 @@ function MultiSelectionOverlay({ selectedIds }: MultiSelectionOverlayProps): Rea
           // (no overlap with inner.NW -5 to +5).
           //
           // pointerEvents: "auto" overrides the parent wrap's
-          // `pointer-events: none` (the wrap is non-interactive so the
-          // underlying frame body still receives clicks). The
-          // pointerdown handler `stopPropagation`s so the press
-          // doesn't bubble to the design plane's clear-selection
-          // handler. v1 has no drag-resize implementation; the
-          // affordance is purely visual + selection-preserving.
+          // `pointer-events: none`. pointerdown captures each item's
+          // pre-drag viewport rect + parent rect, anchors the opposite
+          // corner, and on every pointermove computes the new bounding
+          // box → re-ratios each item's frame relative to its parent.
+          // Updates fire via `onResize` which the host coalesces into
+          // a single undoable history entry through mergeKey.
           <div
             key={corner}
             data-multi-corner={corner}
             onPointerDown={(e) => {
               e.stopPropagation();
               e.preventDefault();
+              const ids = Array.from(selectedIds);
+              const items: Array<{
+                id: string;
+                vp: DOMRect;
+                parentVp: DOMRect;
+              }> = [];
+              for (const id of ids) {
+                const el = document.querySelector(
+                  `[data-frame-id="${CSS.escape(id)}"]`,
+                );
+                if (!(el instanceof HTMLElement)) continue;
+                const parentFrameEl =
+                  el.parentElement?.closest("[data-frame-id]") ?? null;
+                const parentEl =
+                  parentFrameEl ?? document.querySelector("[data-design-plane='true']");
+                if (!(parentEl instanceof HTMLElement)) continue;
+                items.push({
+                  id,
+                  vp: el.getBoundingClientRect(),
+                  parentVp: parentEl.getBoundingClientRect(),
+                });
+              }
+              if (items.length === 0) return;
+              const initialBox = box;
+              if (initialBox === null) return;
+              const anchor = {
+                x: corner.includes("w")
+                  ? initialBox.left + initialBox.width
+                  : initialBox.left,
+                y: corner.includes("n")
+                  ? initialBox.top + initialBox.height
+                  : initialBox.top,
+              };
+              const target = e.currentTarget;
+              const pointerId = e.pointerId;
+              try {
+                target.setPointerCapture(pointerId);
+              } catch {
+                // Ignore if capture is unavailable (test environments).
+              }
+              const onMove = (ev: PointerEvent): void => {
+                const cur = { x: ev.clientX, y: ev.clientY };
+                const newBox = {
+                  left: Math.min(cur.x, anchor.x),
+                  top: Math.min(cur.y, anchor.y),
+                  width: Math.max(Math.abs(cur.x - anchor.x), 1),
+                  height: Math.max(Math.abs(cur.y - anchor.y), 1),
+                };
+                const updates: Array<{
+                  id: string;
+                  frame: { x: number; y: number; width: number; height: number };
+                }> = [];
+                for (const it of items) {
+                  const relX = (it.vp.left - initialBox.left) / initialBox.width;
+                  const relY = (it.vp.top - initialBox.top) / initialBox.height;
+                  const relW = it.vp.width / initialBox.width;
+                  const relH = it.vp.height / initialBox.height;
+                  const newL = newBox.left + relX * newBox.width;
+                  const newT = newBox.top + relY * newBox.height;
+                  const newW = relW * newBox.width;
+                  const newH = relH * newBox.height;
+                  updates.push({
+                    id: it.id,
+                    frame: {
+                      x: (newL - it.parentVp.left) / it.parentVp.width,
+                      y: (newT - it.parentVp.top) / it.parentVp.height,
+                      width: newW / it.parentVp.width,
+                      height: newH / it.parentVp.height,
+                    },
+                  });
+                }
+                onResize(updates);
+              };
+              const onUp = (): void => {
+                window.removeEventListener("pointermove", onMove);
+                window.removeEventListener("pointerup", onUp);
+                window.removeEventListener("pointercancel", onUp);
+                try {
+                  target.releasePointerCapture(pointerId);
+                } catch {
+                  // Ignore.
+                }
+              };
+              window.addEventListener("pointermove", onMove);
+              window.addEventListener("pointerup", onUp);
+              window.addEventListener("pointercancel", onUp);
             }}
             style={{
               position: "absolute",
