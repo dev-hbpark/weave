@@ -6,10 +6,10 @@ import {
   createSerializer,
   itemId,
 } from "@agocraft/core";
-import { toAgocraftDocument } from "./agocraft-mirror.js";
+import { ensureRootStyleProvider, toAgocraftDocument } from "./agocraft-mirror.js";
 import { migrateLegacyKindsToFrame } from "./migrate-frame-only.js";
-import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME } from "./types.js";
 import type { CanvasShape, Design, Document, Item, ItemFrame } from "./types.js";
+import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME } from "./types.js";
 
 // localStorage persistence.
 //
@@ -180,7 +180,11 @@ function migrateV2ToV3(legacy: LegacyDocumentV2): Document {
 // divide by 100). Camera-target positions drop from absolute px → 0..1 ratio
 // (divide by design width/height). Everything else is preserved.
 
-function deepNormalizeItem(item: AgocraftItem, designWidth: number, designHeight: number): AgocraftItem {
+function deepNormalizeItem(
+  item: AgocraftItem,
+  designWidth: number,
+  designHeight: number,
+): AgocraftItem {
   // Attach default frame if missing.
   const attrs = item.attrs as Readonly<Record<string, unknown>>;
   let nextAttrs: Readonly<Record<string, unknown>> = attrs;
@@ -189,8 +193,13 @@ function deepNormalizeItem(item: AgocraftItem, designWidth: number, designHeight
   }
   // Canvas shapes — percent → ratio.
   if (item.kind === "canvas-design") {
-    const a = nextAttrs as unknown as { readonly summary: string; readonly shapes: ReadonlyArray<CanvasShape> };
-    const looksPercent = a.shapes.some((s) => s.x > 1.0001 || s.y > 1.0001 || s.width > 1.0001 || s.height > 1.0001);
+    const a = nextAttrs as unknown as {
+      readonly summary: string;
+      readonly shapes: ReadonlyArray<CanvasShape>;
+    };
+    const looksPercent = a.shapes.some(
+      (s) => s.x > 1.0001 || s.y > 1.0001 || s.width > 1.0001 || s.height > 1.0001,
+    );
     if (looksPercent) {
       const shapes = a.shapes.map((s) => ({
         ...s,
@@ -212,12 +221,7 @@ function deepNormalizeItem(item: AgocraftItem, designWidth: number, designHeight
     nextKind = "frame";
     const a = nextAttrs as { width?: unknown; height?: unknown; flavor?: unknown };
     if (a.width !== undefined || a.height !== undefined || a.flavor !== undefined) {
-      const {
-        width: _w,
-        height: _h,
-        flavor: _f,
-        ...rest
-      } = nextAttrs as Record<string, unknown>;
+      const { width: _w, height: _h, flavor: _f, ...rest } = nextAttrs as Record<string, unknown>;
       nextAttrs = rest;
     }
   }
@@ -226,7 +230,8 @@ function deepNormalizeItem(item: AgocraftItem, designWidth: number, designHeight
     if (u.kind !== "camera-target") return u;
     const carried = u.attrs.behavior as { position?: { x: number; y: number } } | undefined;
     if (carried === undefined || carried.position === undefined) return u;
-    const looksAbsolute = Math.abs(carried.position.x) > 1.0001 || Math.abs(carried.position.y) > 1.0001;
+    const looksAbsolute =
+      Math.abs(carried.position.x) > 1.0001 || Math.abs(carried.position.y) > 1.0001;
     if (!looksAbsolute) return u;
     return {
       ...u,
@@ -329,6 +334,12 @@ export function loadDesign(id: string): Design | undefined {
             if (migrated !== document) saveBackupBlob(id, rawV5);
             document = migrated;
           }
+          // WI-040 — back-fill the root `style.provider` Unit on docs
+          // saved before the cascade landed. Existing items keep their
+          // raw `var(--*)` colors; they'll resolve via the chrome scope
+          // until the user touches a picker (which then writes a
+          // StyleRef that walks through this provider's tokens map).
+          document = ensureRootStyleProvider(document);
           return {
             id: parsed.id,
             title: parsed.title,
@@ -595,7 +606,7 @@ export function createBlankDesign(input: {
 }): Design {
   const now = new Date().toISOString();
   const schema = createSchema();
-  const document: AgocraftDocument = {
+  const document: AgocraftDocument = ensureRootStyleProvider({
     id: input.id,
     schema,
     root: {
@@ -617,7 +628,7 @@ export function createBlankDesign(input: {
       ],
       userMeta: { title: input.title, weaveDocId: input.id },
     },
-  };
+  });
   return {
     id: input.id,
     title: input.title,

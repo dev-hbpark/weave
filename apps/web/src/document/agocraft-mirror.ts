@@ -45,6 +45,31 @@ function buildRootStyleProviderUnit(): AgocraftUnit {
   };
 }
 
+/** Ensure every document the host receives has a `style.provider` Unit on
+ *  its root carrying the canonical theme tokens. Three entry points need
+ *  this guarantee:
+ *
+ *    • `createBlankDesign` (fresh empty doc — see storage.ts)
+ *    • `serializer.fromJSON` load path (existing saved docs predating WI-040)
+ *    • Remote-replace via CRDT (`replaceDocument`)
+ *
+ *  Calling this on a doc that already has a root provider is a no-op (we
+ *  preserve the existing tokens map so any user-customized token survives).
+ *  Calling it on a doc whose root lacks the Unit returns a NEW Document
+ *  with the Unit prepended; the rest of the tree is untouched. */
+export function ensureRootStyleProvider(doc: AgocraftDocument): AgocraftDocument {
+  const hasProvider = doc.root.units.some((u) => u.kind === STYLE_PROVIDER_UNIT_KIND);
+  if (hasProvider) return doc;
+  const provider = buildRootStyleProviderUnit();
+  return {
+    ...doc,
+    root: {
+      ...doc.root,
+      units: [provider, ...doc.root.units],
+    },
+  };
+}
+
 function makeItemMeta(createdAt: string, updatedAt: string): AgocraftItemMeta {
   return {
     createdAt,

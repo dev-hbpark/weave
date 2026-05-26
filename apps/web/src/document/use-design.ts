@@ -10,6 +10,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   addChild,
   applyChangeToDocument,
+  ensureRootStyleProvider,
   type PendingCreationLookup,
   removeChild,
   reorderRootChildren,
@@ -248,7 +249,10 @@ export function useDesign(id: string): UseDesignResult {
   // same shape as the initial mount via `initialDesign`. History stays empty
   // for remote ops because we cannot undo someone else's edit anyway.
   const replaceDocument = useCallback((next: AgocraftDocument) => {
-    setDesign((prev) => withDocument(prev, next));
+    // WI-040 — back-fill the root style.provider if the remote actor's
+    // doc snapshot pre-dates the cascade. Cheap (no-op when already
+    // present) and idempotent across multiple remote applies.
+    setDesign((prev) => withDocument(prev, ensureRootStyleProvider(next)));
   }, []);
 
   const setPresentationOrder = useCallback((next: ReadonlyArray<string>) => {
