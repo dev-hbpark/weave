@@ -128,13 +128,22 @@ const DEFAULT_THEME_COLORS: ReadonlyArray<ThemeColorRef> = [
   { label: "Page Bg Soft", varName: "--bg-page-soft" },
 ];
 
-/** Resolve a CSS custom-property name to its current computed color. Used
- *  to seed the picker's internal HSV state when the host hands in a
- *  `var(--*)` value — keeps the SV pad / hex display synced with the
- *  active theme even though the *stored* value is theme-agnostic. */
+/** Resolve a CSS custom-property name to its current computed color.
+ *
+ *  Several tokens (`--text-*`, `--surface-*`, …) are overridden inside
+ *  `[data-canvas="document"]` to flip dark-ink ↔ light-ink based on the
+ *  user's canvas background. The picker lives in the toolbar (outside
+ *  that scope), so reading from `documentElement` here would surface the
+ *  *chrome's* resolution — the white-on-dark variant — which doesn't
+ *  match what the canvas actually paints with the same `var(--*)`. Prefer
+ *  the canvas element when present so the picker's swatch + HSV state
+ *  reflect the on-canvas color. Falls back to `documentElement` when no
+ *  canvas is mounted (standalone embeds, tests). */
 function resolveCssVarColor(varName: string): string | null {
   if (typeof window === "undefined") return null;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  const canvas = document.querySelector('[data-canvas="document"]');
+  const el: Element = canvas ?? document.documentElement;
+  const v = getComputedStyle(el).getPropertyValue(varName).trim();
   return v === "" ? null : v;
 }
 
@@ -142,6 +151,21 @@ function resolveCssVarColor(varName: string): string | null {
 function extractVarName(str: string): string | null {
   const m = str.trim().match(/^var\(\s*(--[a-z0-9_-]+)\s*\)$/i);
   return m?.[1] ?? null;
+}
+
+/** Compute the swatch background a render uses for `value`. Concrete CSS
+ *  strings (`#hex` / `rgb()` / `linear-gradient(...)`) pass through, but
+ *  bare `var(--*)` references get resolved against the canvas context so
+ *  the trigger / preview swatch matches what the user sees on canvas
+ *  rather than what the chrome scope would compute. Returns the input
+ *  verbatim when the var can't be resolved so CSS at least gets a chance
+ *  to render the variable's "default" fallback. */
+function displayBgFor(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const varName = extractVarName(value);
+  if (varName === null) return value;
+  const resolved = resolveCssVarColor(varName);
+  return resolved ?? value;
 }
 
 // ─── Color math ─────────────────────────────────────────────────────────
@@ -231,7 +255,12 @@ function rgbToHex({ r, g, b, a }: RGBA): string {
   return `${base}${ah}`;
 }
 
-function parseColor(str: string): RGBA | null {
+function parseColor(str: unknown): RGBA | null {
+  // Defensive — callers occasionally pass `undefined` (no attr set) or a
+  // `StyleRef` object whose type cast lied about being a string. Returning
+  // `null` lets the caller fall back to the default RGBA cleanly instead
+  // of throwing on `.trim()`.
+  if (typeof str !== "string") return null;
   const s = str.trim();
   // `var(--*)` — theme swatch emit. Resolve to the current theme's computed
   // value and re-parse so the SV pad / hex display reflect the live color.
@@ -812,7 +841,10 @@ export const ColorPicker = forwardRef<HTMLButtonElement, ColorPickerProps>(funct
               "disabled:opacity-50",
               className,
             )}
-            style={{ background: value }}
+            // Resolve `var(--*)` at the canvas context so the chrome-located
+            // trigger swatch shows the same color the canvas paints, not the
+            // chrome's own data-bg-tone resolution of the same token.
+            style={{ background: displayBgFor(value) }}
           />
         )}
       </PopoverPrimitive.Trigger>

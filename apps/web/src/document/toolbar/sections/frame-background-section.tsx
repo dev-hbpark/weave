@@ -1,5 +1,8 @@
 import { ref as styleRef } from "@agocraft/core";
 import { ContextualToolbar as Bar, Button, ColorPicker } from "@weave/design-system";
+import { findItemDeep } from "../../agocraft-mirror.js";
+import { resolveStoredColor } from "../../style/resolver.js";
+import { useDocumentForResolution } from "../../style/resolver-context.js";
 import { parseVarRef } from "../../style/theme-tokens.js";
 import { isMixed, MixedBadge, sharedValue, updateAll } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
@@ -19,10 +22,28 @@ function pickerValueToStored(v: string): string | { readonly $ref: string } {
  *  the same multi-aware ColorPicker pattern. The attr is undefined when
  *  the frame is transparent; the "×" button clears back to undefined. */
 export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
-  const background = sharedValue<string | undefined>(
-    items,
-    (it) => (it.attrs as unknown as { background?: string }).background,
-  );
+  // Resolve each item's stored background — which may be a `StyleRef` after
+  // WI-040 if the user picked a theme swatch — into a CSS string BEFORE
+  // running through `sharedValue`. Two reasons:
+  //   1. The picker's `value` prop expects a CSS string. Passing a StyleRef
+  //      object made the trigger swatch render as `[object Object]` (no
+  //      color) and broke `parseColor` inside the popover.
+  //   2. `sharedValue`'s default `Object.is` equality reports two distinct
+  //      StyleRef object references as "Mixed" even when they point at the
+  //      same token. Resolving to a string first collapses identity to
+  //      semantic equality.
+  const doc = useDocumentForResolution();
+  const background = sharedValue<string | undefined>(items, (it) => {
+    const raw = (it.attrs as unknown as { background?: unknown }).background;
+    if (doc === null) {
+      return typeof raw === "string" ? raw : undefined;
+    }
+    const item = findItemDeep(doc, it.id);
+    if (item === undefined) {
+      return typeof raw === "string" ? raw : undefined;
+    }
+    return resolveStoredColor(doc, raw, item, undefined);
+  });
   const bgHasValue = !isMixed(background) && background !== undefined;
   return (
     <Bar.Section label="Background">

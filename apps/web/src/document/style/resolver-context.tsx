@@ -12,6 +12,7 @@
 
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
 import { createContext, type ReactNode, useContext } from "react";
+import { findItemDeep } from "../agocraft-mirror.js";
 import { resolveStoredColor } from "./resolver.js";
 
 const DocumentForResolutionContext = createContext<AgocraftDocument | null>(null);
@@ -47,4 +48,33 @@ export function useResolveColor(
     return typeof value === "string" ? value : fallback;
   }
   return resolveStoredColor(doc, value, fromItem, fallback);
+}
+
+/** Toolbar-section variant — takes the item's id (from an `ItemSnapshot`,
+ *  which doesn't carry a reference to the agocraft Item in the doc tree)
+ *  and looks the actual item up before walking the cascade. Falls back to
+ *  the raw value or `fallback` when the doc context is absent or the id
+ *  can no longer be found in the tree (e.g., mid-delete). */
+export function useResolveColorById(
+  value: unknown,
+  itemId: string,
+  fallback?: string,
+): string | undefined {
+  const doc = useContext(DocumentForResolutionContext);
+  if (doc === null) {
+    return typeof value === "string" ? value : fallback;
+  }
+  const item = findItemDeep(doc, itemId);
+  if (item === undefined) {
+    return typeof value === "string" ? value : fallback;
+  }
+  return resolveStoredColor(doc, value, item, fallback);
+}
+
+/** Direct accessor — sections that read multiple items in one pass (e.g.,
+ *  via `sharedValue`) can call this once at the top and resolve per-item
+ *  inside the read callback without violating the hooks rule. Returns
+ *  `null` when no provider is mounted (tests / standalone). */
+export function useDocumentForResolution(): AgocraftDocument | null {
+  return useContext(DocumentForResolutionContext);
 }
