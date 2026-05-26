@@ -1743,7 +1743,11 @@ function MultiSelectionOverlay({ selectedIds }: MultiSelectionOverlayProps): Rea
         top: box.top,
         width: box.width,
         height: box.height,
-        border: "1px dashed var(--accent)",
+        // WI-036 follow-up — explicit dashed marquee with a longer
+        // stroke + gap so the dashing reads as 점선 rather than near-
+        // solid. SVG dasharray would render most cleanly but a CSS
+        // border with `dashed` style is good enough at v1.
+        border: "2px dashed var(--accent)",
         boxSizing: "border-box",
       }}
       data-testid="multi-selection-overlay"
@@ -1758,10 +1762,15 @@ function MultiSelectionOverlay({ selectedIds }: MultiSelectionOverlayProps): Rea
         <div
           key={corner}
           data-multi-corner={corner}
-          className="absolute bg-[color:var(--surface-0)] border border-[color:var(--accent)]"
           style={{
+            position: "absolute",
             width: 10,
             height: 10,
+            background: "#ffffff",
+            border: "1.5px solid var(--accent)",
+            borderRadius: 0,
+            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.18)",
+            boxSizing: "border-box",
             ...(corner.includes("n") ? { top: -16 } : { bottom: -16 }),
             ...(corner.includes("w") ? { left: -16 } : { right: -16 }),
           }}
