@@ -84,6 +84,42 @@ export interface FrameMenuContext {
 const ALL_HANDLES: ReadonlyArray<HandleDir> = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 const MIN_FRAME = 0.02;
 
+/** WI-037 follow-up — compute the next pan/zoom state for a scale change
+ *  that anchors a specific viewport point. The point at `(anchor.x,
+ *  anchor.y)` (in outer-container CSS px, top-left origin) stays under
+ *  the cursor across the zoom: the design-pixel coord beneath it before
+ *  the change equals the design-pixel coord beneath it after.
+ *
+ *  Caller convention:
+ *  - **Pointer-driven** (wheel / pinch) → pass the event's
+ *    `clientX/Y − rect.left/top`.
+ *  - **Hotkey or zoom button** → pass the viewport centre,
+ *    `{ x: outerW / 2, y: outerH / 2 }`.
+ *
+ *  Pure: takes prev pan + raw multiplicative factor, returns next pan.
+ *  Honours the same `[0.1, 8]` scale clamp the wheel handler used to
+ *  apply inline; the effective factor is re-derived after clamp so an
+ *  anchored zoom that hits the limit does not drift. */
+function nextPanForZoom(
+  prev: { tx: number; ty: number; scale: number },
+  factor: number,
+  anchor: { x: number; y: number; outerW: number; outerH: number },
+): { tx: number; ty: number; scale: number } {
+  const nextScale = Math.max(0.1, Math.min(8, prev.scale * factor));
+  const effective = nextScale / prev.scale;
+  if (effective === 1) return prev;
+  const { x: px, y: py, outerW: W, outerH: H } = anchor;
+  // Outer pan div has `transform-origin: center center`, so a local
+  // point lx maps to screen x = tx + W/2 + (lx − W/2) * scale.
+  // Solve for tx_new such that the same lx still lands at px after the
+  // scale change: tx_new = px − W/2 − (px − tx − W/2) * effective.
+  return {
+    scale: nextScale,
+    tx: px - W / 2 - (px - prev.tx - W / 2) * effective,
+    ty: py - H / 2 - (py - prev.ty - H / 2) * effective,
+  };
+}
+
 function resizeFrame(orig: ItemFrame, dx: number, dy: number, dir: HandleDir): ItemFrame {
   let { x, y, width, height } = orig;
   if (dir.includes("e")) {
@@ -1140,6 +1176,39 @@ export function FrameStage(props: FrameStageProps) {
     }
   }, [infiniteCanvas, panActive, transitionFrom, restoreIdleFrom]);
 
+  // WI-037 / DR-018 — gesture-gated `will-change: transform` signal.
+  // Permanent `will-change` on the design plane pinned the composited
+  // layer at a fixed raster resolution, so after the user zoomed in
+  // 3-5× the texture exceeded Chromium's GPU tile budget (~4096-8192px)
+  // and visible tiles dropped out as checker-blanks. We now flip
+  // `will-change` on only while a zoom/pan gesture is in flight
+  // (PanBinding drag OR wheel within the last 200ms) and clear it on
+  // settle so the browser re-rasterises at the new on-screen
+  // resolution. Defined here (above the wheel handler) so the handler
+  // can call `bumpWheel()`; the merged `gestureActive` is derived
+  // alongside `panDragging` further down.
+  const [recentWheel, setRecentWheel] = useState(false);
+  const wheelTimeoutRef = useRef<number | null>(null);
+  const bumpWheel = useCallback(() => {
+    setRecentWheel(true);
+    if (wheelTimeoutRef.current !== null) {
+      window.clearTimeout(wheelTimeoutRef.current);
+    }
+    wheelTimeoutRef.current = window.setTimeout(() => {
+      wheelTimeoutRef.current = null;
+      setRecentWheel(false);
+    }, 200);
+  }, []);
+  useEffect(
+    () => () => {
+      if (wheelTimeoutRef.current !== null) {
+        window.clearTimeout(wheelTimeoutRef.current);
+        wheelTimeoutRef.current = null;
+      }
+    },
+    [],
+  );
+
   // Wheel handling lives on a *native* non-passive listener so that the
   // ctrl+wheel pinch gesture (trackpad pinch-to-zoom; mouse Cmd+wheel) is
   // captured here and `preventDefault()` actually blocks the browser-level
@@ -1152,14 +1221,25 @@ export function FrameStage(props: FrameStageProps) {
     const el = outerRef.current;
     if (el === null) return undefined;
     const handler = (e: WheelEvent) => {
+      // WI-037 — keep the design-plane composited layer warm for the
+      // duration of the wheel burst; settle-debounced clear lets the
+      // browser re-rasterise once the user stops.
+      bumpWheel();
       if (e.ctrlKey || e.metaKey) {
-        // pinch / Cmd+wheel → custom canvas zoom
+        // pinch / Cmd+wheel → custom canvas zoom, anchored at the
+        // pointer so the design-pixel under the cursor stays still
+        // across the scale change. A future hotkey / button caller
+        // would invoke `nextPanForZoom` with `{ x: W/2, y: H/2 }`.
         e.preventDefault();
         const factor = e.deltaY > 0 ? 1 / 1.08 : 1.08;
-        setPan((p) => ({
-          ...p,
-          scale: Math.max(0.1, Math.min(8, p.scale * factor)),
-        }));
+        const rect = el.getBoundingClientRect();
+        const anchor = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+          outerW: rect.width,
+          outerH: rect.height,
+        };
+        setPan((p) => nextPanForZoom(p, factor, anchor));
       } else {
         // plain wheel → canvas pan (also non-passive so the page itself
         // doesn't scroll behind our pan offset)
@@ -1171,7 +1251,7 @@ export function FrameStage(props: FrameStageProps) {
     return () => {
       el.removeEventListener("wheel", handler);
     };
-  }, [infiniteCanvas]);
+  }, [infiniteCanvas, bumpWheel]);
 
   // DR-017 Phase 2~4 — Pan / FrameMove gestures live on the GestureRouter.
   // PanBinding writes vm.camera.tx/ty directly (60Hz MotionValue).
@@ -1604,6 +1684,9 @@ export function FrameStage(props: FrameStageProps) {
       ? "grabbing"
       : "grab"
     : undefined;
+  // WI-037 — derive gesture-active from existing pan drag state plus
+  // the wheel-recency signal hoisted above the wheel handler.
+  const gestureActive = panDragging || recentWheel;
 
   return (
     <TotalScaleContext.Provider value={totalScaleMV}>
@@ -1713,7 +1796,11 @@ export function FrameStage(props: FrameStageProps) {
                 x: planeTxMV,
                 y: planeTyMV,
                 scale: planeScaleMV,
-                willChange: "transform",
+                // WI-037 / DR-018 — only hint will-change while a
+                // zoom/pan gesture is active. See the comment on
+                // `gestureActive` (top of the FrameStage body) for the
+                // tile-drop failure mode this guards against.
+                willChange: gestureActive ? "transform" : undefined,
               }}
             >
               {planeChildren}
