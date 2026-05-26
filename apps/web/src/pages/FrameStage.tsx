@@ -406,19 +406,11 @@ function NestedFrame({
     // see the frame boundary while authoring. Presentation pass renders
     // documents as bare content on the white stage.
     outline: editing
-      ? isSelected && !isMultiSelection
+      ? isSelected
         ? "2px solid var(--accent)"
-        : isSelected && isMultiSelection
-          ? undefined
-          : "1px solid var(--surface-1-border)"
+        : "1px solid var(--surface-1-border)"
       : undefined,
-    outlineOffset: editing
-      ? isSelected && !isMultiSelection
-        ? -2
-        : isSelected && isMultiSelection
-          ? undefined
-          : -1
-      : undefined,
+    outlineOffset: editing ? (isSelected ? -2 : -1) : undefined,
     borderRadius: editing ? "var(--radius-md)" : undefined,
     boxSizing: "border-box",
     // Document background is transparent by default — the design's white
@@ -700,7 +692,6 @@ function NestedFrame({
       {isPrimarySelection && onCommitFrame !== undefined ? (
         <SelectionLayer
           targetRef={selfRef}
-          hideOutline={isMultiSelection}
           // DR-018 — handle list comes from the item kind's
           // SelectionViewModel (the `createFrameDefaultViewModel` built
           // here) plus any cross-cutting providers registered with the
@@ -1662,45 +1653,11 @@ export function FrameStage(props: FrameStageProps) {
       {(() => {
         // WI-033 P2 — Phase 13e drill dim flags retired. No frame is
         // dimmed under selection-only navigation.
-        // Multi-selection union bbox — render one outline around every
-        // selected frame *at any depth*. Walks the tree recursively,
-        // composing each ancestor's frame so a nested shape selected via
-        // Shift+click contributes its absolute design-pixel bbox to the
-        // union. Lives inside the design plane motion.div so it rides
-        // the camera transform exactly like every NestedFrame.
-        const multiSelectionUnion = (() => {
-          const ids = props.selectedIds;
-          if (ids === undefined || ids.size < 2 || !editing) return null;
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          let count = 0;
-          const visit = (
-            item: typeof root,
-            absX: number, absY: number, absW: number, absH: number,
-          ): void => {
-            if (ids.has(String(item.id))) {
-              if (absX < minX) minX = absX;
-              if (absY < minY) minY = absY;
-              if (absX + absW > maxX) maxX = absX + absW;
-              if (absY + absH > maxY) maxY = absY + absH;
-              count += 1;
-            }
-            for (const c of item.children) {
-              const f = (c.attrs as { frame?: ItemFrame }).frame;
-              if (f === undefined) continue;
-              const cx = absX + f.x * absW;
-              const cy = absY + f.y * absH;
-              const cw = absW * f.width;
-              const ch = absH * f.height;
-              visit(c as typeof root, cx, cy, cw, ch);
-            }
-          };
-          // Start at design-pixel coordinate space (root spans the whole
-          // design plane). Root itself is never in selectedIds because
-          // marquee/click never select the synthetic root.
-          visit(root, 0, 0, designWidth, designHeight);
-          if (count < 2) return null;
-          return { x: minX, y: minY, width: maxX - minX, height: maxY - minY, count };
-        })();
+        // WI-036 follow-up — `multiSelectionUnion` computation removed
+        // along with its chrome (legacy 2px solid outline + 4 round
+        // corner dots + count badge). The host-level
+        // MultiSelectionOverlay (DesignPage, viewport-fixed) owns the
+        // multi-selection visual now.
         const planeChildren = frames.map((c, i) => (
           <NestedFrame
             key={String(c.id)}
@@ -1759,66 +1716,11 @@ export function FrameStage(props: FrameStageProps) {
               }}
             >
               {planeChildren}
-              {multiSelectionUnion !== null ? (
-                <div
-                  data-testid="multi-selection-chrome"
-                  data-count={multiSelectionUnion.count}
-                  style={{
-                    position: "absolute",
-                    left: `${multiSelectionUnion.x}px`,
-                    top: `${multiSelectionUnion.y}px`,
-                    width: `${multiSelectionUnion.width}px`,
-                    height: `${multiSelectionUnion.height}px`,
-                    pointerEvents: "none",
-                    outline: "2px solid var(--accent)",
-                    outlineOffset: "-2px",
-                    borderRadius: "var(--radius-md)",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {/* Corner dots — pure visual cue that this is a unified
-                      bounding box. No interaction (pointerEvents:none on
-                      parent); resize on multi is a follow-up. */}
-                  {[
-                    { left: -4, top: -4 },
-                    { right: -4, top: -4 },
-                    { left: -4, bottom: -4 },
-                    { right: -4, bottom: -4 },
-                  ].map((pos, idx) => (
-                    <span
-                      key={idx}
-                      aria-hidden
-                      style={{
-                        position: "absolute",
-                        width: 8,
-                        height: 8,
-                        background: "var(--accent)",
-                        borderRadius: 999,
-                        ...pos,
-                      }}
-                    />
-                  ))}
-                  {/* Count badge — anchored to the union's top-right corner. */}
-                  <span
-                    data-testid="multi-selection-count"
-                    style={{
-                      position: "absolute",
-                      top: -22,
-                      right: 0,
-                      padding: "2px 6px",
-                      fontSize: 11,
-                      lineHeight: 1.2,
-                      fontWeight: 600,
-                      background: "var(--accent)",
-                      color: "white",
-                      borderRadius: 4,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {multiSelectionUnion.count} selected
-                  </span>
-                </div>
-              ) : null}
+              {/* WI-036 follow-up — legacy multi-selection-chrome
+                  (solid 2px outline + 4 round dot corners + count
+                  badge) removed. The host-level MultiSelectionOverlay
+                  (in DesignPage, viewport-fixed) now owns the multi
+                  affordance as a dashed marquee + square handles. */}
             </motion.div>
           </div>
         );
