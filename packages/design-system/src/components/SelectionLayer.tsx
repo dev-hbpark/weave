@@ -93,6 +93,12 @@ interface SelectionLayerProps {
   ) => void;
   readonly onRotateStart?: (e: ReactPointerEvent<HTMLButtonElement>) => void;
   readonly moveLabel?: string;
+  /** WI-036 follow-up v3 — when true, the layer skips its own accent
+   *  outline div and renders only the handles. The host's multi-
+   *  selection bounding-box marquee owns the "selected" indicator in
+   *  that mode; rendering both would draw a redundant solid line
+   *  over the dashed one. Default false. */
+  readonly hideOutline?: boolean;
 }
 
 interface TrackedBox {
@@ -110,6 +116,7 @@ export function SelectionLayer({
   onResizeStart,
   onRotateStart,
   moveLabel,
+  hideOutline,
 }: SelectionLayerProps) {
   const [box, setBox] = useState<TrackedBox | null>(null);
 
@@ -163,17 +170,22 @@ export function SelectionLayer({
           area unchanged — borders would push children outward and shift
           the move-body button by 1.5px. `outlineOffset: -1` paints the
           stroke fully inside the bounds so handles centred on the corners
-          still align with the visible edge. */}
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          outline: "1.5px solid var(--accent)",
-          outlineOffset: -1,
-          pointerEvents: "none",
-        }}
-      />
+          still align with the visible edge.
+          WI-036 follow-up v3 — `hideOutline` lets a multi-select host
+          suppress this so the bounding-box dashed marquee owns the
+          selected-indicator visual without a redundant solid line. */}
+      {hideOutline ? null : (
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            outline: "1.5px solid var(--accent)",
+            outlineOffset: -1,
+            pointerEvents: "none",
+          }}
+        />
+      )}
 
       {/*
         The body of the box is intentionally NOT an interactive button.

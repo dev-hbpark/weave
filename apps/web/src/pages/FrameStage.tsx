@@ -376,6 +376,11 @@ function NestedFrame({
   // level, layered above. So a frame's handles surface whenever it
   // is part of the selection.
   const isPrimarySelection = isSelected;
+  // WI-036 follow-up v3 — multi-selection visual cleanup. When two or
+  // more frames are selected, the host-level dashed marquee owns the
+  // "selected" indicator; per-frame solid outlines would draw a
+  // redundant second line over the same boundary. Suppress them.
+  const isMultiSelection = selectedIds !== undefined && selectedIds.size > 1;
   const childFrames = item.children.filter(isDomainItem);
 
 
@@ -401,11 +406,19 @@ function NestedFrame({
     // see the frame boundary while authoring. Presentation pass renders
     // documents as bare content on the white stage.
     outline: editing
-      ? isSelected
+      ? isSelected && !isMultiSelection
         ? "2px solid var(--accent)"
-        : "1px solid var(--surface-1-border)"
+        : isSelected && isMultiSelection
+          ? undefined
+          : "1px solid var(--surface-1-border)"
       : undefined,
-    outlineOffset: editing ? (isSelected ? -2 : -1) : undefined,
+    outlineOffset: editing
+      ? isSelected && !isMultiSelection
+        ? -2
+        : isSelected && isMultiSelection
+          ? undefined
+          : -1
+      : undefined,
     borderRadius: editing ? "var(--radius-md)" : undefined,
     boxSizing: "border-box",
     // Document background is transparent by default — the design's white
@@ -687,6 +700,7 @@ function NestedFrame({
       {isPrimarySelection && onCommitFrame !== undefined ? (
         <SelectionLayer
           targetRef={selfRef}
+          hideOutline={isMultiSelection}
           // DR-018 — handle list comes from the item kind's
           // SelectionViewModel (the `createFrameDefaultViewModel` built
           // here) plus any cross-cutting providers registered with the
