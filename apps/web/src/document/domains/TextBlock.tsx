@@ -23,6 +23,7 @@ import {
   lazy,
   useEffect,
   useRef,
+  useState,
 } from "react";
 import type { AgoItem, ItemFrame, TextAttrs } from "../types.js";
 
@@ -228,7 +229,35 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // Present mode renders textRuns directly (with <span> styling) when
   // available — preserves bold/italic/underline/strikethrough that the
   // user applied in edit mode.
-  const inner = editable ? (
+  // WI-029 follow-up — text edit mode is gated by double-click. A
+  // single click on a text item now leaves the contenteditable
+  // un-mounted, so the click propagates to NestedFrame for frame
+  // selection (matches every other domain item's single-click =>
+  // select semantics). Double-click flips `isEditing = true`, which
+  // mounts LexicalTextEditor + grabs the caret. An outside click
+  // (anywhere outside the text element) or Escape exits edit mode
+  // and commits the latest textRuns via the same onChange callback.
+  const [isEditing, setIsEditing] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!isEditing) return;
+    const onDocPointer = (e: PointerEvent): void => {
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (wrapRef.current?.contains(target) === true) return;
+      setIsEditing(false);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setIsEditing(false);
+    };
+    document.addEventListener("pointerdown", onDocPointer, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDocPointer, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [isEditing]);
+  const inner = editable && isEditing ? (
     <Suspense fallback={<>{renderReadOnly(a.text, a.textRuns)}</>}>
       <LexicalTextEditor
         anchorId={String(item.id)}
@@ -257,7 +286,16 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   );
 
   return (
-    <div style={containerStyle} data-testid="text-block">
+    <div
+      ref={wrapRef}
+      style={containerStyle}
+      data-testid="text-block"
+      onDoubleClick={(e) => {
+        if (!editable) return;
+        e.stopPropagation();
+        setIsEditing(true);
+      }}
+    >
       <div ref={innerRef} style={textStyle}>
         {linked}
       </div>
