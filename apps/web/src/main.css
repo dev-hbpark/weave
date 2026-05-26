@@ -56,3 +56,19 @@ body {
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* WI-039 — Reparent drop-target highlight. The controller writes one
+ * of these data attributes on the hovered frame's host element during
+ * a Cmd/Ctrl+Shift+drag gesture; CSS draws a solid green / red outline
+ * + cursor affordance so the user can see whether release will commit. */
+[data-reparent-drop-target] {
+  outline: 3px solid rgba(34, 134, 64, 0.92);
+  outline-offset: 2px;
+  transition: outline 80ms ease;
+}
+[data-reparent-drop-invalid] {
+  outline: 3px solid rgba(168, 41, 41, 0.92);
+  outline-offset: 2px;
+  cursor: not-allowed;
+  transition: outline 80ms ease;
+}

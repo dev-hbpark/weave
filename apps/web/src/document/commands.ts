@@ -31,7 +31,13 @@ import {
   ref as styleRef,
 } from "@agocraft/core";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
-import { findItemDeep, findParentAndIndex, toAgocraftItem } from "./agocraft-mirror.js";
+import {
+  absoluteFrameBox,
+  findDescendantSet,
+  findItemDeep,
+  findParentAndIndex,
+  toAgocraftItem,
+} from "./agocraft-mirror.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
@@ -627,6 +633,114 @@ export function buildWeaveCommands(
   const bringToFront = makeZOrderCommand("weave.item.bringToFront", "front");
   const sendToBack = makeZOrderCommand("weave.item.sendToBack", "back");
 
+  // ─── WI-039 — Item / Frame reparent ─────────────────────────────────────
+  //
+  // Surface-driven (modifier drag, ThumbnailPanel drop, ContextMenu picker)
+  // dispatch on this single command. Each call carries N entries
+  // `{ itemId, newParentId }`; the command computes oldState + newFrameRatio
+  // (visual position preserved across the move), runs the cycle guard, and
+  // emits one `item.reparent` patch — one history entry that Cmd+Z reverts
+  // atomically. See features/reparent/ENGINEERING_PLAN.md §3.1.
+  //
+  // Validation responsibility (HANDOFF-002 §3): agocraft's patch reducer
+  // does NOT check cycle / dedupe / unknown — surface UI + this command
+  // body are the two defensive tiers.
+  type ReparentInput = {
+    readonly entries: ReadonlyArray<{
+      readonly itemId: string;
+      readonly newParentId: string;
+    }>;
+  };
+  type ReparentEntry = Extract<Patch, { type: "item.reparent" }>["entries"][number];
+
+  const reparentItem: Command<ReparentInput, void> = {
+    name: "weave.item.reparent",
+    run: (ctx, input) => {
+      const requested = input.entries;
+      if (requested.length === 0) return ok(undefined, []); // no-op
+
+      // Dedupe — same itemId twice = caller bug; keep last entry. agocraft
+      // doesn't reject duplicates (Q1, HANDOFF-002 §4) so doing it here.
+      const dedup = new Map<string, (typeof requested)[number]>();
+      for (const e of requested) dedup.set(e.itemId, e);
+      const uniqueEntries = [...dedup.values()];
+
+      // Cycle guard — reject if newParentId is the item itself or any
+      // of its descendants. 3-tier defense's middle tier (surface UI is
+      // first, agocraft is intentionally absent).
+      for (const e of uniqueEntries) {
+        if (e.newParentId === e.itemId) {
+          return fail(
+            "reparent-cycle",
+            `weave.item.reparent: newParentId "${e.newParentId}" equals itemId`,
+          );
+        }
+        const descendants = findDescendantSet(ctx.document, e.itemId);
+        if (descendants.has(e.newParentId)) {
+          return fail(
+            "reparent-cycle",
+            `weave.item.reparent: newParentId "${e.newParentId}" is a descendant of "${e.itemId}"`,
+          );
+        }
+      }
+
+      // Compute oldState + newFrameRatio for every entry. design-size
+      // is taken as 1×1 — the ratios cancel out so the result is in 0..1
+      // of the new parent regardless of the surrounding design pixel size.
+      const DESIGN_UNIT = 1;
+      const patchEntries: ReparentEntry[] = [];
+      for (const e of uniqueEntries) {
+        const cur = findParentAndIndex(ctx.document, e.itemId);
+        if (cur === undefined) continue; // unknown item — skip
+        const item = findItemDeep(ctx.document, e.itemId);
+        if (item === undefined) continue;
+        const newParent = findItemDeep(ctx.document, e.newParentId);
+        if (newParent === undefined) continue;
+
+        const newParentAbsBox = absoluteFrameBox(
+          ctx.document,
+          e.newParentId,
+          DESIGN_UNIT,
+          DESIGN_UNIT,
+        );
+        const itemAbsBox = absoluteFrameBox(
+          ctx.document,
+          e.itemId,
+          DESIGN_UNIT,
+          DESIGN_UNIT,
+        );
+        if (newParentAbsBox === null || itemAbsBox === null) continue;
+        if (newParentAbsBox.w <= 0 || newParentAbsBox.h <= 0) continue;
+
+        const newFrameRatio = {
+          x: (itemAbsBox.x - newParentAbsBox.x) / newParentAbsBox.w,
+          y: (itemAbsBox.y - newParentAbsBox.y) / newParentAbsBox.h,
+          width: itemAbsBox.w / newParentAbsBox.w,
+          height: itemAbsBox.h / newParentAbsBox.h,
+        };
+
+        // oldFrameRatio = the item's current attrs.frame (already old-parent-relative).
+        const itemFrame = (
+          item.attrs as { frame?: ReparentEntry["oldFrameRatio"] }
+        ).frame;
+        if (itemFrame === undefined) continue;
+
+        patchEntries.push({
+          itemId: item.id,
+          oldParentId: cur.parent.id,
+          oldIndex: cur.indexInParent,
+          oldFrameRatio: itemFrame,
+          newParentId: newParent.id,
+          newIndex: newParent.children.length, // v1 = append to end of new parent
+          newFrameRatio,
+        });
+      }
+
+      if (patchEntries.length === 0) return ok(undefined, []);
+      return ok(undefined, [{ type: "item.reparent", entries: patchEntries }]);
+    },
+  };
+
   // WI-030 — Slide preset batch insert.
   //
   // The preset factory returns a fully populated slide AgocraftItem whose
@@ -711,6 +825,7 @@ export function buildWeaveCommands(
     sendBackward as Command,
     bringToFront as Command,
     sendToBack as Command,
+    reparentItem as Command,
     addBehavior as Command,
     removeBehavior as Command,
     insertPresetSlide as Command,

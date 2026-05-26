@@ -16,6 +16,9 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuSeparator,
   ContextMenuTrigger,
   DropdownMenu,
@@ -57,7 +60,14 @@ import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../document/
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import { RouterProvider } from "../document/interactions/router-context.js";
 import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
+import {
+  buildFrameTree,
+  type FrameTreeNode,
+  resolvePickerTargetId,
+} from "../document/interactions/frame-tree.js";
+import { ReparentGhostOverlay } from "../document/interactions/ReparentGhostOverlay.js";
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
+import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
 import {
   findFramesAtPoint,
   type LayerHit,
@@ -129,6 +139,8 @@ function FrameContextMenu({
   itemId,
   onDelete,
   onZOrder,
+  reparentTree,
+  onReparent,
   children,
   layers,
   onPickLayer,
@@ -140,6 +152,13 @@ function FrameContextMenu({
    *  No-op when the host doesn't supply a handler (e.g., legacy contexts
    *  that haven't been migrated). */
   readonly onZOrder?: (dir: ZOrderDir) => void;
+  /** WI-039 — flat depth-list of frames for the "Move to…" sub-menu.
+   *  Each row includes `disabled` for cycle targets. Undefined skips
+   *  the sub-menu entirely (legacy mounts). */
+  readonly reparentTree?: ReadonlyArray<FrameTreeNode>;
+  /** WI-039 — fires with the picker's row id ("@root" or a frame id)
+   *  when the user picks a Move-to target. */
+  readonly onReparent?: (targetId: string) => void;
   readonly children: ReactNodeAlias;
   readonly layers?: ReadonlyArray<LayerHit>;
   readonly onPickLayer?: (id: string) => void;
@@ -206,6 +225,33 @@ function FrameContextMenu({
             >
               맨 뒤로
             </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
+        {reparentTree !== undefined && onReparent !== undefined && (
+          <>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger data-testid="ctx-move-to">
+                다른 부모로 이동
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent data-testid="ctx-move-to-content">
+                {reparentTree.map((row) => (
+                  <ContextMenuItem
+                    key={row.id}
+                    data-testid={`ctx-move-to-row-${row.id}`}
+                    data-depth={row.depth}
+                    disabled={row.disabled}
+                    onSelect={() => {
+                      if (row.disabled) return;
+                      onReparent(row.id);
+                    }}
+                    style={{ paddingLeft: 10 + row.depth * 12 }}
+                  >
+                    {row.label}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
             <ContextMenuSeparator />
           </>
         )}
@@ -853,6 +899,23 @@ function DesignPageBody() {
   // V / H tool toggle (Figma parity). Stored on vm.handTool so the
   // FrameStage pan binding consults a single flag.
   const handMode = useEditorVM(vm, (v) => v.handTool.get());
+
+  // WI-039 — Reparent drag controller (Cmd/Ctrl + Shift + drag).
+  // Reads the current document + selection on each gesture frame via
+  // refs (selectedIdsRef declared below for multi-delete uses the same
+  // mirror; rather than duplicate, the controller reaches it via a
+  // closure that captures the live `selectedIds` value — both sites
+  // share React state, so a re-render between the gesture frames
+  // refreshes both). Gated off in hand / peek modes so those tools keep
+  // the canvas press exclusively.
+  const reparentSelectedIdsRef = useRef(selectedIds);
+  reparentSelectedIdsRef.current = selectedIds;
+  const reparentDragState = useReparentDragController({
+    editor,
+    getDocument: () => docInAgocraftRef.current ?? null,
+    getSelectedIds: () => reparentSelectedIdsRef.current,
+    enabled: !handMode && !peek.isActive,
+  });
   const setHandMode = useCallback(
     (next: boolean) => {
       vm.handTool.set(next);
@@ -1545,32 +1608,60 @@ function DesignPageBody() {
                                   attrs: { ...prev.attrs, frame: nextFrame } as typeof prev.attrs,
                                 }))
                               }
-                              renderFrameMenu={(itemId, children, ctx) => (
-                                <FrameContextMenu
-                                  itemId={itemId}
-                                  onDelete={() => {
-                                    removeItem(itemId);
-                                    bumpHistoryTick();
-                                  }}
-                                  onZOrder={(dir) => {
-                                    const cmdId = {
-                                      bringForward: "weave.item.bringForward",
-                                      sendBackward: "weave.item.sendBackward",
-                                      bringToFront: "weave.item.bringToFront",
-                                      sendToBack: "weave.item.sendToBack",
-                                    }[dir];
-                                    editor.exec(cmdId, { itemId });
-                                  }}
-                                  {...(ctx !== undefined
-                                    ? {
-                                        layers: ctx.layers,
-                                        onPickLayer: ctx.onPickLayer,
-                                      }
-                                    : {})}
-                                >
-                                  {children}
-                                </FrameContextMenu>
-                              )}
+                              renderFrameMenu={(itemId, children, ctx) => {
+                                // WI-039 — selection-aware reparent. The
+                                // gesture moves either the right-clicked
+                                // frame OR the multi-selection it belongs
+                                // to; cycle-blocked rows are dimmed.
+                                const movedIds: ReadonlyArray<string> =
+                                  selectedIds.has(itemId) && selectedIds.size > 1
+                                    ? [...selectedIds]
+                                    : [itemId];
+                                const reparentTree = buildFrameTree(
+                                  docInAgocraft,
+                                  movedIds,
+                                );
+                                const handleReparent = (targetPickerId: string) => {
+                                  const newParentId = resolvePickerTargetId(
+                                    docInAgocraft,
+                                    targetPickerId,
+                                  );
+                                  editor.exec("weave.item.reparent", {
+                                    entries: movedIds.map((id) => ({
+                                      itemId: id,
+                                      newParentId,
+                                    })),
+                                  });
+                                };
+                                return (
+                                  <FrameContextMenu
+                                    itemId={itemId}
+                                    onDelete={() => {
+                                      removeItem(itemId);
+                                      bumpHistoryTick();
+                                    }}
+                                    onZOrder={(dir) => {
+                                      const cmdId = {
+                                        bringForward: "weave.item.bringForward",
+                                        sendBackward: "weave.item.sendBackward",
+                                        bringToFront: "weave.item.bringToFront",
+                                        sendToBack: "weave.item.sendToBack",
+                                      }[dir];
+                                      editor.exec(cmdId, { itemId });
+                                    }}
+                                    reparentTree={reparentTree}
+                                    onReparent={handleReparent}
+                                    {...(ctx !== undefined
+                                      ? {
+                                          layers: ctx.layers,
+                                          onPickLayer: ctx.onPickLayer,
+                                        }
+                                      : {})}
+                                  >
+                                    {children}
+                                  </FrameContextMenu>
+                                );
+                              }}
                             />
                           </div>
 
@@ -1804,6 +1895,7 @@ function DesignPageBody() {
                           />
                         </div>
                         <CursorTooltip />
+                        <ReparentGhostOverlay state={reparentDragState} />
                         <MediaSrcDialog
                           open={pendingMedia !== null}
                           kind={pendingMedia?.kind ?? "image"}

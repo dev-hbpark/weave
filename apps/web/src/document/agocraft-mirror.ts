@@ -330,9 +330,89 @@ export function applyChangeToDocument(
       });
       return next === doc.root ? doc : withRoot(doc, next);
     }
+    // ─── WI-039 — Item / Frame reparent ────────────────────────────────
+    case "item.reparent": {
+      // Each entry: detach the item from its current parent, splice into
+      // newParent's children at newIndex, replace attrs.frame with
+      // newFrameRatio. Entries are applied serially. The reducer trusts
+      // its emitter (weave.item.reparent command) has cycle / dedupe
+      // guarded — agocraft itself does not validate (HANDOFF-002 §3).
+      let nextRoot = doc.root;
+      for (const entry of change.entries) {
+        const targetId = String(entry.itemId);
+        const item = findItemInTree(nextRoot, targetId);
+        if (item === undefined) continue;
+        const itemWithNewFrame: AgocraftItem = {
+          ...item,
+          attrs: { ...item.attrs, frame: entry.newFrameRatio },
+          meta: { ...item.meta, updatedAt: nowIso() },
+        };
+        const detached = removeItemFromTree(nextRoot, targetId);
+        const inserted = insertItemIntoParent(
+          detached,
+          String(entry.newParentId),
+          itemWithNewFrame,
+          entry.newIndex,
+        );
+        if (inserted !== undefined) {
+          nextRoot = inserted;
+        }
+      }
+      return nextRoot === doc.root ? doc : withRoot(doc, nextRoot);
+    }
     default:
       return doc;
   }
+}
+
+/** WI-039 — drop the subtree whose root has `targetId` from `root`'s
+ *  descendants. Returns a new root if a removal happened, the same
+ *  reference otherwise. */
+function removeItemFromTree(root: AgocraftItem, targetId: string): AgocraftItem {
+  if (root.children.length === 0) return root;
+  let changed = false;
+  const nextChildren: AgocraftItem[] = [];
+  for (const c of root.children) {
+    if (String(c.id) === targetId) {
+      changed = true;
+      continue;
+    }
+    const nc = removeItemFromTree(c, targetId);
+    if (nc !== c) changed = true;
+    nextChildren.push(nc);
+  }
+  if (!changed) return root;
+  return { ...root, children: nextChildren, meta: { ...root.meta, updatedAt: nowIso() } };
+}
+
+/** WI-039 — splice `item` into `parentId`'s children at `index`. Returns
+ *  the new root reference if the parent was found, `undefined`
+ *  otherwise. Out-of-range indices clamp to `[0, children.length]`. */
+function insertItemIntoParent(
+  root: AgocraftItem,
+  parentId: string,
+  item: AgocraftItem,
+  index: number,
+): AgocraftItem | undefined {
+  if (String(root.id) === parentId) {
+    const insertAt = Math.max(0, Math.min(index, root.children.length));
+    const next = [...root.children];
+    next.splice(insertAt, 0, item);
+    return { ...root, children: next, meta: { ...root.meta, updatedAt: nowIso() } };
+  }
+  if (root.children.length === 0) return undefined;
+  let foundIn: number | null = null;
+  const nextChildren = root.children.map((c, idx) => {
+    if (foundIn !== null) return c;
+    const nc = insertItemIntoParent(c, parentId, item, index);
+    if (nc !== undefined) {
+      foundIn = idx;
+      return nc;
+    }
+    return c;
+  });
+  if (foundIn === null) return undefined;
+  return { ...root, children: nextChildren, meta: { ...root.meta, updatedAt: nowIso() } };
 }
 
 /** Recursively walk an Item's subtree (including the item itself) and return
@@ -594,6 +674,27 @@ export function absoluteFrameBox(
     };
   }
   return box;
+}
+
+/** WI-039 — collect every descendant id of `itemId` (inclusive of the
+ *  item itself). Used by `weave.item.reparent` to decide whether a
+ *  candidate `newParentId` would form a cycle: if the candidate is the
+ *  item or any of its descendants, the reparent is rejected. Also used
+ *  by the three reparent surfaces (modifier drag, ThumbnailPanel drop,
+ *  ContextMenu picker) to compute the disabled-target set up front. */
+export function findDescendantSet(
+  doc: AgocraftDocument,
+  itemId: string,
+): ReadonlySet<string> {
+  const item = findItemDeep(doc, itemId);
+  if (item === undefined) return new Set();
+  const ids = new Set<string>();
+  function walk(node: AgocraftItem): void {
+    ids.add(String(node.id));
+    for (const c of node.children) walk(c);
+  }
+  walk(item);
+  return ids;
 }
 
 export function updateAttrs(

@@ -404,3 +404,183 @@ describe("z-order commands (WI-038)", () => {
     expect(String(nestedPatch.itemId)).toBe("b");
   });
 });
+
+// ─── WI-039 — weave.item.reparent ─────────────────────────────────────────
+
+describe("weave.item.reparent (WI-039)", () => {
+  function frameWith(
+    id: string,
+    frame: { x: number; y: number; width: number; height: number },
+  ): Item {
+    return {
+      id,
+      kind: "frame",
+      attrs: { frame },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+  }
+  function nestedFrame(
+    id: string,
+    frame: { x: number; y: number; width: number; height: number },
+  ): AgocraftItem {
+    return {
+      id: makeItemId(id),
+      kind: "frame",
+      attrs: { frame },
+      units: [],
+      children: [],
+      meta: {
+        createdAt: META_DATE,
+        updatedAt: META_DATE,
+        schemaVersion: 9,
+      } as AgocraftItem["meta"],
+    };
+  }
+
+  /** Doc layout:
+   *   root
+   *   ├─ p1 (frame, full)
+   *   │   └─ c1  (frame, x:0.1 y:0.1 w:0.2 h:0.2)
+   *   └─ p2 (frame, x:0.5 y:0.5 w:0.5 h:0.5)
+   */
+  function makeReparentCtx(): CommandContext {
+    const weave: WeaveDocument = {
+      id: "doc-rp",
+      title: "Reparent",
+      items: [
+        frameWith("p1", { x: 0, y: 0, width: 0.5, height: 1 }),
+        frameWith("p2", { x: 0.5, y: 0.5, width: 0.5, height: 0.5 }),
+      ],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    let doc = toAgocraftDocument(weave);
+    doc = addChild(
+      doc,
+      nestedFrame("c1", { x: 0.1, y: 0.1, width: 0.2, height: 0.2 }),
+      "p1",
+    );
+    return {
+      document: doc,
+      resolve: () => null as never,
+      skipRelations: false,
+    };
+  }
+
+  function runReparent(
+    ctx: CommandContext,
+    entries: ReadonlyArray<{ itemId: string; newParentId: string }>,
+  ): ReturnType<ReturnType<typeof buildWeaveCommands>[number]["run"]> {
+    const cmds = buildWeaveCommands(spyTargets());
+    const cmd = cmds.find((c) => c.name === "weave.item.reparent");
+    if (cmd === undefined) throw new Error("weave.item.reparent not found");
+    return cmd.run(ctx, { entries } as never);
+  }
+
+  it("single entry: child frame → other frame, single patch with newFrameRatio computed", () => {
+    const ctx = makeReparentCtx();
+    const result = runReparent(ctx, [{ itemId: "c1", newParentId: "p2" }]);
+    if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
+    expect(result.patches).toHaveLength(1);
+    const patch = result.patches[0]!;
+    if (patch.type !== "item.reparent") throw new Error("wrong patch type");
+    expect(patch.entries).toHaveLength(1);
+    const e = patch.entries[0]!;
+    expect(String(e.itemId)).toBe("c1");
+    expect(String(e.oldParentId)).toBe("p1");
+    expect(e.oldIndex).toBe(0);
+    expect(String(e.newParentId)).toBe("p2");
+    expect(e.newIndex).toBe(0); // p2 had no children before
+
+    // Old c1 inside p1 was at absolute (0*1+0.1*0.5, 0*1+0.1*1) = (0.05, 0.1)
+    // size 0.2 * 0.5 wide, 0.2 * 1 tall → (0.1 wide, 0.2 tall).
+    // p2 absolute box = (0.5, 0.5, 0.5, 0.5).
+    // New ratio = (0.05 - 0.5)/0.5 = -0.9, (0.1 - 0.5)/0.5 = -0.8,
+    //             w 0.1/0.5 = 0.2, h 0.2/0.5 = 0.4.
+    expect(e.newFrameRatio.x).toBeCloseTo(-0.9, 5);
+    expect(e.newFrameRatio.y).toBeCloseTo(-0.8, 5);
+    expect(e.newFrameRatio.width).toBeCloseTo(0.2, 5);
+    expect(e.newFrameRatio.height).toBeCloseTo(0.4, 5);
+    // Old ratio = the item's current attrs.frame
+    expect(e.oldFrameRatio).toEqual({ x: 0.1, y: 0.1, width: 0.2, height: 0.2 });
+  });
+
+  it("multi entry (2 items, same new parent): single patch with 2 entries", () => {
+    const ctx = makeReparentCtx();
+    // Add another root-level frame and a second nested c2 under p1.
+    let doc = ctx.document;
+    doc = addChild(
+      doc,
+      nestedFrame("c2", { x: 0.3, y: 0.3, width: 0.2, height: 0.2 }),
+      "p1",
+    );
+    const ctx2: CommandContext = { ...ctx, document: doc };
+    const result = runReparent(ctx2, [
+      { itemId: "c1", newParentId: "p2" },
+      { itemId: "c2", newParentId: "p2" },
+    ]);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.patches).toHaveLength(1); // single history entry
+    const patch = result.patches[0]!;
+    if (patch.type !== "item.reparent") throw new Error("wrong type");
+    expect(patch.entries).toHaveLength(2);
+    expect(patch.entries.map((e) => String(e.itemId))).toEqual(["c1", "c2"]);
+  });
+
+  it("root → frame: nested item under root reparents into a frame", () => {
+    // Layout: root has [p1, p2], add c-loose directly under root.
+    const ctx = makeReparentCtx();
+    let doc = ctx.document;
+    doc = addChild(
+      doc,
+      nestedFrame("c-loose", { x: 0.7, y: 0.7, width: 0.2, height: 0.2 }),
+      String(doc.root.id),
+    );
+    const ctx2: CommandContext = { ...ctx, document: doc };
+    const result = runReparent(ctx2, [{ itemId: "c-loose", newParentId: "p2" }]);
+    if (!result.ok) throw new Error("expected ok");
+    const patch = result.patches[0]!;
+    if (patch.type !== "item.reparent") throw new Error("wrong type");
+    const e = patch.entries[0]!;
+    expect(String(e.oldParentId)).toBe(String(ctx2.document.root.id));
+    expect(String(e.newParentId)).toBe("p2");
+  });
+
+  it("frame → root: nested c1 (under p1) reparents to the document root", () => {
+    const ctx = makeReparentCtx();
+    const rootId = String(ctx.document.root.id);
+    const result = runReparent(ctx, [{ itemId: "c1", newParentId: rootId }]);
+    if (!result.ok) throw new Error("expected ok");
+    const patch = result.patches[0]!;
+    if (patch.type !== "item.reparent") throw new Error("wrong type");
+    const e = patch.entries[0]!;
+    expect(String(e.oldParentId)).toBe("p1");
+    expect(String(e.newParentId)).toBe(rootId);
+    expect(e.newIndex).toBe(2); // root had [p1, p2] = length 2
+  });
+
+  it("cycle (self): newParentId equals itemId → fails with reparent-cycle", () => {
+    const ctx = makeReparentCtx();
+    const result = runReparent(ctx, [{ itemId: "p1", newParentId: "p1" }]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected fail");
+    expect(result.error.code).toBe("reparent-cycle");
+  });
+
+  it("cycle (ancestor): newParent is a descendant of the item → fails", () => {
+    // Move p1 INTO its own child c1 → cycle.
+    const ctx = makeReparentCtx();
+    const result = runReparent(ctx, [{ itemId: "p1", newParentId: "c1" }]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected fail");
+    expect(result.error.code).toBe("reparent-cycle");
+  });
+
+  it("empty entries: ok with zero patches (no-op)", () => {
+    const ctx = makeReparentCtx();
+    const result = runReparent(ctx, []);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.patches).toHaveLength(0);
+  });
+});

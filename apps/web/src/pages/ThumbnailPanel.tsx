@@ -317,6 +317,13 @@ export function ThumbnailPanel({
               tabIndex={0}
               draggable
               data-thumbnail-id={entry.id}
+              // WI-039 — also expose the frame id so the reparent drag
+              // controller's `document.elementFromPoint` hit-test picks
+              // up panel thumbnails as drop targets. The `data-frame-id`
+              // attribute is the design-plane convention; thumbnails
+              // join it for cross-surface drop without duplicating the
+              // controller's target lookup.
+              data-frame-id={entry.id}
               data-testid={`thumbnail-${idx}`}
               data-tile-stage={tileStage}
               onDragStart={(e) => {

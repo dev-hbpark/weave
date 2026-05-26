@@ -165,3 +165,65 @@ export function ContextMenuGroup({
     </ContextMenuPrimitive.Group>
   );
 }
+
+/** Nested sub-menu primitives (WI-039 "Move to…" picker). Radix
+ *  exposes Sub / SubTrigger / SubContent — we wrap them with the same
+ *  weave token styling as the top-level menu so a sub-tree of frames
+ *  can be rendered inline (no separate Dialog) on right-click. */
+export const ContextMenuSub = ContextMenuPrimitive.Sub;
+
+export function ContextMenuSubTrigger({
+  className,
+  children,
+  ...rest
+}: ContextMenuPrimitive.ContextMenuSubTriggerProps) {
+  return (
+    <ContextMenuPrimitive.SubTrigger
+      {...rest}
+      className={cn(
+        "flex items-center justify-between gap-3 px-2.5 py-1.5",
+        "rounded-[var(--radius-sm)]",
+        "text-[13px] text-[color:var(--text-overlay)]",
+        "outline-none cursor-pointer select-none",
+        "data-[highlighted]:bg-[color:var(--surface-overlay-2)]",
+        "data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed",
+        "data-[state=open]:bg-[color:var(--surface-overlay-2)]",
+        className,
+      )}
+    >
+      <span className="flex-1">{children}</span>
+      <span
+        aria-hidden
+        className="text-[11px] text-[color:var(--text-overlay-muted)]"
+      >
+        ▸
+      </span>
+    </ContextMenuPrimitive.SubTrigger>
+  );
+}
+
+export function ContextMenuSubContent({
+  className,
+  children,
+  ...rest
+}: ContextMenuPrimitive.ContextMenuSubContentProps) {
+  return (
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.SubContent
+        {...rest}
+        className={cn(
+          "z-50 min-w-[200px] max-h-[60vh] overflow-auto p-1",
+          "rounded-[var(--radius-md)] bg-[color:var(--surface-overlay)]",
+          "border border-[color:var(--surface-overlay-border)]",
+          "backdrop-blur-[var(--surface-blur)] shadow-[var(--shadow-overlay)]",
+          "focus-visible:outline-none",
+          "data-[state=open]:animate-in data-[state=closed]:animate-out",
+          "data-[state=open]:fade-in data-[state=closed]:fade-out",
+          className,
+        )}
+      >
+        {children}
+      </ContextMenuPrimitive.SubContent>
+    </ContextMenuPrimitive.Portal>
+  );
+}

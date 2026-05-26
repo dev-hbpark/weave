@@ -158,3 +158,120 @@ export async function addFrame(
     { kind: resolvedKind, frame, containerId: opts.containerId },
   );
 }
+
+/** WI-039 — read the parent id + index inside that parent for `itemId`.
+ *  Returns null when the item is missing or is the doc root. */
+export async function readParentInfo(
+  page: Page,
+  itemId: string,
+): Promise<{ parentId: string; indexInParent: number } | null> {
+  return page.evaluate((targetId) => {
+    interface Node {
+      readonly id: string | number;
+      readonly children: ReadonlyArray<Node>;
+    }
+    type Doc = { root: Node };
+    const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
+    if (doc === undefined) return null;
+    function walk(node: Node, parent: Node | null): {
+      parentId: string;
+      indexInParent: number;
+    } | null {
+      for (let i = 0; i < node.children.length; i++) {
+        const c = node.children[i]!;
+        if (String(c.id) === targetId) {
+          return parent === null
+            ? { parentId: String(node.id), indexInParent: i }
+            : { parentId: String(node.id), indexInParent: i };
+        }
+        const inner = walk(c, node);
+        if (inner !== null) return inner;
+      }
+      return null;
+    }
+    return walk(doc.root, null);
+  }, itemId);
+}
+
+/** WI-039 — read `attrs.frame` for `itemId` (the 0..1 parent-relative
+ *  rect). Returns null when the item is missing or the frame slot is
+ *  absent. */
+export async function readItemFrame(
+  page: Page,
+  itemId: string,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  return page.evaluate((targetId) => {
+    interface Node {
+      readonly id: string | number;
+      readonly attrs: Record<string, unknown>;
+      readonly children: ReadonlyArray<Node>;
+    }
+    type Doc = { root: Node };
+    const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
+    if (doc === undefined) return null;
+    function find(node: Node): Node | null {
+      if (String(node.id) === targetId) return node;
+      for (const c of node.children) {
+        const inner = find(c);
+        if (inner !== null) return inner;
+      }
+      return null;
+    }
+    const node = find(doc.root);
+    if (node === null) return null;
+    const f = (node.attrs as { frame?: { x: number; y: number; width: number; height: number } })
+      .frame;
+    if (f === undefined) return null;
+    return { x: f.x, y: f.y, width: f.width, height: f.height };
+  }, itemId);
+}
+
+/** WI-039 — programmatic reparent for specs that don't want to drive
+ *  the pixel-perfect modifier drag (e.g. multi-entry, parent-only
+ *  reparent). Dispatches the same `weave.item.reparent` command the
+ *  three user-facing surfaces share. */
+export async function execReparent(
+  page: Page,
+  entries: ReadonlyArray<{ itemId: string; newParentId: string }>,
+): Promise<void> {
+  await page.evaluate((es) => {
+    type Editor = {
+      exec: (
+        name: string,
+        input: { entries: ReadonlyArray<{ itemId: string; newParentId: string }> },
+      ) => unknown;
+    };
+    const w = window as unknown as { __weaveEditor?: Editor };
+    w.__weaveEditor?.exec("weave.item.reparent", { entries: es });
+  }, entries);
+}
+
+/** WI-039 — set the editor's item selection to the given ids. Mirrors
+ *  the multi-toolbar / multi-marquee helpers. */
+export async function setSelection(
+  page: Page,
+  ids: ReadonlyArray<string>,
+): Promise<void> {
+  await page.evaluate((targets) => {
+    type Vm = {
+      itemSelection: {
+        set: (x: unknown) => void;
+        addMany?: (xs: ReadonlyArray<unknown>) => void;
+        clear: () => void;
+      };
+    };
+    const vm = (window as unknown as { __weaveVm?: Vm }).__weaveVm;
+    if (vm === undefined) return;
+    vm.itemSelection.clear();
+    if (targets.length === 0) return;
+    if (targets.length === 1) {
+      vm.itemSelection.set(targets[0]);
+      return;
+    }
+    if (typeof vm.itemSelection.addMany === "function") {
+      vm.itemSelection.addMany(targets);
+      return;
+    }
+    for (const id of targets) vm.itemSelection.set(id);
+  }, ids);
+}

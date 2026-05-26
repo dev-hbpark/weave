@@ -54,6 +54,9 @@ export {
   type ContextMenuItemProps,
   ContextMenuLabel,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "./ContextMenu.js";
 export {
