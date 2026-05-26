@@ -209,6 +209,40 @@ test("WI-036 — multi-selection surfaces the `multi.delete` command and clearin
   await expect(page.getByTestId("cmd-multi-delete")).toHaveCount(0);
 });
 
+test("WI-036 — multi-selection mounts a bounding-box marquee + 4 corner handles; single selection does not", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-036-overlay" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
+  });
+  await addFrame(page, "frame", {
+    frame: { x: 0.5, y: 0.5, width: 0.3, height: 0.3, rotation: 0 },
+  });
+  const ids = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    return (w.__weaveDoc?.root.children ?? []).map((c) => String(c.id));
+  });
+  expect(ids.length).toBe(2);
+
+  // Single selection — no multi overlay.
+  await selectFrame(page, ids[0]!);
+  await expect(page.getByTestId("multi-selection-overlay")).toHaveCount(0);
+
+  // Multi-selection — overlay + 4 corner handles mount.
+  await selectFrames(page, ids);
+  const overlay = page.getByTestId("multi-selection-overlay");
+  await expect(overlay).toBeVisible({ timeout: 3_000 });
+  await expect(overlay.locator("[data-multi-corner='nw']")).toBeVisible();
+  await expect(overlay.locator("[data-multi-corner='ne']")).toBeVisible();
+  await expect(overlay.locator("[data-multi-corner='sw']")).toBeVisible();
+  await expect(overlay.locator("[data-multi-corner='se']")).toBeVisible();
+
+  // Clearing selection removes the overlay.
+  await clearSelection(page);
+  await expect(overlay).toHaveCount(0, { timeout: 1_000 });
+});
+
 test("WI-036 — deleting the selected frame clears the bar (no stale menu)", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-stale" });
   await addFrame(page, "frame", {

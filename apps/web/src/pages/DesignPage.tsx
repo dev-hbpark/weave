@@ -1624,6 +1624,7 @@ function DesignPageBody() {
                           continuation of the underlying frame's hover
                           (hover target union). Position follows the
                           frame via RAF while hover is active. */}
+                      <MultiSelectionOverlay selectedIds={selectedIds} />
                       <QuickActionBarAnchored
                         selectedFrameId={selectedFrameId ?? undefined}
                         selectedIds={selectedIds}
@@ -1663,6 +1664,104 @@ function DesignPageBody() {
         </SelectionChromeProvider>
       </RouterProvider>
     </EditorVMProvider>
+  );
+}
+
+interface MultiSelectionOverlayProps {
+  readonly selectedIds: ReadonlySet<string>;
+}
+
+/** WI-036 follow-up v2 — multi-selection bounding box overlay.
+ *  When 2+ frames are selected, paints a dashed marquee enclosing
+ *  every selected frame's viewport bounds plus 4 corner handles
+ *  (visual placeholders; multi-frame resize is v1.x backlog). Each
+ *  individual frame still mounts its own per-frame handle set
+ *  (FrameStage.SelectionLayer), so the overlay is purely additive. */
+function MultiSelectionOverlay({ selectedIds }: MultiSelectionOverlayProps): React.ReactElement | null {
+  const isMulti = selectedIds.size > 1;
+  const [box, setBox] = useState<
+    { left: number; top: number; width: number; height: number } | null
+  >(null);
+  const idsKey = useMemo(
+    () => (isMulti ? Array.from(selectedIds).sort().join("|") : ""),
+    [isMulti, selectedIds],
+  );
+  useEffect(() => {
+    if (!isMulti) {
+      setBox(null);
+      return;
+    }
+    let raf = 0;
+    const tick = (): void => {
+      let minL = Number.POSITIVE_INFINITY;
+      let minT = Number.POSITIVE_INFINITY;
+      let maxR = Number.NEGATIVE_INFINITY;
+      let maxB = Number.NEGATIVE_INFINITY;
+      let found = false;
+      for (const id of selectedIds) {
+        const el = document.querySelector(`[data-frame-id="${CSS.escape(id)}"]`);
+        if (!(el instanceof HTMLElement)) continue;
+        const r = el.getBoundingClientRect();
+        if (r.left < minL) minL = r.left;
+        if (r.top < minT) minT = r.top;
+        if (r.right > maxR) maxR = r.right;
+        if (r.bottom > maxB) maxB = r.bottom;
+        found = true;
+      }
+      if (!found) {
+        setBox(null);
+        return;
+      }
+      const next = {
+        left: minL,
+        top: minT,
+        width: maxR - minL,
+        height: maxB - minT,
+      };
+      setBox((prev) => {
+        if (
+          prev !== null
+          && Math.abs(prev.left - next.left) < 0.5
+          && Math.abs(prev.top - next.top) < 0.5
+          && Math.abs(prev.width - next.width) < 0.5
+          && Math.abs(prev.height - next.height) < 0.5
+        ) return prev;
+        return next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isMulti, selectedIds, idsKey]);
+
+  if (box === null) return null;
+  return (
+    <div
+      className="fixed pointer-events-none z-20"
+      style={{
+        left: box.left,
+        top: box.top,
+        width: box.width,
+        height: box.height,
+        border: "1px dashed var(--accent)",
+        boxSizing: "border-box",
+      }}
+      data-testid="multi-selection-overlay"
+    >
+      {(["nw", "ne", "sw", "se"] as const).map((corner) => (
+        <div
+          key={corner}
+          data-multi-corner={corner}
+          className="absolute rounded-full bg-[color:var(--surface-0)] border border-[color:var(--accent)]"
+          style={{
+            width: 8,
+            height: 8,
+            ...(corner.includes("n") ? { top: -4 } : { bottom: -4 }),
+            ...(corner.includes("w") ? { left: -4 } : { right: -4 }),
+          }}
+        />
+      ))}
+    </div>
   );
 }
 

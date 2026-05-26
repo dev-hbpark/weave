@@ -370,14 +370,12 @@ function NestedFrame({
   // agree.
   const isSelected =
     selectedIds !== undefined ? selectedIds.has(itemId) : selectedId === itemId;
-  // WI-036 follow-up — single-frame resize/rotate handles only mount
-  // when exactly one frame is selected. Multi-selection (size > 1)
-  // would render a per-frame handle set per primary, which is
-  // misleading because the handles act on one frame at a time. The
-  // multi-selection chrome (and QuickActionBar's `multi.*` commands)
-  // takes over at the host level.
-  const isMultiSelection = selectedIds !== undefined && selectedIds.size > 1;
-  const isPrimarySelection = selectedId === itemId && !isMultiSelection;
+  // WI-036 follow-up v2 — every selected frame mounts its own
+  // per-frame handle set (single OR multi). The multi-selection
+  // bounding box (marquee + 4 corner handles) lives at the host
+  // level, layered above. So a frame's handles surface whenever it
+  // is part of the selection.
+  const isPrimarySelection = isSelected;
   const childFrames = item.children.filter(isDomainItem);
 
 
