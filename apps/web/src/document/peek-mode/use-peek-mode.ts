@@ -18,16 +18,11 @@
 //   - No modifier combinations (Cmd+L, Ctrl+L would clash with browser
 //     address bar in some platforms; we deliberately ignore modifiers).
 
-import {
-  createFrameSpatialIndex,
-  type FrameSpatialIndex,
-} from "@agocraft/spatial";
-import {
-  createPeekModeController,
-  type PeekModeController,
-} from "@agocraft/interaction";
-import type { Change, Document as AgocraftDocument, Item } from "@agocraft/core";
+import type { Document as AgocraftDocument, Change, Item } from "@agocraft/core";
+import { createPeekModeController, type PeekModeController } from "@agocraft/interaction";
+import { createFrameSpatialIndex, type FrameSpatialIndex } from "@agocraft/spatial";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { absoluteFrameBox, findItemDeep } from "../agocraft-mirror.js";
 import type { Design } from "../types.js";
 
 export interface UsePeekModeDeps {
@@ -37,10 +32,19 @@ export interface UsePeekModeDeps {
   /** Editor's change stream subscriber. The hook normalizes to a tick-only
    *  signature internally (the spatial index doesn't need change payload). */
   readonly subscribeToChanges: (handler: (change: Change) => void) => () => void;
-  /** Direct reorder callback (Phase 3 bypass). When the user drops a peek
-   *  drag, this is invoked with the new full ordering of root.children ids
-   *  in z-ascending order. See `design-frame.zorder.ts` file header. */
-  readonly onReorderRoot: (orderedIds: ReadonlyArray<string>) => void;
+  /** WI-038 Phase 2 — z-order reorder callback. Invoked once on drag commit
+   *  with the new ordering of `containerId.children` (z-ascending) plus the
+   *  container id so the host can dispatch
+   *  `weave.design.reorderChildren({ containerId, order })`. The container
+   *  id is whatever was passed via `containerId` at the time of the drag;
+   *  defaults to the document root id when omitted. */
+  readonly onReorder: (orderedIds: ReadonlyArray<string>, containerId: string) => void;
+  /** WI-038 Phase 2 — the container Item id whose children peek indexes
+   *  + reorders. Defaults to the document root. The host typically resolves
+   *  this from the current selection (`selectedItem.parent ?? root`) so the
+   *  same L+drag works both for top-level frames and items nested inside
+   *  a frame. */
+  readonly containerId?: string;
   /** Cursor radius in design-space pixels. Default 24. */
   readonly hitRadius?: number;
 }
@@ -60,58 +64,95 @@ export interface UsePeekModeResult {
   readonly setCursor: (x: number, y: number, inside: boolean) => void;
 }
 
-/** Convert a weave `ItemFrame` (0..1 ratio) to absolute design-space bbox. */
-function frameToBBox(
-  frame: { x: number; y: number; width: number; height: number },
-  designWidth: number,
-  designHeight: number,
-): { x: number; y: number; w: number; h: number } {
-  return {
-    x: frame.x * designWidth,
-    y: frame.y * designHeight,
-    w: frame.width * designWidth,
-    h: frame.height * designHeight,
-  };
+interface AbsoluteBox {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
 }
 
 export function usePeekMode(deps: UsePeekModeDeps): UsePeekModeResult {
   const designRef = useRef<Design>(deps.design);
   designRef.current = deps.design;
 
+  const containerIdRef = useRef<string>(deps.containerId ?? String(deps.design.document.root.id));
+
   const [stickyActive, setStickyActive] = useState(false);
   const [holdActive, setHoldActive] = useState(false);
   const effectiveActive = stickyActive || holdActive;
 
-  // FrameSpatialIndex — built once, reads through designRef.
+  // Resolve the active container Item via the shared `findItemDeep` /
+  // `absoluteFrameBox` helpers. Falls back to the document root when the
+  // id is unknown (e.g., the selected item was just removed) so peek
+  // never silently disables itself on a stale id.
+  const resolveContainer = useCallback((): {
+    container: Item;
+    absBox: AbsoluteBox;
+  } => {
+    const doc = designRef.current.document;
+    const root = doc.root;
+    const designW = designRef.current.width;
+    const designH = designRef.current.height;
+    const rootAbsBox: AbsoluteBox = { x: 0, y: 0, w: designW, h: designH };
+    const id = containerIdRef.current;
+    if (id === String(root.id)) {
+      return { container: root, absBox: rootAbsBox };
+    }
+    const found = findItemDeep(doc, id);
+    if (found === undefined) {
+      return { container: root, absBox: rootAbsBox };
+    }
+    const absBox = absoluteFrameBox(doc, id, designW, designH);
+    return { container: found, absBox: absBox ?? rootAbsBox };
+  }, []);
+
+  // FrameSpatialIndex — built once, but `listItems` / `resolveBbox` look
+  // through `containerIdRef` so a container change just requires a
+  // `markDirty()` + the next query rebuilds from the new container.
   const index = useMemo<FrameSpatialIndex<unknown>>(() => {
     return createFrameSpatialIndex<unknown>({
       onChange: (h) => deps.subscribeToChanges(() => h()),
-      frameId: "root",
-      listItems: () =>
-        designRef.current.document.root.children.map((c: Item) => String(c.id)),
+      frameId: "peek-container",
+      listItems: () => resolveContainer().container.children.map((c: Item) => String(c.id)),
       resolveBbox: (itemId) => {
-        const root = designRef.current.document.root;
-        const item = root.children.find((c: Item) => String(c.id) === itemId);
+        const { container, absBox } = resolveContainer();
+        const item = container.children.find((c: Item) => String(c.id) === itemId);
         if (!item) return null;
-        const frame = (item.attrs as { frame?: { x: number; y: number; width: number; height: number } })
-          .frame;
+        const frame = (
+          item.attrs as { frame?: { x: number; y: number; width: number; height: number } }
+        ).frame;
         if (!frame) return null;
-        return frameToBBox(frame, designRef.current.width, designRef.current.height);
+        return {
+          x: absBox.x + frame.x * absBox.w,
+          y: absBox.y + frame.y * absBox.h,
+          w: frame.width * absBox.w,
+          h: frame.height * absBox.h,
+        };
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // When the caller swaps the containerId, mark the index dirty so the
+  // next query rebuilds against the new container's children list.
+  useEffect(() => {
+    const next = deps.containerId ?? String(designRef.current.document.root.id);
+    if (next === containerIdRef.current) return;
+    containerIdRef.current = next;
+    index.markDirty();
+    // Re-seed the controller's cursor probe — the cached lift set targets
+    // the previous container's coords. A no-op `setCursor` clears it.
+    // Caller's next pointer move will re-query against the new container.
+  }, [deps.containerId, index]);
+
   // PeekModeController — built once.
   const controller = useMemo<PeekModeController>(() => {
     return createPeekModeController({
       resolveIndex: () => index,
-      readZ: (itemId) => {
-        const root = designRef.current.document.root;
-        return root.children.findIndex((c: Item) => String(c.id) === itemId);
-      },
+      readZ: (itemId) =>
+        resolveContainer().container.children.findIndex((c: Item) => String(c.id) === itemId),
       onCommit: (orderedAsc) => {
-        deps.onReorderRoot(orderedAsc);
+        deps.onReorder(orderedAsc, containerIdRef.current);
       },
       ...(deps.hitRadius !== undefined ? { hitRadius: deps.hitRadius } : {}),
     });

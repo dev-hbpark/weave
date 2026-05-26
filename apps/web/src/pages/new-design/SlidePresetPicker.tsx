@@ -1,11 +1,11 @@
-// WI-030 Phase 1 — Slide preset picker Dialog.
+// WI-030 — Slide preset picker Dialog.
 //
-// Triggered from DesignPage's Add menu when the user picks "Slide". Shows
+// Triggered from DesignPage's Add menu when the user picks "슬라이드…". Shows
 // the open `defaultPresetRegistry()` content:
-//   - Left rail: category chips (Phase 1 = "표지" only; later phases add 7
-//     more sibling chips with zero code change here — the rail reads from
-//     `registry.listCategories()`).
-//   - Right grid: ~3 preset thumbnails for the selected category.
+//   - Left rail: scrollable category list. Reads from
+//     `registry.listCategories()` so adding a category is data-only.
+//   - Right grid: ~5 preset thumbnails for the selected category. Scrolls
+//     independently of the left rail.
 // Click → `editor.exec("weave.preset.insertSlide", { presetId })`, dialog
 // closes, focus returns to the canvas.
 //
@@ -16,6 +16,14 @@
 //     here.
 //   • Design System Triage Step 1 (Reused) — composes Dialog + Card from
 //     `@weave/design-system`. No new primitive.
+//
+// Visibility: the panel-tone Dialog default uses `--surface-1` (6% alpha
+// glass) which washes out over the aurora canvas. We replace that with a
+// moderate-alpha dark slate (~72%) so the existing `backdrop-blur` reads
+// as a true frosted-glass surface — the aurora behind still tints the
+// surface slightly, but body text stays comfortably legible. Tuned by eye
+// against the aurora theme; mono/vivid still work because the blur +
+// dark-slate base is theme-independent (same approach as DropdownMenu).
 
 import {
   Dialog,
@@ -32,6 +40,9 @@ import {
   type PresetCategory,
   resolveLocalizedText,
 } from "../../document/presets/types.js";
+
+const FROSTED_PANEL_CLASS =
+  "bg-[rgba(15,23,42,0.72)] border-[color:var(--surface-overlay-border)]";
 
 export interface SlidePresetPickerProps {
   readonly open: boolean;
@@ -58,7 +69,7 @@ export function SlidePresetPicker({
     return selectedCategoryId === "" ? [] : registry.listPresetsByCategory(selectedCategoryId);
   }, [registry, selectedCategoryId]);
 
-  const headline = locale === "ko" ? "슬라이드 시작점" : "Choose a slide layout";
+  const headline = locale === "ko" ? "슬라이드" : "Choose a slide layout";
   const description =
     locale === "ko"
       ? "카테고리를 고르면 추천 시작점이 나타나요. 삽입 후 자유롭게 편집할 수 있습니다."
@@ -68,14 +79,19 @@ export function SlidePresetPicker({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-describedby={undefined} size="lg" data-testid="slide-preset-picker">
+      <DialogContent
+        aria-describedby={undefined}
+        size="lg"
+        data-testid="slide-preset-picker"
+        className={FROSTED_PANEL_CLASS}
+      >
         <DialogHeader headline={headline} description={description} />
 
-        <div className="grid grid-cols-[160px_1fr] gap-4 md:gap-6">
-          {/* Left rail — category chips */}
+        <div className="grid grid-cols-[160px_1fr] gap-4 md:gap-6 min-h-[380px]">
+          {/* Left rail — scrollable category list */}
           <nav
             aria-label={locale === "ko" ? "프리셋 카테고리" : "Preset categories"}
-            className="flex flex-col gap-1"
+            className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto pr-1"
             data-testid="preset-category-rail"
           >
             {categories.map((c) => (
@@ -89,9 +105,9 @@ export function SlidePresetPicker({
             ))}
           </nav>
 
-          {/* Right grid — preset thumbnails */}
+          {/* Right grid — preset thumbnails, scroll independently */}
           <div
-            className="grid grid-cols-1 md:grid-cols-3 gap-3"
+            className="grid grid-cols-1 md:grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto pr-1 content-start"
             data-testid="preset-thumbnail-grid"
           >
             {presets.map((p) => (
@@ -143,10 +159,10 @@ function CategoryChip({
       data-testid={`preset-category-${category.id}`}
       aria-pressed={selected}
       className={
-        "text-left px-3 py-2 rounded-[var(--radius-sm)] text-[13px] border " +
+        "text-left px-3 py-2 rounded-[var(--radius-sm)] text-[13px] border shrink-0 " +
         (selected
           ? "bg-[color:var(--accent-soft)] border-[color:var(--accent)]/40 text-[color:var(--text-strong)]"
-          : "bg-transparent border-transparent text-[color:var(--text-default)] hover:bg-[color:var(--surface-2)]")
+          : "bg-transparent border-transparent text-[color:var(--text-default)] hover:bg-[color:var(--surface-overlay-2)]")
       }
     >
       {label}
@@ -173,7 +189,7 @@ function PresetCard({
       onClick={onSelect}
       data-testid={`preset-card-${preset.id}`}
       aria-label={label}
-      className="text-left p-2 rounded-[var(--radius-md)] border border-[color:var(--surface-2-border)] bg-[color:var(--surface-1)] hover:border-[color:var(--accent)]/60 focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)] transition-colors"
+      className="text-left p-2 rounded-[var(--radius-md)] border border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay-2)] hover:border-[color:var(--accent)]/60 focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)] transition-colors"
     >
       <SlidePresetThumbnail preset={preset} locale={locale} />
       <div className="mt-2 px-1">

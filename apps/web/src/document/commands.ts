@@ -30,16 +30,11 @@ import {
   type Patch,
 } from "@agocraft/core";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
-import { findItemDeep, toAgocraftItem } from "./agocraft-mirror.js";
+import { findItemDeep, findParentAndIndex, toAgocraftItem } from "./agocraft-mirror.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
-import type {
-  DomainKind,
-  InteractionBehavior,
-  ItemFrame,
-  Item as WeaveItem,
-} from "./types.js";
+import type { DomainKind, InteractionBehavior, ItemFrame, Item as WeaveItem } from "./types.js";
 
 /** Side-channel — per-editor map of Item shapes referenced by `item.children`
  *  Patches. Used in two directions:
@@ -317,19 +312,17 @@ export function buildWeaveCommands(
   // of N individual weave.item.update entries, which require N Cmd+Z
   // presses to fully undo). Input carries the resolved frame for each
   // item; the command computes the before/after patch for each.
-  const resizeMultiInput = (
-    input: {
-      readonly updates: ReadonlyArray<{
-        readonly itemId: string;
-        readonly frame: {
-          readonly x: number;
-          readonly y: number;
-          readonly width: number;
-          readonly height: number;
-        };
-      }>;
-    },
-  ) => input;
+  const resizeMultiInput = (input: {
+    readonly updates: ReadonlyArray<{
+      readonly itemId: string;
+      readonly frame: {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+      };
+    }>;
+  }) => input;
   type ResizeMultiInput = ReturnType<typeof resizeMultiInput>;
 
   const resizeMulti: Command<ResizeMultiInput, void> = {
@@ -548,6 +541,79 @@ export function buildWeaveCommands(
     },
   };
 
+  // ─── WI-038 — Per-item z-order commands ───────────────────────────────
+  //
+  // After WI-032's frame-only paradigm the only z-order surface (Peek mode)
+  // could only reorder root.children, but the real demo doc has a single
+  // root frame whose primitives are nested one level down — so dragging
+  // in the peek inspector did nothing user-visible. These four commands
+  // emit a single `item.children.reorder` patch against the item's *direct
+  // parent container*, so the same dispatch works whether the selected
+  // item is a top-level frame or a primitive inside a frame.
+  //
+  // Z-stacking convention: paint order = doc order. `children[0]` is the
+  // bottom, `children[N-1]` is the top. "Bring forward" = swap with the
+  // sibling at index+1, "Send backward" = swap with index-1. "Bring to
+  // front" / "Send to back" splice the item to the end / start.
+  //
+  // No-op (already at front/back, or one-element parent) returns ok with
+  // an empty patch list so callers don't have to special-case the
+  // boundary — the editor / history records nothing because nothing
+  // changed.
+
+  function zorderTargetIndex(
+    length: number,
+    indexInParent: number,
+    direction: "forward" | "backward" | "front" | "back",
+  ): number | null {
+    if (length <= 1) return null;
+    const lastIdx = length - 1;
+    let targetIdx: number;
+    if (direction === "forward") targetIdx = Math.min(lastIdx, indexInParent + 1);
+    else if (direction === "backward") targetIdx = Math.max(0, indexInParent - 1);
+    else if (direction === "front") targetIdx = lastIdx;
+    else targetIdx = 0;
+    if (targetIdx === indexInParent) return null;
+    return targetIdx;
+  }
+
+  const makeZOrderCommand = (
+    name: string,
+    direction: "forward" | "backward" | "front" | "back",
+  ): Command<{ readonly itemId: string }, void> => ({
+    name,
+    run: (ctx, input) => {
+      const found = findParentAndIndex(ctx.document, input.itemId);
+      if (found === undefined) {
+        return fail(
+          "item-not-found",
+          `${name}: no item with id "${input.itemId}" (or it is the root)`,
+        );
+      }
+      const { parent, indexInParent } = found;
+      const targetIdx = zorderTargetIndex(parent.children.length, indexInParent, direction);
+      if (targetIdx === null) return ok(undefined, []);
+      const before = parent.children.map((c) => c.id);
+      const after = [...before];
+      const [moved] = after.splice(indexInParent, 1);
+      if (moved === undefined) return ok(undefined, []);
+      after.splice(targetIdx, 0, moved);
+      return ok(undefined, [
+        {
+          type: "item.children.reorder",
+          itemId: parent.id,
+          before,
+          after,
+        },
+      ]);
+    },
+  });
+
+  const bringForward = makeZOrderCommand("weave.item.bringForward", "forward");
+  const sendBackward = makeZOrderCommand("weave.item.sendBackward", "backward");
+  const bringToFront = makeZOrderCommand("weave.item.bringToFront", "front");
+  const sendToBack = makeZOrderCommand("weave.item.sendToBack", "back");
+
   // WI-030 — Slide preset batch insert.
   //
   // The preset factory returns a fully populated slide AgocraftItem whose
@@ -628,6 +694,10 @@ export function buildWeaveCommands(
     setBackground as Command,
     setPresentationOrder as Command,
     reorderChildren as Command,
+    bringForward as Command,
+    sendBackward as Command,
+    bringToFront as Command,
+    sendToBack as Command,
     addBehavior as Command,
     removeBehavior as Command,
     insertPresetSlide as Command,

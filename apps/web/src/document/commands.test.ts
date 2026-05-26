@@ -3,9 +3,14 @@
 // Patch-emitting commands (updateItem/updateShape/removeShape/updateBehavior)
 // compute Patches from ctx.document and do NOT touch targets.X.
 
-import type { Document as AgocraftDocument, CommandContext } from "@agocraft/core";
+import type {
+  Document as AgocraftDocument,
+  Item as AgocraftItem,
+  CommandContext,
+} from "@agocraft/core";
+import { itemId as makeItemId } from "@agocraft/core";
 import { describe, expect, it, vi } from "vitest";
-import { toAgocraftDocument } from "./agocraft-mirror.js";
+import { addChild, toAgocraftDocument } from "./agocraft-mirror.js";
 import {
   buildWeaveCommands,
   createPendingCreations,
@@ -250,5 +255,152 @@ describe("weave.preset.insertSlide (WI-030 Phase 1)", () => {
     expect(new Set(ids).size).toBe(ids.length);
     // The slide's own id should also be distinct from any child id.
     expect(ids).not.toContain(String(slide.id));
+  });
+});
+
+// ── WI-038 — Per-item z-order commands ─────────────────────────────────────
+//
+// Verifies the four commands emit a single `item.children.reorder` patch
+// against the selected item's direct parent — so the same dispatch works
+// both for top-level frames (parent = root) and primitives nested inside
+// a frame (parent = that frame). Tests cover the four moves on each level
+// plus the no-op boundary cases.
+
+describe("z-order commands (WI-038)", () => {
+  function flatFrame(id: string): Item {
+    return {
+      id,
+      kind: "frame",
+      attrs: { frame: FULL_FRAME },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+  }
+  function nestedAgoItem(id: string, kind: string): AgocraftItem {
+    return {
+      id: makeItemId(id),
+      kind,
+      attrs: { frame: FULL_FRAME },
+      units: [],
+      children: [],
+      meta: {
+        createdAt: META_DATE,
+        updatedAt: META_DATE,
+        schemaVersion: 9,
+      } as AgocraftItem["meta"],
+    };
+  }
+
+  function makeZOrderCtx(): CommandContext {
+    // Doc: root has 3 frames [a, b, c]. Frame `b` then gains 2 nested
+    // children [b-1, b-2] via the agocraft-level `addChild` helper —
+    // weave's flat Item type doesn't carry `children`, so we attach the
+    // nested subtree after the flat seed.
+    const weave: WeaveDocument = {
+      id: "doc-z",
+      title: "Z",
+      items: [flatFrame("a"), flatFrame("b"), flatFrame("c")],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    let doc = toAgocraftDocument(weave);
+    doc = addChild(doc, nestedAgoItem("b-1", "shape"), "b");
+    doc = addChild(doc, nestedAgoItem("b-2", "shape"), "b");
+    return {
+      document: doc,
+      resolve: () => null as never,
+      skipRelations: false,
+    };
+  }
+
+  function runZ(
+    name: string,
+    itemId: string,
+  ): {
+    after?: ReadonlyArray<string>;
+    before?: ReadonlyArray<string>;
+    patches: number;
+  } {
+    const cmds = buildWeaveCommands(spyTargets());
+    const cmd = cmds.find((c) => c.name === name);
+    if (cmd === undefined) throw new Error(`command not found: ${name}`);
+    const result = cmd.run(makeZOrderCtx(), { itemId });
+    if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
+    if (result.patches.length === 0) return { patches: 0 };
+    const patch = result.patches[0]!;
+    if (patch.type !== "item.children.reorder") {
+      throw new Error(`expected item.children.reorder, got ${patch.type}`);
+    }
+    return {
+      patches: result.patches.length,
+      before: patch.before.map(String),
+      after: patch.after.map(String),
+    };
+  }
+
+  it("bringForward at root: [a,b,c] / b → [a,c,b]", () => {
+    expect(runZ("weave.item.bringForward", "b").after).toEqual(["a", "c", "b"]);
+  });
+  it("sendBackward at root: [a,b,c] / b → [b,a,c]", () => {
+    expect(runZ("weave.item.sendBackward", "b").after).toEqual(["b", "a", "c"]);
+  });
+  it("bringToFront at root: [a,b,c] / a → [b,c,a]", () => {
+    expect(runZ("weave.item.bringToFront", "a").after).toEqual(["b", "c", "a"]);
+  });
+  it("sendToBack at root: [a,b,c] / c → [c,a,b]", () => {
+    expect(runZ("weave.item.sendToBack", "c").after).toEqual(["c", "a", "b"]);
+  });
+
+  it("bringForward no-op at front: c is already the topmost → empty patches", () => {
+    expect(runZ("weave.item.bringForward", "c").patches).toBe(0);
+  });
+  it("sendBackward no-op at back: a is already the bottommost → empty patches", () => {
+    expect(runZ("weave.item.sendBackward", "a").patches).toBe(0);
+  });
+  it("bringToFront no-op when already at front", () => {
+    expect(runZ("weave.item.bringToFront", "c").patches).toBe(0);
+  });
+  it("sendToBack no-op when already at back", () => {
+    expect(runZ("weave.item.sendToBack", "a").patches).toBe(0);
+  });
+
+  it("nested: bringForward on b-1 reorders inside frame b, not root", () => {
+    const result = runZ("weave.item.bringForward", "b-1");
+    expect(result.before).toEqual(["b-1", "b-2"]);
+    expect(result.after).toEqual(["b-2", "b-1"]);
+  });
+
+  it("nested: sendToBack on b-2 reorders inside frame b", () => {
+    const result = runZ("weave.item.sendToBack", "b-2");
+    expect(result.after).toEqual(["b-2", "b-1"]);
+  });
+
+  it("fails with item-not-found when the target is missing", () => {
+    const cmds = buildWeaveCommands(spyTargets());
+    const cmd = cmds.find((c) => c.name === "weave.item.bringToFront");
+    if (cmd === undefined) throw new Error("not found");
+    const result = cmd.run(makeZOrderCtx(), { itemId: "ghost" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("item-not-found");
+  });
+
+  it("emits the correct parent container itemId in the patch", () => {
+    const cmds = buildWeaveCommands(spyTargets());
+    const cmd = cmds.find((c) => c.name === "weave.item.bringForward");
+    if (cmd === undefined) throw new Error("not found");
+    const ctx = makeZOrderCtx();
+    // Root-level reorder → container itemId equals doc.root.id
+    const rootResult = cmd.run(ctx, { itemId: "a" });
+    if (!rootResult.ok) throw new Error("expected ok");
+    const rootPatch = rootResult.patches[0]!;
+    if (rootPatch.type !== "item.children.reorder") throw new Error("wrong kind");
+    expect(String(rootPatch.itemId)).toBe(String(ctx.document.root.id));
+    // Nested reorder → container itemId equals frame b
+    const nestedResult = cmd.run(ctx, { itemId: "b-1" });
+    if (!nestedResult.ok) throw new Error("expected ok");
+    const nestedPatch = nestedResult.patches[0]!;
+    if (nestedPatch.type !== "item.children.reorder") throw new Error("wrong kind");
+    expect(String(nestedPatch.itemId)).toBe("b");
   });
 });

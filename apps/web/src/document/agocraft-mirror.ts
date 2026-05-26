@@ -17,16 +17,16 @@
 // weave shape (if it survives) becomes a projection. Phase 3 removes it.
 
 import {
-  createSchema,
   type Document as AgocraftDocument,
   type Item as AgocraftItem,
   type ItemMeta as AgocraftItemMeta,
   type Unit as AgocraftUnit,
   type UnitMeta as AgocraftUnitMeta,
+  createSchema,
   itemId,
   unitId,
 } from "@agocraft/core";
-import type { Document as WeaveDocument, InteractionBehavior, Item as WeaveItem } from "./types.js";
+import type { InteractionBehavior, Document as WeaveDocument, Item as WeaveItem } from "./types.js";
 
 const SCHEMA_VERSION = 3;
 
@@ -236,9 +236,7 @@ export function applyChangeToDocument(
       })();
       const next = mapItemDeep(doc.root, targetItemId, (item) => {
         const existingById = new Set(item.units.map((u) => String(u.id)));
-        const filtered = item.units.filter(
-          (u) => !removedIds.has(String(u.id)),
-        );
+        const filtered = item.units.filter((u) => !removedIds.has(String(u.id)));
         const nextUnits = [...filtered];
         for (const added of addedUnits) {
           if (existingById.has(String(added.id))) continue;
@@ -428,11 +426,7 @@ export function updateChild(
   return next === doc.root ? doc : withRoot(doc, next);
 }
 
-function stripChildDeep(
-  item: AgocraftItem,
-  childId: string,
-  onRemove: () => void,
-): AgocraftItem {
+function stripChildDeep(item: AgocraftItem, childId: string, onRemove: () => void): AgocraftItem {
   const idx = item.children.findIndex((c) => String(c.id) === childId);
   if (idx >= 0) {
     onRemove();
@@ -457,10 +451,7 @@ function stripChildDeep(
 
 /** Find an Item anywhere in the tree (root, root.children, grandchildren, …).
  *  Returns undefined if not found. */
-export function findItemDeep(
-  doc: AgocraftDocument,
-  itemId: string,
-): AgocraftItem | undefined {
+export function findItemDeep(doc: AgocraftDocument, itemId: string): AgocraftItem | undefined {
   return findItemInTree(doc.root, itemId);
 }
 
@@ -494,6 +485,73 @@ export function findTrailDeep(
   return walk(doc.root) ? trail : undefined;
 }
 
+/** Locate the direct parent container of `itemId` and the child index inside
+ *  that parent. Returns:
+ *   - `parent`: the document root or any nested Item that hosts `itemId` as a
+ *     direct child;
+ *   - `indexInParent`: the position of `itemId` inside `parent.children`.
+ *
+ *  Returns `undefined` when `itemId` doesn't exist in the tree or refers to
+ *  the document root itself (no parent).
+ *
+ *  Used by the z-order commands (`weave.item.bringToFront` /
+ *  `bringForward` / `sendBackward` / `sendToBack`) so the four siblings can
+ *  reorder regardless of whether the selected item is a top-level Frame or a
+ *  primitive nested inside one. */
+export function findParentAndIndex(
+  doc: AgocraftDocument,
+  itemId: string,
+):
+  | {
+      readonly parent: AgocraftItem;
+      readonly indexInParent: number;
+    }
+  | undefined {
+  const trail = findTrailDeep(doc, itemId);
+  if (trail === undefined || trail.length === 0) return undefined;
+  const parent = trail.length === 1 ? doc.root : trail[trail.length - 2]!;
+  const indexInParent = parent.children.findIndex((c) => String(c.id) === itemId);
+  if (indexInParent < 0) return undefined;
+  return { parent, indexInParent };
+}
+
+/** WI-038 Phase 2 — compute the absolute axis-aligned bbox of an item in
+ *  design-space pixels by walking from the root and composing each
+ *  ancestor's `attrs.frame` (0..1 ratio of its parent). Rotation is
+ *  intentionally ignored — composing a rotated chain into an axis-aligned
+ *  box isn't meaningful, and weave's v1 hit-test treats every frame as
+ *  axis-aligned.
+ *
+ *  Returns `null` when the item isn't in the tree or any intermediate
+ *  ancestor lacks a `frame`. The document root maps to
+ *  `(0, 0, designW, designH)` for symmetry with descendants. */
+export function absoluteFrameBox(
+  doc: AgocraftDocument,
+  itemId: string,
+  designW: number,
+  designH: number,
+): { readonly x: number; readonly y: number; readonly w: number; readonly h: number } | null {
+  if (String(doc.root.id) === itemId) {
+    return { x: 0, y: 0, w: designW, h: designH };
+  }
+  const trail = findTrailDeep(doc, itemId);
+  if (trail === undefined) return null;
+  let box = { x: 0, y: 0, w: designW, h: designH };
+  for (const item of trail) {
+    const frame = (
+      item.attrs as { frame?: { x: number; y: number; width: number; height: number } }
+    ).frame;
+    if (!frame) return null;
+    box = {
+      x: box.x + frame.x * box.w,
+      y: box.y + frame.y * box.h,
+      w: frame.width * box.w,
+      h: frame.height * box.h,
+    };
+  }
+  return box;
+}
+
 export function updateAttrs(
   item: AgocraftItem,
   patch: Readonly<Record<string, unknown>>,
@@ -514,7 +572,11 @@ export function updateUnitAttrs(
     ...item,
     units: item.units.map((u) =>
       String(u.id) === unitId
-        ? { ...u, attrs: { ...u.attrs, ...patch }, meta: { ...u.meta, updatedAt: nowIso() } as typeof u.meta }
+        ? {
+            ...u,
+            attrs: { ...u.attrs, ...patch },
+            meta: { ...u.meta, updatedAt: nowIso() } as typeof u.meta,
+          }
         : u,
     ),
     meta: { ...item.meta, updatedAt: nowIso() },
@@ -563,13 +625,7 @@ export function isDomainItem(item: AgocraftItem): boolean {
   // WI-032 Phase 3 — frame (container) + 4 primitives (image / video /
   // shape / text). FrameStage filters root.children by this predicate to
   // skip the synthetic "weave-doc" root + any unknown kinds.
-  return (
-    k === "frame" ||
-    k === "image" ||
-    k === "video" ||
-    k === "shape" ||
-    k === "text"
-  );
+  return k === "frame" || k === "image" || k === "video" || k === "shape" || k === "text";
 }
 
 /** Project an agocraft Item back to a weave Item. Returns undefined when the
@@ -601,7 +657,9 @@ export function fromAgocraftDocument(ago: AgocraftDocument): WeaveDocument {
     if (w !== undefined) items.push(w);
   }
   const title =
-    (ago.root.attrs.title as string | undefined) ?? (ago.meta.userMeta?.title as string | undefined) ?? "";
+    (ago.root.attrs.title as string | undefined) ??
+    (ago.meta.userMeta?.title as string | undefined) ??
+    "";
   // Prefer the preserved weave id from userMeta — `ago.id` may be empty after
   // a Serializer round-trip since DocumentMeta has no top-level id field.
   const docId = (ago.meta.userMeta?.weaveDocId as string | undefined) ?? ago.id;

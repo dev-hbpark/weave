@@ -20,16 +20,16 @@
 // CODE_STRUCTURE_DESIGN_RULES Rule 6 (declarative branching via
 // context dispatch).
 
-import { createInputBus } from "@agocraft/input/bus";
-import { createHotkeyRegistry } from "@agocraft/input/hotkey";
 import {
   type CommandMetadata,
   type CommandMetadataRegistry,
   createCommandMetadataRegistry,
 } from "@agocraft/core";
+import type { Editor } from "@agocraft/editor";
+import { createInputBus } from "@agocraft/input/bus";
+import { createHotkeyRegistry } from "@agocraft/input/hotkey";
 import type { AITooltipHotkeyTable } from "@weave/design-system";
 import { useEffect, useMemo, useRef } from "react";
-import type { Editor } from "@agocraft/editor";
 
 interface EditorActionDeps {
   readonly editor: Editor;
@@ -49,9 +49,7 @@ let mediaSrcOpener: ((kind: "image" | "video", frameId: string) => void) | undef
  *  selection-scope `setItemAdder` (hotkey path) because QuickActionBar
  *  dispatches with the hovered frame id, not the selected one. */
 let hoverFrameChildAdder: ((parentFrameId: string) => void) | undefined;
-export function setHoverFrameChildAdder(
-  fn: (parentFrameId: string) => void,
-): () => void {
+export function setHoverFrameChildAdder(fn: (parentFrameId: string) => void): () => void {
   hoverFrameChildAdder = fn;
   return () => {
     if (hoverFrameChildAdder === fn) hoverFrameChildAdder = undefined;
@@ -108,15 +106,9 @@ export function setPaletteOpener(opener: () => void): () => void {
  *  actions (selection.drillDown / drillUp / nextSibling / prevSibling)
  *  dispatch through this slot — keeps this module pure and lets the
  *  navigator close over React state without exporting it. */
-export type SelectionNavDir =
-  | "drillDown"
-  | "drillUp"
-  | "nextSibling"
-  | "prevSibling";
+export type SelectionNavDir = "drillDown" | "drillUp" | "nextSibling" | "prevSibling";
 let selectionNavigator: ((dir: SelectionNavDir) => void) | undefined;
-export function setSelectionNavigator(
-  fn: (dir: SelectionNavDir) => void,
-): () => void {
+export function setSelectionNavigator(fn: (dir: SelectionNavDir) => void): () => void {
   selectionNavigator = fn;
   return () => {
     if (selectionNavigator === fn) selectionNavigator = undefined;
@@ -128,18 +120,25 @@ export function setSelectionNavigator(
  *  produces a default-sized item of the requested kind. Hotkey actions
  *  dispatch through this slot so the editor-hotkeys module stays
  *  React-agnostic. */
-export type ItemAdderKind =
-  | "addRect"
-  | "addText"
-  | "addLine"
-  | "addFrame";
+export type ItemAdderKind = "addRect" | "addText" | "addLine" | "addFrame";
 let itemAdder: ((kind: ItemAdderKind) => void) | undefined;
-export function setItemAdder(
-  fn: (kind: ItemAdderKind) => void,
-): () => void {
+export function setItemAdder(fn: (kind: ItemAdderKind) => void): () => void {
   itemAdder = fn;
   return () => {
     if (itemAdder === fn) itemAdder = undefined;
+  };
+}
+
+/** WI-038 — z-order dispatch host slot. The hotkey / ContextMenu surface
+ *  fires one of four directions; the host (DesignPage) registers a closure
+ *  that resolves the currently-selected item id and routes to the matching
+ *  `weave.item.*` command. Keeps editor-hotkeys React-agnostic. */
+export type ZOrderDir = "bringToFront" | "bringForward" | "sendBackward" | "sendToBack";
+let zorderDispatcher: ((dir: ZOrderDir) => void) | undefined;
+export function setZOrderDispatcher(fn: (dir: ZOrderDir) => void): () => void {
+  zorderDispatcher = fn;
+  return () => {
+    if (zorderDispatcher === fn) zorderDispatcher = undefined;
   };
 }
 
@@ -264,6 +263,70 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       selectionNavigator?.("prevSibling");
     },
   },
+  // ── Z-order (WI-038) ──────────────────────────────────────────────────
+  // Figma-parity bindings — `]` / `[` move one step, `Cmd+]` / `Cmd+[`
+  // jump to extremes. The action closures look up the currently-selected
+  // item id via the host slot (`setZOrderDispatcher`) and dispatch the
+  // matching `weave.item.*` command. enabledWhen guards on
+  // `hasFrameSelection` so the binding is a no-op when nothing is
+  // selected. The hotkey registry already skips text-editing surfaces
+  // so `]` / `[` stay typeable inside Lexical / inputs.
+  {
+    id: "zorder.bringForward",
+    label: { en: "Bring forward", ko: "앞으로" },
+    description: {
+      en: "Move the selected item one step toward the front within its parent.",
+      ko: "선택한 항목을 부모 안에서 한 단계 앞으로 이동합니다.",
+    },
+    hotkey: { keys: "]", binding: "]", scope: "editor" },
+    category: "arrange",
+    enabledWhen: (ctx) => Boolean(ctx.hasFrameSelection),
+    action: () => {
+      zorderDispatcher?.("bringForward");
+    },
+  },
+  {
+    id: "zorder.sendBackward",
+    label: { en: "Send backward", ko: "뒤로" },
+    description: {
+      en: "Move the selected item one step toward the back within its parent.",
+      ko: "선택한 항목을 부모 안에서 한 단계 뒤로 이동합니다.",
+    },
+    hotkey: { keys: "[", binding: "[", scope: "editor" },
+    category: "arrange",
+    enabledWhen: (ctx) => Boolean(ctx.hasFrameSelection),
+    action: () => {
+      zorderDispatcher?.("sendBackward");
+    },
+  },
+  {
+    id: "zorder.bringToFront",
+    label: { en: "Bring to front", ko: "맨 앞으로" },
+    description: {
+      en: "Move the selected item to the very front of its parent.",
+      ko: "선택한 항목을 부모 안의 맨 앞으로 이동합니다.",
+    },
+    hotkey: { keys: "⌘ + ]", binding: "Mod+]", scope: "editor" },
+    category: "arrange",
+    enabledWhen: (ctx) => Boolean(ctx.hasFrameSelection),
+    action: () => {
+      zorderDispatcher?.("bringToFront");
+    },
+  },
+  {
+    id: "zorder.sendToBack",
+    label: { en: "Send to back", ko: "맨 뒤로" },
+    description: {
+      en: "Move the selected item to the very back of its parent.",
+      ko: "선택한 항목을 부모 안의 맨 뒤로 이동합니다.",
+    },
+    hotkey: { keys: "⌘ + [", binding: "Mod+[", scope: "editor" },
+    category: "arrange",
+    enabledWhen: (ctx) => Boolean(ctx.hasFrameSelection),
+    action: () => {
+      zorderDispatcher?.("sendToBack");
+    },
+  },
   // ── Tool hotkey (WI-035 P1) ───────────────────────────────────────────
   // Figma parity: single press inserts a default-sized item of the
   // requested kind into the current selected frame's center (or root if
@@ -350,7 +413,10 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
   {
     id: "frame.addChild",
     label: { en: "Add child frame", ko: "자식 프레임 추가" },
-    hint: { en: "Insert a default-sized frame here.", ko: "이 프레임 안에 새 프레임을 추가합니다." },
+    hint: {
+      en: "Insert a default-sized frame here.",
+      ko: "이 프레임 안에 새 프레임을 추가합니다.",
+    },
     category: "frame",
     // WI-036 follow-up — QuickActionBar pivoted from hover-driven to
     // selection-driven. visibleWhen / enabledWhen read the SELECTED
@@ -368,11 +434,11 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     hint: { en: "Remove this frame.", ko: "이 프레임을 삭제합니다." },
     category: "frame",
     visibleWhen: (ctx) =>
-      ctx.selectedKind === "frame"
-      || ctx.selectedKind === "image"
-      || ctx.selectedKind === "video"
-      || ctx.selectedKind === "shape"
-      || ctx.selectedKind === "text",
+      ctx.selectedKind === "frame" ||
+      ctx.selectedKind === "image" ||
+      ctx.selectedKind === "video" ||
+      ctx.selectedKind === "shape" ||
+      ctx.selectedKind === "text",
     enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
       // Dispatched via frameDeleter slot.
@@ -426,17 +492,12 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
 /** Bridge between dispatchEditorCommand and host-supplied action slots.
  *  Called from dispatchEditorCommand for command ids whose static
  *  `action` is a no-op (the host owns the closure). */
-function tryHostSlot(
-  id: string,
-  ctx: Readonly<Record<string, unknown>> | undefined,
-): boolean {
+function tryHostSlot(id: string, ctx: Readonly<Record<string, unknown>> | undefined): boolean {
   // WI-036 follow-up — QuickActionBar now reads SELECTION state, not
   // hover. The slot dispatch mirrors: pull `selectedId` /
   // `selectedKind` from the host's commandContext.
-  const selectedId =
-    typeof ctx?.selectedId === "string" ? ctx.selectedId : undefined;
-  const selectedKind =
-    typeof ctx?.selectedKind === "string" ? ctx.selectedKind : undefined;
+  const selectedId = typeof ctx?.selectedId === "string" ? ctx.selectedId : undefined;
+  const selectedKind = typeof ctx?.selectedKind === "string" ? ctx.selectedKind : undefined;
   if (id === "frame.duplicate" && frameDuplicator !== undefined && selectedId !== undefined) {
     frameDuplicator(selectedId);
     return true;
@@ -445,11 +506,7 @@ function tryHostSlot(
     frameDeleter(selectedId);
     return true;
   }
-  if (
-    id === "frame.addChild"
-    && hoverFrameChildAdder !== undefined
-    && selectedId !== undefined
-  ) {
+  if (id === "frame.addChild" && hoverFrameChildAdder !== undefined && selectedId !== undefined) {
     hoverFrameChildAdder(selectedId);
     return true;
   }
@@ -458,19 +515,19 @@ function tryHostSlot(
     return true;
   }
   if (
-    id === "image.replaceSrc"
-    && mediaSrcOpener !== undefined
-    && selectedId !== undefined
-    && selectedKind === "image"
+    id === "image.replaceSrc" &&
+    mediaSrcOpener !== undefined &&
+    selectedId !== undefined &&
+    selectedKind === "image"
   ) {
     mediaSrcOpener("image", selectedId);
     return true;
   }
   if (
-    id === "video.replaceSrc"
-    && mediaSrcOpener !== undefined
-    && selectedId !== undefined
-    && selectedKind === "video"
+    id === "video.replaceSrc" &&
+    mediaSrcOpener !== undefined &&
+    selectedId !== undefined &&
+    selectedKind === "video"
   ) {
     mediaSrcOpener("video", selectedId);
     return true;
@@ -481,8 +538,7 @@ function tryHostSlot(
 /** Module-level registry. Populated once at import time so every
  *  consumer (tooltip, button, palette) shares the same metadata
  *  identity. Adding a command above auto-flows into this registry. */
-export const editorCommandMetadata: CommandMetadataRegistry =
-  createCommandMetadataRegistry();
+export const editorCommandMetadata: CommandMetadataRegistry = createCommandMetadataRegistry();
 
 for (const cmd of EDITOR_COMMANDS) {
   // Strip the `action` field — agocraft's CommandMetadata is purely
@@ -578,12 +634,7 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
       if (ev.kind !== "key" || ev.phase !== "down" || ev.repeat) return;
       // Tool shortcuts are plain (no modifier). Skip when any modifier
       // is held so combinations stay free for future bindings.
-      if (
-        ev.modifiers.shift
-        || ev.modifiers.meta
-        || ev.modifiers.ctrl
-        || ev.modifiers.alt
-      ) return;
+      if (ev.modifiers.shift || ev.modifiers.meta || ev.modifiers.ctrl || ev.modifiers.alt) return;
       const cmdId = IME_SAFE_TOOL_BINDINGS[ev.code];
       if (cmdId === undefined) return;
       if (isTextEditingTarget(ev.target)) return;

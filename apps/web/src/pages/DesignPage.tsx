@@ -53,6 +53,7 @@ import {
   useSelection,
   useTooltipsAllowed,
 } from "../document";
+import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../document/agocraft-mirror.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import { RouterProvider } from "../document/interactions/router-context.js";
 import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
@@ -75,14 +76,16 @@ import {
   type ItemAdderKind,
   type SelectionNavDir,
   setFrameDeleter,
-  setMultiDeleter,
   setFrameDuplicator,
   setHoverFrameChildAdder,
   setItemAdder,
   setMediaSrcOpener,
+  setMultiDeleter,
   setPaletteOpener,
   setSelectionNavigator,
+  setZOrderDispatcher,
   useEditorHotkeys,
+  type ZOrderDir,
 } from "../document/tooltip/editor-hotkeys.js";
 import { useWeaveEditor } from "../document/use-weave-editor.js";
 import { registerZOrderAdapters } from "../document/zorder/register.js";
@@ -124,6 +127,7 @@ function ModeAwareAITooltipProvider({
 function FrameContextMenu({
   itemId,
   onDelete,
+  onZOrder,
   children,
   layers,
   onPickLayer,
@@ -131,6 +135,10 @@ function FrameContextMenu({
 }: {
   readonly itemId: string;
   readonly onDelete: () => void;
+  /** WI-038 — fires when the user picks one of the four z-order rows.
+   *  No-op when the host doesn't supply a handler (e.g., legacy contexts
+   *  that haven't been migrated). */
+  readonly onZOrder?: (dir: ZOrderDir) => void;
   readonly children: ReactNodeAlias;
   readonly layers?: ReadonlyArray<LayerHit>;
   readonly onPickLayer?: (id: string) => void;
@@ -167,6 +175,39 @@ function FrameContextMenu({
             Selection-only navigation is the Figma-aligned paradigm;
             cursor / Enter hotkey / Layer Picker cover the deeper
             navigation cases. */}
+        {onZOrder !== undefined && (
+          <>
+            <ContextMenuItem
+              onSelect={() => onZOrder("bringToFront")}
+              shortcut="⌘ ]"
+              data-testid="ctx-bring-to-front"
+            >
+              맨 앞으로
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => onZOrder("bringForward")}
+              shortcut="]"
+              data-testid="ctx-bring-forward"
+            >
+              앞으로
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => onZOrder("sendBackward")}
+              shortcut="["
+              data-testid="ctx-send-backward"
+            >
+              뒤로
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => onZOrder("sendToBack")}
+              shortcut="⌘ ["
+              data-testid="ctx-send-to-back"
+            >
+              맨 뒤로
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ContextMenuItem
           onSelect={onDelete}
           variant="danger"
@@ -268,6 +309,59 @@ function DesignPageBody() {
     },
     [editor],
   );
+  // WI-038 Phase 2 — peek-driven reorder routes through editor.exec with
+  // the active peek container id. The agocraft PeekModeController fires
+  // `onCommit(orderedAsc)` with the LOCAL lift stack's new order, but
+  // `weave.design.reorderChildren` validates as a full permutation of the
+  // container's children. We merge here: walk the container's children,
+  // replace each lifted slot with the next id from the new local order;
+  // un-lifted children keep their positions. This matches the original
+  // WI-019 `reorderRootChildren` helper semantics, generalized to any
+  // container.
+  //
+  // Reads `docInAgocraft` through a ref so the closure is stable for
+  // `usePeekMode` (which builds the controller once and captures the
+  // callback in `useMemo([index])`).
+  const reorderChildrenInContainerViaEditor = useCallback(
+    (localOrderAsc: ReadonlyArray<string>, containerId: string) => {
+      const doc = docInAgocraftRef.current;
+      if (!doc) return;
+      const container =
+        String(doc.root.id) === containerId
+          ? doc.root
+          : (findItemDeep(doc, containerId) ?? doc.root);
+      const currentIds = container.children.map((c) => String(c.id));
+      const localSet = new Set(localOrderAsc);
+      const liftedPositions: number[] = [];
+      currentIds.forEach((id, i) => {
+        if (localSet.has(id)) liftedPositions.push(i);
+      });
+      if (liftedPositions.length !== localOrderAsc.length) {
+        // One of the lifted ids is no longer a child of `containerId`
+        // (stale lift set after a remove). Skip silently — peek will
+        // refresh on the next cursor probe.
+        return;
+      }
+      const merged = [...currentIds];
+      liftedPositions.forEach((pos, i) => {
+        merged[pos] = localOrderAsc[i]!;
+      });
+      // Guard against no-op commits — the controller already filters those
+      // but a defense-in-depth check costs nothing.
+      const changed = merged.some((id, i) => id !== currentIds[i]);
+      if (!changed) return;
+      editor.exec("weave.design.reorderChildren", {
+        order: merged,
+        containerId,
+      });
+    },
+    [editor],
+  );
+  // WI-038 Phase 2 — the container peek indexes + reorders. Initial value
+  // is undefined → usePeekMode falls back to root. The container is
+  // recomputed once the selection state below is known, via the effect
+  // that watches `selectedFrameId`.
+  const [peekContainerId, setPeekContainerId] = useState<string | undefined>(undefined);
 
   // DR-018 PoC — register slide-only "add bullet" handle. Demonstrates
   // the extension story: a domain view-model contributes a kind-
@@ -289,11 +383,16 @@ function DesignPageBody() {
     });
   }, [editor]);
 
-  // WI-019 Phase 3 — Peek mode controller + cursor → design coord translation.
+  // WI-019 Phase 3 / WI-038 Phase 2 — Peek mode controller + cursor →
+  // design coord translation. The `containerId` selects which Item's
+  // children peek indexes; defaults to the document root and switches to
+  // the parent of the currently-selected item once selection is wired up
+  // (see effect further down).
   const peek = usePeekMode({
     design,
     subscribeToChanges: (h) => editor.changeStream.subscribe(h),
-    onReorderRoot: reorderRootChildrenViaEditor,
+    onReorder: reorderChildrenInContainerViaEditor,
+    ...(peekContainerId !== undefined ? { containerId: peekContainerId } : {}),
   });
 
   // Expose peek controller for e2e diagnostics + dev tools only — never read
@@ -468,20 +567,20 @@ function DesignPageBody() {
     const liftSet = peek.controller.liftSet.get();
     if (!liftSet) return null;
     // Walk highest-z first so a click on overlapping items selects the top.
+    // WI-038 Phase 2 — bbox composed via `absoluteFrameBox` so nested items
+    // (anything below the root) hit-test against their accumulated parent
+    // transform, not the design's outer box.
     for (let i = liftSet.orderedIds.length - 1; i >= 0; i -= 1) {
       const id = liftSet.orderedIds[i];
       if (id === undefined) continue;
-      const item = docInAgocraft.root.children.find((c) => String(c.id) === id);
-      if (!item) continue;
-      const frame = (
-        item.attrs as { frame?: { x: number; y: number; width: number; height: number } }
-      ).frame;
-      if (!frame) continue;
-      const x = frame.x * design.width;
-      const y = frame.y * design.height;
-      const w = frame.width * design.width;
-      const h = frame.height * design.height;
-      if (designX >= x && designX <= x + w && designY >= y && designY <= y + h) {
+      const box = absoluteFrameBox(docInAgocraft, id, design.width, design.height);
+      if (!box) continue;
+      if (
+        designX >= box.x &&
+        designX <= box.x + box.w &&
+        designY >= box.y &&
+        designY <= box.y + box.h
+      ) {
         return id;
       }
     }
@@ -489,9 +588,10 @@ function DesignPageBody() {
   }
 
   // labelFor / swatchFor — feed Inspector with meaningful labels.
+  // WI-038 Phase 2 — lookup walks the full tree so nested items resolve.
   const labelFor = useCallback(
     (id: string) => {
-      const it = docInAgocraft.root.children.find((c) => String(c.id) === id);
+      const it = findItemDeep(docInAgocraft, id);
       if (!it) return id;
       const kind = it.kind;
       const title =
@@ -537,8 +637,7 @@ function DesignPageBody() {
       // current frame selection (was: always root). Selected frame
       // becomes the parent; falling back to root when nothing is
       // selected keeps the empty-design entry point working.
-      const containerId =
-        selectedFrameIdRef.current ?? String(docInAgocraft.root.id);
+      const containerId = selectedFrameIdRef.current ?? String(docInAgocraft.root.id);
       const result = editor.exec<unknown, string>("weave.item.add", {
         kind,
         containerId,
@@ -572,7 +671,8 @@ function DesignPageBody() {
 
   const swatchFor = useCallback(
     (id: string) => {
-      const it = docInAgocraft.root.children.find((c) => String(c.id) === id);
+      // WI-038 Phase 2 — lookup walks the full tree so nested items resolve.
+      const it = findItemDeep(docInAgocraft, id);
       if (!it) return "rgba(255,255,255,0.12)";
       // Map domain kind → domain accent (defined in design-system tokens).
       const tone: Record<string, string> = {
@@ -635,6 +735,23 @@ function DesignPageBody() {
     useSelection(vm);
   const selectedFrameId = selection?.kind === "frame" ? selection.id : undefined;
   const isMultiSelect = selectedIds.size > 1;
+  // WI-038 Phase 2 — derive peek container from selection. Selecting any
+  // item makes peek index THAT item's parent's children (so the user can
+  // L+drag to reorder the siblings of the selected item). No selection ⇒
+  // root.children (legacy top-level peek behavior). Same semantics as the
+  // four `weave.item.*` z-order commands so the two surfaces stay aligned.
+  useEffect(() => {
+    if (selectedFrameId === undefined) {
+      setPeekContainerId(undefined);
+      return;
+    }
+    const found = findParentAndIndex(docInAgocraft, selectedFrameId);
+    if (found === undefined) {
+      setPeekContainerId(undefined);
+      return;
+    }
+    setPeekContainerId(String(found.parent.id));
+  }, [selectedFrameId, docInAgocraft]);
   const onMarqueeSelect = useCallback(
     (intent: "replace" | "add" | "toggle", ids: ReadonlyArray<string>) => {
       if (intent === "replace") {
@@ -655,6 +772,74 @@ function DesignPageBody() {
   );
   // Mirror into the ref the add-menu callback uses (declaration-order safe).
   setSelectedFrameIdRef.current = (id) => setSelectedFrameId(id ?? undefined);
+
+  // WI-039 — z-order focus, two-stage.
+  //
+  // Each slide tile in ThumbnailPanel cycles through:
+  //   undefined      → no focus, every sibling renders normally
+  //   stage 1 "dim"  → siblings above the focused frame fade (visual hint
+  //                    only, pointer events still flow)
+  //   stage 2 "iso"  → siblings above also ignore pointer events so the
+  //                    focused frame becomes the sole editable surface
+  //
+  // Single-toggle: at most one frame is focused at a time. Cycling a
+  // different tile resets the previous stage and restarts the new tile
+  // at stage 1 (or jumps to stage 2 via the shift-click power path).
+  // Focus is independent of selection — the user can select a frame
+  // without focusing it, and vice versa. Esc on the focus toggle button
+  // clears focus immediately (handled in ThumbnailPanel).
+  type FocusedFrame = { readonly id: string; readonly stage: 1 | 2 };
+  const [focused, setFocused] = useState<FocusedFrame | undefined>(undefined);
+  const handleCycleFocus = useCallback(
+    (id: string, opts?: { readonly skipToIsolate?: boolean }) => {
+      const skipToIsolate = opts?.skipToIsolate === true;
+      setFocused((curr) => {
+        if (curr === undefined || curr.id !== id) {
+          return { id, stage: skipToIsolate ? 2 : 1 };
+        }
+        if (curr.stage === 1) return { id, stage: 2 };
+        return undefined;
+      });
+    },
+    [],
+  );
+  const handleClearFocus = useCallback(() => setFocused(undefined), []);
+  // Siblings of the focused frame (same parent, paint order > focused).
+  // Dimmed in both stages; the host uses this set for opacity. Empty when
+  // nothing is focused, when the focused frame disappears, or when it
+  // sits at the top of its sibling stack.
+  const dimmedFrameIds = useMemo<ReadonlySet<string>>(() => {
+    if (focused === undefined) return new Set<string>();
+    const found = findParentAndIndex(docInAgocraft, focused.id);
+    if (found === undefined) return new Set<string>();
+    const ids = new Set<string>();
+    for (let i = found.indexInParent + 1; i < found.parent.children.length; i += 1) {
+      const sibling = found.parent.children[i];
+      if (sibling === undefined) continue;
+      ids.add(String(sibling.id));
+    }
+    return ids;
+  }, [focused, docInAgocraft]);
+  // Stage-2 only — the host translates this into `pointer-events: none`
+  // so dimmed siblings stop intercepting clicks. Kept as a distinct memo
+  // (rather than a boolean flag) so FrameStage stays declarative: "this
+  // set is isolated" instead of "if isolating, this other set is isolated".
+  const isolatedFrameIds = useMemo<ReadonlySet<string>>(
+    () => (focused?.stage === 2 ? dimmedFrameIds : new Set<string>()),
+    [focused, dimmedFrameIds],
+  );
+  // Stage indicator on the design root so peer surfaces (e.g.,
+  // ThumbnailPanel) can react via `[data-focus-stage]` selectors
+  // without prop drilling. `0` keeps the attribute always present so
+  // CSS rules don't have to defend against `undefined`.
+  const focusStage: 0 | 1 | 2 = focused?.stage ?? 0;
+  // Clear focus when the focused frame is removed from the document.
+  useEffect(() => {
+    if (focused === undefined) return;
+    if (findItemDeep(docInAgocraft, focused.id) === undefined) {
+      setFocused(undefined);
+    }
+  }, [focused, docInAgocraft]);
 
   // WI-033 P2 dead-code cleanup — `enteredFrameStack` consumer +
   // `setEnteredFrameId` callback removed. Phase 12 drill-in mode is
@@ -927,6 +1112,23 @@ function DesignPageBody() {
       setPendingMedia({ action: "edit", kind: mediaKind });
     });
   }, []);
+  // WI-038 — z-order host slot. Resolves the currently-selected item id
+  // through `selectedFrameIdRef` and dispatches the matching weave command.
+  // Same closure serves the four ContextMenu rows and the four hotkeys
+  // (`]` / `[` / `⌘+]` / `⌘+[`).
+  useEffect(() => {
+    const ZORDER_COMMAND_BY_DIR: Readonly<Record<ZOrderDir, string>> = {
+      bringForward: "weave.item.bringForward",
+      sendBackward: "weave.item.sendBackward",
+      bringToFront: "weave.item.bringToFront",
+      sendToBack: "weave.item.sendToBack",
+    };
+    return setZOrderDispatcher((dir) => {
+      const itemId = selectedFrameIdRef.current;
+      if (itemId === undefined) return;
+      editor.exec(ZORDER_COMMAND_BY_DIR[dir], { itemId });
+    });
+  }, [editor]);
   // Also re-tick whenever the ChangeStream emits — covers hotkey-driven
   // undo/redo + remote edits that don't go through the toolbar buttons.
   useEffect(() => {
@@ -947,9 +1149,35 @@ function DesignPageBody() {
               >
                 <ModeAwareAITooltipProvider hotkeyTable={editorHotkeyTable}>
                   <EditorProvider editor={editor}>
-                    <div className="fixed inset-0 flex flex-col bg-[color:var(--bg-page)]">
+                    {/* WI-039 — z-stack layout. The design surface (`<main>`)
+                        fills the entire viewport so the canvas reaches every
+                        edge with no chrome gap. Header, launch banners and
+                        ThumbnailPanel are absolutely positioned overlays
+                        above the main; they each carry their own background
+                        + border so they read as floating chrome over the
+                        canvas. Prior flex-column layout produced a black
+                        gap above the bottom panel because the panel's new
+                        bg (intentionally shorter than the tile) exposed the
+                        parent's `--bg-page` color through the flex gap. */}
+                    <div className="fixed inset-0 bg-[color:var(--bg-page)]">
                       <header
-                        className="relative z-20 shrink-0 grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)] bg-[color:var(--surface-1)]"
+                        // WI-039 — opaque self-background. The original
+                        // `bg-[color:var(--surface-1)]` is a translucent
+                        // glass token; when the header sat in a flex
+                        // child of `bg-[color:var(--bg-page)]` it
+                        // composited into a dark glass tone. With the
+                        // z-stack the canvas (potentially a light
+                        // design background) now sits behind the header,
+                        // so the glass token looks washed out. Stacking
+                        // `--surface-1` as a flat gradient on top of an
+                        // opaque `--bg-page` base reproduces the exact
+                        // original perceived color but is now fully
+                        // self-contained — no parent bg dependency.
+                        className="absolute inset-x-0 top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)]"
+                        style={{
+                          background:
+                            "linear-gradient(var(--surface-1), var(--surface-1)), var(--bg-page)",
+                        }}
                         data-testid="design-header"
                         role="toolbar"
                         aria-label="Edit tools"
@@ -1089,7 +1317,7 @@ function DesignPageBody() {
                                 onSelect={() => setSlidePickerOpen(true)}
                                 data-testid="add-slide"
                               >
-                                ▭&nbsp;&nbsp;슬라이드 시작점…
+                                ▭&nbsp;&nbsp;슬라이드…
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuLabel>미디어</DropdownMenuLabel>
@@ -1214,13 +1442,18 @@ function DesignPageBody() {
                           (LG-001 / RISK-001 #6 + RISK-005 #5). Both
                           auto-show during the launch week and fall
                           silent on dismiss / outside the window. */}
-                      <div className="px-4 pt-2 flex flex-col gap-2">
+                      {/* Launch banners — float just below the header.
+                          `pointer-events-none` on the wrapper lets clicks
+                          pass through the empty space to main; each banner
+                          re-enables `pointer-events-auto` on its own card
+                          so its dismiss control stays clickable. */}
+                      <div className="absolute inset-x-0 top-12 z-30 px-4 pt-2 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
                         <TextV1LaunchBanner />
                         <FigmaSelectionLaunchBanner />
                       </div>
 
                       <main
-                        className="relative flex-1 overflow-hidden"
+                        className="absolute inset-0 overflow-hidden"
                         data-testid="design-canvas-host"
                         ref={canvasHostCallbackRef}
                         style={
@@ -1256,6 +1489,8 @@ function DesignPageBody() {
                             // frame" (undefined).
                             selectedId={selectedFrameId ?? undefined}
                             selectedIds={selectedIds}
+                            dimmedFrameIds={dimmedFrameIds}
+                            isolatedFrameIds={isolatedFrameIds}
                             onSelect={setSelectedFrameId}
                             onToggleSelect={(id) => toggleFrames([id])}
                             onMarqueeSelect={onMarqueeSelect}
@@ -1314,6 +1549,15 @@ function DesignPageBody() {
                                 onDelete={() => {
                                   removeItem(itemId);
                                   bumpHistoryTick();
+                                }}
+                                onZOrder={(dir) => {
+                                  const cmdId = {
+                                    bringForward: "weave.item.bringForward",
+                                    sendBackward: "weave.item.sendBackward",
+                                    bringToFront: "weave.item.bringToFront",
+                                    sendToBack: "weave.item.sendToBack",
+                                  }[dir];
+                                  editor.exec(cmdId, { itemId });
                                 }}
                                 {...(ctx !== undefined
                                   ? {
@@ -1467,7 +1711,16 @@ function DesignPageBody() {
                           <div
                             style={{
                               position: "absolute",
-                              top: 12,
+                              // WI-039 — z-stack layout: <main> now fills the
+                              // entire viewport (was flex-1 below header
+                              // before). The previous `top: 12` placed the
+                              // bar 12px inside main, which used to be ~60px
+                              // from viewport top; now it lands *inside* the
+                              // 48px header. Header bottom + 12px gap:
+                              //   48 (h-12 header) + 12 = 60
+                              // This keeps the toolbar a few px below the
+                              // header border in any theme.
+                              top: 60,
                               left: "50%",
                               transform: "translateX(-50%)",
                               zIndex: 35,
@@ -1477,19 +1730,28 @@ function DesignPageBody() {
                             <ContextualToolbar
                               editor={editor}
                               selectedItems={(() => {
+                                // Pre-existing bug fix — earlier this loop
+                                // only iterated `root.children`, so nested
+                                // items (anything below the first level)
+                                // never surfaced in `selectedItems` and
+                                // the toolbar simply didn't render for
+                                // them. Walk the full tree by resolving
+                                // each id via findItemDeep so any item in
+                                // the selection — root or nested — feeds
+                                // its kind + attrs into the toolbar.
                                 const out: Array<{
                                   id: string;
                                   kind: string;
                                   attrs: Readonly<Record<string, unknown>>;
                                 }> = [];
-                                for (const c of docInAgocraft.root.children) {
-                                  if (selectedIds.has(String(c.id))) {
-                                    out.push({
-                                      id: String(c.id),
-                                      kind: c.kind,
-                                      attrs: c.attrs,
-                                    });
-                                  }
+                                for (const id of selectedIds) {
+                                  const it = findItemDeep(docInAgocraft, id);
+                                  if (it === undefined) continue;
+                                  out.push({
+                                    id: String(it.id),
+                                    kind: it.kind,
+                                    attrs: it.attrs,
+                                  });
                                 }
                                 return out;
                               })()}
@@ -1521,12 +1783,23 @@ function DesignPageBody() {
                         ) : null}
                       </main>
 
-                      <ThumbnailPanel
-                        design={design}
-                        setPresentationOrder={setPresentationOrderViaEditor}
-                        selectedId={selectedFrameId}
-                        onSelect={setSelectedFrameId}
-                      />
+                      {/* ThumbnailPanel floats at the bottom of the viewport
+                          on top of the design canvas (z-stack). The panel's
+                          own section uses `position: relative` to host its
+                          shorter bg band; the wrapper here owns the
+                          viewport-bottom anchoring + stack order. */}
+                      <div className="absolute inset-x-0 bottom-0 z-30">
+                        <ThumbnailPanel
+                          design={design}
+                          setPresentationOrder={setPresentationOrderViaEditor}
+                          selectedId={selectedFrameId}
+                          onSelect={setSelectedFrameId}
+                          focusedId={focused?.id}
+                          focusStage={focusStage}
+                          onCycleFocus={handleCycleFocus}
+                          onClearFocus={handleClearFocus}
+                        />
+                      </div>
                       <CursorTooltip />
                       <MediaSrcDialog
                         open={pendingMedia !== null}
@@ -1597,8 +1870,8 @@ function DesignPageBody() {
                         }}
                         onCancel={() => setPendingMedia(null)}
                       />
-                      {/* WI-030 Phase 1 — slide preset picker. Add menu →
-                          "슬라이드 시작점…" opens this Dialog. Picking a
+                      {/* WI-030 — slide preset picker. Add menu →
+                          "슬라이드…" opens this Dialog. Picking a
                           preset dispatches a single `weave.preset.insertSlide`
                           which stages the slide + child Items as one history
                           entry; Cmd+Z reverts the whole subtree. */}
@@ -1666,9 +1939,7 @@ function DesignPageBody() {
                             kind,
                             containerId,
                             frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-                            ...(Object.keys(attrsOverride).length > 0
-                              ? { attrsOverride }
-                              : {}),
+                            ...(Object.keys(attrsOverride).length > 0 ? { attrsOverride } : {}),
                           });
                         }}
                       />
@@ -1706,11 +1977,17 @@ interface MultiSelectionOverlayProps {
  *  (visual placeholders; multi-frame resize is v1.x backlog). Each
  *  individual frame still mounts its own per-frame handle set
  *  (FrameStage.SelectionLayer), so the overlay is purely additive. */
-function MultiSelectionOverlay({ selectedIds, onResize }: MultiSelectionOverlayProps): React.ReactElement | null {
+function MultiSelectionOverlay({
+  selectedIds,
+  onResize,
+}: MultiSelectionOverlayProps): React.ReactElement | null {
   const isMulti = selectedIds.size > 1;
-  const [box, setBox] = useState<
-    { left: number; top: number; width: number; height: number } | null
-  >(null);
+  const [box, setBox] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const idsKey = useMemo(
     () => (isMulti ? Array.from(selectedIds).sort().join("|") : ""),
     [isMulti, selectedIds],
@@ -1749,12 +2026,13 @@ function MultiSelectionOverlay({ selectedIds, onResize }: MultiSelectionOverlayP
       };
       setBox((prev) => {
         if (
-          prev !== null
-          && Math.abs(prev.left - next.left) < 0.5
-          && Math.abs(prev.top - next.top) < 0.5
-          && Math.abs(prev.width - next.width) < 0.5
-          && Math.abs(prev.height - next.height) < 0.5
-        ) return prev;
+          prev !== null &&
+          Math.abs(prev.left - next.left) < 0.5 &&
+          Math.abs(prev.top - next.top) < 0.5 &&
+          Math.abs(prev.width - next.width) < 0.5 &&
+          Math.abs(prev.height - next.height) < 0.5
+        )
+          return prev;
         return next;
       });
       raf = requestAnimationFrame(tick);
@@ -1782,8 +2060,7 @@ function MultiSelectionOverlay({ selectedIds, onResize }: MultiSelectionOverlayP
       data-testid="multi-selection-overlay"
     >
       {(["nw", "ne", "sw", "se"] as const).map((corner) => {
-        const cursor =
-          corner === "nw" || corner === "se" ? "nwse-resize" : "nesw-resize";
+        const cursor = corner === "nw" || corner === "se" ? "nwse-resize" : "nesw-resize";
         return (
           // WI-036 follow-up — square handle (matches SelectionHandle's
           // kind="corner" 10×10 px). Offset -16 px so the handle sits
@@ -1812,12 +2089,9 @@ function MultiSelectionOverlay({ selectedIds, onResize }: MultiSelectionOverlayP
                 parentVp: DOMRect;
               }> = [];
               for (const id of ids) {
-                const el = document.querySelector(
-                  `[data-frame-id="${CSS.escape(id)}"]`,
-                );
+                const el = document.querySelector(`[data-frame-id="${CSS.escape(id)}"]`);
                 if (!(el instanceof HTMLElement)) continue;
-                const parentFrameEl =
-                  el.parentElement?.closest("[data-frame-id]") ?? null;
+                const parentFrameEl = el.parentElement?.closest("[data-frame-id]") ?? null;
                 const parentEl =
                   parentFrameEl ?? document.querySelector("[data-design-plane='true']");
                 if (!(parentEl instanceof HTMLElement)) continue;
@@ -1831,12 +2105,8 @@ function MultiSelectionOverlay({ selectedIds, onResize }: MultiSelectionOverlayP
               const initialBox = box;
               if (initialBox === null) return;
               const anchor = {
-                x: corner.includes("w")
-                  ? initialBox.left + initialBox.width
-                  : initialBox.left,
-                y: corner.includes("n")
-                  ? initialBox.top + initialBox.height
-                  : initialBox.top,
+                x: corner.includes("w") ? initialBox.left + initialBox.width : initialBox.left,
+                y: corner.includes("n") ? initialBox.top + initialBox.height : initialBox.top,
               };
               const target = e.currentTarget;
               const pointerId = e.pointerId;
@@ -1936,11 +2206,13 @@ interface QuickActionBarAnchoredProps {
   ) => void;
 }
 
-function QuickActionBarAnchored({ selectedFrameId, selectedIds, onInsertInFrame }: QuickActionBarAnchoredProps): React.ReactElement | null {
+function QuickActionBarAnchored({
+  selectedFrameId,
+  selectedIds,
+  onInsertInFrame,
+}: QuickActionBarAnchoredProps): React.ReactElement | null {
   const isMulti = selectedIds.size > 1;
-  const [anchor, setAnchor] = useState<
-    { top: number; left: number; frameId: string } | null
-  >(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number; frameId: string } | null>(null);
   // Stable key for the multi-select case so the effect re-mounts
   // whenever the selection set changes (sorted ids joined).
   const multiKey = useMemo(
@@ -1985,11 +2257,12 @@ function QuickActionBarAnchored({ selectedFrameId, selectedIds, onInsertInFrame 
       const tagId = isMulti ? (ids[0] ?? "multi") : ids[0]!;
       setAnchor((prev) => {
         if (
-          prev !== null
-          && prev.frameId === tagId
-          && Math.abs(prev.top - nextTop) < 0.5
-          && Math.abs(prev.left - nextLeft) < 0.5
-        ) return prev;
+          prev !== null &&
+          prev.frameId === tagId &&
+          Math.abs(prev.top - nextTop) < 0.5 &&
+          Math.abs(prev.left - nextLeft) < 0.5
+        )
+          return prev;
         return { top: nextTop, left: nextLeft, frameId: tagId };
       });
       raf = requestAnimationFrame(tick);
@@ -2021,12 +2294,7 @@ function QuickActionBarAnchored({ selectedFrameId, selectedIds, onInsertInFrame 
           // hover opens the submenu so the user can pick any kind
           // without learning a separate path.
           if (id === "frame.addChild") {
-            return (
-              <FrameAddSubmenu
-                frameId={anchor.frameId}
-                onInsert={onInsertInFrame}
-              />
-            );
+            return <FrameAddSubmenu frameId={anchor.frameId} onInsert={onInsertInFrame} />;
           }
           const glyph =
             id === "frame.delete" || id === "multi.delete"
@@ -2047,11 +2315,7 @@ function QuickActionBarAnchored({ selectedFrameId, selectedIds, onInsertInFrame 
 
 interface FrameAddSubmenuProps {
   readonly frameId: string;
-  readonly onInsert: (
-    containerId: string,
-    kind: DomainKind,
-    shapeSubKind?: ShapeSubKind,
-  ) => void;
+  readonly onInsert: (containerId: string, kind: DomainKind, shapeSubKind?: ShapeSubKind) => void;
 }
 
 function FrameAddSubmenu({ frameId, onInsert }: FrameAddSubmenuProps): React.ReactElement {
@@ -2110,7 +2374,10 @@ function FrameAddSubmenu({ frameId, onInsert }: FrameAddSubmenuProps): React.Rea
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>도형</DropdownMenuLabel>
-        <DropdownMenuItem onSelect={insertHandler("shape", "rectangle")} data-testid="frame-add-shape-rectangle">
+        <DropdownMenuItem
+          onSelect={insertHandler("shape", "rectangle")}
+          data-testid="frame-add-shape-rectangle"
+        >
           ▭&nbsp;&nbsp;사각형
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={insertHandler("shape", "ellipse")}>
@@ -2141,4 +2408,3 @@ function FrameAddSubmenu({ frameId, onInsert }: FrameAddSubmenuProps): React.Rea
     </DropdownMenu>
   );
 }
-

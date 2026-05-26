@@ -113,7 +113,16 @@ export function NewDesignWizard({ open, onOpenChange }: NewDesignWizardProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-describedby={undefined}>
+      {/* Frosted-glass treatment: replace the panel tone's near-transparent
+       *  `--surface-1` (6% alpha) with a moderate dark-slate base (~72% α)
+       *  so the existing `backdrop-blur` reads as a true frosted sheet —
+       *  the aurora behind still tints the surface, but body text stays
+       *  legible. Theme-independent dark base; same idea DropdownMenu /
+       *  Popover already use over varying surfaces. */}
+      <DialogContent
+        aria-describedby={undefined}
+        className="bg-[rgba(15,23,42,0.72)] border-[color:var(--surface-overlay-border)]"
+      >
         <DialogHeader
           headline="Start a new design"
           description="Pick a document flavor and size. You'll be able to add slides, canvases, blocks, media, and nested documents on the next screen."

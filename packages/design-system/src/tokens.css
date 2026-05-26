@@ -125,6 +125,17 @@
   --domain-canvas-accent: var(--color-magenta-500);
   --domain-block-accent: var(--color-violet-500);
   --domain-media-accent: var(--color-amber-500);
+
+  /* WI-039 — z-order focus stages.
+     Stage 1 (dim): higher-z siblings of the focused frame fade out so the
+     focused frame stands out visually; pointer events still flow.
+     Stage 2 (isolate): siblings fade further AND ignore pointer events so
+     the focused frame becomes the only editable surface in the area.
+     `peer-saturate` desaturates *other* tiles in the ThumbnailPanel while
+     stage 2 is active so the panel itself reflects the global lock. */
+  --focus-dim-opacity: 0.28;
+  --focus-isolate-opacity: 0.14;
+  --focus-peer-saturate: 0.55;
 }
 
 /* === SEMANTIC — Mono (Linear-grade, sharp, B2B 진중) === */
@@ -166,6 +177,12 @@
   --domain-canvas-accent: #ff6b35;
   --domain-block-accent: #ffb088;
   --domain-media-accent: #ffd0b8;
+
+  /* WI-039 — z-order focus stages. Mono 는 saturation 변동이 적어 isolate
+     opacity 를 조금 더 깊게 가져가야 같은 격리 효과 (DR-design follow-up). */
+  --focus-dim-opacity: 0.3;
+  --focus-isolate-opacity: 0.1;
+  --focus-peer-saturate: 0.6;
 }
 
 /* === SEMANTIC — Vivid (가장 톡톡, multi-color aurora, playful) === */
@@ -208,6 +225,12 @@
   --domain-canvas-accent: #ff50c8;
   --domain-block-accent: #8c5aff;
   --domain-media-accent: #ffdc50;
+
+  /* WI-039 — z-order focus stages. Vivid 는 채도가 강해 같은 alpha 에도
+     충분히 격리됨; 기본값 유지. */
+  --focus-dim-opacity: 0.28;
+  --focus-isolate-opacity: 0.14;
+  --focus-peer-saturate: 0.5;
 }
 
 /* === DOCUMENT CONTEXT — readable text/surface tokens on any canvas bg ===
