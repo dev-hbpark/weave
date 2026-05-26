@@ -89,6 +89,29 @@ test("F hotkey adds a frame to the selected frame", async ({ page }) => {
   await expect.poll(() => childCountOf(page, parentId)).toBe(before + 1);
 });
 
+test("R hotkey fires even when IME is composing (Korean input mode)", async ({ page }) => {
+  // WI-035 IME-safety regression. With Korean IME on, browsers fire
+  // keydown with `key="Process"` + `isComposing=true` while a
+  // composition is pending. The agocraft hotkey registry (which
+  // matches by `event.key`) misses; our sidecar matches by
+  // `event.code` instead. Simulate by dispatching a synthetic
+  // keydown carrying both the composition flag and the physical code.
+  const parentId = await setupParent(page);
+  await preselect(page, parentId);
+  const before = await childCountOf(page, parentId);
+  await page.evaluate(() => {
+    const ev = new KeyboardEvent("keydown", {
+      key: "Process",
+      code: "KeyR",
+      bubbles: true,
+      cancelable: true,
+      isComposing: true,
+    });
+    window.dispatchEvent(ev);
+  });
+  await expect.poll(() => childCountOf(page, parentId)).toBe(before + 1);
+});
+
 test("R hotkey with no selection adds to root.children", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-035-root" });
   // No preselect — root.children is empty (0 frames).

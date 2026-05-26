@@ -507,8 +507,24 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
     const bus = createInputBus({ target: window, origin: "editor" });
     const hotkeys = createHotkeyRegistry({ bus, initialScope: "editor" });
 
+    // WI-035 IME-safety — Korean (and other composition-based) IMEs
+    // replace `KeyboardEvent.key` with "Process" while a composition is
+    // pending, so the agocraft hotkey registry (which matches by `key`)
+    // misses the tool shortcuts when 한글 입력모드 is on. Match by
+    // `KeyboardEvent.code` instead — the physical key code is layout
+    // AND IME independent. Each command id below is also skipped in
+    // the registry-based registration loop so the tool shortcut never
+    // double-fires.
+    const IME_SAFE_TOOL_BINDINGS: Readonly<Record<string, string>> = {
+      KeyR: "tool.addRect",
+      KeyT: "tool.addText",
+      KeyF: "tool.addFrame",
+    };
+    const IME_SAFE_COMMAND_IDS = new Set(Object.values(IME_SAFE_TOOL_BINDINGS));
+
     const offs = EDITOR_COMMANDS.flatMap((cmd) => {
       if (cmd.hotkey === undefined) return [];
+      if (IME_SAFE_COMMAND_IDS.has(cmd.id)) return [];
       const action = findAction(cmd.id);
       if (action === undefined) return [];
       const koLabel = cmd.label.ko;
@@ -525,7 +541,25 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
       ];
     });
 
+    const codeUnsub = bus.subscribe((ev) => {
+      if (ev.kind !== "key" || ev.phase !== "down" || ev.repeat) return;
+      // Tool shortcuts are plain (no modifier). Skip when any modifier
+      // is held so combinations stay free for future bindings.
+      if (
+        ev.modifiers.shift
+        || ev.modifiers.meta
+        || ev.modifiers.ctrl
+        || ev.modifiers.alt
+      ) return;
+      const cmdId = IME_SAFE_TOOL_BINDINGS[ev.code];
+      if (cmdId === undefined) return;
+      if (isTextEditingTarget(ev.target)) return;
+      ev.raw.preventDefault();
+      findAction(cmdId)?.({ editor: editorRef.current });
+    });
+
     return () => {
+      codeUnsub();
       for (const off of offs) off();
       hotkeys.dispose();
       bus.dispose();
