@@ -29,23 +29,23 @@
   },
   "pnpm": {
     "overrides": {
-      "@agocraft/core": "file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/domain-block-doc": "file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/domain-canvas-design": "file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/domain-media": "file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/domain-presentation": "file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/editor": "file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/input": "file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/interaction": "file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/manipulation": "file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/plugin-sample-measurement": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-measurement-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/plugin-sample-sticky-note": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-sticky-note-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/renderer-canvas2d": "file:apps/web/vendor/agocraft/agocraft-renderer-canvas2d-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/renderer-html-canvas": "file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/renderer-mock": "file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/spatial": "file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/sync": "file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260526143000.tgz",
-      "@agocraft/testing": "file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260526143000.tgz"
+      "@agocraft/core": "file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/domain-block-doc": "file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/domain-canvas-design": "file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/domain-media": "file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/domain-presentation": "file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/editor": "file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/input": "file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/interaction": "file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/manipulation": "file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/plugin-sample-measurement": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-measurement-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/plugin-sample-sticky-note": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-sticky-note-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/renderer-canvas2d": "file:apps/web/vendor/agocraft/agocraft-renderer-canvas2d-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/renderer-html-canvas": "file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/renderer-mock": "file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/spatial": "file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/sync": "file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260526174124.tgz",
+      "@agocraft/testing": "file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260526174124.tgz"
     }
   }
 }
