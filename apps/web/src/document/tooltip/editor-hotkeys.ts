@@ -504,52 +504,21 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // WI-035 diagnostic — heavy logging to localize R/T/F miss in real
-    // browsers. Drop these once the bug is closed. Not gated by
-    // `import.meta.env.DEV` so it works in production builds too.
-    // eslint-disable-next-line no-console
-    console.debug("[editor-hotkeys] useEffect mount");
     const bus = createInputBus({ target: window, origin: "editor" });
     const hotkeys = createHotkeyRegistry({ bus, initialScope: "editor" });
-    // Bus-level probe — every keydown that reaches the window listener
-    // shows up here. If you press R and see "bus.key r down", the bus
-    // got it; if not, something upstream is stopping the keydown
-    // (capture-phase stopPropagation in a Radix/Lexical/portal layer).
-    const busUnsub = bus.subscribe((ev) => {
-      if (ev.kind === "key") {
-        // eslint-disable-next-line no-console
-        console.debug(
-          "[editor-hotkeys] bus.key",
-          ev.key,
-          ev.phase,
-          "shift=", ev.modifiers.shift,
-          "meta=", ev.modifiers.meta,
-          "ctrl=", ev.modifiers.ctrl,
-          "alt=", ev.modifiers.alt,
-        );
-      }
-    });
 
     const offs = EDITOR_COMMANDS.flatMap((cmd) => {
       if (cmd.hotkey === undefined) return [];
       const action = findAction(cmd.id);
       if (action === undefined) return [];
       const koLabel = cmd.label.ko;
-      // eslint-disable-next-line no-console
-      console.debug("[editor-hotkeys] register", cmd.id, "binding=", cmd.hotkey.binding);
       return [
         hotkeys.register({
           keys: cmd.hotkey.binding,
           scope: cmd.hotkey.scope ?? "editor",
           label: koLabel,
           action: (ctx) => {
-            if (isTextEditingTarget(ctx.event.target)) {
-              // eslint-disable-next-line no-console
-              console.debug("[editor-hotkey]", cmd.id, "skipped (text editing target)");
-              return;
-            }
-            // eslint-disable-next-line no-console
-            console.debug("[editor-hotkey]", cmd.id, "fired");
+            if (isTextEditingTarget(ctx.event.target)) return;
             action({ editor: editorRef.current });
           },
         }),
@@ -557,9 +526,6 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
     });
 
     return () => {
-      // eslint-disable-next-line no-console
-      console.debug("[editor-hotkeys] useEffect cleanup");
-      busUnsub();
       for (const off of offs) off();
       hotkeys.dispose();
       bus.dispose();
