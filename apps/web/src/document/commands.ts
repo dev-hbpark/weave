@@ -28,12 +28,14 @@ import {
   unitId as makeUnitId,
   ok,
   type Patch,
+  ref as styleRef,
 } from "@agocraft/core";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import { findItemDeep, findParentAndIndex, toAgocraftItem } from "./agocraft-mirror.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
+import { parseVarRef } from "./style/theme-tokens.js";
 import type { DomainKind, InteractionBehavior, ItemFrame, Item as WeaveItem } from "./types.js";
 
 /** Side-channel — per-editor map of Item shapes referenced by `item.children`
@@ -400,8 +402,19 @@ export function buildWeaveCommands(
     run: (ctx, input) => {
       const before = (ctx.document.attrs ?? {}) as Readonly<Record<string, unknown>>;
       const after: Record<string, unknown> = { ...before };
-      if (input.color === null) delete after.background;
-      else after.background = input.color;
+      if (input.color === null) {
+        delete after.background;
+      } else {
+        // WI-040 — when the input is a `var(--*)` literal pointing at a
+        // theme token registered in this project, store as a `StyleRef`
+        // (`{$ref: tokenName}`) instead of the raw CSS string. The
+        // StyleResolver cascade then walks ancestor providers on read,
+        // letting per-slide / per-frame `style.provider` Units override
+        // the same token. Non-token strings (custom hex / rgb / arbitrary
+        // var) fall through and are stored verbatim.
+        const tokenInfo = parseVarRef(input.color);
+        after.background = tokenInfo !== null ? styleRef(tokenInfo.tokenName) : input.color;
+      }
       return ok(undefined, [{ type: "document.attrs", before, after }]);
     },
   };

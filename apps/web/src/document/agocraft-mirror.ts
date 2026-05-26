@@ -24,11 +24,26 @@ import {
   type UnitMeta as AgocraftUnitMeta,
   createSchema,
   itemId,
+  STYLE_PROVIDER_UNIT_KIND,
   unitId,
 } from "@agocraft/core";
+import { buildThemeTokenMap } from "./style/theme-tokens.js";
 import type { InteractionBehavior, Document as WeaveDocument, Item as WeaveItem } from "./types.js";
 
 const SCHEMA_VERSION = 3;
+
+/** Build the root-level `style.provider` Unit that publishes weave's theme
+ *  tokens (color.accent, color.domain.*, color.text.*, …) to every Item in
+ *  the document. The token values are CSS `var(--*)` strings so the active
+ *  `[data-theme]` attribute on `<html>` does the per-theme resolution. */
+function buildRootStyleProviderUnit(): AgocraftUnit {
+  return {
+    id: unitId("style-provider-root"),
+    kind: STYLE_PROVIDER_UNIT_KIND,
+    attrs: { tokens: buildThemeTokenMap() },
+    meta: makeUnitMeta(),
+  };
+}
 
 function makeItemMeta(createdAt: string, updatedAt: string): AgocraftItemMeta {
   return {
@@ -76,7 +91,11 @@ export function toAgocraftDocument(doc: WeaveDocument): AgocraftDocument {
     id: itemId(`${doc.id}-root`),
     kind: "weave-doc",
     attrs: { title: doc.title },
-    units: [],
+    // WI-040 — seed the root with a `style.provider` Unit carrying weave's
+    // theme tokens. The StyleResolver walks ancestors looking for the
+    // nearest provider, so anchoring it here makes the full theme palette
+    // available to every descendant Item.
+    units: [buildRootStyleProviderUnit()],
     children: doc.items.map((it) => toAgocraftItem(it, doc.updatedAt)),
     meta: makeItemMeta(rootCreatedAt, doc.updatedAt),
   };

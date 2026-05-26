@@ -20,6 +20,7 @@ import {
 } from "./agocraft-mirror.js";
 import { createDefaultItem } from "./seed.js";
 import { createBlankDesign, loadDesign, saveDesign } from "./storage.js";
+import { resolveStoredColor } from "./style/resolver.js";
 import type {
   CanvasAttrs,
   CanvasShape,
@@ -208,15 +209,17 @@ export function useDesign(id: string): UseDesignResult {
       const docAttrs = (nextDoc.attrs ?? {}) as Readonly<Record<string, unknown>>;
       const bg = docAttrs.background;
       const order = docAttrs.presentationOrder;
+      // WI-040 — bg may be a raw CSS string OR a `StyleRef` written by
+      // `weave.design.setBackground` when the user picked a theme color.
+      // Resolve via the cascade walker so the wrapper-level
+      // `Design.background` stays a CSS string for legacy consumers.
+      const resolvedBg = resolveStoredColor(nextDoc, bg, nextDoc.root, prev.background);
       const mirroredBg =
-        typeof bg === "string" && bg !== prev.background ? bg : prev.background;
+        resolvedBg !== undefined && resolvedBg !== prev.background ? resolvedBg : prev.background;
       const mirroredOrder =
         Array.isArray(order) &&
         order.every((s) => typeof s === "string") &&
-        !shallowEqualStringArray(
-          order as ReadonlyArray<string>,
-          prev.presentationOrder,
-        )
+        !shallowEqualStringArray(order as ReadonlyArray<string>, prev.presentationOrder)
           ? (order as ReadonlyArray<string>)
           : prev.presentationOrder;
       return {
@@ -230,10 +233,7 @@ export function useDesign(id: string): UseDesignResult {
   // Wrapper helper — narrow shallow equality for the presentationOrder
   // mirror guard above. Avoids React state churn when the patched array
   // is identical to the wrapper's current array.
-  function shallowEqualStringArray(
-    a: ReadonlyArray<string>,
-    b: ReadonlyArray<string>,
-  ): boolean {
+  function shallowEqualStringArray(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
     if (a === b) return true;
     if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) {
