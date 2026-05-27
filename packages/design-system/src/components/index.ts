@@ -100,6 +100,8 @@ export {
   IconChevronLeft,
   IconChevronRight,
   IconClose,
+  IconCloudCheck,
+  IconCloudUpload,
   IconCursor,
   IconDistributeHorizontal,
   IconDistributeVertical,
@@ -183,6 +185,7 @@ export {
   type SelectionLayerBounds,
   type SelectionLayerCapability,
 } from "./SelectionLayer.js";
+export { Spinner, type SpinnerProps } from "./Spinner.js";
 export { Stage, type StageScene } from "./Stage.js";
 export { Switch, type SwitchProps } from "./Switch.js";
 export { FieldGroup, TextField } from "./TextField.js";

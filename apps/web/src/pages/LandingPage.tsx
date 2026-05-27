@@ -18,10 +18,40 @@ import {
 } from "@weave/design-system";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { bootstrapFromCloud } from "../document/cloud-sync.js";
+import {
+  bootstrapFromCloud,
+  duplicateDesignCloud,
+  fetchAllDesignsCloud,
+} from "../document/cloud-sync.js";
 import { listResources, type MediaResource, removeResource } from "../document/resource-storage.js";
 import { clearDesign, type DesignSummary, listAllDesigns } from "../document/storage.js";
 import { NewDesignWizard } from "./new-design/NewDesignWizard.js";
+
+/** Same id shape as `NewDesignWizard.makeDesignId` — local copy avoids
+ *  importing into the workspace mount path. Both call sites yield
+ *  `design-<base36-now>-<6-char-random>`. */
+function makeDuplicateDesignId(): string {
+  return `design-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Source title → copy title. Appends "(복사본)" once; if the source is
+ *  itself a copy (already ends with "(복사본)" or "(복사본 N)"), bumps to
+ *  "(복사본 2)", "(복사본 3)", … so successive duplicates don't pile up
+ *  identical names. Display only — uniqueness is enforced by the id,
+ *  not the title. */
+function duplicateTitleOf(sourceTitle: string): string {
+  const trimmed = sourceTitle.trim();
+  const reN = /\s*\(복사본\s*(\d+)\)\s*$/;
+  const matchN = trimmed.match(reN);
+  if (matchN !== null) {
+    const next = Number.parseInt(matchN[1] ?? "1", 10) + 1;
+    return `${trimmed.replace(reN, "")} (복사본 ${next})`;
+  }
+  if (/\(복사본\)\s*$/.test(trimmed)) {
+    return `${trimmed.replace(/\s*\(복사본\)\s*$/, "")} (복사본 2)`;
+  }
+  return `${trimmed} (복사본)`;
+}
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -46,11 +76,61 @@ export function LandingPage() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [designs, setDesigns] = useState<ReadonlyArray<DesignSummary>>([]);
   const [resources, setResources] = useState<ReadonlyArray<MediaResource>>([]);
+  // Tracks the design id currently being duplicated so the per-card
+  // button can show a "복제 중…" state and we can disable double-click.
+  // Cleared after the cloud round-trip (fetch source + POST copy +
+  // summary re-pull) resolves.
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     setDesigns(listAllDesigns());
     setResources(listResources());
   }, []);
+
+  // Pure-cloud list refresh — used after `duplicateDesignCloud` so the
+  // newly-created entry shows up without touching localStorage. The
+  // mount-time path keeps using `listAllDesigns()` (LS-cached) for an
+  // instant first paint; this refresher is the cloud-only counterpart
+  // requested for the duplicate flow.
+  const refreshFromCloud = useCallback(async () => {
+    const summaries = await fetchAllDesignsCloud();
+    setDesigns(
+      summaries.map((s) => ({
+        id: s.id,
+        title: s.title,
+        width: s.width,
+        height: s.height,
+        background: s.background,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      })),
+    );
+  }, []);
+
+  const handleDuplicate = useCallback(
+    async (source: DesignSummary): Promise<void> => {
+      if (duplicatingId !== null) return; // single-flight per workspace
+      setDuplicatingId(source.id);
+      try {
+        const newId = makeDuplicateDesignId();
+        const newTitle = duplicateTitleOf(source.title);
+        const ok = await duplicateDesignCloud(source.id, newId, newTitle);
+        if (ok === null) {
+          if (typeof window !== "undefined") {
+            window.alert("복제에 실패했습니다. 네트워크 상태를 확인하고 다시 시도해 주세요.");
+          }
+          return;
+        }
+        // Pull the fresh summary list from the cloud so the new entry
+        // appears in-place. Skips LS entirely — the duplicate flow
+        // honors the "no localStorage" contract end-to-end.
+        await refreshFromCloud();
+      } finally {
+        setDuplicatingId(null);
+      }
+    },
+    [duplicatingId, refreshFromCloud],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -180,28 +260,49 @@ export function LandingPage() {
                         </CardEyebrow>
                       </Card>
                     </Link>
-                    {/* Delete button — appears on hover. Lives OUTSIDE the
-                        Link so the click doesn't navigate. */}
-                    <button
-                      type="button"
-                      data-testid="design-delete"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (
-                          typeof window !== "undefined" &&
-                          !window.confirm(`"${d.title}" 디자인을 삭제할까요?`)
-                        ) {
-                          return;
-                        }
-                        clearDesign(d.id);
-                        refresh();
-                      }}
-                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] rounded-[var(--radius-sm)] px-2 py-1"
-                      aria-label="디자인 삭제"
-                    >
-                      ×
-                    </button>
+                    {/* Hover actions — Duplicate + Delete. Both live
+                        OUTSIDE the Link so a click doesn't navigate. The
+                        cluster sits in the top-right; visibility ties to
+                        the parent card's hover so the chrome stays out
+                        of the way until the user reaches for it.
+                        Duplicate flow goes through `duplicateDesignCloud`
+                        — cloud-only, no localStorage. */}
+                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        data-testid="design-duplicate"
+                        disabled={duplicatingId !== null}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void handleDuplicate(d);
+                        }}
+                        className="bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] disabled:opacity-50 disabled:cursor-progress rounded-[var(--radius-sm)] px-2 py-1"
+                        aria-label="디자인 복제"
+                      >
+                        {duplicatingId === d.id ? "복제 중…" : "복제"}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="design-delete"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (
+                            typeof window !== "undefined" &&
+                            !window.confirm(`"${d.title}" 디자인을 삭제할까요?`)
+                          ) {
+                            return;
+                          }
+                          clearDesign(d.id);
+                          refresh();
+                        }}
+                        className="bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] rounded-[var(--radius-sm)] px-2 py-1"
+                        aria-label="디자인 삭제"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
                 </Reveal>
               ))}

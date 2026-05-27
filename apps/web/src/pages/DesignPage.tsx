@@ -36,6 +36,8 @@ import {
   IconAlignTop,
   IconAlignVerticalCenter,
   IconButton,
+  IconCloudCheck,
+  IconCloudUpload,
   IconCursor,
   IconDistributeHorizontal,
   IconDistributeVertical,
@@ -45,6 +47,7 @@ import {
   IconPlus,
   IconRedo,
   IconUndo,
+  Spinner,
   QuickActionBar,
   ThemeSwitcher,
   useCommandHost,
@@ -125,6 +128,7 @@ import {
   useEditorHotkeys,
   type ZOrderDir,
 } from "../document/tooltip/editor-hotkeys.js";
+import { useMigrateInlineMedia } from "../document/use-migrate-inline-media.js";
 import { useWeaveEditor } from "../document/use-weave-editor.js";
 import { registerZOrderAdapters } from "../document/zorder/register.js";
 import { FigmaSelectionLaunchBanner } from "../launch/FigmaSelectionLaunchBanner.js";
@@ -508,6 +512,7 @@ function DesignPageBody() {
     reorderRootChildren,
     setDesignBackground,
     persistNow,
+    isLoading,
   } = useDesign(designId);
   const { editor, vm, router, selectionChrome, sync } = useWeaveEditor({
     docInAgocraft,
@@ -912,9 +917,46 @@ function DesignPageBody() {
       };
   const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
 
+  // Retro-active inline-media migration. Fires once per editor mount,
+  // walks the loaded design for `data:` URL image attrs.src, uploads
+  // each to `/api/resources`, then POSTs a NEW design entity carrying
+  // the cloud URLs. The source design (with data URLs) stays untouched
+  // on the server. localStorage is not involved on either side.
+  useMigrateInlineMedia({ design, document: docInAgocraft });
+
   // WI-030 — Slide preset picker open state. The Add menu's "슬라이드" item
   // opens this dialog instead of immediately inserting a blank slide.
   const [slidePickerOpen, setSlidePickerOpen] = useState(false);
+
+  // DR-design-017 — manual cloud save. The ChangeStream debounced sink in
+  // useWeaveEditor already mirrors every patch to the cloud via
+  // `persistNow`, so this button is a *force-now* affordance: the user
+  // wants to commit a session-final state immediately (e.g. before
+  // closing the tab on a slow network where the debounce window hasn't
+  // elapsed). `pushDesignCloud` is fire-and-forget, so the success flash
+  // is optimistic — we flip to "saved" right after dispatch and revert
+  // 1500 ms later. The timer is cleared on unmount and on overlapping
+  // clicks so re-saves restart the flash cleanly.
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
+  const saveFlashTimerRef = useRef<number | null>(null);
+  const handleManualSave = useCallback(() => {
+    persistNow();
+    setSaveStatus("saved");
+    if (saveFlashTimerRef.current !== null) {
+      window.clearTimeout(saveFlashTimerRef.current);
+    }
+    saveFlashTimerRef.current = window.setTimeout(() => {
+      setSaveStatus("idle");
+      saveFlashTimerRef.current = null;
+    }, 1500);
+  }, [persistNow]);
+  useEffect(() => {
+    return () => {
+      if (saveFlashTimerRef.current !== null) {
+        window.clearTimeout(saveFlashTimerRef.current);
+      }
+    };
+  }, []);
 
   const swatchFor = useCallback(
     (id: string) => {
@@ -1896,6 +1938,35 @@ function DesignPageBody() {
                                 />
                               </span>
                               <ThemeSwitcher />
+                              {/* DR-design-017 — manual cloud save trigger.
+                                  Click forces an immediate `persistNow()`
+                                  even if the debounced auto-save window
+                                  hasn't elapsed. Glyph flashes to a check
+                                  for 1.5s after dispatch so the user
+                                  sees an explicit acknowledgement (the
+                                  cloud POST itself is fire-and-forget). */}
+                              <AITooltip
+                                context={
+                                  saveStatus === "saved"
+                                    ? "저장됨"
+                                    : "현재 디자인 저장"
+                                }
+                                actions={[{ action: "서버로 즉시 저장" }]}
+                              >
+                                <IconButton
+                                  aria-label="Save design to server"
+                                  size="sm"
+                                  onClick={handleManualSave}
+                                  data-testid="toolbar-save"
+                                  data-state={saveStatus}
+                                >
+                                  {saveStatus === "saved" ? (
+                                    <IconCloudCheck />
+                                  ) : (
+                                    <IconCloudUpload />
+                                  )}
+                                </IconButton>
+                              </AITooltip>
                               <Button size="md" trailingIcon={<IconPlay size={14} />} asChild>
                                 <Link
                                   to={`/design/${designId}/present`}
@@ -1924,6 +1995,35 @@ function DesignPageBody() {
                             <TextV1LaunchBanner />
                             <FigmaSelectionLaunchBanner />
                           </div>
+
+                          {/* LS-miss cloud-fetch spinner. Covers the
+                              canvas area (top-12 to skip the header
+                              chrome) while `useDesign` is awaiting the
+                              server snapshot for an id that wasn't
+                              cached locally — duplicate / migrate
+                              destinations, fresh-tab cold loads, etc.
+                              z-20 sits above the canvas (z-auto) and
+                              below the header (z-30), so the user can
+                              still see "weave / title" and bail back
+                              via the home link. */}
+                          {isLoading && (
+                            <div
+                              className="absolute inset-x-0 bottom-0 top-12 z-20 flex items-center justify-center bg-[color:var(--bg-page)]/85 backdrop-blur-sm"
+                              data-testid="design-loading"
+                              role="status"
+                              aria-live="polite"
+                            >
+                              <div className="flex flex-col items-center gap-3">
+                                <Spinner
+                                  size={28}
+                                  className="text-[color:var(--text-strong)]"
+                                />
+                                <span className="text-[13px] text-[color:var(--text-soft)]">
+                                  디자인을 불러오는 중…
+                                </span>
+                              </div>
+                            </div>
+                          )}
 
                           <main
                             className="absolute inset-0 overflow-hidden"

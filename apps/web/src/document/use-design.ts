@@ -6,7 +6,8 @@
 
 import type { Document as AgocraftDocument, Unit as AgocraftUnit, Change } from "@agocraft/core";
 import { unitId as makeUnitId } from "@agocraft/core";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchDesignCloud } from "./cloud-sync.js";
 import {
   addChild,
   applyChangeToDocument,
@@ -20,7 +21,13 @@ import {
   updateUnitAttrs,
 } from "./agocraft-mirror.js";
 import { createDefaultItem } from "./seed.js";
-import { createBlankDesign, loadDesign, saveDesign } from "./storage.js";
+import {
+  createBlankDesign,
+  hydrateSerializedDesign,
+  loadDesign,
+  saveDesign,
+  type SerializedDesignV5,
+} from "./storage.js";
 import { resolveStoredColor } from "./style/resolver.js";
 import type {
   CanvasAttrs,
@@ -69,6 +76,14 @@ interface UseDesignResult {
    *  agocraft `scheduling.debounce`. Renders stay immediate while
    *  persistence batches at the consumer's schedule. */
   readonly persistNow: () => void;
+  /** True while the LS-miss cloud fallback is mid-fetch — the
+   *  initial Design returned from this hook is a blank placeholder
+   *  that the host should mask behind a spinner until the real blob
+   *  arrives (or the fetch fails, in which case this flips to false
+   *  and the blank becomes the live editing target). Always `false`
+   *  when LS already had the design, so well-behaved hosts can render
+   *  the spinner unconditionally on `isLoading`. */
+  readonly isLoading: boolean;
 }
 
 function nowIso(): string {
@@ -83,22 +98,80 @@ function withDocument(design: Design, document: AgocraftDocument): Design {
   };
 }
 
-/** Resolve the initial Design for `id`. Loads from storage if present, else
- *  builds a blank Design with the default 1920×1080 preset. */
-function initialDesign(id: string): Design {
+/** Resolve the initial Design for `id`. Loads from storage if present,
+ *  else builds a blank Design with the default 1920×1080 preset. The
+ *  `localMiss` flag tells the caller whether the LS path actually
+ *  produced a hit — `true` means the returned Design is the fallback
+ *  blank, in which case the host should attempt a cloud fetch before
+ *  letting the user start editing.
+ *
+ *  The flag is necessary because a blank fallback is structurally
+ *  indistinguishable from a freshly-created empty design — both have
+ *  zero items. Without the flag we'd either skip the cloud probe
+ *  (breaking duplicate / migrate flows that don't seed LS) or fire it
+ *  for every brand-new design (wasted round-trip). */
+function initialDesign(id: string): { readonly design: Design; readonly localMiss: boolean } {
   const loaded = loadDesign(id);
-  if (loaded !== undefined) return loaded;
-  return createBlankDesign({ id, title: "Untitled design", width: 1920, height: 1080 });
+  if (loaded !== undefined) return { design: loaded, localMiss: false };
+  return {
+    design: createBlankDesign({ id, title: "Untitled design", width: 1920, height: 1080 }),
+    localMiss: true,
+  };
 }
 
 export function useDesign(id: string): UseDesignResult {
-  const [design, setDesign] = useState<Design>(() => initialDesign(id));
+  const initial = useRef<{ readonly design: Design; readonly localMiss: boolean }>();
+  if (initial.current === undefined) initial.current = initialDesign(id);
+  const [design, setDesign] = useState<Design>(initial.current.design);
+  // Spinner gate. Starts true only on LS-miss (= the cloud fallback
+  // effect below will fire); on LS-hit there's nothing to wait for so
+  // it starts false. Flips to false in every effect exit path (success,
+  // 404, network error, user-mutated-mid-fetch) so the spinner does
+  // not strand the user.
+  const [isLoading, setIsLoading] = useState<boolean>(initial.current.localMiss);
 
   // Mirror the latest Design into a ref so persistNow can read it without
   // re-creating the callback on every render. setDesign batching means the
   // ref is updated synchronously on the very next render after a mutation.
   const designRef = useRef<Design>(design);
   designRef.current = design;
+
+  // Cloud fallback for LS-miss. Fires once per id, only when the
+  // initial load above returned the blank. Successful hydration
+  // replaces the blank Design with the cloud snapshot; failure is a
+  // silent no-op (user keeps editing the blank, which will then save
+  // to the cloud as the first user mutation lands and produces a
+  // patch). Race-protected by reference-equality against the snapshot
+  // we captured at mount: a user who started typing on the blank will
+  // have rotated `designRef.current` to a new object via `setDesign`,
+  // so the bail-out below leaves their work intact.
+  const designAtMountRef = useRef(initial.current.design);
+  useEffect(() => {
+    if (!initial.current?.localMiss) return undefined;
+    let cancelled = false;
+    void (async () => {
+      const raw = await fetchDesignCloud(id);
+      if (cancelled) return;
+      if (raw === null) {
+        setIsLoading(false);
+        return;
+      }
+      if (designRef.current !== designAtMountRef.current) {
+        setIsLoading(false);
+        return;
+      }
+      const hydrated = hydrateSerializedDesign(raw as unknown as SerializedDesignV5);
+      if (hydrated === undefined) {
+        setIsLoading(false);
+        return;
+      }
+      setDesign(hydrated);
+      setIsLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   // Persistence is no longer driven by useEffect on design changes —
   // useWeaveEditor wires a debounced ChangeStream sink to persistNow.
@@ -315,6 +388,7 @@ export function useDesign(id: string): UseDesignResult {
     addBehavior,
     setDesignBackground,
     persistNow,
+    isLoading,
   };
 }
 

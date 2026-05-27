@@ -38,6 +38,20 @@ const BACKUP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // `saveDesign` persists the new shape, and the pre-migration v9 blob is
 // stashed under `weave.design.v9-backup.<id>` for 1 week (RISK-004 §1).
 const WI032_MIGRATE_ENABLED = true;
+
+// Save-path localStorage gate. When `false`, `saveDesign` skips the LS
+// write line and only fires the cloud (`pushDesignCloud`) mirror — the
+// server becomes the sole persistence target. Read-side (`loadDesign`,
+// `listAllDesigns`) and the cloud → LS bootstrap (`bootstrapFromCloud`)
+// are intentionally left untouched: LS still acts as a per-session
+// cache so reloads inside the same session pick up the in-memory shape
+// without a round-trip. Flip back to `true` to restore the original
+// dual-write behavior.
+//
+// Set false on user request (2026-05-27): "당장은 로컬스토리지에는 저장하고
+// 싶지 않아 기능을 막아두고 네트워크로 실제 서버에 저장하는것만 동작하게
+// 해줘".
+const LOCAL_STORAGE_SAVE_ENABLED = false;
 const LEGACY_PREFIX_V3 = "weave.doc.v3.";
 const LEGACY_PREFIX_V2 = "weave.doc.v2.";
 const LEGACY_PREFIX_V1 = "weave.doc.v1.";
@@ -88,7 +102,7 @@ interface LegacyCanvasShapeV2 {
   readonly hue: string;
 }
 
-interface SerializedDesignV5 {
+export interface SerializedDesignV5 {
   readonly id: string;
   readonly title: string;
   readonly width: number;
@@ -285,6 +299,52 @@ function wrapDocumentInDesign(doc: AgocraftDocument): Design {
 
 // ── Public surface ─────────────────────────────────────────────────────────
 
+/** Pure transform: SerializedDesignV5 blob (e.g. fetched from the cloud)
+ *  → runtime `Design`. Mirrors the v5-branch of `loadDesign` but with no
+ *  LS side effects, so callers that already hold the JSON (e.g. cloud
+ *  fetch responses) can hydrate without re-reading or re-writing
+ *  localStorage. Returns `undefined` when the blob fails schema
+ *  validation; callers fall back to whatever in-memory state they
+ *  already have.
+ *
+ *  WI-032 frame-only migration runs the same way (in-place rewrite of
+ *  legacy `slide` / `canvas-design` / `block-doc` / `media` kinds) so
+ *  cloud blobs from before the migration land in a known-frame shape.
+ *  The v9 backup *cannot* be written here — there's no original v5
+ *  raw string to stash; the migration backup contract is LS-only. */
+export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | undefined {
+  if (blob.meta?.schemaVersion !== 5) return undefined;
+  let documentJson = blob.document;
+  if (WI032_MIGRATE_ENABLED) {
+    const rawAsAgo = documentJson as unknown as AgocraftDocument;
+    const migrated = migrateLegacyKindsToFrame(rawAsAgo);
+    if (migrated !== rawAsAgo) {
+      documentJson = migrated as unknown as typeof documentJson;
+    }
+  }
+  const result = serializer.fromJSON(documentJson, {
+    schema: createSchema(),
+    features: createFeatureRegistry(),
+    onUnknown: "preserve",
+  });
+  if (!result.ok) return undefined;
+  let document = result.document;
+  if (WI032_MIGRATE_ENABLED) {
+    document = migrateLegacyKindsToFrame(document);
+  }
+  document = ensureRootStyleProvider(document);
+  return {
+    id: blob.id,
+    title: blob.title,
+    width: blob.width,
+    height: blob.height,
+    background: blob.background ?? DEFAULT_DESIGN_BACKGROUND,
+    document,
+    presentationOrder: blob.presentationOrder ?? [],
+    meta: blob.meta,
+  };
+}
+
 export function loadDesign(id: string): Design | undefined {
   if (typeof window === "undefined") return undefined;
 
@@ -440,10 +500,16 @@ export function saveDesign(design: Design): void {
     presentationOrder: design.presentationOrder,
     meta: design.meta,
   };
-  window.localStorage.setItem(KEY_PREFIX_V5 + design.id, JSON.stringify(blob));
+  if (LOCAL_STORAGE_SAVE_ENABLED) {
+    window.localStorage.setItem(KEY_PREFIX_V5 + design.id, JSON.stringify(blob));
+  }
   // WI-025 — mirror to cloud (fire-and-forget). The cloud sees the same
   // serialized blob as localStorage. Loaded lazily so unit tests don't
-  // pull the cloud module by default.
+  // pull the cloud module by default. When the LS write above is gated
+  // off, this becomes the sole persistence call — `pushDesignCloud` is
+  // still fire-and-forget, so a failed network round-trip leaves no
+  // local fallback. The user opted into that trade-off (see flag
+  // comment at the top of this file).
   void import("./cloud-sync.js")
     .then((m) => {
       m.pushDesignCloud(blob as unknown as Design);

@@ -133,6 +133,76 @@ export function deleteDesignCloud(id: string): void {
   });
 }
 
+/** Awaitable POST of an already-shaped SerializedDesignV5 blob. Unlike
+ *  `pushDesignCloud` (fire-and-forget), the caller awaits the round-
+ *  trip and gets the new id back on success. Used by the inline-media
+ *  migration to stamp a fresh design entity onto the server without
+ *  blocking on the editor's debounced save sink — the caller is
+ *  responsible for assigning a NEW id inside `blob` before invoking
+ *  this, so the migration never overwrites the source's server entry
+ *  even when both designs share the same in-memory editor session. */
+export async function postDesignBlobAsNew(blob: unknown): Promise<string | null> {
+  const resp = await safeFetch("/api/designs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(blob),
+  });
+  if (resp === null || !resp.ok) return null;
+  return (blob as { id?: string }).id ?? null;
+}
+
+/** Server-side duplicate: pulls the source design's full blob from the
+ *  cloud, rewrites the envelope identity (new id + new title + fresh
+ *  meta timestamps), POSTs it back as a new design. Awaits both the
+ *  fetch and the POST so callers can refresh the workspace list only
+ *  after the new entry actually exists on the server.
+ *
+ *  Intentionally bypasses `saveDesign` / localStorage entirely — the
+ *  read side comes from `/api/designs/<id>` and the write side from
+ *  `POST /api/designs`. No LS read, no LS write. The inner agocraft
+ *  document (item ids, root attrs, meta) is preserved as-is; only the
+ *  outer envelope (id, title, meta.createdAt, meta.updatedAt) is
+ *  rewritten. Inner ids only need to be unique within one design, and
+ *  two separate designs never share an editor instance, so the
+ *  duplication carries no collision risk.
+ *
+ *  Returns the new design id on success. Returns `null` when the
+ *  source can't be fetched (deleted concurrently, network down) or
+ *  when the POST fails (5xx, payload too large). The caller decides
+ *  whether to surface an error toast — this module stays UI-agnostic. */
+export async function duplicateDesignCloud(
+  sourceId: string,
+  newId: string,
+  newTitle: string,
+): Promise<string | null> {
+  const source = await fetchDesignCloud(sourceId);
+  if (source === null) return null;
+  const now = new Date().toISOString();
+  // `fetchDesignCloud` types the return as `Design`, but the server
+  // round-trips the SerializedDesignV5 shape verbatim, so spreading
+  // through `unknown` lets us rewrite the envelope without dragging
+  // in the runtime AgocraftDocument type.
+  const sourceBlob = source as unknown as Record<string, unknown>;
+  const sourceMeta = (sourceBlob.meta as Record<string, unknown> | undefined) ?? {};
+  const copy = {
+    ...sourceBlob,
+    id: newId,
+    title: newTitle,
+    meta: {
+      ...sourceMeta,
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+  const resp = await safeFetch("/api/designs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(copy),
+  });
+  if (resp === null || !resp.ok) return null;
+  return newId;
+}
+
 // ── Resources ────────────────────────────────────────────────────────────
 
 interface CloudResource {

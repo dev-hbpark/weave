@@ -227,6 +227,38 @@ export const IconMore = forwardRef<SVGSVGElement, IconProps>(function IconMore(p
   );
 });
 
+// DR-design-017 — manual cloud save trigger.
+//
+// IconCloudUpload (idle) shows a cloud silhouette with an upward arrow
+// piercing the bottom-center, conveying "push local → server". Stroke
+// only (no fill) keeps it in the same visual tier as IconUndo / IconRedo
+// in the header chrome cluster. IconCloudCheck (success) drops the
+// arrow for a checkmark inside the same cloud silhouette so a
+// post-save flash maintains shape continuity (the cloud envelope stays
+// put; only the inner glyph swaps) — no layout shift in the IconButton.
+export const IconCloudUpload = forwardRef<SVGSVGElement, IconProps>(
+  function IconCloudUpload(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M7 18a4 4 0 1 1 .8-7.92A6 6 0 0 1 19 11a4 4 0 0 1 0 8h-2" />
+        <path d="M12 21v-9" />
+        <path d="M9 15l3-3 3 3" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconCloudCheck = forwardRef<SVGSVGElement, IconProps>(
+  function IconCloudCheck(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M7 18a4 4 0 1 1 .8-7.92A6 6 0 0 1 19 11a4 4 0 0 1 0 8H7z" />
+        <path d="M9 14.5l2 2 4-4" />
+      </SvgRoot>
+    );
+  },
+);
+
 // ── alignment / distribution ────────────────────────────────────────
 // Each icon depicts a guide line (the alignment edge / axis) plus two
 // rectangles snapped to it. Distribute icons show three rectangles with
