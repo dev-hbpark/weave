@@ -159,7 +159,19 @@ export function useHoverContext(hostRef: { readonly current: HTMLElement | null 
         const t = e.target;
         const insideHost = t instanceof Node ? host.contains(t) : false;
         const onBar = t instanceof Element ? t.closest("[data-quick-actions-bar]") !== null : false;
-        if (!insideHost && !onBar) {
+        // WI-039 follow-up (2026-05-27) — the bottom thumbnail panel
+        // dispatches `data-frame-kind` on each non-disabled tile so
+        // tile hover paints the canvas's HoverAffordanceLayer. Treat
+        // the panel as a recognised hover surface: when the pointer
+        // sits over panel chrome (between tiles, or over a disabled
+        // tile that's been stripped of `data-frame-kind`), publish
+        // EMPTY immediately instead of arming the 200ms grace timer.
+        // Without this, leaving a thumbnail leaves the canvas frame
+        // outlined for ~200ms — the user reported that as "stale" on
+        // 2026-05-27.
+        const onThumbnailPanel =
+          t instanceof Element ? t.closest('[data-testid="thumbnail-panel"]') !== null : false;
+        if (!insideHost && !onBar && !onThumbnailPanel) {
           // Mouse left both the canvas host and the bar — start the
           // grace window the same way `pointerleave` would.
           graceTimerRef.current = window.setTimeout(() => {

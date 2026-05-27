@@ -61,7 +61,12 @@ import {
   useSelectionChromeVisible,
   useTooltipsAllowed,
 } from "../document";
-import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../document/agocraft-mirror.js";
+import {
+  absoluteFrameBox,
+  findItemDeep,
+  findParentAndIndex,
+  findTrailDeep,
+} from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
@@ -115,6 +120,65 @@ import { TextV1LaunchBanner } from "../launch/TextV1LaunchBanner.js";
 import { FrameStage } from "./FrameStage.js";
 import { SlidePresetPicker } from "./new-design/SlidePresetPicker.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
+
+/** WI-039 — z-order focus gate set computation.
+ *
+ *  Walks the trail from doc root to the focused frame and collects every
+ *  frame id that should be visually + interactively suppressed for the
+ *  given mode. Returns the empty set when the focused frame doesn't
+ *  exist (it was deleted while focused — the host's clear-on-removal
+ *  effect tidies up shortly after).
+ *
+ *  `mode = "above"` (stage 1): at every ancestor, take only the children
+ *  whose paint order is AFTER the trail element. This yields true z-order
+ *  above across nested levels — including later siblings of any ancestor,
+ *  not just same-parent siblings of the focused frame.
+ *
+ *  `mode = "outside"` (stage 2): at every ancestor, take every child
+ *  except the trail element. Yields the entire complement of the focused
+ *  frame's subtree (siblings + their subtrees + cousins + their subtrees,
+ *  recursively). Ancestors themselves stay untouched so the DOM chain
+ *  that mounts the focused frame still paints and receives events.
+ *
+ *  Descendants of each collected sibling are added explicitly. Opacity
+ *  inherits through CSS, but `pointer-events` is re-applied per frame
+ *  wrapper by FrameStage's hit gate, so a parent-only set would let
+ *  descendants stay interactive. Including every id in the set lets the
+ *  per-frame gate enforce the block uniformly. */
+function collectFocusGateIds(
+  doc: AgocraftDocument,
+  focusedId: string,
+  mode: "above" | "outside",
+): ReadonlySet<string> {
+  const trail = findTrailDeep(doc, focusedId);
+  if (trail === undefined) return new Set<string>();
+  // trail = [root.child_in_path, ..., focused]; focused itself sits at
+  // trail[trail.length - 1]. Ancestors that own a child in the trail are:
+  // root, trail[0], trail[1], ..., trail[trail.length - 2].
+  const out = new Set<string>();
+  const addSubtree = (item: AgocraftItem): void => {
+    out.add(String(item.id));
+    for (const c of item.children) addSubtree(c);
+  };
+  const collectLevel = (parent: AgocraftItem, trailChild: AgocraftItem): void => {
+    const idx = parent.children.findIndex((c) => String(c.id) === String(trailChild.id));
+    if (idx < 0) return;
+    const start = mode === "above" ? idx + 1 : 0;
+    for (let i = start; i < parent.children.length; i += 1) {
+      if (mode === "outside" && i === idx) continue;
+      const sibling = parent.children[i];
+      if (sibling !== undefined) addSubtree(sibling);
+    }
+  };
+  const firstTrail = trail[0];
+  if (firstTrail !== undefined) collectLevel(doc.root, firstTrail);
+  for (let k = 0; k < trail.length - 1; k += 1) {
+    const ancestor = trail[k];
+    const next = trail[k + 1];
+    if (ancestor !== undefined && next !== undefined) collectLevel(ancestor, next);
+  }
+  return out;
+}
 
 /** AITooltipProvider that mirrors the editor-wide interaction mode. Reads
  *  `useTooltipsAllowed()` from the InteractionMode machine and passes its
@@ -882,11 +946,24 @@ function DesignPageBody() {
   // WI-039 — z-order focus, two-stage.
   //
   // Each slide tile in ThumbnailPanel cycles through:
-  //   undefined      → no focus, every sibling renders normally
-  //   stage 1 "dim"  → siblings above the focused frame fade (visual hint
-  //                    only, pointer events still flow)
-  //   stage 2 "iso"  → siblings above also ignore pointer events so the
-  //                    focused frame becomes the sole editable surface
+  //   undefined        → no focus, every frame renders normally
+  //   stage 1 "dim"    → everything painted ABOVE the focused frame +
+  //                      descendants in z-order fades to
+  //                      `--focus-dim-opacity` AND ignores pointer events.
+  //                      The focused tree is unaffected and stays the only
+  //                      interactive surface ABOVE the painted z-order line.
+  //   stage 2 "isolate"→ everything OUTSIDE the focused frame tree fades
+  //                      to `--focus-isolate-opacity` (0 by default) and
+  //                      ignores pointer events. Only the focused tree
+  //                      remains visible and editable.
+  //
+  // Both stages block interaction; the difference is the *scope* (above-
+  // tree vs. outside-tree) and the *opacity depth* (dim vs. invisible).
+  //
+  // "Above" is true z-order, not just same-parent siblings: at every
+  // ancestor of the focused frame we collect its children that come AFTER
+  // the trail element, with their entire subtrees. "Outside" is the same
+  // walk but takes all non-trail children at each level.
   //
   // Single-toggle: at most one frame is focused at a time. Cycling a
   // different tile resets the previous stage and restarts the new tile
@@ -910,30 +987,36 @@ function DesignPageBody() {
     [],
   );
   const handleClearFocus = useCallback(() => setFocused(undefined), []);
-  // Siblings of the focused frame (same parent, paint order > focused).
-  // Dimmed in both stages; the host uses this set for opacity. Empty when
-  // nothing is focused, when the focused frame disappears, or when it
-  // sits at the top of its sibling stack.
+  // Walk the focused frame's trail and collect every frame id that should
+  // be gated out for the given mode. `above` only takes later siblings at
+  // each ancestor level; `outside` takes every non-trail sibling at every
+  // level. Descendants of each selected sibling are included so the per-
+  // frame hit gate in FrameStage blocks pointer events for the whole
+  // subtree (CSS opacity inherits but `pointer-events` is re-applied per
+  // wrapper, so each descendant id must appear in the set explicitly).
   const dimmedFrameIds = useMemo<ReadonlySet<string>>(() => {
-    if (focused === undefined) return new Set<string>();
-    const found = findParentAndIndex(docInAgocraft, focused.id);
-    if (found === undefined) return new Set<string>();
-    const ids = new Set<string>();
-    for (let i = found.indexInParent + 1; i < found.parent.children.length; i += 1) {
-      const sibling = found.parent.children[i];
-      if (sibling === undefined) continue;
-      ids.add(String(sibling.id));
-    }
-    return ids;
+    if (focused?.stage !== 1) return new Set<string>();
+    return collectFocusGateIds(docInAgocraft, focused.id, "above");
   }, [focused, docInAgocraft]);
-  // Stage-2 only — the host translates this into `pointer-events: none`
-  // so dimmed siblings stop intercepting clicks. Kept as a distinct memo
-  // (rather than a boolean flag) so FrameStage stays declarative: "this
-  // set is isolated" instead of "if isolating, this other set is isolated".
-  const isolatedFrameIds = useMemo<ReadonlySet<string>>(
-    () => (focused?.stage === 2 ? dimmedFrameIds : new Set<string>()),
-    [focused, dimmedFrameIds],
-  );
+  const isolatedFrameIds = useMemo<ReadonlySet<string>>(() => {
+    if (focused?.stage !== 2) return new Set<string>();
+    return collectFocusGateIds(docInAgocraft, focused.id, "outside");
+  }, [focused, docInAgocraft]);
+  // Tiles whose underlying frame is currently gated (dim OR isolate) get
+  // a "disabled" treatment in ThumbnailPanel: no hover pop, no click-
+  // select, no drag-to-reorder, no keyboard activate. Aligning the panel
+  // surface with the canvas surface keeps the "interaction blocked"
+  // semantic consistent — a frame that ignores edits should also ignore
+  // a click on its thumbnail. The focus toggle button on the tile stays
+  // functional so the user can still cycle focus from any tile.
+  const disabledFrameIds = useMemo<ReadonlySet<string>>(() => {
+    if (dimmedFrameIds.size === 0 && isolatedFrameIds.size === 0) {
+      return new Set<string>();
+    }
+    const merged = new Set<string>(dimmedFrameIds);
+    for (const id of isolatedFrameIds) merged.add(id);
+    return merged;
+  }, [dimmedFrameIds, isolatedFrameIds]);
   // Stage indicator on the design root so peer surfaces (e.g.,
   // ThumbnailPanel) can react via `[data-focus-stage]` selectors
   // without prop drilling. `0` keeps the attribute always present so
@@ -2066,6 +2149,7 @@ function DesignPageBody() {
                               onSelect={setSelectedFrameId}
                               focusedId={focused?.id}
                               focusStage={focusStage}
+                              disabledFrameIds={disabledFrameIds}
                               onCycleFocus={handleCycleFocus}
                               onClearFocus={handleClearFocus}
                             />
@@ -2538,7 +2622,7 @@ function HoverAffordanceMount({
     <HoverAffordanceLayer
       visible={true}
       hovered={projection.hovered}
-      siblings={projection.siblings}
+      descendants={projection.descendants}
       parent={projection.parent}
     />
   );

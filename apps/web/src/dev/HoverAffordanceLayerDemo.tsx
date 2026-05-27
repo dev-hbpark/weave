@@ -1,10 +1,15 @@
 // WI-040 Phase 2 — HoverAffordanceLayer visual demo.
 //
 // DEV-only route at `/_dev/hover-affordance-demo`. Visual evidence for
-// DR-design-016 — proves the 3 tiers (hovered / siblings / parent) read
-// as a single relationship at a glance because they share `--accent`
-// hue. Not wired into the production document flow; the primitive
-// receives hardcoded rects.
+// DR-design-016 — proves the 3 tiers (hovered / descendants / parent)
+// read as a single relationship at a glance because they share
+// `--accent` hue. Not wired into the production document flow; the
+// primitive receives hardcoded rects.
+//
+// 2026-05-27 scope update: the middle tier is now the hovered item's
+// own descendants (children of the hovered subtree), not its tree
+// siblings. The demo layout reflects that — descendant rects sit
+// INSIDE the hovered rect, the same way they will at runtime.
 //
 // Theme switcher (mono / aurora / vivid) is mounted so the demo proves
 // the layer's tokens cascade through `[data-theme]` — flipping the
@@ -14,17 +19,20 @@
 // 방지"): when an item is already selected, its hover outline is
 // suppressed because SelectionLayer is already painting selection
 // chrome over it. The "selected" toggles below simulate that — host
-// (Phase 3) will compute the same filter from real selection state.
+// (Phase 3) computes the same filter from real selection state.
 
 import { HoverAffordanceLayer, type HoverAffordanceRect, useTheme } from "@weave/design-system";
 import { useRef, useState } from "react";
 
 const PARENT: HoverAffordanceRect = { x: 40, y: 40, width: 720, height: 380, id: "parent" };
-const SIBLINGS: ReadonlyArray<HoverAffordanceRect> = [
-  { x: 64, y: 64, width: 240, height: 140, id: "sibling-a" },
-  { x: 64, y: 240, width: 480, height: 140, id: "sibling-b" },
+const HOVERED: HoverAffordanceRect = { x: 200, y: 100, width: 400, height: 260, id: "hovered" };
+// Descendant rects sit INSIDE the hovered rect to match real-runtime
+// geometry (descendants of a frame are nested in the frame's box).
+const DESCENDANTS: ReadonlyArray<HoverAffordanceRect> = [
+  { x: 220, y: 120, width: 170, height: 100, id: "descendant-a" },
+  { x: 410, y: 120, width: 170, height: 100, id: "descendant-b" },
+  { x: 220, y: 240, width: 360, height: 100, id: "descendant-c" },
 ];
-const HOVERED: HoverAffordanceRect = { x: 320, y: 64, width: 380, height: 140, id: "hovered" };
 
 export function HoverAffordanceLayerDemo() {
   // Mount useTheme so visiting /_dev/... directly applies the stored
@@ -33,21 +41,21 @@ export function HoverAffordanceLayerDemo() {
   const { theme, setTheme } = useTheme();
   const hostRef = useRef<HTMLDivElement>(null);
   const [showHovered, setShowHovered] = useState(true);
-  const [showSiblings, setShowSiblings] = useState(true);
+  const [showDescendants, setShowDescendants] = useState(true);
   const [showParent, setShowParent] = useState(true);
   const [selectedHovered, setSelectedHovered] = useState(false);
-  const [selectedSiblingA, setSelectedSiblingA] = useState(false);
-  const [selectedSiblingB, setSelectedSiblingB] = useState(false);
+  const [selectedDescA, setSelectedDescA] = useState(false);
+  const [selectedDescB, setSelectedDescB] = useState(false);
   const [selectedParent, setSelectedParent] = useState(false);
 
-  const renderedSiblings = SIBLINGS.filter((r) => {
-    if (r.id === "sibling-a" && selectedSiblingA) return false;
-    if (r.id === "sibling-b" && selectedSiblingB) return false;
+  const renderedDescendants = DESCENDANTS.filter((r) => {
+    if (r.id === "descendant-a" && selectedDescA) return false;
+    if (r.id === "descendant-b" && selectedDescB) return false;
     return true;
   });
   const renderedHovered = showHovered && !selectedHovered ? HOVERED : null;
   const renderedParent = showParent && !selectedParent ? PARENT : null;
-  const renderedSiblingsList = showSiblings ? renderedSiblings : [];
+  const renderedDescendantsList = showDescendants ? renderedDescendants : [];
 
   return (
     <div
@@ -63,8 +71,9 @@ export function HoverAffordanceLayerDemo() {
         HoverAffordanceLayer — DR-design-016 visual evidence
       </h1>
       <p style={{ margin: "0 0 16px", opacity: 0.7, fontSize: 13 }}>
-        Three tiers (hovered / siblings / parent) share `--accent` hue. Flip the theme to confirm
-        the layer follows; flip "selected" to confirm the overlap-with-selection-chrome rule.
+        Three tiers (hovered / descendants / parent) share `--accent` hue. Flip the theme to
+        confirm the layer follows; flip "selected" to confirm the overlap-with-selection-chrome
+        rule.
       </p>
 
       {/* Theme switcher — proves `--accent` cascades through [data-theme]. */}
@@ -121,10 +130,10 @@ export function HoverAffordanceLayerDemo() {
         <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           <input
             type="checkbox"
-            checked={showSiblings}
-            onChange={(e) => setShowSiblings(e.target.checked)}
+            checked={showDescendants}
+            onChange={(e) => setShowDescendants(e.target.checked)}
           />
-          siblings ({SIBLINGS.length})
+          descendants ({DESCENDANTS.length})
         </label>
         <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           <input
@@ -162,18 +171,18 @@ export function HoverAffordanceLayerDemo() {
         <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           <input
             type="checkbox"
-            checked={selectedSiblingA}
-            onChange={(e) => setSelectedSiblingA(e.target.checked)}
+            checked={selectedDescA}
+            onChange={(e) => setSelectedDescA(e.target.checked)}
           />
-          sibling A
+          descendant A
         </label>
         <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           <input
             type="checkbox"
-            checked={selectedSiblingB}
-            onChange={(e) => setSelectedSiblingB(e.target.checked)}
+            checked={selectedDescB}
+            onChange={(e) => setSelectedDescB(e.target.checked)}
           />
-          sibling B
+          descendant B
         </label>
         <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           <input
@@ -211,20 +220,6 @@ export function HoverAffordanceLayerDemo() {
             background: "rgba(255,255,255,0.02)",
           }}
         />
-        {SIBLINGS.map((r) => (
-          <div
-            key={`mock-sibling-${r.id}`}
-            aria-hidden
-            style={{
-              position: "absolute",
-              left: r.x,
-              top: r.y,
-              width: r.width,
-              height: r.height,
-              background: "rgba(255,255,255,0.03)",
-            }}
-          />
-        ))}
         <div
           aria-hidden
           style={{
@@ -236,10 +231,24 @@ export function HoverAffordanceLayerDemo() {
             background: "rgba(255,255,255,0.05)",
           }}
         />
+        {DESCENDANTS.map((r) => (
+          <div
+            key={`mock-descendant-${r.id}`}
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: r.x,
+              top: r.y,
+              width: r.width,
+              height: r.height,
+              background: "rgba(255,255,255,0.06)",
+            }}
+          />
+        ))}
         <HoverAffordanceLayer
           visible={true}
           hovered={renderedHovered}
-          siblings={renderedSiblingsList}
+          descendants={renderedDescendantsList}
           parent={renderedParent}
           hostRef={hostRef}
         />

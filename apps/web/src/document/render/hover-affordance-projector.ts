@@ -2,18 +2,26 @@
 //
 // Pure function. Maps the hover + selection state plus the document
 // tree onto the three rects the `HoverAffordanceLayer` primitive
-// renders (hovered / siblings / parent), in design-plane absolute
+// renders (hovered / descendants / parent), in design-plane absolute
 // pixels.
+//
+// 2026-05-27 — scope change (user spec):
+//   • Tree siblings are NO LONGER part of the projection. Hovering an
+//     item must not paint anything on its peers.
+//   • Instead, the hover effect propagates DOWN into the hovered item's
+//     entire children tree, and UP exactly one level to the direct
+//     parent. The geometric set is: { hovered, all descendants of
+//     hovered, direct parent (skipping root) }.
 //
 // Two source paths:
 //   1. The pointer is over a frame Item (kind ∈ {frame, image, video,
-//      text} per the host's HoverKind union). The frame's parent is
-//      either another frame Item or the design root; siblings are
-//      that parent's other children.
+//      text} per the host's HoverKind union). Descendants come from
+//      walking the hovered item's own `children` tree recursively. The
+//      parent tier is the direct parent Item (the design root is
+//      skipped — tinting the entire canvas is noise).
 //   2. The pointer is over a canvas-shape inside a frame's
-//      `attrs.shapes[]` array. The "parent" tier is the containing
-//      frame; siblings are the other shapes in the same frame's
-//      array.
+//      `attrs.shapes[]` array. Shapes have no children, so descendants
+//      is empty; the "parent" tier is the containing frame.
 //
 // Other hover kinds (handle, hotspot, background, none) return an
 // empty projection — the layer hides everything.
@@ -21,7 +29,7 @@
 // Selection exclusion (DR-design-016 §"Selection chrome 와 겹침
 // 방지"): any id in `selectedIds` is filtered out before the rects
 // are built, so hover overlay never paints over selection chrome.
-// hovered is dropped when its id is selected; siblings are filtered
+// hovered is dropped when its id is selected; descendants are filtered
 // element-wise; parent is dropped when its id is selected.
 
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
@@ -39,13 +47,17 @@ export interface ProjectorRect {
 
 export interface HoverAffordanceProjection {
   readonly hovered: ProjectorRect | null;
-  readonly siblings: ReadonlyArray<ProjectorRect>;
+  /** Every Item in the hovered item's own subtree (children +
+   *  grandchildren …). Empty when the hovered item is a leaf, when it
+   *  is a canvas-shape (shapes have no children), or when every
+   *  descendant is in `selectedIds`. */
+  readonly descendants: ReadonlyArray<ProjectorRect>;
   readonly parent: ProjectorRect | null;
 }
 
 const EMPTY: HoverAffordanceProjection = {
   hovered: null,
-  siblings: [],
+  descendants: [],
   parent: null,
 };
 
@@ -99,13 +111,11 @@ function projectFrame(
     ? null
     : rectOf(hoveredBox, hoveredId, extractRotation(item));
 
-  // Parent is either another Item (when found) or the design root.
-  // Root → use { 0, 0, designW, designH }. Skip the root parent tier
-  // when the hovered item is a top-level child — the entire canvas
-  // tinted as "parent" is noise, not information.
+  // Parent: direct parent only (one level up). Skip when it's the
+  // design root — tinting the entire canvas is noise. User-confirmed
+  // scope (2026-05-27): "한 단계 위 부모".
   const parentInfo = findParentAndIndex(doc, hoveredId);
   let parent: ProjectorRect | null = null;
-  let siblings: ReadonlyArray<ProjectorRect> = [];
   if (parentInfo !== undefined) {
     const { parent: parentItem } = parentInfo;
     const parentId = String(parentItem.id);
@@ -116,28 +126,40 @@ function projectFrame(
         parent = rectOf(parentBox, parentId, extractRotation(parentItem));
       }
     }
-    siblings = collectSiblings(doc, parentItem, hoveredId, designWidth, designHeight, selectedIds);
   }
-  return { hovered, siblings, parent };
+
+  // Descendants: every Item under the hovered item's subtree. The
+  // hovered item itself is excluded (it's its own tier). Selected
+  // descendants drop out element-wise so the SelectionLayer owns
+  // their chrome.
+  const descendants = collectDescendants(doc, item, designWidth, designHeight, selectedIds);
+  return { hovered, descendants, parent };
 }
 
-function collectSiblings(
+function collectDescendants(
   doc: AgocraftDocument,
-  parentItem: AgocraftItem,
-  excludeId: string,
+  hoveredItem: AgocraftItem,
   designWidth: number,
   designHeight: number,
   selectedIds: ReadonlySet<string>,
 ): ReadonlyArray<ProjectorRect> {
   const out: ProjectorRect[] = [];
-  for (const child of parentItem.children) {
-    const cid = String(child.id);
-    if (cid === excludeId) continue;
-    if (selectedIds.has(cid)) continue;
-    const box = absoluteFrameBox(doc, cid, designWidth, designHeight);
-    if (box === null) continue;
-    out.push(rectOf(box, cid, extractRotation(child)));
-  }
+  const walk = (item: AgocraftItem): void => {
+    for (const child of item.children) {
+      const cid = String(child.id);
+      if (!selectedIds.has(cid)) {
+        const box = absoluteFrameBox(doc, cid, designWidth, designHeight);
+        if (box !== null) {
+          out.push(rectOf(box, cid, extractRotation(child)));
+        }
+      }
+      // Recurse regardless of whether this child was selected — a
+      // selected branch's children can still be unselected and should
+      // surface in the descendant set.
+      walk(child);
+    }
+  };
+  walk(hoveredItem);
   return out;
 }
 
@@ -157,14 +179,14 @@ function projectShape(
   const hovered: ProjectorRect | null = selectedIds.has(hoveredShapeId)
     ? null
     : rectOf(shapeAbsoluteBox(frameBox, shape), hoveredShapeId, shape.rotation);
-  const shapes = (frame.attrs as { shapes?: ReadonlyArray<CanvasShape> }).shapes ?? [];
-  const siblings: ReadonlyArray<ProjectorRect> = shapes
-    .filter((s) => s.id !== hoveredShapeId && !selectedIds.has(s.id))
-    .map((s) => rectOf(shapeAbsoluteBox(frameBox, s), s.id, s.rotation));
   const parent: ProjectorRect | null = selectedIds.has(frameId)
     ? null
     : rectOf(frameBox, frameId, extractRotation(frame));
-  return { hovered, siblings, parent };
+  // Shapes have no children (they're CanvasShape records, not Items).
+  // Peer shapes in the same frame are no longer surfaced — the user
+  // spec is "no sibling visual". The parent tier (the containing
+  // frame) still anchors the hover.
+  return { hovered, descendants: [], parent };
 }
 
 function findFrameContainingShape(

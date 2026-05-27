@@ -1,18 +1,22 @@
 // WI-040 Phase 3 — projector unit tests.
 //
-// Pinned cases:
-//   1. Hovered frame at root → hovered + siblings; parent = null (root
-//      is skipped — tinting the entire canvas is noise).
-//   2. Hovered frame nested in another frame → hovered + siblings +
-//      parent (the containing frame).
-//   3. Hovered canvas-shape inside a frame's attrs.shapes → hovered
-//      uses shape's frame-local rect projected through frame box;
-//      siblings = other shapes in the same array; parent = the frame.
-//   4. Selection exclusion — selected ids drop out of every tier
-//      individually; if everything is selected the projection is empty
-//      but valid.
-//   5. Unknown / unprojectable hover kinds (handle / background / none
-//      / hotspot) return EMPTY.
+// Pinned cases (2026-05-27 scope: hovered → descendants ⊂ hovered's
+// subtree; parent = direct parent; tree siblings are NOT projected):
+//   1. Unprojectable hover kinds (handle / background / none / hotspot)
+//      return EMPTY.
+//   2. Hovered frame at root, no children → hovered only; parent = null;
+//      descendants empty.
+//   3. Hovered frame nested in another frame, with its own children →
+//      hovered + descendants (the child tree) + parent (direct parent).
+//      Tree siblings (the parent's OTHER children) are absent.
+//   4. Nested descendants — grandchildren surface in the descendants
+//      list flat.
+//   5. Hovered canvas-shape inside a frame's attrs.shapes → hovered +
+//      parent frame; descendants empty; sibling shapes are absent.
+//   6. Selection exclusion — selected ids drop from their tier
+//      element-wise; if every tier is selected the projection is the
+//      empty projection.
+//   7. Rotation is preserved on every emitted tier.
 
 import type { Document as AgocraftDocument, Item as AgocraftItem, ItemId } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
@@ -60,11 +64,11 @@ describe("projectHoverAffordance — frame paths", () => {
           designHeight: DESIGN_H,
           selectedIds: new Set(),
         }),
-      ).toEqual({ hovered: null, siblings: [], parent: null });
+      ).toEqual({ hovered: null, descendants: [], parent: null });
     }
   });
 
-  it("hovered frame at root: hovered + siblings, parent stays null (root skipped)", () => {
+  it("hovered leaf at root: hovered only; parent + descendants empty (root skipped)", () => {
     const doc = makeDoc([
       makeItem("a", { frame: { x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0 } }),
       makeItem("b", { frame: { x: 0.5, y: 0, width: 0.5, height: 0.5, rotation: 0 } }),
@@ -79,24 +83,26 @@ describe("projectHoverAffordance — frame paths", () => {
       selectedIds: new Set(),
     });
     expect(out.hovered).toEqual({ x: 0, y: 0, width: 500, height: 300, id: "a" });
-    expect(out.siblings).toEqual([
-      { x: 500, y: 0, width: 500, height: 300, id: "b" },
-      { x: 0, y: 300, width: 1000, height: 300, id: "c" },
-    ]);
+    // Tree siblings (b, c) are no longer projected — scope is descendants,
+    // not parent's other children.
+    expect(out.descendants).toEqual([]);
     expect(out.parent).toBeNull();
   });
 
-  it("nested hovered frame: parent + siblings derived from containing frame", () => {
+  it("nested hovered frame: descendants from own subtree, parent = direct parent", () => {
     const outer = makeItem(
       "outer",
       { frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0 } },
       [
-        makeItem("inner-a", {
-          frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
-        }),
-        makeItem("inner-b", {
-          frame: { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 },
-        }),
+        makeItem(
+          "inner-a",
+          { frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 } },
+          [
+            makeItem("leaf-a1", { frame: { x: 0, y: 0, width: 1, height: 0.5, rotation: 0 } }),
+            makeItem("leaf-a2", { frame: { x: 0, y: 0.5, width: 1, height: 0.5, rotation: 0 } }),
+          ],
+        ),
+        makeItem("inner-b", { frame: { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 } }),
       ],
     );
     const doc = makeDoc([outer]);
@@ -109,7 +115,12 @@ describe("projectHoverAffordance — frame paths", () => {
       selectedIds: new Set(),
     });
     expect(out.hovered).toEqual({ x: 100, y: 60, width: 400, height: 480, id: "inner-a" });
-    expect(out.siblings).toEqual([{ x: 500, y: 60, width: 400, height: 480, id: "inner-b" }]);
+    // Descendants: inner-a's own children flattened. inner-b (a tree
+    // sibling) is absent.
+    expect(out.descendants).toEqual([
+      { x: 100, y: 60, width: 400, height: 240, id: "leaf-a1" },
+      { x: 100, y: 300, width: 400, height: 240, id: "leaf-a2" },
+    ]);
     expect(out.parent).toEqual({
       x: 100,
       y: 60,
@@ -119,11 +130,31 @@ describe("projectHoverAffordance — frame paths", () => {
     });
   });
 
+  it("descendants flatten grandchildren in document order", () => {
+    const root = makeItem("a", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 } }, [
+      makeItem("b", { frame: { x: 0, y: 0, width: 1, height: 0.5, rotation: 0 } }, [
+        makeItem("b1", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 } }),
+      ]),
+      makeItem("c", { frame: { x: 0, y: 0.5, width: 1, height: 0.5, rotation: 0 } }),
+    ]);
+    const doc = makeDoc([root]);
+    const out = projectHoverAffordance({
+      doc,
+      hoveredKind: "frame",
+      hoveredId: "a",
+      designWidth: DESIGN_W,
+      designHeight: DESIGN_H,
+      selectedIds: new Set(),
+    });
+    expect(out.descendants.map((r) => r.id)).toEqual(["b", "b1", "c"]);
+    expect(out.parent).toBeNull(); // direct parent is the doc root → skipped
+  });
+
   it("rotation is preserved on every tier when non-zero", () => {
     const outer = makeItem("outer", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0.5 } }, [
-      makeItem("inner", {
-        frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0.25 },
-      }),
+      makeItem("inner", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0.25 } }, [
+        makeItem("leaf", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0.75 } }),
+      ]),
     ]);
     const doc = makeDoc([outer]);
     const out = projectHoverAffordance({
@@ -136,14 +167,17 @@ describe("projectHoverAffordance — frame paths", () => {
     });
     expect(out.hovered?.rotation).toBe(0.25);
     expect(out.parent?.rotation).toBe(0.5);
+    expect(out.descendants[0]?.rotation).toBe(0.75);
   });
 });
 
 describe("projectHoverAffordance — selection exclusion", () => {
   const doc = makeDoc([
     makeItem("outer", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 } }, [
-      makeItem("a", { frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 } }),
-      makeItem("b", { frame: { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 } }),
+      makeItem("a", { frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 } }, [
+        makeItem("a1", { frame: { x: 0, y: 0, width: 1, height: 0.5, rotation: 0 } }),
+        makeItem("a2", { frame: { x: 0, y: 0.5, width: 1, height: 0.5, rotation: 0 } }),
+      ]),
     ]),
   ]);
 
@@ -157,21 +191,22 @@ describe("projectHoverAffordance — selection exclusion", () => {
       selectedIds: new Set(["a"]),
     });
     expect(out.hovered).toBeNull();
-    expect(out.siblings.map((s) => s.id)).toEqual(["b"]);
+    expect(out.descendants.map((r) => r.id)).toEqual(["a1", "a2"]);
     expect(out.parent?.id).toBe("outer");
   });
 
-  it("drops selected siblings element-wise", () => {
+  it("drops selected descendants element-wise but still recurses into them", () => {
     const out = projectHoverAffordance({
       doc,
       hoveredKind: "frame",
       hoveredId: "a",
       designWidth: DESIGN_W,
       designHeight: DESIGN_H,
-      selectedIds: new Set(["b"]),
+      selectedIds: new Set(["a1"]),
     });
     expect(out.hovered?.id).toBe("a");
-    expect(out.siblings).toEqual([]);
+    // a1 is selected → dropped; a2 still surfaces.
+    expect(out.descendants.map((r) => r.id)).toEqual(["a2"]);
     expect(out.parent?.id).toBe("outer");
   });
 
@@ -185,7 +220,7 @@ describe("projectHoverAffordance — selection exclusion", () => {
       selectedIds: new Set(["outer"]),
     });
     expect(out.hovered?.id).toBe("a");
-    expect(out.siblings.map((s) => s.id)).toEqual(["b"]);
+    expect(out.descendants.map((r) => r.id)).toEqual(["a1", "a2"]);
     expect(out.parent).toBeNull();
   });
 
@@ -196,9 +231,9 @@ describe("projectHoverAffordance — selection exclusion", () => {
       hoveredId: "a",
       designWidth: DESIGN_W,
       designHeight: DESIGN_H,
-      selectedIds: new Set(["a", "b", "outer"]),
+      selectedIds: new Set(["a", "a1", "a2", "outer"]),
     });
-    expect(out).toEqual({ hovered: null, siblings: [], parent: null });
+    expect(out).toEqual({ hovered: null, descendants: [], parent: null });
   });
 });
 
@@ -227,7 +262,7 @@ describe("projectHoverAffordance — canvas-shape path", () => {
   });
   const doc = makeDoc([frame]);
 
-  it("hovered shape: hovered + sibling shape + parent frame", () => {
+  it("hovered shape: hovered + parent frame; descendants empty (shapes have no children)", () => {
     const out = projectHoverAffordance({
       doc,
       hoveredKind: "shape",
@@ -240,22 +275,9 @@ describe("projectHoverAffordance — canvas-shape path", () => {
     expect(out.parent).toEqual({ x: 100, y: 60, width: 800, height: 480, id: "frame-1" });
     // shape-a: x=100 + 0.1*800 = 180, y=60 + 0.1*480 = 108, w=0.3*800=240, h=0.4*480=192.
     expect(out.hovered).toEqual({ x: 180, y: 108, width: 240, height: 192, id: "shape-a" });
-    // shape-b: x=100+0.5*800=500, y=60+0.5*480=300, w=0.4*800=320, h=0.3*480=144, rotation=0.5
-    expect(out.siblings).toEqual([
-      { x: 500, y: 300, width: 320, height: 144, rotation: 0.5, id: "shape-b" },
-    ]);
-  });
-
-  it("selected shape is excluded from siblings", () => {
-    const out = projectHoverAffordance({
-      doc,
-      hoveredKind: "shape",
-      hoveredId: "shape-a",
-      designWidth: DESIGN_W,
-      designHeight: DESIGN_H,
-      selectedIds: new Set(["shape-b"]),
-    });
-    expect(out.siblings).toEqual([]);
+    // Peer shapes are no longer projected — sibling chrome was removed
+    // from the spec. Only the parent frame anchors the hover for shapes.
+    expect(out.descendants).toEqual([]);
   });
 
   it("returns EMPTY when shape id is unknown", () => {
@@ -267,6 +289,6 @@ describe("projectHoverAffordance — canvas-shape path", () => {
       designHeight: DESIGN_H,
       selectedIds: new Set(),
     });
-    expect(out).toEqual({ hovered: null, siblings: [], parent: null });
+    expect(out).toEqual({ hovered: null, descendants: [], parent: null });
   });
 });

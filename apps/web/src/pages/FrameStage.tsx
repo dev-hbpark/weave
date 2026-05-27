@@ -182,15 +182,20 @@ export interface FrameStageProps {
    *  selected outline; `selectedId` stays the "primary" single pick that
    *  drives selection chrome (resize/rotation handles, hotspot overlays). */
   readonly selectedIds?: ReadonlySet<string> | undefined;
-  /** WI-039 — Stage 1 set. Frames whose id appears here render at reduced
-   *  opacity so the host's "focused" frame stands out. Pointer events still
-   *  flow normally — this is a visual hint only. */
+  /** WI-039 — Stage 1 set. Frames whose id appears here render at
+   *  `--focus-dim-opacity` AND with `pointer-events: none`, so the focused
+   *  tree below remains the sole interactive surface. The host populates
+   *  this with every frame painted ABOVE the focused tree in z-order
+   *  (later siblings of each ancestor, plus their descendants). The two
+   *  focus sets are mutually exclusive — at most one is non-empty at a time. */
   readonly dimmedFrameIds?: ReadonlySet<string> | undefined;
-  /** WI-039 — Stage 2 set. Frames whose id appears here render with
-   *  `pointer-events: none` (in addition to deeper opacity) so they are
-   *  excluded from selection / drag / click flows entirely; the focused
-   *  frame below becomes directly editable. The host is expected to keep
-   *  this set as a subset of `dimmedFrameIds`. */
+  /** WI-039 — Stage 2 set. Frames whose id appears here render at
+   *  `--focus-isolate-opacity` (0 — fully invisible) AND with
+   *  `pointer-events: none`. The host populates this with every frame
+   *  OUTSIDE the focused frame's subtree (non-trail children of every
+   *  ancestor, with their subtrees). Ancestors themselves stay
+   *  interactive so the DOM chain that mounts the focused frame keeps
+   *  paint + event flow. */
   readonly isolatedFrameIds?: ReadonlySet<string> | undefined;
   readonly onSelect?: ((itemId: string | undefined) => void) | undefined;
   /** Shift/Cmd/Ctrl + click on a frame toggles it in/out of the multi
@@ -260,14 +265,19 @@ interface NestedFrameProps {
    *  legacy `selectedId` stays for hover/scroll routing (the "primary" pick
    *  in a multi-selection). When undefined, single-id semantics apply. */
   readonly selectedIds?: ReadonlySet<string>;
-  /** WI-039 — Stage 1 set. Every id in here is painted at reduced opacity
-   *  (token: `--focus-dim-opacity`). Opacity is applied on the frame's
-   *  outer wrapper so descendants inherit the dim automatically. */
+  /** WI-039 — Stage 1 set. Every id in here paints at
+   *  `--focus-dim-opacity` AND has its pointer-events forced off by the
+   *  hit gate. The host computes the entire above-tree subtree, so the
+   *  per-frame gate blocks the whole branch (the parent-only set would
+   *  leave nested descendants interactive — `pointer-events` is re-applied
+   *  per wrapper, not inherited through the cascade once a child sets
+   *  its own value). */
   readonly dimmedFrameIds?: ReadonlySet<string>;
-  /** WI-039 — Stage 2 set. Every id in here additionally renders with
-   *  `pointer-events: none`, blocking selection/drag/click on that frame
-   *  and its subtree. Stage 2 ⊆ Stage 1 (the host enforces the subset
-   *  invariant). */
+  /** WI-039 — Stage 2 set. Every id in here paints at
+   *  `--focus-isolate-opacity` (0 — invisible) AND has its pointer-events
+   *  forced off. The host computes the entire outside-tree subtree for
+   *  the same per-wrapper-gate reason as above. Stage 1 and Stage 2 are
+   *  mutually exclusive (at most one is non-empty at a time). */
   readonly isolatedFrameIds?: ReadonlySet<string>;
   /** Toggle this frame in/out of the multi-selection. Fired on
    *  Shift / Cmd / Ctrl + click. Absent → modifier clicks fall back to
@@ -401,14 +411,16 @@ function NestedFrame({
   // pan zoom, mount layout) so the gate stays accurate without re-rendering
   // the frame tree on every animation frame.
   //
-  // WI-039 — the gate also yields to Stage-2 isolation: an isolated frame
-  // forces `pointerEvents = none` regardless of display size, so the
-  // focused frame underneath stays editable. Isolation is read through a
-  // ref-snapshot (not a deps entry) so the hot path doesn't rebind on
-  // every selection change; the post-mount effect below pokes the gate
-  // when the set itself changes.
+  // WI-039 — the gate also yields to z-order focus gating: both Stage-1
+  // dim and Stage-2 isolate force `pointerEvents = none` regardless of
+  // display size, so the focused tree underneath stays editable. The two
+  // sets are read through ref-snapshots (not deps entries) so the hot
+  // path doesn't rebind on every selection change; the post-mount effect
+  // below pokes the gate when either set itself changes.
   const isolatedRef = useRef<boolean>(isolatedFrameIds?.has(itemId) ?? false);
   isolatedRef.current = isolatedFrameIds?.has(itemId) ?? false;
+  const dimmedGatedRef = useRef<boolean>(dimmedFrameIds?.has(itemId) ?? false);
+  dimmedGatedRef.current = dimmedFrameIds?.has(itemId) ?? false;
   const totalScaleFromCtx = useContext(TotalScaleContext);
   const totalScaleFallback = useMotionValue(1);
   const totalScaleMV = totalScaleFromCtx ?? totalScaleFallback;
@@ -416,7 +428,7 @@ function NestedFrame({
     (scale: number) => {
       const el = selfRef.current;
       if (el === null) return;
-      if (isolatedRef.current) {
+      if (isolatedRef.current || dimmedGatedRef.current) {
         el.style.pointerEvents = "none";
         return;
       }
@@ -429,11 +441,11 @@ function NestedFrame({
   useLayoutEffect(() => {
     applyHitGate(totalScaleMV.get());
   }, [applyHitGate, totalScaleMV]);
-  // Re-poke the gate whenever isolation flips so the latest set takes
-  // effect immediately instead of waiting for the next scale change.
+  // Re-poke the gate whenever either focus set flips so the latest set
+  // takes effect immediately instead of waiting for the next scale change.
   useLayoutEffect(() => {
     applyHitGate(totalScaleMV.get());
-  }, [applyHitGate, totalScaleMV, isolatedFrameIds]);
+  }, [applyHitGate, totalScaleMV, isolatedFrameIds, dimmedFrameIds]);
   useMotionValueEvent(totalScaleMV, "change", (s) => {
     applyHitGate(s);
   });
@@ -498,16 +510,22 @@ function NestedFrame({
     // WI-039 — host-driven z-order focus, visual side.
     //
     // Stage 1 (id ∈ dimmedFrameIds): wrapper opacity drops to
-    //   `--focus-dim-opacity` (≈ 0.28). Descendants inherit via CSS opacity
-    //   cascade so no per-renderer opt-in is needed. Pointer events still
-    //   flow normally — this is a visual hint only.
-    // Stage 2 (id ∈ isolatedFrameIds): opacity drops further to
-    //   `--focus-isolate-opacity` (≈ 0.14). The pointer-events block lives
-    //   in `applyHitGate` above (single authority over `style.pointerEvents`,
-    //   so React-managed style and the imperative gate don't fight).
-    // Stage 2 is always a subset of Stage 1.
+    //   `--focus-dim-opacity` (≈ 0.28). Pointer events are blocked by the
+    //   hit gate above so this branch is non-interactive too. Nested
+    //   members of the set get the same opacity applied to their own
+    //   wrapper — visually the cascade multiplies (0.28 × 0.28 ≈ 0.08)
+    //   which reads as "deeper layers recede further", an acceptable
+    //   side-effect for the rare nested-frame case.
+    // Stage 2 (id ∈ isolatedFrameIds): opacity drops to
+    //   `--focus-isolate-opacity` (0 — fully invisible) and pointer
+    //   events are blocked. The host populates the set with the entire
+    //   outside-tree subtree.
+    // The two sets are mutually exclusive (host enforces). The
+    // pointer-events block lives in `applyHitGate` above (single
+    // authority over `style.pointerEvents`, so React-managed style and
+    // the imperative gate don't fight).
     opacity: isolatedFrameIds?.has(itemId)
-      ? "var(--focus-isolate-opacity, 0.14)"
+      ? "var(--focus-isolate-opacity, 0)"
       : dimmedFrameIds?.has(itemId)
         ? "var(--focus-dim-opacity, 0.28)"
         : 1,

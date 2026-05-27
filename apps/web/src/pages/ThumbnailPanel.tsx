@@ -7,10 +7,15 @@
 //   off → stage 1 "dim" → stage 2 "isolate" → off
 //
 // • Off            — no effect on the canvas.
-// • Stage 1 (dim)  — host fades sibling frames painted above the focused
-//                    one; pointer events still flow.
-// • Stage 2 (iso)  — host *also* blocks pointer events on those siblings,
-//                    so the focused frame becomes the sole editable surface.
+// • Stage 1 (dim)  — host fades EVERYTHING painted above the focused
+//                    frame's subtree in z-order (later siblings of every
+//                    ancestor, with their subtrees) AND blocks pointer
+//                    events on them. The focused tree stays the sole
+//                    interactive surface above the painted line.
+// • Stage 2 (iso)  — host hides EVERYTHING outside the focused frame's
+//                    subtree (every non-trail sibling at every ancestor)
+//                    with full transparency AND blocks pointer events.
+//                    Only the focused tree paints and accepts input.
 //
 // Shift-clicking the toggle jumps directly from off to stage 2 (power
 // path). Esc on a focused toggle clears immediately. Only one tile may be
@@ -102,6 +107,14 @@ export interface ThumbnailPanelProps {
   readonly onCycleFocus?: ((id: string, opts?: { skipToIsolate?: boolean }) => void) | undefined;
   /** WI-039 — drop focus completely (Esc inside the toggle). */
   readonly onClearFocus?: (() => void) | undefined;
+  /** WI-039 — frames whose edit interaction is currently blocked on the
+   *  canvas (union of stage-1 dim + stage-2 isolate sets). Tiles for
+   *  these frames render in a disabled state: no hover pop, no click-
+   *  select, no drag-to-reorder, and keyboard Enter/Space is a no-op.
+   *  The per-tile focus toggle button stays functional so the user can
+   *  still cycle focus from any tile (otherwise stage 2 would lock the
+   *  user out of switching focus to another slide). */
+  readonly disabledFrameIds?: ReadonlySet<string> | undefined;
 }
 
 const FLAVOR_GLYPH: Readonly<Record<DocFlavor, string>> = {
@@ -183,6 +196,7 @@ export function ThumbnailPanel({
   onSelect,
   focusedId,
   focusStage = 0,
+  disabledFrameIds,
   onCycleFocus,
   onClearFocus,
 }: ThumbnailPanelProps) {
@@ -302,20 +316,27 @@ export function ThumbnailPanel({
           const isSelected = entry.id === selectedId;
           const isFocused = entry.id === focusedId;
           const tileStage: FocusStage = isFocused ? focusStage : 0;
-          // Peer-tile soften: when *any* tile is in stage 2, the non-focused
-          // tiles desaturate + dim. This carries the "global lock" signal
-          // across the whole strip so the user perceives the isolation at
-          // a glance instead of only on the focused tile.
-          const peerSoftened = focusStage === 2 && !isFocused;
+          // WI-039 — tile-level "disabled" treatment for frames whose
+          // canvas interaction is currently gated (stage-1 dim OR stage-2
+          // isolate). Disabling the tile keeps the panel surface aligned
+          // with the canvas surface: a frame that ignores edits on the
+          // canvas also ignores clicks/hover/drag on its thumbnail.
+          // Replaces the old `peerSoftened` heuristic (which only fired
+          // in stage 2) — the new set is computed by the host as the
+          // union of the dim + isolate sets, so stage 1 above-tree tiles
+          // are now disabled too. Focused tiles are never in the set
+          // (the host enforces) so they always stay interactive.
+          const isDisabled = disabledFrameIds?.has(entry.id) ?? false;
           const accentVar = DOMAIN_ACCENT_VAR[entry.kind] ?? "var(--accent)";
           return (
             <div
               key={entry.id}
               role="option"
               aria-selected={isSelected}
+              aria-disabled={isDisabled || undefined}
               aria-current={isSelected ? "page" : undefined}
-              tabIndex={0}
-              draggable
+              tabIndex={isDisabled ? -1 : 0}
+              draggable={!isDisabled}
               data-thumbnail-id={entry.id}
               // WI-039 — also expose the frame id so the reparent drag
               // controller's `document.elementFromPoint` hit-test picks
@@ -324,12 +345,31 @@ export function ThumbnailPanel({
               // join it for cross-surface drop without duplicating the
               // controller's target lookup.
               data-frame-id={entry.id}
+              // WI-039 — non-disabled tiles also publish `data-frame-kind`
+              // so `useHoverContext` (window-level pointer probe used by
+              // the canvas) picks up tile hovers and the canvas's
+              // HoverAffordanceLayer paints the corresponding frame as
+              // hovered. The probe walks `closest("[data-frame-kind]")`,
+              // reads `data-frame-id` as the id, and the projector treats
+              // it identically to a canvas-side hover. Disabled tiles
+              // omit this attribute so gated frames stay un-hovered
+              // even when the pointer lands on their thumbnail.
+              {...(isDisabled ? {} : { "data-frame-kind": entry.kind })}
               data-testid={`thumbnail-${idx}`}
               data-tile-stage={tileStage}
+              data-disabled={isDisabled || undefined}
               onDragStart={(e) => {
+                if (isDisabled) {
+                  e.preventDefault();
+                  return;
+                }
                 e.dataTransfer.setData(DRAG_MIME, String(idx));
                 e.dataTransfer.effectAllowed = "move";
               }}
+              // Drop targets remain valid even on disabled tiles — a non-
+              // disabled tile dragged onto a disabled tile's slot should
+              // still reorder into that index. The block is on STARTING
+              // a drag from the disabled tile, not on RECEIVING one.
               onDragOver={(e) => {
                 if (e.dataTransfer.types.includes(DRAG_MIME)) e.preventDefault();
               }}
@@ -340,8 +380,12 @@ export function ThumbnailPanel({
                 if (!Number.isInteger(from)) return;
                 setPresentationOrder(reorder(order, from, idx));
               }}
-              onClick={() => handleTileActivate(entry)}
+              onClick={() => {
+                if (isDisabled) return;
+                handleTileActivate(entry);
+              }}
               onKeyDown={(e) => {
+                if (isDisabled) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   handleTileActivate(entry);
@@ -350,20 +394,36 @@ export function ThumbnailPanel({
               className={
                 "group relative flex flex-col w-[160px] h-[124px] p-2 gap-1.5 rounded-[var(--radius-md)] " +
                 "border transition-[background,border-color,box-shadow,filter,opacity,transform] duration-[var(--motion-quick)] " +
-                "cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)] " +
+                // WI-039 follow-up (2026-05-27) — spring-y back-out curve
+                // so hover pop / lift / glow read as a single coherent
+                // physical motion instead of a flat ease. The 1.5 over-
+                // shoot is subtle (≈4% past target) which makes the tile
+                // feel like it "settles" without bouncing distractingly.
+                "[transition-timing-function:cubic-bezier(0.34,1.5,0.5,1)] " +
+                "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)] " +
+                // Cursor + drag affordance only when interactive.
+                (isDisabled ? "cursor-not-allowed " : "cursor-grab active:cursor-grabbing ") +
                 // WI-039 — hover pop. The tile scales 1.05× from its bottom
                 // edge so the strip's baseline stays aligned; `z-10` lifts
                 // the hovered tile above neighbours during the transition.
-                // Skipped for:
-                //   • peer-softened tiles (global-lock signal takes priority)
+                // A small `-translate-y-[2px]` adds vertical lift, and a
+                // soft accent glow (≤16px outward, kept inside the
+                // strip's pt-3 = 12px overflow buffer by the negative
+                // y-offset spread `-6px`) gives the tile a "lifted off
+                // the panel" feel — animated via the same spring curve
+                // above. Skipped for:
+                //   • disabled tiles (gated frames — no hover affordance)
                 //   • focused tiles (tileStage > 0) — they already carry
-                //     accent border + glow + tint, the extra +6px lift
-                //     would push the glow past the strip's pt-3 overflow
+                //     accent border + glow + tint, the extra lift would
+                //     push the glow past the strip's pt-3 overflow
                 //     boundary and re-introduce the clipping it caused
                 //     before this commit
-                (peerSoftened || tileStage > 0
+                (isDisabled || tileStage > 0
                   ? ""
-                  : "hover:scale-[1.05] hover:z-10 focus-visible:scale-[1.05] focus-visible:z-10 " +
+                  : "hover:scale-[1.05] hover:-translate-y-[2px] hover:z-10 " +
+                    "focus-visible:scale-[1.05] focus-visible:-translate-y-[2px] focus-visible:z-10 " +
+                    "hover:[box-shadow:0_8px_18px_-6px_var(--accent-soft),0_2px_6px_-2px_rgba(0,0,0,0.35)] " +
+                    "focus-visible:[box-shadow:var(--focus-ring),0_8px_18px_-6px_var(--accent-soft)] " +
                     // Hover tint swap — driven by --tile-tint CSS variable
                     // so the multi-bg formula (tint over opaque bg-page)
                     // stays declarative. Only applied when the tile is
@@ -386,17 +446,14 @@ export function ThumbnailPanel({
                     : isSelected
                       ? "border-[color:var(--accent)] "
                       : "border-[color:var(--surface-1-border)] ") +
-                // Peer-softened tiles — when another tile is in stage 2,
-                // every non-focused tile recedes. The previous treatment
-                // (opacity-50 + saturate) made the tile semi-transparent
-                // so the design canvas bled through the tile's top half
-                // (the part that overhangs the panel band), creating a
-                // visible step between panel-bg and design-bg. Drop the
-                // opacity entirely; keep the tile fully opaque and signal
-                // "inert" via desaturation + brightness drop only. The
-                // tile reads as a darker, calmer sibling without breaking
-                // the panel's continuous surface.
-                (peerSoftened
+                // Disabled tiles — frame's canvas interaction is gated,
+                // so the panel surface reflects it: desaturate +
+                // brightness drop signals "inert" without going semi-
+                // transparent (which would let the design canvas bleed
+                // through the tile's overhang area). Same formula the
+                // old `peerSoftened` branch used; the trigger is the new
+                // explicit disabled set instead of stage===2.
+                (isDisabled
                   ? "[filter:saturate(var(--focus-peer-saturate,0.55))_brightness(0.62)] "
                   : "")
               }
@@ -446,10 +503,17 @@ export function ThumbnailPanel({
                       it stays anchored visible so the user can step
                       forward or unfocus). Stage 2 is signalled by the
                       eye-off shape of this very button, not by an extra
-                      badge — the icon morph is the single lock cue. */}
+                      badge — the icon morph is the single lock cue.
+
+                      When the tile itself is disabled (its frame is in
+                      dim/iso set on the canvas), the button is also
+                      disabled — "block everything inside" semantics. The
+                      escape path from stage 2 is the FOCUSED tile's own
+                      button (never in the disabled set). */}
                 {onCycleFocus !== undefined ? (
                   <button
                     type="button"
+                    disabled={isDisabled}
                     onClick={(e) => handleToggleClick(entry, e)}
                     onKeyDown={(e) => handleToggleKey(entry, e)}
                     onMouseDown={(e) => e.stopPropagation()}
@@ -469,9 +533,16 @@ export function ThumbnailPanel({
                       "absolute top-1.5 right-1.5 inline-flex items-center justify-center w-6 h-6 rounded-[var(--radius-sm)] " +
                       "border transition-[opacity,background,color,border-color] duration-[var(--motion-quick)] " +
                       "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)] " +
+                      "disabled:cursor-not-allowed disabled:pointer-events-none " +
                       (tileStage >= 1
                         ? "opacity-100 bg-[color:var(--accent)] text-[color:var(--text-on-accent)] border-[color:var(--accent)] "
-                        : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 " +
+                        : // Disabled tiles never reveal the eye on hover —
+                          // tile-level interaction is gated, so the button
+                          // affordance would only mislead. Stay at
+                          // opacity-0 across hover and focus-visible.
+                          (isDisabled
+                            ? "opacity-0 "
+                            : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ") +
                           "bg-[rgba(0,0,0,0.42)] [backdrop-filter:blur(6px)] text-[color:var(--text-overlay-soft)] border-transparent hover:text-[color:var(--text-overlay)] ")
                     }
                   >

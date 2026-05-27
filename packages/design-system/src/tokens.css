@@ -112,13 +112,15 @@
   --accent-gradient: linear-gradient(135deg, var(--color-magenta-500), var(--color-violet-500));
 
   /* WI-040 Phase 2 / DR-design-016 — HoverAffordanceLayer 3-tier.
-     같은 hue (--accent) 안에서 stroke style + 채도로 위계 분리:
-       hovered  — 가장 강한 시각 신호 (solid + glow)
-       sibling  — dashed, 채도 낮춤 (관계 있음 / 타겟 아님)
-       parent   — thin solid + 내부 tint (containment 강조) */
+     같은 hue (--accent) 안에서 stroke style + glow 로 위계 분리:
+       hovered     — focal 시각 신호 (solid + glow)
+       descendants — focal 과 동일 outline, glow 없음
+                     (호버 효과가 자식 트리 전체로 확장됨을 표시)
+       parent      — 한 단계 위 부모 강조 (thin solid + 내부 tint)
+     2026-05-27 정정: sibling 토큰 폐기 — sibling 시각은 사용자 명시로
+     제거. 호버 효과는 자식 트리로만 확장되고 형제로는 가지 않는다. */
   --hover-affordance-stroke-hovered: var(--accent);
   --hover-affordance-glow-hovered: color-mix(in oklch, var(--accent) 12%, transparent);
-  --hover-affordance-stroke-sibling: color-mix(in oklch, var(--accent) 55%, transparent);
   --hover-affordance-stroke-parent: color-mix(in oklch, var(--accent) 35%, transparent);
   --hover-affordance-tint-parent: color-mix(in oklch, var(--accent) 4%, transparent);
 
@@ -138,14 +140,16 @@
   --domain-media-accent: var(--color-amber-500);
 
   /* WI-039 — z-order focus stages.
-     Stage 1 (dim): higher-z siblings of the focused frame fade out so the
-     focused frame stands out visually; pointer events still flow.
-     Stage 2 (isolate): siblings fade further AND ignore pointer events so
-     the focused frame becomes the only editable surface in the area.
+     Stage 1 (dim): everything painted ABOVE the focused tree in z-order
+     fades to `--focus-dim-opacity` AND is gated from pointer events; the
+     focused tree remains the only interactive surface above the line.
+     Stage 2 (isolate): everything OUTSIDE the focused tree fades to
+     `--focus-isolate-opacity` (0 — fully invisible) AND is gated from
+     pointer events; only the focused tree paints and accepts input.
      `peer-saturate` desaturates *other* tiles in the ThumbnailPanel while
      stage 2 is active so the panel itself reflects the global lock. */
   --focus-dim-opacity: 0.28;
-  --focus-isolate-opacity: 0.14;
+  --focus-isolate-opacity: 0;
   --focus-peer-saturate: 0.55;
 }
 
@@ -189,10 +193,11 @@
   --domain-block-accent: #ffb088;
   --domain-media-accent: #ffd0b8;
 
-  /* WI-039 — z-order focus stages. Mono 는 saturation 변동이 적어 isolate
-     opacity 를 조금 더 깊게 가져가야 같은 격리 효과 (DR-design follow-up). */
+  /* WI-039 — z-order focus stages. Stage 2 is fully invisible across all
+     themes; Mono keeps a slightly stronger Stage-1 dim to compensate for
+     its lower saturation contrast (DR-design follow-up). */
   --focus-dim-opacity: 0.3;
-  --focus-isolate-opacity: 0.1;
+  --focus-isolate-opacity: 0;
   --focus-peer-saturate: 0.6;
 }
 
@@ -237,10 +242,10 @@
   --domain-block-accent: #8c5aff;
   --domain-media-accent: #ffdc50;
 
-  /* WI-039 — z-order focus stages. Vivid 는 채도가 강해 같은 alpha 에도
-     충분히 격리됨; 기본값 유지. */
+  /* WI-039 — z-order focus stages. Vivid 는 채도가 강해 stage 1 도
+     기본값으로 충분히 격리됨; stage 2 는 모든 테마 공통으로 완전 투명. */
   --focus-dim-opacity: 0.28;
-  --focus-isolate-opacity: 0.14;
+  --focus-isolate-opacity: 0;
   --focus-peer-saturate: 0.5;
 }
 

@@ -1,6 +1,6 @@
 // WI-040 Phase 2 — visual smoke test for the HoverAffordanceLayer
 // demo route. Confirms the primitive mounts under DEV builds, the
-// three tier markers (`data-hover-tier="hovered|sibling|parent"`)
+// three tier markers (`data-hover-tier="hovered|descendant|parent"`)
 // render simultaneously, and the toggles wire correctly.
 //
 // Production builds skip this route entirely (`import.meta.env.DEV`
@@ -17,7 +17,7 @@ test("HoverAffordanceLayer dev demo renders all three tiers", async ({ page }) =
   //  IS aria-hidden because it's visual-only — assert presence instead.)
   await expect(page.getByTestId("hover-affordance-layer")).toHaveCount(1);
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(2);
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(3);
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(1);
 });
 
@@ -27,19 +27,19 @@ test("toggling tiers removes the corresponding overlay", async ({ page }) => {
 
   await render.getByLabel("hovered").uncheck();
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(0);
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(2);
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(3);
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(1);
 
   await render.getByLabel("hovered").check();
-  await render.getByLabel(/siblings/).uncheck();
+  await render.getByLabel(/descendants/).uncheck();
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(0);
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(0);
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(1);
 
-  await render.getByLabel(/siblings/).check();
+  await render.getByLabel(/descendants/).check();
   await render.getByLabel("parent").uncheck();
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(2);
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(3);
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(0);
 });
 
@@ -51,14 +51,14 @@ test("selecting an item suppresses its hover overlay tier", async ({ page }) => 
   // chrome is now its primary visual signal).
   await selected.getByLabel("hovered").check();
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(0);
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(2);
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(3);
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(1);
 
-  // Restore hovered, select sibling A — one fewer sibling outline.
+  // Restore hovered, select descendant A — one fewer descendant outline.
   await selected.getByLabel("hovered").uncheck();
-  await selected.getByLabel("sibling A").check();
+  await selected.getByLabel("descendant A").check();
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(1);
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(2);
 
   // Select parent — parent outline disappears.
   await selected.getByLabel("parent").check();

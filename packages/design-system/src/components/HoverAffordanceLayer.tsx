@@ -2,20 +2,28 @@
 //
 // 3-tier hover overlay primitive. Draws three differently-styled
 // outlines simultaneously so the user can see — at a glance — the
-// containment relationship of the item under the pointer:
+// reach of the hover under the pointer:
 //
-//   • hovered  — the item the pointer is directly over
-//                (2px solid accent + glow)
-//   • siblings — every other child of the same parent
-//                (1px dashed, lower-chroma accent)
-//   • parent   — the container that holds the hovered + siblings
-//                (1px solid, low-chroma accent + 4% inset tint)
+//   • hovered     — the item the pointer is directly over
+//                   (2px solid accent + glow — focal emphasis)
+//   • descendants — every Item inside the hovered item's own subtree
+//                   (2px solid accent, no glow — same outline as the
+//                   focal item to signal "you're also targeting these",
+//                   no glow so nested children don't pile halos)
+//   • parent      — the direct parent of the hovered item, one level up
+//                   (1px solid, low-chroma accent + 4% inset tint)
+//
+// Tree siblings of the hovered item are intentionally absent. The user
+// rejected sibling chrome on 2026-05-27: hovering one item must NOT
+// paint any visual on its peers. The hover effect now travels DOWN
+// through the subtree and UP exactly one level to the parent — never
+// sideways.
 //
 // All three tiers share the same hue (`--accent`). The visual hierarchy
-// comes from stroke style + chroma, not from different colors — so the
-// brain reads them as "the same group" rather than three independent
-// signals. Adding a fourth color (or a different hue per tier) breaks
-// the intent (사용자 명시 / DR-design-016 §"3-tier 시각 토큰").
+// comes from stroke style + chroma + glow, not from different colors —
+// so the brain reads them as "the same group" rather than three
+// independent signals. Adding a fourth color (or a different hue per
+// tier) breaks the intent (사용자 명시 / DR-design-016 §"3-tier 시각 토큰").
 //
 // **Constant stroke width across camera zoom.** Input rects are
 // expressed in design-plane local CSS px (the same coords the document
@@ -56,10 +64,12 @@ export interface HoverAffordanceLayerProps {
   readonly visible: boolean;
   /** The directly-hovered rect. `null` when nothing is hovered. */
   readonly hovered: Rect | null;
-  /** Every other child of the hovered item's parent. */
-  readonly siblings: ReadonlyArray<Rect>;
-  /** The hovered item's parent container. `null` when the hovered
-   *  item is at the design root. */
+  /** Every Item in the hovered item's own subtree. Painted with the
+   *  same outline as the focal `hovered` tier (no glow). Pass an empty
+   *  array when the hovered item is a leaf. */
+  readonly descendants: ReadonlyArray<Rect>;
+  /** The hovered item's direct parent container (one level up).
+   *  `null` when the parent is the design root. */
   readonly parent: Rect | null;
   /** Optional explicit host. When omitted the layer queries
    *  `[data-design-plane="true"]` (FrameStage's design plane). The
@@ -117,7 +127,7 @@ function tierStyle(rect: Rect, host: HostBox): CSSProperties {
 export function HoverAffordanceLayer({
   visible,
   hovered,
-  siblings,
+  descendants,
   parent,
   hostRef,
 }: HoverAffordanceLayerProps): React.ReactElement | null {
@@ -175,14 +185,18 @@ export function HoverAffordanceLayer({
           }}
         />
       ) : null}
-      {siblings.map((rect, i) => (
+      {descendants.map((rect, i) => (
         <div
-          key={rect.id ?? `sibling-${i}-${rect.x}x${rect.y}`}
-          data-hover-tier="sibling"
+          key={rect.id ?? `descendant-${i}-${rect.x}x${rect.y}`}
+          data-hover-tier="descendant"
           style={{
+            // Same outline as the focal tier so descendants read as
+            // "part of the same hover target". The glow is dropped on
+            // purpose — stacking glows on nested children would create
+            // a halo soup; the focal tier owns the single glow.
             ...tierStyle(rect, host),
-            outline: "1px dashed var(--hover-affordance-stroke-sibling)",
-            outlineOffset: "-1px",
+            outline: "2px solid var(--hover-affordance-stroke-hovered)",
+            outlineOffset: "0px",
           }}
         />
       ))}

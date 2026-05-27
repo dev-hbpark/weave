@@ -3,6 +3,11 @@
 // Verifies the layer mounts the right tier set for real document
 // state, hides under non-idle / peek modes (relies on Phase 1 gates),
 // and respects the selection-exclusion rule (DR-design-016).
+//
+// 2026-05-27 scope update: tier set is now { hovered, descendants
+// (own subtree), parent (direct parent, skipping root) }. Tree
+// siblings are NOT projected — hovering an item must not paint any
+// chrome on its peers.
 
 import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
@@ -50,10 +55,10 @@ async function lastFrameId(page: Page, parentIndex?: number): Promise<string> {
   return id;
 }
 
-test("hovering a top-level frame shows hovered + sibling tiers (root parent skipped)", async ({
+test("hovering a leaf top-level frame: hovered only (no siblings, no parent — root skipped, no descendants)", async ({
   page,
 }) => {
-  await prepareDesign(page, { flavor: "mixed", title: "WI-040 P3 root hover" });
+  await prepareDesign(page, { flavor: "mixed", title: "WI-040 P3 leaf hover" });
   await addFrame(page, "frame", {
     frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
   });
@@ -73,13 +78,42 @@ test("hovering a top-level frame shows hovered + sibling tiers (root parent skip
   await page.mouse.move(rect.left + rect.width / 2, rect.top + rect.height / 2);
 
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
-  // Two other top-level frames → two sibling tiers.
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(2);
+  // Other top-level frames are tree siblings — NOT projected.
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(0);
   // Root is skipped — no parent tier on a top-level hover.
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(0);
 });
 
-test("hovering a nested frame shows hovered + sibling + parent tiers", async ({ page }) => {
+test("hovering a top-level frame with children: hovered + descendant tiers, no parent (root skipped)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-040 P3 root with kids" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.15, y: 0.15, width: 0.7, height: 0.7, rotation: 0 },
+  });
+  const rootFrameId = await lastFrameId(page);
+  await addFrame(page, "frame", {
+    containerId: rootFrameId,
+    frame: { x: 0.05, y: 0.05, width: 0.4, height: 0.9, rotation: 0 },
+  });
+  await addFrame(page, "frame", {
+    containerId: rootFrameId,
+    frame: { x: 0.55, y: 0.05, width: 0.4, height: 0.9, rotation: 0 },
+  });
+  // Hover the parent — descendants should be the two children.
+  // Aim for the top-center strip (between the children's vertical 0.05
+  // gap) so the pointer lands on the parent's own chrome.
+  const rect = await rectOfFrame(page, rootFrameId);
+  await page.mouse.move(rect.left + rect.width / 2, rect.top + 6);
+
+  await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(2);
+  await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(0);
+});
+
+test("hovering a nested leaf frame: hovered + parent tiers, no descendants, no siblings", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-040 P3 nested hover" });
   await addFrame(page, "frame", {
     frame: { x: 0.15, y: 0.15, width: 0.7, height: 0.7, rotation: 0 },
@@ -98,7 +132,9 @@ test("hovering a nested frame shows hovered + sibling + parent tiers", async ({ 
   await page.mouse.move(rect.left + rect.width / 2, rect.top + rect.height / 2);
 
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(1);
+  // childA is a leaf and its tree sibling (the second nested frame) is
+  // NOT projected.
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(0);
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(1);
 });
 
@@ -124,10 +160,11 @@ test("hovering a selected frame suppresses its hovered tier (selection-exclusion
   // Hover stays on the same frame after the click.
   await page.mouse.move(rect.left + rect.width / 2, rect.top + rect.height / 2);
 
-  // Selected frame's hover tier suppressed — SelectionLayer owns the
-  // chrome. Siblings still render (the other frame is not selected).
+  // Selected frame's hovered tier suppressed — SelectionLayer owns the
+  // chrome. No descendants (it's a leaf). No siblings (scope change).
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(0);
-  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(1);
+  await expect(page.locator('[data-hover-tier="descendant"]')).toHaveCount(0);
+  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(0);
 });
 
 test("hover overlay disappears in peek mode (uses Phase 1 affordance gate)", async ({ page }) => {
