@@ -59,11 +59,20 @@ export type ClickIntent = "plain" | "deep" | "toggle";
  *  - `intent: "toggle"` (Shift-click) — caller routes to multi-frame
  *    toggleFrames; this helper still returns the hit as the
  *    representative leaf so single-selection consumers stay coherent.
- *  - `intent: "plain"` — "already-in-context" heuristic. If the current
- *    selection is anywhere on the trail down to the hit, the user is
- *    drilling deeper within the same context → return the leaf hit. If
- *    the current selection is in a different branch, only walk one
- *    level in from the root → return the top-level frame on the trail.
+ *  - `intent: "plain"` — "already-in-context" heuristic. The user is
+ *    considered to be in a context once *any* frame on the hit's trail
+ *    is either the current selection itself OR the parent of the
+ *    current selection. In that case → return the leaf hit (drill).
+ *    Otherwise the user is switching contexts → only walk one level
+ *    in from the root and return the top-level frame on the trail.
+ *
+ *    The parent-of-current arm exists for the "sibling pick inside the
+ *    already-entered frame" path: once `text1` inside `FrameA` is
+ *    selected, clicking `text2` (a sibling inside the same `FrameA`)
+ *    must select `text2` directly — `FrameA` is on `text2`'s trail and
+ *    is the parent of `text1`, so the click is still "in context". A
+ *    rule that only checked `current ∈ trail` would re-select `FrameA`
+ *    on every sibling switch (the bug this fix removes).
  *
  *  Pure: no React, no vm, no DOM. Doc + current + hit + intent in,
  *  Selection|null out. Testable in isolation. */
@@ -82,8 +91,17 @@ export function selectFromHit(
     return null;
   }
   const currentId = current?.kind === "frame" ? current.id : undefined;
+  // Parent of the current selection — the frame whose viewport the user
+  // is currently treating as "root". `parentOf` returns undefined when
+  // the current selection is a top-level frame (its parent is the
+  // document root, which is intentionally absent from the trail).
+  const currentParentId = currentId !== undefined ? parentOf(currentId, doc) : undefined;
   const inCurrentContext =
-    currentId !== undefined && trail.some((item) => String(item.id) === currentId);
+    currentId !== undefined &&
+    trail.some((item) => {
+      const id = String(item.id);
+      return id === currentId || id === currentParentId;
+    });
   if (inCurrentContext) {
     // Same context — let the click drill all the way to the leaf hit.
     return { kind: "frame", id: hitId };

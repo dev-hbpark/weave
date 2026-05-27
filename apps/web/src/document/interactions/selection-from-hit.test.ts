@@ -66,6 +66,75 @@ describe("selectFromHit — A1 parent-first auto-select (plain intent)", () => {
   });
 });
 
+// Sibling-context tree — separate fixture so the assertions about
+// "sibling pick inside the entered frame" don't fight the single-chain
+// shape of TREE.
+//
+//   root
+//   └── P                       (a frame the user "enters")
+//       ├── X                   (an item inside P)
+//       ├── Y                   (sibling of X inside P)
+//       └── N                   (a nested frame, also inside P)
+//           └── Na              (leaf inside the nested frame)
+//
+// And one more top-level frame to test cross-context exits:
+//
+//   └── Z                       (sibling of P at root)
+const SIB_TREE = doc(
+  frame("root", [
+    frame("P", [frame("X"), frame("Y"), frame("N", [frame("Na")])]),
+    frame("Z"),
+  ]),
+);
+
+describe("selectFromHit — sibling-of-current inside the same parent frame", () => {
+  it("X selected → clicking Y (sibling inside P) drills directly to Y", () => {
+    // OLD behavior: parent-first → re-select P. NEW behavior: parent of
+    // X is P; P is on Y's trail → drill to Y. Matches the user spec —
+    // once the user is inside P, P acts as the local root.
+    const next = selectFromHit("Y", "plain", SIB_TREE, sel("X"));
+    expect(next).toEqual({ kind: "frame", id: "Y" });
+  });
+
+  it("X selected → clicking nested frame N (sibling of X inside P) drills to N", () => {
+    const next = selectFromHit("N", "plain", SIB_TREE, sel("X"));
+    expect(next).toEqual({ kind: "frame", id: "N" });
+  });
+
+  it("X selected → clicking deep leaf Na (inside N inside P) drills to Na", () => {
+    // Na's trail = [P, N, Na]. P is the parent of X → in-context → drill.
+    const next = selectFromHit("Na", "plain", SIB_TREE, sel("X"));
+    expect(next).toEqual({ kind: "frame", id: "Na" });
+  });
+
+  it("X selected → clicking Z (sibling of P at root) walks one level in (parent-first)", () => {
+    // Z's trail = [Z]. X's parent is P, which is NOT on Z's trail. The
+    // user is leaving P's context entirely → parent-first → Z.
+    const next = selectFromHit("Z", "plain", SIB_TREE, sel("X"));
+    expect(next).toEqual({ kind: "frame", id: "Z" });
+  });
+
+  it("X selected → clicking P itself selects P (current is on P's children, P is on P's trail)", () => {
+    // Trail of P = [P]. P is the parent of X → in-context → drill to P.
+    // The user is selecting the enclosing frame; result = P.
+    const next = selectFromHit("P", "plain", SIB_TREE, sel("X"));
+    expect(next).toEqual({ kind: "frame", id: "P" });
+  });
+
+  it("Na selected → clicking X (sibling of N inside P) drills to X", () => {
+    // X's trail = [P, X]. Parent of Na = N, NOT on trail. Na itself NOT
+    // on trail. But… per the rule, the only "context" we honor is the
+    // parent. So this falls through to parent-first → P.
+    //
+    // Rationale: when the user has drilled multiple levels (Na deep
+    // inside N inside P) and clicks something above that depth, they
+    // are stepping back out — re-anchoring at the current top-level
+    // frame is the safer default.
+    const next = selectFromHit("X", "plain", SIB_TREE, sel("Na"));
+    expect(next).toEqual({ kind: "frame", id: "P" });
+  });
+});
+
 describe("selectFromHit — A2 Cmd/Ctrl deep select (deep intent)", () => {
   it("Cmd-click on a leaf → that leaf, regardless of current selection", () => {
     const next = selectFromHit("A1a", "deep", TREE, null);
