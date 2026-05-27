@@ -20,6 +20,7 @@ import {
 } from "../document";
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
+import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 
 // Phase 13d-3 — entrance-animation Web Animations API keyframes per mode.
 function entranceKeyframes(mode: EntranceAnimationBehavior["mode"]): Keyframe[] {
@@ -385,59 +386,101 @@ export function PresentPage() {
     ],
   );
 
+  // Doc-order rank — DFS over the design tree assigns each Item id an
+  // increasing integer. Doc order *is* z-order in this renderer (no
+  // `z-index` is ever set), so the rank doubles as the paint-order key.
+  // Used both to sort scenes (paint order) and to classify a scene's
+  // visibility relative to the active frame (above / below / subtree).
+  const docOrderRank = useMemo(() => {
+    const out = new Map<string, number>();
+    let rank = 0;
+    function walk(item: AgocraftItem): void {
+      out.set(String(item.id), rank);
+      rank += 1;
+      for (const c of item.children) walk(c);
+    }
+    walk(docInAgocraft.root);
+    return out;
+  }, [docInAgocraft]);
+
+  // The Item id of the frame the camera is currently focused on. Used as
+  // the anchor for the visibility classification below.
+  const activeFrameId =
+    cameraTargets[safeStep]?.item.id !== undefined
+      ? String(cameraTargets[safeStep]?.item.id)
+      : undefined;
+
+  // Every id that should render *as if it's the active scene* — that is,
+  // the active frame itself plus every descendant at any depth. The user-
+  // visible rule says items *inside the visible frame's child tree* stay
+  // visible (no blur, no hide); everything outside that subtree is then
+  // classified by doc-order rank vs. the active frame's rank.
+  const activeSubtreeIds = useMemo(() => {
+    const out = new Set<string>();
+    if (activeFrameId === undefined) return out;
+    const root = findItemDeep(docInAgocraft, activeFrameId);
+    if (root === undefined) return out;
+    function collect(item: AgocraftItem): void {
+      out.add(String(item.id));
+      for (const c of item.children) collect(c);
+    }
+    collect(root);
+    return out;
+  }, [docInAgocraft, activeFrameId]);
+
+  // Internal scene shape — carries the doc-order anchor so the visibility
+  // classifier can rank scenes against the active frame. Stripped before
+  // the scenes array reaches `<Stage>` (Stage only accepts `StageScene`).
+  type LocalScene = StageScene & { readonly __docOrderId: string };
+
   // Phase 7b — root-level non-frame primitives (image / video / shape items
   // added directly to the design root, outside any slide-equivalent frame).
-  // These aren't navigation targets, but they should still render in present
-  // mode at their absolute design coords. Done as one passive scene at the
-  // design's full bounds — first in scene array so it's never dimmed (Stage's
-  // dim rule fires on `idx > activeIdx`, and activeIdx is always a frame
-  // camera target at idx ≥ 1 because cameraTargets excludes the root).
-  const designLayerScene = useMemo<StageScene | undefined>(() => {
-    const rootPrimitives = docInAgocraft.root.children.filter(
-      (c) => isDomainItem(c) && !FRAME_KINDS.has(c.kind),
-    );
-    if (rootPrimitives.length === 0) return undefined;
-    return {
-      id: "present-design-layer",
-      position: { x: design.width / 2, y: design.height / 2 },
-      size: { width: design.width, height: design.height },
-      scale: 1, // never the active scene; scale unused
-      children: (
-        <div data-testid="present-design-layer" style={{ position: "absolute", inset: 0 }}>
-          {rootPrimitives.map((child) => {
-            const f = (child.attrs as { frame?: ItemFrame }).frame;
-            if (f === undefined) return null;
-            const rotation = f.rotation ?? 0;
-            return (
-              <div
-                key={String(child.id)}
-                data-testid="present-primitive"
-                data-kind={child.kind}
-                data-item-id={String(child.id)}
-                style={{
-                  position: "absolute",
-                  left: `${f.x * 100}%`,
-                  top: `${f.y * 100}%`,
-                  width: `${f.width * 100}%`,
-                  height: `${f.height * 100}%`,
-                  ...(rotation
-                    ? {
-                        transform: `rotate(${rotation}rad)`,
-                        transformOrigin: "center center",
-                      }
-                    : {}),
-                }}
-              >
-                <PresentFrameTree item={child} />
-              </div>
-            );
-          })}
-        </div>
-      ),
-    };
+  // These aren't navigation targets, but they DO sit in the z-order and so
+  // each one gets its own scene at its absolute design coords. Per-primitive
+  // scenes (instead of one lumped design layer) are necessary so the
+  // visibility classifier can rank them individually — a primitive that
+  // happens to sit *between* two frames in doc order ends up "above" or
+  // "below" the active frame on its own merits.
+  const rootPrimitiveScenes = useMemo<LocalScene[]>(() => {
+    const out: LocalScene[] = [];
+    for (const child of docInAgocraft.root.children) {
+      if (!isDomainItem(child)) continue;
+      if (FRAME_KINDS.has(child.kind)) continue;
+      const f = (child.attrs as { frame?: ItemFrame }).frame;
+      if (f === undefined) continue;
+      const absX = f.x * design.width;
+      const absY = f.y * design.height;
+      const absW = f.width * design.width;
+      const absH = f.height * design.height;
+      const rotation = f.rotation ?? 0;
+      out.push({
+        id: `present-primitive-${String(child.id)}`,
+        __docOrderId: String(child.id),
+        position: { x: absX + absW / 2, y: absY + absH / 2 },
+        size: { width: absW, height: absH },
+        scale: 1, // never the active scene; scale unused
+        children: (
+          <div
+            data-testid="present-primitive"
+            data-kind={child.kind}
+            data-item-id={String(child.id)}
+            style={{
+              position: "absolute",
+              inset: 0,
+              ...(rotation
+                ? { transform: `rotate(${rotation}rad)`, transformOrigin: "center center" }
+                : {}),
+            }}
+          >
+            <PresentFrameTree item={child} />
+          </div>
+        ),
+      });
+    }
+    return out;
   }, [docInAgocraft, design.width, design.height]);
 
-  const cameraTargetScenes = useMemo<StageScene[]>(
+  const cameraTargetScenes = useMemo<LocalScene[]>(
     () =>
       cameraTargets.map(({ item, behavior, absW, absH }, idx) => {
         // Each navigable frame is its own scene. Body uses PresentFrameTree
@@ -474,6 +517,7 @@ export function PresentPage() {
 
         return {
           id: behavior.id,
+          __docOrderId: entryItemId,
           position: {
             x: behavior.position.x * design.width,
             y: behavior.position.y * design.height,
@@ -503,14 +547,45 @@ export function PresentPage() {
     [cameraTargets, ctx, safeStep, design.width, design.height, hoveredEntry, dispatchAction],
   );
 
-  // Combined scenes — design layer first (so it's never dimmed by Stage's
-  // `idx > activeIdx` rule), followed by the navigable camera-target scenes.
-  // activeId is always a camera target id, so the design layer is never the
-  // active scene.
-  const scenes = useMemo<StageScene[]>(
-    () => (designLayerScene ? [designLayerScene, ...cameraTargetScenes] : cameraTargetScenes),
-    [designLayerScene, cameraTargetScenes],
-  );
+  // Combined scenes — root primitives + camera-target frames, sorted by
+  // doc-order rank so paint order matches z-order, and classified per
+  // visibility relative to the active frame:
+  //
+  //   • In the active subtree (active itself + descendants) → render
+  //     normally; visibility omitted.
+  //   • doc-order rank *higher* than active AND not in subtree → "hidden"
+  //     so the scene paints at opacity 0 (it would otherwise occlude the
+  //     active frame).
+  //   • doc-order rank *lower* than active AND not in subtree → "blur" so
+  //     the scene reads as soft background context behind the active frame.
+  const scenes = useMemo<StageScene[]>(() => {
+    const combined: LocalScene[] = [...rootPrimitiveScenes, ...cameraTargetScenes];
+    combined.sort((a, b) => {
+      const ra = docOrderRank.get(a.__docOrderId);
+      const rb = docOrderRank.get(b.__docOrderId);
+      if (ra === undefined && rb === undefined) return 0;
+      if (ra === undefined) return 1;
+      if (rb === undefined) return -1;
+      return ra - rb;
+    });
+    const activeRank =
+      activeFrameId !== undefined ? docOrderRank.get(activeFrameId) : undefined;
+    return combined.map(({ __docOrderId, ...rest }) => {
+      if (activeFrameId === undefined || activeRank === undefined) return rest;
+      if (activeSubtreeIds.has(__docOrderId)) return rest;
+      const rank = docOrderRank.get(__docOrderId);
+      if (rank === undefined) return rest;
+      return rank > activeRank
+        ? { ...rest, visibility: "hidden" as const }
+        : { ...rest, visibility: "blur" as const };
+    });
+  }, [
+    rootPrimitiveScenes,
+    cameraTargetScenes,
+    docOrderRank,
+    activeFrameId,
+    activeSubtreeIds,
+  ]);
 
   if (totalSteps === 0) {
     return (
@@ -554,13 +629,22 @@ export function PresentPage() {
 
   return (
     <div className="fixed inset-0">
-      <Stage
-        designSize={{ width: design.width, height: design.height }}
-        scenes={scenes}
-        activeId={activeId}
-        background={design.background}
-        bgTone={bgTone}
-      />
+      {/* WI-040 — the StyleResolver cascade (theme tokens written as
+       *  `{ $ref: "color.accent" }` etc.) walks the document via
+       *  `useResolveColor` deep inside FrameBlock / TextBlock. Without
+       *  the provider present, every `$ref` collapses to its fallback
+       *  ("transparent" / undefined) and theme colors disappear in
+       *  present mode while looking fine in edit mode (which already
+       *  mounts the provider inside DesignPage). */}
+      <DocumentForResolutionProvider document={docInAgocraft}>
+        <Stage
+          designSize={{ width: design.width, height: design.height }}
+          scenes={scenes}
+          activeId={activeId}
+          background={design.background}
+          bgTone={bgTone}
+        />
+      </DocumentForResolutionProvider>
       <PresentChrome
         step={safeStep}
         total={totalSteps}

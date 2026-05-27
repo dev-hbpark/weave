@@ -21,6 +21,21 @@ export interface StageScene {
    * to fit the scene's frame to the viewport, or as a manual override.
    */
   readonly scale: number;
+  /**
+   * Explicit visibility hint relative to the active scene. When provided on
+   * any scene, Stage uses these classifications instead of the index-based
+   * dim fallback.
+   *
+   *   • `"hidden"` — paint as opacity 0 (used for z-order-above-active items
+   *     that are NOT in the active scene's subtree; they should not occlude).
+   *   • `"blur"`   — paint at opacity 1 but apply `filter: blur(...)` so the
+   *     scene reads as background context behind the active frame.
+   *   • omitted    — paint normally (the active scene + its descendants).
+   *
+   * Caller is responsible for the classification (descendant-of-active vs.
+   * doc-order rank); Stage merely applies the visual.
+   */
+  readonly visibility?: "hidden" | "blur";
   readonly children: ReactNode;
 }
 
@@ -293,13 +308,23 @@ export function Stage({
           // overlap in the middle 30% so the perceived flow is
           //   "leaving first → both mid-transition → arriving last".
           const activeIdx = scenes.findIndex((s) => s.id === activeId);
+          // If any scene carries an explicit visibility, treat the array as
+          // *classified* — every scene's flag is authoritative and the
+          // index-based fallback is bypassed. Otherwise (e.g., test stubs)
+          // keep the legacy `idx > activeIdx` dim so existing callers don't
+          // change behavior silently.
+          const classified = scenes.some((s) => s.visibility !== undefined);
           return scenes.map((scene, idx) => {
-            const dimmed = activeIdx >= 0 && idx > activeIdx;
+            const visibility: "hidden" | "blur" | undefined = classified
+              ? scene.visibility
+              : activeIdx >= 0 && idx > activeIdx
+                ? "hidden"
+                : undefined;
             return (
               <SceneItem
                 key={scene.id}
                 scene={scene}
-                dimmed={dimmed}
+                visibility={visibility}
                 progressMV={progressMV}
                 reduce={reduce === true}
                 activeKey={activeId}
@@ -314,52 +339,66 @@ export function Stage({
 
 interface SceneItemProps {
   readonly scene: StageScene;
-  readonly dimmed: boolean;
+  /** Per-scene visibility relative to the active scene.
+   *   - `"hidden"` → opacity 0 (z-order-above siblings outside active subtree)
+   *   - `"blur"`   → opacity 1 + filter:blur (z-order-below background context)
+   *   - undefined  → normal paint (active + descendants) */
+  readonly visibility: "hidden" | "blur" | undefined;
   readonly progressMV: MotionValue<number>;
   readonly reduce: boolean;
   /** The currently active scene's id. Threaded down only so SceneItem's
    *  effect can re-fire on *every* step change — even when this scene's
-   *  own `dimmed` didn't flip — to re-snapshot from/to refs before the
-   *  parent resets `progressMV` to 0. Without this, scenes whose dimmed
+   *  own visibility didn't flip — to re-snapshot from/to refs before the
+   *  parent resets `progressMV` to 0. Without this, scenes whose visibility
    *  state is unchanged keep stale refs (e.g. from=1 / to=0 from a prior
    *  fade-out) and their opacity jumps to 1 when `progressMV` resets,
    *  visible as a one-frame "z-order flash". */
   readonly activeKey: string;
 }
 
+/** Px radius of the gaussian blur applied to `"blur"` scenes. Read as a
+ *  hard-coded constant rather than a CSS var so the value is reachable
+ *  from non-DOM (test / serialize) contexts too if needed later. The
+ *  amount is deliberately soft (≤ 16px) so backdrop content reads as
+ *  *background context* — the active frame still owns visual focus, but
+ *  the user can perceive the surrounding scene rather than seeing it
+ *  punched out to black. */
+const BLUR_PX = 12;
+
 /** A single Stage scene whose opacity rides the camera spring's
  *  `progressMV`. The component owns from/to refs so a step change captures
  *  whatever the live opacity is *at that instant* (handling rapid step
  *  changes that interrupt a mid-flight transition) and re-targets to the
- *  new dimmed state. */
-function SceneItem({ scene, dimmed, progressMV, reduce, activeKey }: SceneItemProps) {
+ *  new visibility state. */
+function SceneItem({ scene, visibility, progressMV, reduce, activeKey }: SceneItemProps) {
+  const targetOpacity = visibility === "hidden" ? 0 : 1;
   // The opacity the scene started this transition at, and the one it's
   // heading toward. On the very first render they match — no animation,
   // just the static initial state.
-  const fromRef = useRef<number>(dimmed ? 0 : 1);
-  const toRef = useRef<number>(dimmed ? 0 : 1);
+  const fromRef = useRef<number>(targetOpacity);
+  const toRef = useRef<number>(targetOpacity);
 
-  // On `dimmed` change: snapshot the current interpolated opacity (so a
+  // On visibility change: snapshot the current interpolated opacity (so a
   // mid-flight interrupt continues smoothly), then aim at the new target.
   // Effect runs *before* the parent's camera spring reset, because child
   // effects run before parent effects on the same commit — so by the time
   // the parent calls `progressMV.set(0)` our refs are already updated.
   useEffect(() => {
     if (reduce) {
-      fromRef.current = dimmed ? 0 : 1;
-      toRef.current = dimmed ? 0 : 1;
+      fromRef.current = targetOpacity;
+      toRef.current = targetOpacity;
       return;
     }
     // Re-sync from/to on EVERY step change (activeKey is in deps), not
-    // just when this scene's own `dimmed` flips. The parent's effect
+    // just when this scene's own visibility flips. The parent's effect
     // resets `progressMV` to 0 each step; if our refs are stale, the
     // useTransform output snaps from the prior settled value to whatever
     // computeStaggered(staleFrom, staleTo, 0) returns — a visible flash.
     const p = progressMV.get();
     const live = computeStaggered(fromRef.current, toRef.current, p);
     fromRef.current = live;
-    toRef.current = dimmed ? 0 : 1;
-  }, [dimmed, progressMV, reduce, activeKey]);
+    toRef.current = targetOpacity;
+  }, [targetOpacity, progressMV, reduce, activeKey]);
 
   // Opacity derived from progressMV with the leaving-first / arriving-last
   // stagger map. The useTransform's read function runs every animation
@@ -368,10 +407,22 @@ function SceneItem({ scene, dimmed, progressMV, reduce, activeKey }: SceneItemPr
     reduce ? toRef.current : computeStaggered(fromRef.current, toRef.current, p),
   );
 
+  // Filter follows visibility as a CSS transition (no motion value needed —
+  // the change is one-shot per step, not continuously interpolated with
+  // the camera spring). `will-change: filter` promotes a compositor layer
+  // so Chromium keeps the blur stable while the parent's transform
+  // animation is in flight; without it the filter can drop mid-animation
+  // and re-apply after settle (the same family of compositor-drop seen
+  // with `backdrop-filter under transform`). The hint is scoped to scenes
+  // that actually use the filter so non-blurred scenes stay flat layers.
+  const blurred = visibility === "blur";
+
   return (
     <motion.div
       data-stage-scene-id={scene.id}
-      data-stage-scene-dimmed={dimmed ? "true" : "false"}
+      data-stage-scene-visibility={visibility ?? "normal"}
+      // Back-compat — existing e2e selectors keyed on `dimmed`.
+      data-stage-scene-dimmed={visibility === "hidden" ? "true" : "false"}
       className="absolute"
       style={{
         left: scene.position.x - scene.size.width / 2,
@@ -389,6 +440,9 @@ function SceneItem({ scene, dimmed, progressMV, reduce, activeKey }: SceneItemPr
         // apps/web/src/document/render/FrameContent.tsx (FRAME_OVERFLOW).
         overflow: "visible",
         opacity,
+        filter: blurred ? `blur(${BLUR_PX}px)` : undefined,
+        willChange: blurred ? "filter" : undefined,
+        transition: "filter 280ms cubic-bezier(0.22, 1, 0.36, 1)",
       }}
     >
       {scene.children}
