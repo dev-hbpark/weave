@@ -4,9 +4,11 @@
 //   1. Per-frame: every frame gets a
 //      `background?: string` attr. Renderers paint it. The ContextualToolbar
 //      exposes a Background ColorPicker + Clear (×).
-//   2. Design-wide: when nothing is selected, the toolbar mounts a "design"
-//      variant with a Background ColorPicker that edits `design.background`
-//      and persists via the storage layer.
+//   2. Design-wide: `design.background` is edited via a `ColorPicker` that
+//      sits in the DesignPage header's right cluster (next to ThemeSwitcher).
+//      The picker is always discoverable, independent of selection, and
+//      routes through `weave.design.setBackground` so the change lands in
+//      `editor.history` and survives Cmd+Z.
 
 import { expect, test, type Page } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
@@ -145,16 +147,26 @@ test.skip("clearing the background (×) removes attrs.background", async ({
   expect(bg).toBeUndefined();
 });
 
-test.skip("design background editor mounts when no item is selected", async ({
-  page,
-}) => {
-  // Phase 17 — the auto-mount of the design-variant toolbar (top-right
-  // corner when nothing was selected) was reverted because it intercepted
-  // dblclick on full-frame slide titles. Design-background editing will
-  // come back via an explicit UI affordance; until then this test is
-  // skipped. The frame-level Background section (the rest of this spec)
-  // continues to cover the per-frame case.
-  void page;
+test("design background editor mounts in the header regardless of selection", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "BG-D" });
+
+  // No selection — picker is still visible (file-level chrome).
+  await clearSelectionViaVm(page);
+  await expect(page.getByTestId("header-design-background")).toBeVisible();
+
+  // With a selection — picker remains visible (selection-independent).
+  await addFrame(page, "slide", {
+    frame: { x: 0.2, y: 0.2, width: 0.4, height: 0.4, rotation: 0 },
+  });
+  const id = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    return String((w.__weaveDoc?.root.children ?? [])[0]?.id);
+  });
+  await selectFrameViaVm(page, id);
+  await expect(page.getByTestId("header-design-background")).toBeVisible();
 });
 
 test("editing design background updates the rendered canvas + persists", async ({

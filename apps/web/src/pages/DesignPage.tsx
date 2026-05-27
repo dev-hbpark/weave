@@ -16,6 +16,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ColorPicker,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
@@ -1487,6 +1488,27 @@ function DesignPageBody() {
                           </div>
 
                           <div className="flex items-center justify-end gap-2">
+                            {/* Design 배경색 — file-level 속성이라 selection 과
+                                무관한 영구 chrome 인 header 의 우 cluster 에
+                                상주. ContextualToolbar 의 selection==0
+                                variant 를 대체. ThemeSwitcher 와 같은
+                                design-level 컨트롤 군에 속하므로 인접 배치.
+                                `setDesignBackgroundViaEditor` 는
+                                weave.design.setBackground 명령을 통해 History
+                                를 거치므로 Cmd+Z 가 그대로 작동. ColorPicker 는
+                                data-testid 를 trigger 로 전달하지 않으므로
+                                span wrapper 로 e2e hook 노출 (inline-flex 로
+                                trigger 의 layout 에 영향 X). */}
+                            <span data-testid="header-design-background" className="inline-flex">
+                              <ColorPicker
+                                value={design.background ?? "#ffffff"}
+                                onValueCommit={(v) => setDesignBackgroundViaEditor(v)}
+                                onValueChange={() => {
+                                  /* commit-only */
+                                }}
+                                aria-label="Design background"
+                              />
+                            </span>
                             <ThemeSwitcher />
                             <Button size="md" trailingIcon={<IconPlay size={14} />} asChild>
                               <Link
@@ -1791,16 +1813,12 @@ function DesignPageBody() {
                           ) : null}
 
                           {/* WI-020 / WI-021 / Phase 14 — ContextualToolbar mounts
-                  centered above the canvas. Two variants:
-                    • selectedIds.size === 0 → "design" variant
-                      (Background ColorPicker for the canvas itself).
+                  centered above the canvas. Selection-only:
+                    • selectedIds.size === 0 → bar unmounted.
+                      design.background editor lives in the header's right
+                      cluster (file-level chrome, always discoverable).
                     • selectedIds.size ≥ 1   → selection variant resolved
-                      from the toolbar section registry per kind.
-                  Earlier the no-selection variant was suppressed because the
-                  old top-right corner mount intercepted clicks on
-                  FULL_FRAME frame content. The current top-center mount is
-                  narrow (single ColorPicker) and sits well clear of the
-                  canvas body, so it no longer needs the suppression. */}
+                      from the toolbar section registry per kind. */}
                           {!peek.isActive ? (
                             <div
                               style={{
@@ -1861,8 +1879,6 @@ function DesignPageBody() {
                                     initialSrc: current,
                                   });
                                 }}
-                                designBackground={design.background}
-                                onChangeDesignBackground={setDesignBackgroundViaEditor}
                               />
                             </div>
                           ) : null}

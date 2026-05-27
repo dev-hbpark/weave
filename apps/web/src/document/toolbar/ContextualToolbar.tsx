@@ -11,14 +11,14 @@
 // context dispatch. weave AUDIT-002 documents the 18-case `switch (firstKind)`
 // this file replaced.
 //
-// Behaviour preserved from WI-020 Phase 5 + WI-021 Phase 11:
-//   • selectedItems.length === 0 + design-background callbacks → "design"
-//     variant (single Background picker for the canvas).
+// Behaviour:
+//   • Selection 비어 있음        → bar mount X. design.background 편집은
+//     header 우 cluster 의 ColorPicker 가 담당 (file-level chrome).
 //   • Single kind selection (1+ items, all same kind) → kind's section
 //     with Mixed-aware controls when multi.
 //   • Mixed-kind selection (2+ items, different kinds) → no bar.
 
-import { ColorPicker, ContextualToolbar as Bar } from "@weave/design-system";
+import { ContextualToolbar as Bar } from "@weave/design-system";
 import type { Editor } from "@agocraft/editor";
 import type { JSX } from "react";
 import type { ItemSnapshot } from "./multi-edit.js";
@@ -26,11 +26,10 @@ import { toolbarSectionRegistry } from "./sections/index.js";
 
 interface ContextualToolbarProps {
   readonly editor: Editor;
-  /** Selected items. Length 0 + `designBackground` set → "design" variant
-   *  with a single Background picker for the canvas. Length 1 → single-
-   *  select section. Length ≥ 2 with all same kind → multi-select section
-   *  with mixed indicators on diverging props. Length ≥ 2 with mixed kinds
-   *  → no bar. */
+  /** Selected items. Length 0 → bar hidden (design.background lives in the
+   *  header). Length 1 → single-select section. Length ≥ 2 with all same
+   *  kind → multi-select section with mixed indicators on diverging props.
+   *  Length ≥ 2 with mixed kinds → no bar. */
   readonly selectedItems: ReadonlyArray<ItemSnapshot>;
   /** Open the host's MediaSrcDialog pre-filled with the current src for the
    *  selected image / video. Host owns the dialog (DesignPage). */
@@ -41,10 +40,6 @@ interface ContextualToolbarProps {
     kind: "image" | "video",
     current: string,
   ) => void;
-  /** When provided AND no items are selected, the toolbar mounts a single
-   *  "Background" picker that edits the overall design background. */
-  readonly designBackground?: string;
-  readonly onChangeDesignBackground?: (color: string) => void;
 }
 
 export function ContextualToolbar({
@@ -52,34 +47,10 @@ export function ContextualToolbar({
   selectedItems,
   onEditMediaSrc,
   onEditShapeFill,
-  designBackground,
-  onChangeDesignBackground,
 }: ContextualToolbarProps): JSX.Element | null {
-  // No selection — render the "design" variant (overall canvas background)
-  // when the host wires the design-background callbacks. Otherwise hide.
-  if (selectedItems.length === 0) {
-    if (
-      designBackground === undefined ||
-      onChangeDesignBackground === undefined
-    ) {
-      return null;
-    }
-    return (
-      <Bar
-        aria-label="Design properties"
-        data-testid="contextual-toolbar"
-        data-kind="design"
-      >
-        <Bar.Section label="Background">
-          <ColorPicker
-            value={designBackground}
-            onValueCommit={(v) => onChangeDesignBackground(v)}
-            onValueChange={() => { /* commit-only */ }}
-          />
-        </Bar.Section>
-      </Bar>
-    );
-  }
+  // No selection — bar stays unmounted. Design background editing moved to
+  // the header's right cluster (file-level chrome).
+  if (selectedItems.length === 0) return null;
 
   // Same-kind only — multi-selection of mixed kinds hides the bar.
   const firstKind = selectedItems[0]!.kind;
