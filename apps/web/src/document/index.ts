@@ -2,27 +2,39 @@ export { BehaviorEditor } from "./BehaviorEditor.js";
 export {
   cameraTargetAdapter,
   createInteractionRegistry,
+  firstChildOf,
   hotspotAdapter,
   type InteractionAdapter,
   type InteractionMode,
   InteractionModeProvider,
   type InteractionRegistry,
   interactionRegistry,
+  nextSiblingOf,
+  PeekActiveProvider,
   type PresentContext,
   type PresentEvent,
+  parentOf,
+  prevSiblingOf,
   revealOnStepAdapter,
   type Selection,
   SelectionProvider,
-  firstChildOf,
-  nextSiblingOf,
-  parentOf,
-  prevSiblingOf,
+  useEditAffordancesAllowed,
+  useFrameDragBindingsAllowed,
   useFrameSelectionAllowed,
   useInteractionMode,
+  usePeekActive,
   useRubberBandAllowed,
   useSelection,
+  useSelectionChromeVisible,
   useTooltipsAllowed,
 } from "./interactions/index.js";
+export {
+  collectPresentationIds,
+  effectivePresentationOrder,
+  FRAME_KINDS,
+  reconcilePresentationOrder,
+  reorder,
+} from "./presentation-order.js";
 export { createDefaultItem, tileFrame } from "./seed.js";
 export {
   clearDesign,
@@ -38,6 +50,7 @@ export {
 export type {
   AgoItem,
   BlockDocAttrs,
+  ButtonTriggerBehavior,
   CameraTargetBehavior,
   CanvasAttrs,
   Design,
@@ -46,7 +59,6 @@ export type {
   DocSizePreset,
   DomainKind,
   DomainMeta,
-  ButtonTriggerBehavior,
   EntranceAnimationBehavior,
   HotspotAction,
   HotspotBehavior,
@@ -66,11 +78,4 @@ export {
   FLAVOR_REGISTRY,
   FULL_FRAME,
 } from "./types.js";
-export {
-  collectPresentationIds,
-  effectivePresentationOrder,
-  FRAME_KINDS,
-  reconcilePresentationOrder,
-  reorder,
-} from "./presentation-order.js";
 export { useDesign } from "./use-design.js";

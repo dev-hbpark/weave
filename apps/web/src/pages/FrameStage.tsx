@@ -54,7 +54,12 @@ import {
   useState,
 } from "react";
 import type { AgoItem, DomainKind, ItemFrame } from "../document";
-import { useFrameSelectionAllowed, useInteractionMode } from "../document";
+import {
+  useFrameDragBindingsAllowed,
+  useFrameSelectionAllowed,
+  useInteractionMode,
+  useSelectionChromeVisible,
+} from "../document";
 import { findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
@@ -345,6 +350,11 @@ function NestedFrame({
   // frame-manipulating / text-editing / context-menu each own their own
   // event flow and must not have a parallel selection happen alongside.
   const selectionAllowed = useFrameSelectionAllowed();
+  // WI-040 — selection chrome (outline + handles) hides when LayerPicker
+  // open (context-menu), Space-pan (hand), or mid-rubber-band; stays on
+  // through `idle`, `frame-manipulating` (handles glued through drag),
+  // and `text-editing` (frame still resizable while typing).
+  const chromeVisible = useSelectionChromeVisible();
   // DR-018 — selection chrome registry. Cross-cutting providers (plugins,
   // AI selection-actions, future domain extensions) register here; the
   // NestedFrame's `<SelectionLayer>` resolver merges their specs with
@@ -767,7 +777,7 @@ function NestedFrame({
           />
         ));
       })()}
-      {isPrimarySelection && onCommitFrame !== undefined ? (
+      {isPrimarySelection && onCommitFrame !== undefined && chromeVisible ? (
         <SelectionLayer
           targetRef={selfRef}
           // DR-018 — handle list comes from the item kind's
@@ -1509,6 +1519,11 @@ export function FrameStage(props: FrameStageProps) {
     [designCapability, editor],
   );
 
+  // WI-040 — frame-drag bindings (alt-rubber-band, frame-move) register
+  // only while the mode permits a drag to start or continue. Pan stays
+  // registered always — it carries its own `enabled` predicate and is
+  // the gesture the user typically wants when in `hand` / `panning`.
+  const frameDragAllowed = useFrameDragBindingsAllowed();
   useEffect(() => {
     if (router === null) return undefined;
     if (vm === null) return undefined;
@@ -1519,7 +1534,7 @@ export function FrameStage(props: FrameStageProps) {
     // to MODIFIER_OVERRIDE=90 with `alt: "required"`. Wins over
     // Resize / Rotate handles (80) / FrameMove (50) / Pan (5).
     const altRubberBand =
-      designAdaptedCapability === undefined
+      !frameDragAllowed || designAdaptedCapability === undefined
         ? null
         : createModifierOverride({
             base: createRubberBandBinding({
@@ -1534,6 +1549,25 @@ export function FrameStage(props: FrameStageProps) {
               name: "rubber-band:design-root",
             }),
           });
+    // WI-040 — frame-move excluded outside idle / frame-manipulating so
+    // hand/panning, context-menu (LayerPicker open), text-editing, and
+    // rubber-band reviewing don't allow a competing item drag.
+    const frameMove = frameDragAllowed
+      ? createFrameMoveBinding({
+          access: frameAccess,
+          priority: GESTURE_PRIORITY_ELEMENT_BODY,
+          moveThreshold: 3,
+          // HANDOFF-011 / WI-033 — opt out of the binding's raw
+          // `vm.itemSelection.set(itemId)` on plain pointerdown so
+          // NestedFrame's onClick can apply Figma's parent-first /
+          // Cmd-deep / Shift-toggle semantics via `selectFromHit`.
+          disableSelectionSet: true,
+          // WI-034 — Alt+drag on a frame is reserved for
+          // RubberBandLayer's "add child" gesture; frame-move declines
+          // so the lower-priority alt-rubber-band binding can claim.
+          modifiers: { alt: "forbidden", button: 0 },
+        })
+      : null;
     return router.register({
       host: outerRef,
       bindings: [
@@ -1551,20 +1585,7 @@ export function FrameStage(props: FrameStageProps) {
         //   • Pan              ( 5, FALLBACK) — only when hand tool /
         //     space-down is active.
         ...(altRubberBand === null ? [] : [altRubberBand]),
-        createFrameMoveBinding({
-          access: frameAccess,
-          priority: GESTURE_PRIORITY_ELEMENT_BODY,
-          moveThreshold: 3,
-          // HANDOFF-011 / WI-033 — opt out of the binding's raw
-          // `vm.itemSelection.set(itemId)` on plain pointerdown so
-          // NestedFrame's onClick can apply Figma's parent-first /
-          // Cmd-deep / Shift-toggle semantics via `selectFromHit`.
-          disableSelectionSet: true,
-          // WI-034 — Alt+drag on a frame is reserved for
-          // RubberBandLayer's "add child" gesture; frame-move declines
-          // so the lower-priority alt-rubber-band binding can claim.
-          modifiers: { alt: "forbidden", button: 0 },
-        }),
+        ...(frameMove === null ? [] : [frameMove]),
         createPanBinding({
           enabled: () => panActiveRef.current,
           priority: GESTURE_PRIORITY_FALLBACK,
@@ -1580,6 +1601,7 @@ export function FrameStage(props: FrameStageProps) {
     designWidth,
     designHeight,
     clientToDesignLocal,
+    frameDragAllowed,
   ]);
 
   // FrameResize + FrameRotate live on a SEPARATE router host attached
@@ -1590,10 +1612,16 @@ export function FrameStage(props: FrameStageProps) {
   // clicks. A body-scoped host catches them at the document level.
   // `acceptTarget` keeps the binding inert for non-handle presses, so
   // every other gesture (including outer-router clicks) is unaffected.
+  // WI-040 — same mode gate as the outer router: skip registration in
+  // hand / panning / rubber-band / context-menu / text-editing. Handle
+  // hit-testing via `acceptTarget` is not enough on its own — a hand-
+  // tool drag that happened to land on a portal'd handle would still
+  // claim a resize despite the user's pan intent.
   useEffect(() => {
     if (router === null) return undefined;
     if (vm === null) return undefined;
     if (typeof document === "undefined") return undefined;
+    if (!frameDragAllowed) return undefined;
     return router.register({
       host: document.body,
       bindings: [
@@ -1654,7 +1682,7 @@ export function FrameStage(props: FrameStageProps) {
         }),
       ],
     });
-  }, [router, vm, frameAccess]);
+  }, [router, vm, frameAccess, frameDragAllowed]);
 
   // Single editor-level Esc → `router.cancelActive()` flow. agocraft
   // fans the call out to every attached host (in-flight binding's

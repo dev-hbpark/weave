@@ -10,17 +10,17 @@ import {
   type AITooltipHotkeyTable,
   AITooltipProvider,
   Button,
+  ColorPicker,
   CommandHostProvider,
   CommandIconButton,
   CommandPalette,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ColorPicker,
+  ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-  ContextMenuSeparator,
   ContextMenuTrigger,
   DropdownMenu,
   DropdownMenuContent,
@@ -49,24 +49,27 @@ import {
   InteractionModeProvider,
   type ItemFrame,
   nextSiblingOf,
+  PeekActiveProvider,
   parentOf,
   prevSiblingOf,
   SelectionProvider,
   useDesign,
+  useEditAffordancesAllowed,
   useInteractionMode,
   useSelection,
+  useSelectionChromeVisible,
   useTooltipsAllowed,
 } from "../document";
 import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../document/agocraft-mirror.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
-import { RouterProvider } from "../document/interactions/router-context.js";
-import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
 import {
   buildFrameTree,
   type FrameTreeNode,
   resolvePickerTargetId,
 } from "../document/interactions/frame-tree.js";
 import { ReparentGhostOverlay } from "../document/interactions/ReparentGhostOverlay.js";
+import { RouterProvider } from "../document/interactions/router-context.js";
+import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
 import {
@@ -1206,16 +1209,17 @@ function DesignPageBody() {
         <SelectionChromeProvider registry={selectionChrome}>
           <SelectionProvider vm={vm}>
             <InteractionModeProvider vm={vm}>
-              <CommandHostProvider
-                registry={editorCommandMetadata}
-                context={commandContext}
-                locale="ko"
-                dispatch={dispatchCommand}
-              >
-                <ModeAwareAITooltipProvider hotkeyTable={editorHotkeyTable}>
-                  <EditorProvider editor={editor}>
-                    <DocumentForResolutionProvider document={docInAgocraft}>
-                      {/* WI-039 — z-stack layout. The design surface (`<main>`)
+              <PeekActiveProvider active={peek.isActive}>
+                <CommandHostProvider
+                  registry={editorCommandMetadata}
+                  context={commandContext}
+                  locale="ko"
+                  dispatch={dispatchCommand}
+                >
+                  <ModeAwareAITooltipProvider hotkeyTable={editorHotkeyTable}>
+                    <EditorProvider editor={editor}>
+                      <DocumentForResolutionProvider document={docInAgocraft}>
+                        {/* WI-039 — z-stack layout. The design surface (`<main>`)
                         fills the entire viewport so the canvas reaches every
                         edge with no chrome gap. Header, launch banners and
                         ThumbnailPanel are absolutely positioned overlays
@@ -1225,270 +1229,280 @@ function DesignPageBody() {
                         gap above the bottom panel because the panel's new
                         bg (intentionally shorter than the tile) exposed the
                         parent's `--bg-page` color through the flex gap. */}
-                      <div className="fixed inset-0 bg-[color:var(--bg-page)]">
-                        <header
-                          // WI-039 — opaque self-background. The original
-                          // `bg-[color:var(--surface-1)]` is a translucent
-                          // glass token; when the header sat in a flex
-                          // child of `bg-[color:var(--bg-page)]` it
-                          // composited into a dark glass tone. With the
-                          // z-stack the canvas (potentially a light
-                          // design background) now sits behind the header,
-                          // so the glass token looks washed out. Stacking
-                          // `--surface-1` as a flat gradient on top of an
-                          // opaque `--bg-page` base reproduces the exact
-                          // original perceived color but is now fully
-                          // self-contained — no parent bg dependency.
-                          className="absolute inset-x-0 top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)]"
-                          style={{
-                            background:
-                              "linear-gradient(var(--surface-1), var(--surface-1)), var(--bg-page)",
-                          }}
-                          data-testid="design-header"
-                          role="toolbar"
-                          aria-label="Edit tools"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Link
-                              to="/"
-                              className="flex items-center gap-2 no-underline shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
-                              aria-label="Home"
-                            >
+                        <div className="fixed inset-0 bg-[color:var(--bg-page)]">
+                          <header
+                            // WI-039 — opaque self-background. The original
+                            // `bg-[color:var(--surface-1)]` is a translucent
+                            // glass token; when the header sat in a flex
+                            // child of `bg-[color:var(--bg-page)]` it
+                            // composited into a dark glass tone. With the
+                            // z-stack the canvas (potentially a light
+                            // design background) now sits behind the header,
+                            // so the glass token looks washed out. Stacking
+                            // `--surface-1` as a flat gradient on top of an
+                            // opaque `--bg-page` base reproduces the exact
+                            // original perceived color but is now fully
+                            // self-contained — no parent bg dependency.
+                            className="absolute inset-x-0 top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)]"
+                            style={{
+                              background:
+                                "linear-gradient(var(--surface-1), var(--surface-1)), var(--bg-page)",
+                            }}
+                            data-testid="design-header"
+                            role="toolbar"
+                            aria-label="Edit tools"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Link
+                                to="/"
+                                className="flex items-center gap-2 no-underline shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+                                aria-label="Home"
+                              >
+                                <span
+                                  aria-hidden
+                                  className="inline-block w-5 h-5 rounded-[var(--radius-sm)] bg-[image:var(--accent-gradient)] shadow-[var(--shadow-glow)]"
+                                />
+                                <span className="text-[13px] font-semibold tracking-tight text-[color:var(--text-strong)]">
+                                  weave
+                                </span>
+                              </Link>
                               <span
                                 aria-hidden
-                                className="inline-block w-5 h-5 rounded-[var(--radius-sm)] bg-[image:var(--accent-gradient)] shadow-[var(--shadow-glow)]"
-                              />
-                              <span className="text-[13px] font-semibold tracking-tight text-[color:var(--text-strong)]">
-                                weave
+                                className="text-[12px] text-[color:var(--text-muted)] px-1"
+                              >
+                                /
                               </span>
-                            </Link>
-                            <span
-                              aria-hidden
-                              className="text-[12px] text-[color:var(--text-muted)] px-1"
-                            >
-                              /
-                            </span>
-                            {/* WI-033 P2 — Breadcrumb (Phase 12 drill-in trail
+                              {/* WI-033 P2 — Breadcrumb (Phase 12 drill-in trail
                               indicator) removed. Figma-aligned selection
                               navigation has no entered-frame state, so the
                               header only shows the design title. */}
-                            <nav
-                              className="flex items-center gap-1 text-[12px] text-[color:var(--text-muted)] min-w-0"
-                              aria-label="Breadcrumb"
-                            >
-                              <span className="text-[color:var(--text-strong)] truncate max-w-[280px]">
-                                {design.title}
-                              </span>
-                            </nav>
-                          </div>
+                              <nav
+                                className="flex items-center gap-1 text-[12px] text-[color:var(--text-muted)] min-w-0"
+                                aria-label="Breadcrumb"
+                              >
+                                <span className="text-[color:var(--text-strong)] truncate max-w-[280px]">
+                                  {design.title}
+                                </span>
+                              </nav>
+                            </div>
 
-                          <div
-                            className="flex items-center gap-0.5"
-                            role="group"
-                            aria-label="Edit tools"
-                          >
-                            {infiniteCanvas ? (
-                              <>
-                                {/* Three tool buttons form a mutually-exclusive toggle
+                            <div
+                              className="flex items-center gap-0.5"
+                              role="group"
+                              aria-label="Edit tools"
+                            >
+                              {infiniteCanvas ? (
+                                <>
+                                  {/* Three tool buttons form a mutually-exclusive toggle
                         group: Select / Hand / Peek. Choosing one
                         deactivates the others (peek's sticky activation
                         included). Peek's hold-mode (L key) remains
                         orthogonal — it engages while held and yields back
                         on release. */}
-                                <AITooltip context="선택" actions={[{ action: "V" }]}>
-                                  <IconButton
-                                    aria-label="Select tool"
-                                    aria-pressed={!handMode && !peek.isActive}
-                                    size="sm"
-                                    onClick={() => {
-                                      setHandMode(false);
-                                      peek.deactivateSticky();
-                                    }}
-                                    data-testid="toolbar-select"
-                                    data-active={!handMode && !peek.isActive ? "true" : undefined}
-                                    className={
-                                      !handMode && !peek.isActive
-                                        ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                        : undefined
-                                    }
+                                  <AITooltip context="선택" actions={[{ action: "V" }]}>
+                                    <IconButton
+                                      aria-label="Select tool"
+                                      aria-pressed={!handMode && !peek.isActive}
+                                      size="sm"
+                                      onClick={() => {
+                                        setHandMode(false);
+                                        peek.deactivateSticky();
+                                      }}
+                                      data-testid="toolbar-select"
+                                      data-active={!handMode && !peek.isActive ? "true" : undefined}
+                                      className={
+                                        !handMode && !peek.isActive
+                                          ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                          : undefined
+                                      }
+                                    >
+                                      <IconCursor />
+                                    </IconButton>
+                                  </AITooltip>
+                                  <AITooltip context="이동" actions={[{ action: "H / Space" }]}>
+                                    <IconButton
+                                      aria-label="Hand tool"
+                                      aria-pressed={handMode && !peek.isActive}
+                                      size="sm"
+                                      onClick={() => {
+                                        setHandMode(true);
+                                        peek.deactivateSticky();
+                                      }}
+                                      data-testid="toolbar-hand"
+                                      data-active={handMode && !peek.isActive ? "true" : undefined}
+                                      className={
+                                        handMode && !peek.isActive
+                                          ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                          : undefined
+                                      }
+                                    >
+                                      <IconHand />
+                                    </IconButton>
+                                  </AITooltip>
+                                  <AITooltip
+                                    context="Z-순서 보기"
+                                    actions={[{ action: "L (홀드) · 클릭 고정" }]}
                                   >
-                                    <IconCursor />
-                                  </IconButton>
-                                </AITooltip>
-                                <AITooltip context="이동" actions={[{ action: "H / Space" }]}>
-                                  <IconButton
-                                    aria-label="Hand tool"
-                                    aria-pressed={handMode && !peek.isActive}
-                                    size="sm"
-                                    onClick={() => {
-                                      setHandMode(true);
-                                      peek.deactivateSticky();
-                                    }}
-                                    data-testid="toolbar-hand"
-                                    data-active={handMode && !peek.isActive ? "true" : undefined}
-                                    className={
-                                      handMode && !peek.isActive
-                                        ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                        : undefined
-                                    }
-                                  >
-                                    <IconHand />
-                                  </IconButton>
-                                </AITooltip>
+                                    <IconButton
+                                      aria-label="Peek z-order"
+                                      aria-pressed={peek.isActive}
+                                      size="sm"
+                                      onClick={peek.toggle}
+                                      data-testid="toolbar-peek"
+                                      data-active={peek.isActive ? "true" : undefined}
+                                      className={
+                                        peek.isActive
+                                          ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                          : undefined
+                                      }
+                                    >
+                                      <IconLayers />
+                                    </IconButton>
+                                  </AITooltip>
+                                  <span
+                                    aria-hidden
+                                    className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
+                                  />
+                                </>
+                              ) : null}
+                              {/* WI-020 — Add menu: image / video / 9 shape sub-kinds */}
+                              <DropdownMenu>
                                 <AITooltip
-                                  context="Z-순서 보기"
-                                  actions={[{ action: "L (홀드) · 클릭 고정" }]}
+                                  context="추가"
+                                  actions={[{ action: "이미지 · 비디오 · 도형" }]}
                                 >
-                                  <IconButton
-                                    aria-label="Peek z-order"
-                                    aria-pressed={peek.isActive}
-                                    size="sm"
-                                    onClick={peek.toggle}
-                                    data-testid="toolbar-peek"
-                                    data-active={peek.isActive ? "true" : undefined}
-                                    className={
-                                      peek.isActive
-                                        ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                        : undefined
-                                    }
-                                  >
-                                    <IconLayers />
-                                  </IconButton>
+                                  <DropdownMenuTrigger asChild>
+                                    <IconButton
+                                      aria-label="Add new item"
+                                      size="sm"
+                                      data-testid="toolbar-add"
+                                    >
+                                      <IconPlus />
+                                    </IconButton>
+                                  </DropdownMenuTrigger>
                                 </AITooltip>
-                                <span
-                                  aria-hidden
-                                  className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
-                                />
-                              </>
-                            ) : null}
-                            {/* WI-020 — Add menu: image / video / 9 shape sub-kinds */}
-                            <DropdownMenu>
-                              <AITooltip
-                                context="추가"
-                                actions={[{ action: "이미지 · 비디오 · 도형" }]}
-                              >
-                                <DropdownMenuTrigger asChild>
-                                  <IconButton
-                                    aria-label="Add new item"
-                                    size="sm"
-                                    data-testid="toolbar-add"
+                                <DropdownMenuContent align="start" sideOffset={6}>
+                                  <DropdownMenuLabel>슬라이드</DropdownMenuLabel>
+                                  <DropdownMenuItem
+                                    onSelect={() => setSlidePickerOpen(true)}
+                                    data-testid="add-slide"
                                   >
-                                    <IconPlus />
-                                  </IconButton>
-                                </DropdownMenuTrigger>
-                              </AITooltip>
-                              <DropdownMenuContent align="start" sideOffset={6}>
-                                <DropdownMenuLabel>슬라이드</DropdownMenuLabel>
-                                <DropdownMenuItem
-                                  onSelect={() => setSlidePickerOpen(true)}
-                                  data-testid="add-slide"
-                                >
-                                  ▭&nbsp;&nbsp;슬라이드…
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuLabel>미디어</DropdownMenuLabel>
-                                <DropdownMenuItem
-                                  onSelect={() => setPendingMedia({ action: "add", kind: "image" })}
-                                  data-testid="add-image"
-                                >
-                                  이미지
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => setPendingMedia({ action: "add", kind: "video" })}
-                                  data-testid="add-video"
-                                >
-                                  비디오
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuLabel>텍스트</DropdownMenuLabel>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("text")}
-                                  data-testid="add-text"
-                                  draggable
-                                  onDragStart={(e) => {
-                                    e.dataTransfer.setData("application/x-weave-add-kind", "text");
-                                    e.dataTransfer.effectAllowed = "copy";
-                                  }}
-                                >
-                                  T&nbsp;&nbsp;텍스트
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuLabel>도형</DropdownMenuLabel>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "rectangle")}
-                                  data-testid="add-shape-rectangle"
-                                  draggable
-                                  onDragStart={(e) => {
-                                    e.dataTransfer.setData("application/x-weave-add-kind", "shape");
-                                    e.dataTransfer.effectAllowed = "copy";
-                                  }}
-                                >
-                                  ▭&nbsp;&nbsp;사각형
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "ellipse")}
-                                  data-testid="add-shape-ellipse"
-                                >
-                                  ◯&nbsp;&nbsp;원
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "line")}
-                                  data-testid="add-shape-line"
-                                >
-                                  ─&nbsp;&nbsp;선
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "arrow")}
-                                  data-testid="add-shape-arrow"
-                                >
-                                  →&nbsp;&nbsp;화살표
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "triangle")}
-                                  data-testid="add-shape-triangle"
-                                >
-                                  △&nbsp;&nbsp;삼각형
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "star")}
-                                  data-testid="add-shape-star"
-                                >
-                                  ★&nbsp;&nbsp;별
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "polygon")}
-                                  data-testid="add-shape-polygon"
-                                >
-                                  ⬡&nbsp;&nbsp;다각형
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "heart")}
-                                  data-testid="add-shape-heart"
-                                >
-                                  ♥&nbsp;&nbsp;하트
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => addNewItem("shape", "speech-bubble")}
-                                  data-testid="add-shape-speech-bubble"
-                                >
-                                  💬&nbsp;&nbsp;말풍선
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <span
-                              aria-hidden
-                              className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
-                            />
-                            <CommandIconButton commandId="history.undo" size="sm">
-                              <IconUndo />
-                            </CommandIconButton>
-                            <CommandIconButton commandId="history.redo" size="sm">
-                              <IconRedo />
-                            </CommandIconButton>
-                          </div>
+                                    ▭&nbsp;&nbsp;슬라이드…
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel>미디어</DropdownMenuLabel>
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      setPendingMedia({ action: "add", kind: "image" })
+                                    }
+                                    data-testid="add-image"
+                                  >
+                                    이미지
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      setPendingMedia({ action: "add", kind: "video" })
+                                    }
+                                    data-testid="add-video"
+                                  >
+                                    비디오
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel>텍스트</DropdownMenuLabel>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("text")}
+                                    data-testid="add-text"
+                                    draggable
+                                    onDragStart={(e) => {
+                                      e.dataTransfer.setData(
+                                        "application/x-weave-add-kind",
+                                        "text",
+                                      );
+                                      e.dataTransfer.effectAllowed = "copy";
+                                    }}
+                                  >
+                                    T&nbsp;&nbsp;텍스트
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel>도형</DropdownMenuLabel>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "rectangle")}
+                                    data-testid="add-shape-rectangle"
+                                    draggable
+                                    onDragStart={(e) => {
+                                      e.dataTransfer.setData(
+                                        "application/x-weave-add-kind",
+                                        "shape",
+                                      );
+                                      e.dataTransfer.effectAllowed = "copy";
+                                    }}
+                                  >
+                                    ▭&nbsp;&nbsp;사각형
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "ellipse")}
+                                    data-testid="add-shape-ellipse"
+                                  >
+                                    ◯&nbsp;&nbsp;원
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "line")}
+                                    data-testid="add-shape-line"
+                                  >
+                                    ─&nbsp;&nbsp;선
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "arrow")}
+                                    data-testid="add-shape-arrow"
+                                  >
+                                    →&nbsp;&nbsp;화살표
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "triangle")}
+                                    data-testid="add-shape-triangle"
+                                  >
+                                    △&nbsp;&nbsp;삼각형
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "star")}
+                                    data-testid="add-shape-star"
+                                  >
+                                    ★&nbsp;&nbsp;별
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "polygon")}
+                                    data-testid="add-shape-polygon"
+                                  >
+                                    ⬡&nbsp;&nbsp;다각형
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "heart")}
+                                    data-testid="add-shape-heart"
+                                  >
+                                    ♥&nbsp;&nbsp;하트
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => addNewItem("shape", "speech-bubble")}
+                                    data-testid="add-shape-speech-bubble"
+                                  >
+                                    💬&nbsp;&nbsp;말풍선
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <span
+                                aria-hidden
+                                className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
+                              />
+                              <CommandIconButton commandId="history.undo" size="sm">
+                                <IconUndo />
+                              </CommandIconButton>
+                              <CommandIconButton commandId="history.redo" size="sm">
+                                <IconRedo />
+                              </CommandIconButton>
+                            </div>
 
-                          <div className="flex items-center justify-end gap-2">
-                            {/* Design 배경색 — file-level 속성이라 selection 과
+                            <div className="flex items-center justify-end gap-2">
+                              {/* Design 배경색 — file-level 속성이라 selection 과
                                 무관한 영구 chrome 인 header 의 우 cluster 에
                                 상주. ContextualToolbar 의 selection==0
                                 variant 를 대체. ThemeSwitcher 와 같은
@@ -1499,511 +1513,514 @@ function DesignPageBody() {
                                 data-testid 를 trigger 로 전달하지 않으므로
                                 span wrapper 로 e2e hook 노출 (inline-flex 로
                                 trigger 의 layout 에 영향 X). */}
-                            <span data-testid="header-design-background" className="inline-flex">
-                              <ColorPicker
-                                value={design.background ?? "#ffffff"}
-                                onValueCommit={(v) => setDesignBackgroundViaEditor(v)}
-                                onValueChange={() => {
-                                  /* commit-only */
-                                }}
-                                aria-label="Design background"
-                              />
-                            </span>
-                            <ThemeSwitcher />
-                            <Button size="md" trailingIcon={<IconPlay size={14} />} asChild>
-                              <Link
-                                to={`/design/${designId}/present`}
-                                data-testid="toolbar-present"
-                                data-ai-tooltip="true"
-                                data-tooltip-context="프레젠테이션"
-                                data-tooltip-actions='[{"action":"풀스크린 발표"}]'
-                              >
-                                Present
-                              </Link>
-                            </Button>
-                          </div>
-                        </header>
+                              <span data-testid="header-design-background" className="inline-flex">
+                                <ColorPicker
+                                  value={design.background ?? "#ffffff"}
+                                  onValueCommit={(v) => setDesignBackgroundViaEditor(v)}
+                                  onValueChange={() => {
+                                    /* commit-only */
+                                  }}
+                                  aria-label="Design background"
+                                />
+                              </span>
+                              <ThemeSwitcher />
+                              <Button size="md" trailingIcon={<IconPlay size={14} />} asChild>
+                                <Link
+                                  to={`/design/${designId}/present`}
+                                  data-testid="toolbar-present"
+                                  data-ai-tooltip="true"
+                                  data-tooltip-context="프레젠테이션"
+                                  data-tooltip-actions='[{"action":"풀스크린 발표"}]'
+                                >
+                                  Present
+                                </Link>
+                              </Button>
+                            </div>
+                          </header>
 
-                        {/* WI-029 R5 + WI-033 P3 — text item v1 +
+                          {/* WI-029 R5 + WI-033 P3 — text item v1 +
                           Figma frame selection launch announcements
                           (LG-001 / RISK-001 #6 + RISK-005 #5). Both
                           auto-show during the launch week and fall
                           silent on dismiss / outside the window. */}
-                        {/* Launch banners — float just below the header.
+                          {/* Launch banners — float just below the header.
                           `pointer-events-none` on the wrapper lets clicks
                           pass through the empty space to main; each banner
                           re-enables `pointer-events-auto` on its own card
                           so its dismiss control stays clickable. */}
-                        <div className="absolute inset-x-0 top-12 z-30 px-4 pt-2 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
-                          <TextV1LaunchBanner />
-                          <FigmaSelectionLaunchBanner />
-                        </div>
-
-                        <main
-                          className="absolute inset-0 overflow-hidden"
-                          data-testid="design-canvas-host"
-                          ref={canvasHostCallbackRef}
-                          style={
-                            peek.isActive
-                              ? { perspective: "1800px", perspectiveOrigin: "50% 35%" }
-                              : undefined
-                          }
-                        >
-                          <div
-                            data-peek-tilt-target
-                            style={{
-                              position: "absolute",
-                              inset: 0,
-                              transformStyle: "preserve-3d",
-                              transform: peek.isActive ? "rotateX(12deg)" : "rotateX(0deg)",
-                              transformOrigin: "50% 50%",
-                            }}
-                          >
-                            <FrameStage
-                              designWidth={design.width}
-                              designHeight={design.height}
-                              background={design.background}
-                              root={docInAgocraft.root}
-                              document={docInAgocraft}
-                              editor={editor}
-                              editing={true}
-                              infiniteCanvas={infiniteCanvas}
-                              handMode={handMode}
-                              // WI-033 P2 — enteredId / onEnter / onFitAll were
-                              // the drill-in mode wiring (Phase 12); removed
-                              // alongside the breadcrumb + Enter frame menu
-                              // item. FrameStage falls back to "no entered
-                              // frame" (undefined).
-                              selectedId={selectedFrameId ?? undefined}
-                              selectedIds={selectedIds}
-                              dimmedFrameIds={dimmedFrameIds}
-                              isolatedFrameIds={isolatedFrameIds}
-                              onSelect={setSelectedFrameId}
-                              onToggleSelect={(id) => toggleFrames([id])}
-                              onMarqueeSelect={onMarqueeSelect}
-                              // WI-035 P3 — Toolbar drag-to-add. The
-                              // DropdownMenu add-items set the mime
-                              // `application/x-weave-add-kind` on
-                              // dragstart; FrameStage routes the drop's
-                              // `containerId` (root or hovered frame).
-                              // This handler dispatches the same
-                              // `weave.item.add` SSOT.
-                              onDragOver={(e) => {
-                                if (e.dataTransfer.types.includes("application/x-weave-add-kind")) {
-                                  e.preventDefault();
-                                }
-                              }}
-                              onDropAdd={(e, containerId) => {
-                                const kindRaw = e.dataTransfer.getData(
-                                  "application/x-weave-add-kind",
-                                );
-                                if (kindRaw === "") return;
-                                e.preventDefault();
-                                const kind = kindRaw as DomainKind;
-                                editor.exec("weave.item.add", {
-                                  kind,
-                                  containerId,
-                                  frame: {
-                                    x: 0.3,
-                                    y: 0.3,
-                                    width: 0.4,
-                                    height: 0.4,
-                                    rotation: 0,
-                                  },
-                                });
-                              }}
-                              onUpdateItem={(itemId, patcher) =>
-                                updateItem(itemId, (prev) => ({
-                                  ...prev,
-                                  attrs: patcher(
-                                    prev.attrs as unknown as Record<string, unknown>,
-                                  ) as never,
-                                }))
-                              }
-                              // WI-032 Phase 3b — onUpdateShape / onRemoveShape
-                              // edited `canvas-design.attrs.shapes[]`; with that
-                              // kind removed, shape primitives flow through
-                              // `onUpdateItem` instead.
-                              onCommitFrame={(itemId, nextFrame: ItemFrame) =>
-                                updateItem(itemId, (prev) => ({
-                                  ...prev,
-                                  attrs: { ...prev.attrs, frame: nextFrame } as typeof prev.attrs,
-                                }))
-                              }
-                              renderFrameMenu={(itemId, children, ctx) => {
-                                // WI-039 — selection-aware reparent. The
-                                // gesture moves either the right-clicked
-                                // frame OR the multi-selection it belongs
-                                // to; cycle-blocked rows are dimmed.
-                                const movedIds: ReadonlyArray<string> =
-                                  selectedIds.has(itemId) && selectedIds.size > 1
-                                    ? [...selectedIds]
-                                    : [itemId];
-                                const reparentTree = buildFrameTree(
-                                  docInAgocraft,
-                                  movedIds,
-                                );
-                                const handleReparent = (targetPickerId: string) => {
-                                  const newParentId = resolvePickerTargetId(
-                                    docInAgocraft,
-                                    targetPickerId,
-                                  );
-                                  editor.exec("weave.item.reparent", {
-                                    entries: movedIds.map((id) => ({
-                                      itemId: id,
-                                      newParentId,
-                                    })),
-                                  });
-                                };
-                                return (
-                                  <FrameContextMenu
-                                    itemId={itemId}
-                                    onDelete={() => {
-                                      removeItem(itemId);
-                                      bumpHistoryTick();
-                                    }}
-                                    onZOrder={(dir) => {
-                                      const cmdId = {
-                                        bringForward: "weave.item.bringForward",
-                                        sendBackward: "weave.item.sendBackward",
-                                        bringToFront: "weave.item.bringToFront",
-                                        sendToBack: "weave.item.sendToBack",
-                                      }[dir];
-                                      editor.exec(cmdId, { itemId });
-                                    }}
-                                    reparentTree={reparentTree}
-                                    onReparent={handleReparent}
-                                    {...(ctx !== undefined
-                                      ? {
-                                          layers: ctx.layers,
-                                          onPickLayer: ctx.onPickLayer,
-                                        }
-                                      : {})}
-                                  >
-                                    {children}
-                                  </FrameContextMenu>
-                                );
-                              }}
-                            />
+                          <div className="absolute inset-x-0 top-12 z-30 px-4 pt-2 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
+                            <TextV1LaunchBanner />
+                            <FigmaSelectionLaunchBanner />
                           </div>
 
-                          {/* WI-019 Phase 3 (rev2) — Peek mode capture layer + overlay.
+                          <main
+                            className="absolute inset-0 overflow-hidden"
+                            data-testid="design-canvas-host"
+                            ref={canvasHostCallbackRef}
+                            style={
+                              peek.isActive
+                                ? { perspective: "1800px", perspectiveOrigin: "50% 35%" }
+                                : undefined
+                            }
+                          >
+                            <div
+                              data-peek-tilt-target
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                transformStyle: "preserve-3d",
+                                transform: peek.isActive ? "rotateX(12deg)" : "rotateX(0deg)",
+                                transformOrigin: "50% 50%",
+                              }}
+                            >
+                              <FrameStage
+                                designWidth={design.width}
+                                designHeight={design.height}
+                                background={design.background}
+                                root={docInAgocraft.root}
+                                document={docInAgocraft}
+                                editor={editor}
+                                editing={true}
+                                infiniteCanvas={infiniteCanvas}
+                                handMode={handMode}
+                                // WI-033 P2 — enteredId / onEnter / onFitAll were
+                                // the drill-in mode wiring (Phase 12); removed
+                                // alongside the breadcrumb + Enter frame menu
+                                // item. FrameStage falls back to "no entered
+                                // frame" (undefined).
+                                selectedId={selectedFrameId ?? undefined}
+                                selectedIds={selectedIds}
+                                dimmedFrameIds={dimmedFrameIds}
+                                isolatedFrameIds={isolatedFrameIds}
+                                onSelect={setSelectedFrameId}
+                                onToggleSelect={(id) => toggleFrames([id])}
+                                onMarqueeSelect={onMarqueeSelect}
+                                // WI-035 P3 — Toolbar drag-to-add. The
+                                // DropdownMenu add-items set the mime
+                                // `application/x-weave-add-kind` on
+                                // dragstart; FrameStage routes the drop's
+                                // `containerId` (root or hovered frame).
+                                // This handler dispatches the same
+                                // `weave.item.add` SSOT.
+                                onDragOver={(e) => {
+                                  if (
+                                    e.dataTransfer.types.includes("application/x-weave-add-kind")
+                                  ) {
+                                    e.preventDefault();
+                                  }
+                                }}
+                                onDropAdd={(e, containerId) => {
+                                  const kindRaw = e.dataTransfer.getData(
+                                    "application/x-weave-add-kind",
+                                  );
+                                  if (kindRaw === "") return;
+                                  e.preventDefault();
+                                  const kind = kindRaw as DomainKind;
+                                  editor.exec("weave.item.add", {
+                                    kind,
+                                    containerId,
+                                    frame: {
+                                      x: 0.3,
+                                      y: 0.3,
+                                      width: 0.4,
+                                      height: 0.4,
+                                      rotation: 0,
+                                    },
+                                  });
+                                }}
+                                onUpdateItem={(itemId, patcher) =>
+                                  updateItem(itemId, (prev) => ({
+                                    ...prev,
+                                    attrs: patcher(
+                                      prev.attrs as unknown as Record<string, unknown>,
+                                    ) as never,
+                                  }))
+                                }
+                                // WI-032 Phase 3b — onUpdateShape / onRemoveShape
+                                // edited `canvas-design.attrs.shapes[]`; with that
+                                // kind removed, shape primitives flow through
+                                // `onUpdateItem` instead.
+                                onCommitFrame={(itemId, nextFrame: ItemFrame) =>
+                                  updateItem(itemId, (prev) => ({
+                                    ...prev,
+                                    attrs: { ...prev.attrs, frame: nextFrame } as typeof prev.attrs,
+                                  }))
+                                }
+                                renderFrameMenu={(itemId, children, ctx) => {
+                                  // WI-039 — selection-aware reparent. The
+                                  // gesture moves either the right-clicked
+                                  // frame OR the multi-selection it belongs
+                                  // to; cycle-blocked rows are dimmed.
+                                  const movedIds: ReadonlyArray<string> =
+                                    selectedIds.has(itemId) && selectedIds.size > 1
+                                      ? [...selectedIds]
+                                      : [itemId];
+                                  const reparentTree = buildFrameTree(docInAgocraft, movedIds);
+                                  const handleReparent = (targetPickerId: string) => {
+                                    const newParentId = resolvePickerTargetId(
+                                      docInAgocraft,
+                                      targetPickerId,
+                                    );
+                                    editor.exec("weave.item.reparent", {
+                                      entries: movedIds.map((id) => ({
+                                        itemId: id,
+                                        newParentId,
+                                      })),
+                                    });
+                                  };
+                                  return (
+                                    <FrameContextMenu
+                                      itemId={itemId}
+                                      onDelete={() => {
+                                        removeItem(itemId);
+                                        bumpHistoryTick();
+                                      }}
+                                      onZOrder={(dir) => {
+                                        const cmdId = {
+                                          bringForward: "weave.item.bringForward",
+                                          sendBackward: "weave.item.sendBackward",
+                                          bringToFront: "weave.item.bringToFront",
+                                          sendToBack: "weave.item.sendToBack",
+                                        }[dir];
+                                        editor.exec(cmdId, { itemId });
+                                      }}
+                                      reparentTree={reparentTree}
+                                      onReparent={handleReparent}
+                                      {...(ctx !== undefined
+                                        ? {
+                                            layers: ctx.layers,
+                                            onPickLayer: ctx.onPickLayer,
+                                          }
+                                        : {})}
+                                    >
+                                      {children}
+                                    </FrameContextMenu>
+                                  );
+                                }}
+                              />
+                            </div>
+
+                            {/* WI-019 Phase 3 (rev2) — Peek mode capture layer + overlay.
                   The capture div sits z-above FrameStage and is mounted
                   ONLY while peek is active, intercepting pointer events
                   to (a) report cursor → controller, (b) handle drag-to-
                   reorder on lifted frames. PeekOverlay is responsible for
                   the CSS lift effect on the *real* frame DOM via data
                   attributes (no transparent placeholder boxes).            */}
-                          {peek.isActive ? (
-                            <div
-                              data-testid="peek-capture"
-                              style={{
-                                position: "absolute",
-                                inset: 0,
-                                zIndex: 30,
-                                cursor: peekDragRef.current ? "grabbing" : "crosshair",
-                              }}
-                              onPointerDown={(e) => {
-                                if (e.button !== 0) return;
-                                const p = screenToDesign(e.clientX, e.clientY);
-                                if (!p) return;
-                                const id = hitTestLifted(p.x, p.y);
-                                if (!id) return;
-                                const liftSet = peek.controller.liftSet.get();
-                                if (!liftSet) return;
-                                const startRank = liftSet.orderedIds.indexOf(id);
-                                if (startRank < 0) return;
-                                if (!peek.controller.startDrag(id)) return;
-                                peekDragRef.current = {
-                                  itemId: id,
-                                  startClientY: e.clientY,
-                                  startRank,
-                                  pointerId: e.pointerId,
-                                };
-                                setPeekDraggingId(id);
-                                // Mark the dragging frame for the stronger lifted style.
-                                const el = canvasHostRef.current?.querySelector(
-                                  `[data-frame-id="${id}"]`,
-                                );
-                                if (el instanceof HTMLElement)
-                                  el.setAttribute("data-peek-dragging", "");
-                                try {
-                                  e.currentTarget.setPointerCapture(e.pointerId);
-                                } catch {
-                                  /* setPointerCapture may throw on detached pointers — safe ignore. */
-                                }
-                              }}
-                              onPointerMove={(e) => {
-                                const p = screenToDesign(e.clientX, e.clientY);
-                                if (p) {
-                                  peek.setCursor(p.x, p.y, true);
-                                  setPeekCursor({
-                                    x: e.clientX - (hostRect?.left ?? 0),
-                                    y: e.clientY - (hostRect?.top ?? 0),
-                                  });
-                                }
-                                // Drag preview — vertical pointer delta → rank delta.
-                                const drag = peekDragRef.current;
-                                if (drag) {
+                            {peek.isActive ? (
+                              <div
+                                data-testid="peek-capture"
+                                style={{
+                                  position: "absolute",
+                                  inset: 0,
+                                  zIndex: 30,
+                                  cursor: peekDragRef.current ? "grabbing" : "crosshair",
+                                }}
+                                onPointerDown={(e) => {
+                                  if (e.button !== 0) return;
+                                  const p = screenToDesign(e.clientX, e.clientY);
+                                  if (!p) return;
+                                  const id = hitTestLifted(p.x, p.y);
+                                  if (!id) return;
                                   const liftSet = peek.controller.liftSet.get();
                                   if (!liftSet) return;
-                                  const dy = drag.startClientY - e.clientY;
-                                  const STEP_PX = 28;
-                                  const deltaRank = Math.round(dy / STEP_PX);
-                                  const max = liftSet.orderedIds.length - 1;
-                                  const newRank = Math.max(
-                                    0,
-                                    Math.min(max, drag.startRank + deltaRank),
-                                  );
-                                  peek.controller.updateDrag(newRank);
-                                }
-                              }}
-                              onPointerUp={(e) => {
-                                const drag = peekDragRef.current;
-                                if (drag) {
-                                  peek.controller.endDrag(true);
+                                  const startRank = liftSet.orderedIds.indexOf(id);
+                                  if (startRank < 0) return;
+                                  if (!peek.controller.startDrag(id)) return;
+                                  peekDragRef.current = {
+                                    itemId: id,
+                                    startClientY: e.clientY,
+                                    startRank,
+                                    pointerId: e.pointerId,
+                                  };
+                                  setPeekDraggingId(id);
+                                  // Mark the dragging frame for the stronger lifted style.
                                   const el = canvasHostRef.current?.querySelector(
-                                    `[data-frame-id="${drag.itemId}"]`,
+                                    `[data-frame-id="${id}"]`,
                                   );
                                   if (el instanceof HTMLElement)
-                                    el.removeAttribute("data-peek-dragging");
-                                  peekDragRef.current = null;
-                                  setPeekDraggingId(null);
+                                    el.setAttribute("data-peek-dragging", "");
                                   try {
-                                    e.currentTarget.releasePointerCapture(e.pointerId);
+                                    e.currentTarget.setPointerCapture(e.pointerId);
                                   } catch {
-                                    /* safe ignore */
+                                    /* setPointerCapture may throw on detached pointers — safe ignore. */
                                   }
-                                }
-                              }}
-                              onPointerCancel={() => {
-                                const drag = peekDragRef.current;
-                                if (drag) {
-                                  peek.controller.endDrag(false);
-                                  const el = canvasHostRef.current?.querySelector(
-                                    `[data-frame-id="${drag.itemId}"]`,
-                                  );
-                                  if (el instanceof HTMLElement)
-                                    el.removeAttribute("data-peek-dragging");
-                                  peekDragRef.current = null;
-                                  setPeekDraggingId(null);
-                                }
-                              }}
-                              onPointerLeave={() => {
-                                peek.setCursor(-9999, -9999, false);
-                                setPeekCursor(null);
-                              }}
-                            >
-                              <PeekOverlay
+                                }}
+                                onPointerMove={(e) => {
+                                  const p = screenToDesign(e.clientX, e.clientY);
+                                  if (p) {
+                                    peek.setCursor(p.x, p.y, true);
+                                    setPeekCursor({
+                                      x: e.clientX - (hostRect?.left ?? 0),
+                                      y: e.clientY - (hostRect?.top ?? 0),
+                                    });
+                                  }
+                                  // Drag preview — vertical pointer delta → rank delta.
+                                  const drag = peekDragRef.current;
+                                  if (drag) {
+                                    const liftSet = peek.controller.liftSet.get();
+                                    if (!liftSet) return;
+                                    const dy = drag.startClientY - e.clientY;
+                                    const STEP_PX = 28;
+                                    const deltaRank = Math.round(dy / STEP_PX);
+                                    const max = liftSet.orderedIds.length - 1;
+                                    const newRank = Math.max(
+                                      0,
+                                      Math.min(max, drag.startRank + deltaRank),
+                                    );
+                                    peek.controller.updateDrag(newRank);
+                                  }
+                                }}
+                                onPointerUp={(e) => {
+                                  const drag = peekDragRef.current;
+                                  if (drag) {
+                                    peek.controller.endDrag(true);
+                                    const el = canvasHostRef.current?.querySelector(
+                                      `[data-frame-id="${drag.itemId}"]`,
+                                    );
+                                    if (el instanceof HTMLElement)
+                                      el.removeAttribute("data-peek-dragging");
+                                    peekDragRef.current = null;
+                                    setPeekDraggingId(null);
+                                    try {
+                                      e.currentTarget.releasePointerCapture(e.pointerId);
+                                    } catch {
+                                      /* safe ignore */
+                                    }
+                                  }
+                                }}
+                                onPointerCancel={() => {
+                                  const drag = peekDragRef.current;
+                                  if (drag) {
+                                    peek.controller.endDrag(false);
+                                    const el = canvasHostRef.current?.querySelector(
+                                      `[data-frame-id="${drag.itemId}"]`,
+                                    );
+                                    if (el instanceof HTMLElement)
+                                      el.removeAttribute("data-peek-dragging");
+                                    peekDragRef.current = null;
+                                    setPeekDraggingId(null);
+                                  }
+                                }}
+                                onPointerLeave={() => {
+                                  peek.setCursor(-9999, -9999, false);
+                                  setPeekCursor(null);
+                                }}
+                              >
+                                <PeekOverlay
+                                  controller={peek.controller}
+                                  canvasHost={canvasHostEl}
+                                  cursor={peekCursor}
+                                  colorFor={swatchFor}
+                                  draggingId={peekDraggingId}
+                                />
+                              </div>
+                            ) : null}
+
+                            {peek.isActive ? (
+                              <PointStackInspector
                                 controller={peek.controller}
-                                canvasHost={canvasHostEl}
-                                cursor={peekCursor}
-                                colorFor={swatchFor}
-                                draggingId={peekDraggingId}
+                                labelFor={labelFor}
+                                swatchFor={swatchFor}
                               />
-                            </div>
-                          ) : null}
+                            ) : null}
 
-                          {peek.isActive ? (
-                            <PointStackInspector
-                              controller={peek.controller}
-                              labelFor={labelFor}
-                              swatchFor={swatchFor}
-                            />
-                          ) : null}
-
-                          {/* WI-020 / WI-021 / Phase 14 — ContextualToolbar mounts
+                            {/* WI-020 / WI-021 / Phase 14 — ContextualToolbar mounts
                   centered above the canvas. Selection-only:
                     • selectedIds.size === 0 → bar unmounted.
                       design.background editor lives in the header's right
                       cluster (file-level chrome, always discoverable).
                     • selectedIds.size ≥ 1   → selection variant resolved
                       from the toolbar section registry per kind. */}
-                          {!peek.isActive ? (
-                            <div
-                              style={{
-                                position: "absolute",
-                                // WI-039 — z-stack layout: <main> now fills the
-                                // entire viewport (was flex-1 below header
-                                // before). The previous `top: 12` placed the
-                                // bar 12px inside main, which used to be ~60px
-                                // from viewport top; now it lands *inside* the
-                                // 48px header. Header bottom + 12px gap:
-                                //   48 (h-12 header) + 12 = 60
-                                // This keeps the toolbar a few px below the
-                                // header border in any theme.
-                                top: 60,
-                                left: "50%",
-                                transform: "translateX(-50%)",
-                                zIndex: 35,
-                                pointerEvents: "auto",
-                              }}
-                            >
-                              <ContextualToolbar
-                                editor={editor}
-                                selectedItems={(() => {
-                                  // Pre-existing bug fix — earlier this loop
-                                  // only iterated `root.children`, so nested
-                                  // items (anything below the first level)
-                                  // never surfaced in `selectedItems` and
-                                  // the toolbar simply didn't render for
-                                  // them. Walk the full tree by resolving
-                                  // each id via findItemDeep so any item in
-                                  // the selection — root or nested — feeds
-                                  // its kind + attrs into the toolbar.
-                                  const out: Array<{
-                                    id: string;
-                                    kind: string;
-                                    attrs: Readonly<Record<string, unknown>>;
-                                  }> = [];
-                                  for (const id of selectedIds) {
-                                    const it = findItemDeep(docInAgocraft, id);
-                                    if (it === undefined) continue;
-                                    out.push({
-                                      id: String(it.id),
-                                      kind: it.kind,
-                                      attrs: it.attrs,
+                            <SelectionChromeGate>
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  // WI-039 — z-stack layout: <main> now fills the
+                                  // entire viewport (was flex-1 below header
+                                  // before). The previous `top: 12` placed the
+                                  // bar 12px inside main, which used to be ~60px
+                                  // from viewport top; now it lands *inside* the
+                                  // 48px header. Header bottom + 12px gap:
+                                  //   48 (h-12 header) + 12 = 60
+                                  // This keeps the toolbar a few px below the
+                                  // header border in any theme.
+                                  top: 60,
+                                  left: "50%",
+                                  transform: "translateX(-50%)",
+                                  zIndex: 35,
+                                  pointerEvents: "auto",
+                                }}
+                              >
+                                <ContextualToolbar
+                                  editor={editor}
+                                  selectedItems={(() => {
+                                    // Pre-existing bug fix — earlier this loop
+                                    // only iterated `root.children`, so nested
+                                    // items (anything below the first level)
+                                    // never surfaced in `selectedItems` and
+                                    // the toolbar simply didn't render for
+                                    // them. Walk the full tree by resolving
+                                    // each id via findItemDeep so any item in
+                                    // the selection — root or nested — feeds
+                                    // its kind + attrs into the toolbar.
+                                    const out: Array<{
+                                      id: string;
+                                      kind: string;
+                                      attrs: Readonly<Record<string, unknown>>;
+                                    }> = [];
+                                    for (const id of selectedIds) {
+                                      const it = findItemDeep(docInAgocraft, id);
+                                      if (it === undefined) continue;
+                                      out.push({
+                                        id: String(it.id),
+                                        kind: it.kind,
+                                        attrs: it.attrs,
+                                      });
+                                    }
+                                    return out;
+                                  })()}
+                                  onEditMediaSrc={(mediaKind) => {
+                                    setPendingMedia({ action: "edit", kind: mediaKind });
+                                  }}
+                                  onEditShapeFill={(mediaKind, current) => {
+                                    if (!selectedFrameId) return;
+                                    setPendingMedia({
+                                      action: "fill",
+                                      kind: mediaKind,
+                                      itemId: selectedFrameId,
+                                      initialSrc: current,
                                     });
-                                  }
-                                  return out;
-                                })()}
-                                onEditMediaSrc={(mediaKind) => {
-                                  setPendingMedia({ action: "edit", kind: mediaKind });
-                                }}
-                                onEditShapeFill={(mediaKind, current) => {
-                                  if (!selectedFrameId) return;
-                                  setPendingMedia({
-                                    action: "fill",
-                                    kind: mediaKind,
-                                    itemId: selectedFrameId,
-                                    initialSrc: current,
-                                  });
-                                }}
-                              />
-                            </div>
-                          ) : null}
+                                  }}
+                                />
+                              </div>
+                            </SelectionChromeGate>
 
-                          {/* WI-028 Phase 4 — remote cursors overlay. `project` maps the
+                            {/* WI-028 Phase 4 — remote cursors overlay. `project` maps the
                   presence-broadcast design-space coords to host-relative
                   pixels so the SVG renders aligned to the local user's
                   viewport. The SVG itself is pointer-events:none — it
                   never intercepts the design surface gestures. */}
-                          {sync !== undefined ? (
-                            <PresenceCursors engine={sync.engine} project={designToHost} />
-                          ) : null}
-                        </main>
+                            {sync !== undefined ? (
+                              <PresenceCursors engine={sync.engine} project={designToHost} />
+                            ) : null}
+                          </main>
 
-                        {/* ThumbnailPanel floats at the bottom of the viewport
+                          {/* ThumbnailPanel floats at the bottom of the viewport
                           on top of the design canvas (z-stack). The panel's
                           own section uses `position: relative` to host its
                           shorter bg band; the wrapper here owns the
                           viewport-bottom anchoring + stack order. */}
-                        <div className="absolute inset-x-0 bottom-0 z-30">
-                          <ThumbnailPanel
-                            design={design}
-                            setPresentationOrder={setPresentationOrderViaEditor}
-                            selectedId={selectedFrameId}
-                            onSelect={setSelectedFrameId}
-                            focusedId={focused?.id}
-                            focusStage={focusStage}
-                            onCycleFocus={handleCycleFocus}
-                            onClearFocus={handleClearFocus}
-                          />
-                        </div>
-                        <CursorTooltip />
-                        <ReparentGhostOverlay state={reparentDragState} />
-                        <MediaSrcDialog
-                          open={pendingMedia !== null}
-                          kind={pendingMedia?.kind ?? "image"}
-                          initialSrc={(() => {
-                            if (!pendingMedia) return "";
-                            if (pendingMedia.action === "fill") return pendingMedia.initialSrc;
-                            if (pendingMedia.action === "edit") {
-                              if (!selectedFrameId) return "";
-                              const it = docInAgocraft.root.children.find(
-                                (c) => String(c.id) === selectedFrameId,
-                              );
-                              if (!it || it.kind !== pendingMedia.kind) return "";
-                              return (it.attrs as { src?: string }).src ?? "";
-                            }
-                            return "";
-                          })()}
-                          onConfirm={(src) => {
-                            const pending = pendingMedia;
-                            setPendingMedia(null);
-                            if (!pending) return;
-                            if (pending.action === "fill") {
-                              // Replace the shape's fill with image/video paint. Default
-                              // fit "cover" matches Figma. Video defaults muted+loop so
-                              // the browser autoplay policy is satisfied.
-                              editor.exec("weave.item.update", {
-                                itemId: pending.itemId,
-                                patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-                                  attrs: {
-                                    ...prev.attrs,
-                                    fill:
-                                      pending.kind === "image"
-                                        ? { type: "image", src, fit: "cover", opacity: 1 }
-                                        : {
-                                            type: "video",
-                                            src,
-                                            fit: "cover",
-                                            muted: true,
-                                            loop: true,
-                                            opacity: 1,
-                                          },
-                                  } as unknown as Readonly<Record<string, unknown>>,
-                                }),
-                              });
-                              return;
-                            }
-                            if (pending.action === "edit") {
-                              if (!selectedFrameId) return;
-                              const it = docInAgocraft.root.children.find(
-                                (c) => String(c.id) === selectedFrameId,
-                              );
-                              if (it && it.kind === pending.kind) {
+                          <div className="absolute inset-x-0 bottom-0 z-30">
+                            <ThumbnailPanel
+                              design={design}
+                              setPresentationOrder={setPresentationOrderViaEditor}
+                              selectedId={selectedFrameId}
+                              onSelect={setSelectedFrameId}
+                              focusedId={focused?.id}
+                              focusStage={focusStage}
+                              onCycleFocus={handleCycleFocus}
+                              onClearFocus={handleClearFocus}
+                            />
+                          </div>
+                          <CursorTooltip />
+                          <EditAffordanceGate>
+                            <ReparentGhostOverlay state={reparentDragState} />
+                          </EditAffordanceGate>
+                          <MediaSrcDialog
+                            open={pendingMedia !== null}
+                            kind={pendingMedia?.kind ?? "image"}
+                            initialSrc={(() => {
+                              if (!pendingMedia) return "";
+                              if (pendingMedia.action === "fill") return pendingMedia.initialSrc;
+                              if (pendingMedia.action === "edit") {
+                                if (!selectedFrameId) return "";
+                                const it = docInAgocraft.root.children.find(
+                                  (c) => String(c.id) === selectedFrameId,
+                                );
+                                if (!it || it.kind !== pendingMedia.kind) return "";
+                                return (it.attrs as { src?: string }).src ?? "";
+                              }
+                              return "";
+                            })()}
+                            onConfirm={(src) => {
+                              const pending = pendingMedia;
+                              setPendingMedia(null);
+                              if (!pending) return;
+                              if (pending.action === "fill") {
+                                // Replace the shape's fill with image/video paint. Default
+                                // fit "cover" matches Figma. Video defaults muted+loop so
+                                // the browser autoplay policy is satisfied.
                                 editor.exec("weave.item.update", {
-                                  itemId: selectedFrameId,
+                                  itemId: pending.itemId,
                                   patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
                                     attrs: {
                                       ...prev.attrs,
-                                      src,
+                                      fill:
+                                        pending.kind === "image"
+                                          ? { type: "image", src, fit: "cover", opacity: 1 }
+                                          : {
+                                              type: "video",
+                                              src,
+                                              fit: "cover",
+                                              muted: true,
+                                              loop: true,
+                                              opacity: 1,
+                                            },
                                     } as unknown as Readonly<Record<string, unknown>>,
                                   }),
                                 });
                                 return;
                               }
+                              if (pending.action === "edit") {
+                                if (!selectedFrameId) return;
+                                const it = docInAgocraft.root.children.find(
+                                  (c) => String(c.id) === selectedFrameId,
+                                );
+                                if (it && it.kind === pending.kind) {
+                                  editor.exec("weave.item.update", {
+                                    itemId: selectedFrameId,
+                                    patch: (prev: {
+                                      attrs: Readonly<Record<string, unknown>>;
+                                    }) => ({
+                                      attrs: {
+                                        ...prev.attrs,
+                                        src,
+                                      } as unknown as Readonly<Record<string, unknown>>,
+                                    }),
+                                  });
+                                  return;
+                                }
+                                addNewItem(pending.kind, undefined, src);
+                                return;
+                              }
                               addNewItem(pending.kind, undefined, src);
-                              return;
-                            }
-                            addNewItem(pending.kind, undefined, src);
-                          }}
-                          onCancel={() => setPendingMedia(null)}
-                        />
-                        {/* WI-030 — slide preset picker. Add menu →
+                            }}
+                            onCancel={() => setPendingMedia(null)}
+                          />
+                          {/* WI-030 — slide preset picker. Add menu →
                           "슬라이드…" opens this Dialog. Picking a
                           preset dispatches a single `weave.preset.insertSlide`
                           which stages the slide + child Items as one history
                           entry; Cmd+Z reverts the whole subtree. */}
-                        <SlidePresetPicker
-                          open={slidePickerOpen}
-                          onOpenChange={setSlidePickerOpen}
-                          onPick={(presetId) => {
-                            const result = editor.exec<unknown, string>(
-                              "weave.preset.insertSlide",
-                              {
-                                presetId,
-                                containerId: String(docInAgocraft.root.id),
-                              },
-                            );
-                            if (result.ok) {
-                              setSelectedFrameIdRef.current?.(result.value);
-                            }
-                          }}
-                        />
-                        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-                        {/* WI-036 — QuickActionBar anchored to the hovered
+                          <SlidePresetPicker
+                            open={slidePickerOpen}
+                            onOpenChange={setSlidePickerOpen}
+                            onPick={(presetId) => {
+                              const result = editor.exec<unknown, string>(
+                                "weave.preset.insertSlide",
+                                {
+                                  presetId,
+                                  containerId: String(docInAgocraft.root.id),
+                                },
+                              );
+                              if (result.ok) {
+                                setSelectedFrameIdRef.current?.(result.value);
+                              }
+                            }}
+                          />
+                          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+                          {/* WI-036 — QuickActionBar anchored to the hovered
                           frame's viewport top-left (8px gap above the
                           frame edge). The bar carries
                           `data-quick-actions-frame-id` so
@@ -2011,57 +2028,58 @@ function DesignPageBody() {
                           continuation of the underlying frame's hover
                           (hover target union). Position follows the
                           frame via RAF while hover is active. */}
-                        <MultiSelectionOverlay
-                          selectedIds={selectedIds}
-                          onResize={(updates) => {
-                            // WI-036 follow-up — multi-selection resize.
-                            // Dispatch a SINGLE `weave.items.resizeMulti`
-                            // command that emits N patches in one Change,
-                            // so the editor's history records the entire
-                            // drag as ONE undoable step (per-frame
-                            // updates would be N separate entries).
-                            if (updates.length === 0) return;
-                            editor.exec("weave.items.resizeMulti", {
-                              updates: updates.map((u) => ({
-                                itemId: u.id,
-                                frame: u.frame,
-                              })),
-                            });
-                          }}
-                        />
-                        <QuickActionBarAnchored
-                          selectedFrameId={selectedFrameId ?? undefined}
-                          selectedIds={selectedIds}
-                          onInsertInFrame={(containerId, kind, sub) => {
-                            // WI-036 follow-up — hover-open submenu of
-                            // the `+` button. Shares the same
-                            // `weave.item.add` SSOT as the hotkey /
-                            // Alt+drag / DropdownMenu add paths.
-                            //
-                            // The bar is selection-driven: after the
-                            // submenu inserts a child we deliberately
-                            // KEEP the parent selected (don't follow
-                            // the new item) so the bar stays anchored
-                            // to the same frame and the user can add
-                            // multiple children in a row.
-                            const attrsOverride: Record<string, unknown> = {};
-                            if (kind === "shape" && sub && sub !== "rectangle") {
-                              attrsOverride.shape = sub;
-                              attrsOverride.subAttrs = defaultShapeSubAttrs(sub);
-                            }
-                            editor.exec<unknown, string>("weave.item.add", {
-                              kind,
-                              containerId,
-                              frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-                              ...(Object.keys(attrsOverride).length > 0 ? { attrsOverride } : {}),
-                            });
-                          }}
-                        />
-                      </div>
-                    </DocumentForResolutionProvider>
-                  </EditorProvider>
-                </ModeAwareAITooltipProvider>
-              </CommandHostProvider>
+                          <MultiSelectionOverlay
+                            selectedIds={selectedIds}
+                            onResize={(updates) => {
+                              // WI-036 follow-up — multi-selection resize.
+                              // Dispatch a SINGLE `weave.items.resizeMulti`
+                              // command that emits N patches in one Change,
+                              // so the editor's history records the entire
+                              // drag as ONE undoable step (per-frame
+                              // updates would be N separate entries).
+                              if (updates.length === 0) return;
+                              editor.exec("weave.items.resizeMulti", {
+                                updates: updates.map((u) => ({
+                                  itemId: u.id,
+                                  frame: u.frame,
+                                })),
+                              });
+                            }}
+                          />
+                          <QuickActionBarAnchored
+                            selectedFrameId={selectedFrameId ?? undefined}
+                            selectedIds={selectedIds}
+                            onInsertInFrame={(containerId, kind, sub) => {
+                              // WI-036 follow-up — hover-open submenu of
+                              // the `+` button. Shares the same
+                              // `weave.item.add` SSOT as the hotkey /
+                              // Alt+drag / DropdownMenu add paths.
+                              //
+                              // The bar is selection-driven: after the
+                              // submenu inserts a child we deliberately
+                              // KEEP the parent selected (don't follow
+                              // the new item) so the bar stays anchored
+                              // to the same frame and the user can add
+                              // multiple children in a row.
+                              const attrsOverride: Record<string, unknown> = {};
+                              if (kind === "shape" && sub && sub !== "rectangle") {
+                                attrsOverride.shape = sub;
+                                attrsOverride.subAttrs = defaultShapeSubAttrs(sub);
+                              }
+                              editor.exec<unknown, string>("weave.item.add", {
+                                kind,
+                                containerId,
+                                frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
+                                ...(Object.keys(attrsOverride).length > 0 ? { attrsOverride } : {}),
+                              });
+                            }}
+                          />
+                        </div>
+                      </DocumentForResolutionProvider>
+                    </EditorProvider>
+                  </ModeAwareAITooltipProvider>
+                </CommandHostProvider>
+              </PeekActiveProvider>
             </InteractionModeProvider>
           </SelectionProvider>
         </SelectionChromeProvider>
@@ -2298,6 +2316,28 @@ function MultiSelectionOverlay({
   );
 }
 
+/** WI-040 — chrome visibility gate for affordances that should track
+ *  `useSelectionChromeVisible` (idle / frame-manipulating / text-editing,
+ *  with peek hidden). Lives as a separate component so the hook reads
+ *  the InteractionMode + PeekActive contexts that wrap the DesignPage
+ *  return tree — DesignPage's main body sits OUTSIDE those providers,
+ *  so calling the hook there would return the no-op fallback. */
+function SelectionChromeGate({ children }: { readonly children: ReactNodeAlias }): ReactNodeAlias {
+  const visible = useSelectionChromeVisible();
+  if (!visible) return null;
+  return <>{children}</>;
+}
+
+/** WI-040 — strictly idle gate for short-lived affordances that should
+ *  vanish the moment another mode owns the canvas: ReparentGhostOverlay
+ *  chip, future HoverAffordanceLayer. Same provider-scope rationale as
+ *  `SelectionChromeGate`. */
+function EditAffordanceGate({ children }: { readonly children: ReactNodeAlias }): ReactNodeAlias {
+  const allowed = useEditAffordancesAllowed();
+  if (!allowed) return null;
+  return <>{children}</>;
+}
+
 interface QuickActionBarAnchoredProps {
   /** WI-036 follow-up — selection-driven QuickActionBar. The bar
    *  mounts when a frame is selected (not when one is hovered), so
@@ -2326,6 +2366,14 @@ function QuickActionBarAnchored({
   selectedIds,
   onInsertInFrame,
 }: QuickActionBarAnchoredProps): React.ReactElement | null {
+  // WI-040 — affordance gate. The QuickActionBar is a hover/selection
+  // affordance and must stand down whenever something else owns the
+  // canvas: peek inspector active, context-menu (LayerPicker) open,
+  // hand/pan armed, rubber-band drawing, text editing in flight, or a
+  // frame mid-drag. `useEditAffordancesAllowed` is the single-source
+  // boolean for this — same gate the upcoming HoverAffordanceLayer
+  // (Phase 3) will share.
+  const affordancesAllowed = useEditAffordancesAllowed();
   const isMulti = selectedIds.size > 1;
   const [anchor, setAnchor] = useState<{ top: number; left: number; frameId: string } | null>(null);
   // Stable key for the multi-select case so the effect re-mounts
@@ -2386,6 +2434,7 @@ function QuickActionBarAnchored({
     return () => cancelAnimationFrame(raf);
   }, [selectedFrameId, isMulti, selectedIds, multiKey]);
 
+  if (!affordancesAllowed) return null;
   if (anchor === null) return null;
   // The outer wrap carries an invisible 12px padding so the bar's
   // hover hit-area extends past the visible bar boundary into the
