@@ -236,6 +236,12 @@ export interface FrameStageProps {
         region: { x: number; y: number; width: number; height: number },
       ) => void)
     | undefined;
+  /** WI-040 Phase 3 — host-supplied overlay rendered inside the
+   *  design-plane subtree (under the same camera transform as frames)
+   *  so design-space rects line up with frames pixel-for-pixel. Slot
+   *  fires every render and is expected to be cheap — typically the
+   *  host returns `<HoverAffordanceLayer .../>` or `null`. */
+  readonly renderHoverOverlay?: (() => React.ReactNode) | undefined;
 }
 
 // WI-033 P2 — `computeDrillStaggered` / `computeDrillDimFlags` (Phase 13e
@@ -984,6 +990,7 @@ export function FrameStage(props: FrameStageProps) {
     infiniteCanvas = false,
     handMode = false,
     background = "#ffffff",
+    renderHoverOverlay,
   } = props;
 
   const bgTone: "light" | "dark" = useMemo(
@@ -1893,6 +1900,15 @@ export function FrameStage(props: FrameStageProps) {
                 }}
               >
                 {planeChildren}
+                {/* WI-040 Phase 3 — host-supplied hover overlay
+                  (`HoverAffordanceLayer` in DesignPage). Lives inside
+                  the camera-transformed subtree so the projector's
+                  design-space px line up exactly with the rendered
+                  frames. Sits between planeChildren and the legacy
+                  multi-selection placeholder; the SelectionLayer +
+                  multi-selection chrome (mounted via portal to body)
+                  naturally paint on top. */}
+                {renderHoverOverlay?.()}
                 {/* WI-036 follow-up — legacy multi-selection-chrome
                   (solid 2px outline + 4 round dot corners + count
                   badge) removed. The host-level MultiSelectionOverlay

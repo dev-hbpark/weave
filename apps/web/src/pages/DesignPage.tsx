@@ -28,6 +28,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  HoverAffordanceLayer,
   IconButton,
   IconCursor,
   IconHand,
@@ -80,6 +81,7 @@ import {
 import { PeekOverlay, PointStackInspector, usePeekMode } from "../document/peek-mode/index.js";
 import { PresenceCursors } from "../document/presence/PresenceCursors.js";
 import { usePresenceLocalCursor } from "../document/presence/use-presence-local-cursor.js";
+import { projectHoverAffordance } from "../document/render/hover-affordance-projector.js";
 import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 import { ContextualToolbar } from "../document/toolbar/ContextualToolbar.js";
@@ -1576,6 +1578,23 @@ function DesignPageBody() {
                               <FrameStage
                                 designWidth={design.width}
                                 designHeight={design.height}
+                                // WI-040 Phase 3 — host-supplied hover
+                                // overlay. Lives inside FrameStage's
+                                // design-plane so its rects share the
+                                // camera transform. The Mount component
+                                // uses the gate hook + projector;
+                                // visibility filters + selection
+                                // exclusion happen there.
+                                renderHoverOverlay={() => (
+                                  <HoverAffordanceMount
+                                    doc={docInAgocraft}
+                                    hoveredKind={hoverContext.hoveredKind}
+                                    hoveredId={hoverContext.hoveredId}
+                                    designWidth={design.width}
+                                    designHeight={design.height}
+                                    selectedIds={selectedIds}
+                                  />
+                                )}
                                 background={design.background}
                                 root={docInAgocraft.root}
                                 document={docInAgocraft}
@@ -2336,6 +2355,52 @@ function EditAffordanceGate({ children }: { readonly children: ReactNodeAlias })
   const allowed = useEditAffordancesAllowed();
   if (!allowed) return null;
   return <>{children}</>;
+}
+
+interface HoverAffordanceMountProps {
+  readonly doc: AgocraftDocument;
+  readonly hoveredKind: string;
+  readonly hoveredId: string | undefined;
+  readonly designWidth: number;
+  readonly designHeight: number;
+  readonly selectedIds: ReadonlySet<string>;
+}
+
+/** WI-040 Phase 3 — design-plane resident hover overlay. Lives inside
+ *  the providers (FrameStage renders it via `renderHoverOverlay` slot
+ *  inside the camera-transformed design-plane subtree). The
+ *  `useEditAffordancesAllowed` gate handles peek + non-idle modes; the
+ *  projector handles selection exclusion. */
+function HoverAffordanceMount({
+  doc,
+  hoveredKind,
+  hoveredId,
+  designWidth,
+  designHeight,
+  selectedIds,
+}: HoverAffordanceMountProps): ReactNodeAlias {
+  const allowed = useEditAffordancesAllowed();
+  const projection = useMemo(
+    () =>
+      projectHoverAffordance({
+        doc,
+        hoveredKind,
+        hoveredId,
+        designWidth,
+        designHeight,
+        selectedIds,
+      }),
+    [doc, hoveredKind, hoveredId, designWidth, designHeight, selectedIds],
+  );
+  if (!allowed) return null;
+  return (
+    <HoverAffordanceLayer
+      visible={true}
+      hovered={projection.hovered}
+      siblings={projection.siblings}
+      parent={projection.parent}
+    />
+  );
 }
 
 interface QuickActionBarAnchoredProps {
