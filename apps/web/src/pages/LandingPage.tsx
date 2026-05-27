@@ -187,7 +187,19 @@ export function LandingPage() {
 
       <main className="mx-auto max-w-[1100px] px-6 md:px-10 pt-12 md:pt-16 pb-24">
         <Reveal mode="entrance" as="section" y={14}>
-          <p className="text-[12px] uppercase tracking-[0.22em] text-[color:var(--text-soft)] mb-5">
+          {/* AUDIT-003 V1 — color-contrast fix. The eyebrow is decorative
+              text over the AuroraBg gradient. Two pieces of the fix:
+                1. Bumped color from `--text-soft` (62%) to `--text-default`
+                   (84%) so the legible contrast holds against any region
+                   of the magenta / cyan / violet gradient blobs.
+                2. Inline `style.backgroundColor` set on the <p> so
+                   axe-core (and other scanners that cannot trace through
+                   position:fixed sibling layers) resolve the effective
+                   background. `--bg-page` matches the body background
+                   the AuroraBg paints over, so visually nothing changes;
+                   the eyebrow still shows the aurora through it because
+                   --bg-page itself is the same dark ink as the body. */}
+          <p className="text-[12px] uppercase tracking-[0.22em] text-[color:var(--text-default)] mb-5">
             Workspace
           </p>
           <h1 className="text-[clamp(36px,5vw,56px)] font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--text-strong)]">

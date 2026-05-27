@@ -53,13 +53,15 @@ function describeViolations(
     impact?: string | null;
     description: string;
     helpUrl: string;
-    nodes: ReadonlyArray<{ target: ReadonlyArray<unknown> }>;
+    nodes: ReadonlyArray<{ target: ReadonlyArray<unknown>; html?: string }>;
   }>,
 ): string {
   return violations
     .map((v) => {
       const target = v.nodes[0]?.target?.join(" ") ?? "(no node)";
-      return `  - [${v.impact ?? "?"}] ${v.id}: ${v.description}\n      first: ${target}\n      help: ${v.helpUrl}`;
+      const html = v.nodes[0]?.html ?? "";
+      const htmlPreview = html.slice(0, 280);
+      return `  - [${v.impact ?? "?"}] ${v.id}: ${v.description}\n      first: ${target}\n      html: ${htmlPreview}${html.length > 280 ? "…" : ""}\n      help: ${v.helpUrl}`;
     })
     .join("\n");
 }
@@ -73,7 +75,7 @@ test.describe("a11y smoke — WCAG 2.2 AA", () => {
   // `.uppercase` eyebrow at LandingPage.tsx:190 using `--text-soft` token).
   // Re-enable as `test(...)` once the token is tightened or the eyebrow is
   // re-coloured. See records/audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md.
-  test.fixme("landing page passes axe-core with no critical/serious violations", async ({ page }) => {
+  test("landing page passes axe-core with no critical/serious violations", async ({ page }) => {
     await page.goto("/");
     // Wait for landing chrome to settle so axe scans the real surface.
     await page.getByTestId("landing-new-design").waitFor({ state: "visible" });
@@ -98,7 +100,7 @@ test.describe("a11y smoke — WCAG 2.2 AA", () => {
   // on a `.group` wrapper somewhere in the FrameStage / QuickActionBar
   // surface). Re-enable as `test(...)` once the nesting is restructured.
   // See records/audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md.
-  test.fixme("design page (frame + text) passes axe-core with no critical/serious violations", async ({ page }) => {
+  test("design page (frame + text) passes axe-core with no critical/serious violations", async ({ page }) => {
     await prepareDesign(page, { flavor: "mixed", presetId: "16:9", title: "a11y smoke" });
 
     // Add a frame (LG-002 surface: frame UX). prepareDesign lands on an

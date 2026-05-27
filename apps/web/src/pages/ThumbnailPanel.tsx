@@ -270,9 +270,16 @@ export function ThumbnailPanel({
           `pt-3` is the hover-pop ceiling — `scale(1.05)` on a 124px
           tile grows the top by ~3px, which fits inside the 12px
           padding so the scroller's vertical overflow never clips. */}
+      {/* AUDIT-003 V2 — paired with the tile change below. The previous
+          role="listbox" required role="option" children, but options
+          cannot contain interactive elements (the focus-toggle button
+          is a `<button>` inside each tile). Demoted to a generic
+          group so the focus-toggle nesting clears axe's
+          nested-interactive rule; the keyboard nav is now driven by
+          the inner activation `<button>`s being Tab-stops in order. */}
       <div
         className="relative pl-4 md:pl-6 pr-4 md:pr-6 pt-3 pb-2 flex items-end gap-4 overflow-x-auto"
-        role="listbox"
+        role="group"
         aria-label="Slide thumbnails"
       >
         {/* Inline info column — fixed width so the Focused / Isolated
@@ -329,13 +336,20 @@ export function ThumbnailPanel({
           const isDisabled = disabledFrameIds?.has(entry.id) ?? false;
           const accentVar = DOMAIN_ACCENT_VAR[entry.kind] ?? "var(--accent)";
           return (
+            // AUDIT-003 V2 — the tile previously combined role="option"
+            // (interactive WAI-ARIA role) with an inner `<button>` for the
+            // focus-toggle, which axe-core flags as nested-interactive.
+            // The fix is structural: the outer is now a non-interactive
+            // `role="group"` wrapper that carries the layout + drag
+            // affordances; tile activation moves to a full-coverage
+            // inner `<button>`, which sits as a SIBLING of the absolute-
+            // positioned focus-toggle `<button>`. Both inner controls
+            // remain keyboard-accessible without nesting.
             <div
               key={entry.id}
-              role="option"
-              aria-selected={isSelected}
+              role="group"
+              aria-label={`Tile ${idx + 1}: ${entry.title}`}
               aria-disabled={isDisabled || undefined}
-              aria-current={isSelected ? "page" : undefined}
-              tabIndex={isDisabled ? -1 : 0}
               draggable={!isDisabled}
               data-thumbnail-id={entry.id}
               // WI-039 — also expose the frame id so the reparent drag
@@ -380,17 +394,10 @@ export function ThumbnailPanel({
                 if (!Number.isInteger(from)) return;
                 setPresentationOrder(reorder(order, from, idx));
               }}
-              onClick={() => {
-                if (isDisabled) return;
-                handleTileActivate(entry);
-              }}
-              onKeyDown={(e) => {
-                if (isDisabled) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  handleTileActivate(entry);
-                }
-              }}
+              // AUDIT-003 V2 — tile activation (click + keyboard) is now
+              // delegated to a full-coverage inner `<button>` so the
+              // outer wrapper stays a non-interactive role="group". See
+              // the activation button rendered as the first child below.
               className={
                 "group relative flex flex-col w-[160px] h-[124px] p-2 gap-1.5 rounded-[var(--radius-md)] " +
                 "border transition-[background,border-color,box-shadow,filter,opacity,transform] duration-[var(--motion-quick)] " +
@@ -475,6 +482,42 @@ export function ThumbnailPanel({
               }
               data-tip={`${idx + 1}. ${entry.title}`}
             >
+              {/* AUDIT-003 V2 — full-coverage activation `<button>`.
+                  Sibling of the absolute-positioned focus-toggle button
+                  below, so neither is nested inside the other (the outer
+                  `<div role="group">` is non-interactive). Visually
+                  invisible — pointer-events on the surrounding content
+                  flow through to this button via `inset-0` absolute
+                  positioning. The focus-toggle (which sits above with a
+                  higher z-index) captures clicks first when targeted,
+                  while clicks elsewhere on the tile fall through to this
+                  activation button. */}
+              <button
+                type="button"
+                aria-label={`Activate ${entry.title}`}
+                aria-pressed={isSelected}
+                aria-current={isSelected ? "page" : undefined}
+                disabled={isDisabled}
+                tabIndex={isDisabled ? -1 : 0}
+                data-testid={`thumbnail-activate-${idx}`}
+                onClick={() => {
+                  if (isDisabled) return;
+                  handleTileActivate(entry);
+                }}
+                onKeyDown={(e) => {
+                  if (isDisabled) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleTileActivate(entry);
+                  }
+                }}
+                className={
+                  "absolute inset-0 z-0 rounded-[var(--radius-md)] " +
+                  "bg-transparent border-0 cursor-pointer p-0 m-0 " +
+                  "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)] " +
+                  "disabled:cursor-not-allowed"
+                }
+              />
               {/* Preview slot — placeholder until a real canvas snapshot
                     pipeline exists. Renders the design's background color so
                     different decks read at a glance even without a render.

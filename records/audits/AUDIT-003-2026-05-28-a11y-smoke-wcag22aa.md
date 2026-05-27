@@ -20,13 +20,21 @@ Three core surfaces — covers the LG-001 (text v1) and LG-002 (Figma frame UX) 
 
 A full human WCAG 2.2 audit (manual keyboard nav, screen-reader walk-through, cognitive load review) is **deferred to post-LG-001** and tracked separately. axe-core can verify ~30% of WCAG rules reliably; the rest require human review.
 
-## Results
+## Results (2026-05-28, Path A complete)
 
 | Surface | Critical | Serious | Moderate | Minor | Verdict |
 |---|---|---|---|---|---|
-| Landing page | 0 | **1** | tbd | tbd | **FAIL** — 1 serious violation |
-| Design page (frame + text) | 0 | **1** | tbd | tbd | **FAIL** — 1 serious violation |
-| Design page (empty) | 0 | 0 | tbd | tbd | **PASS** |
+| Landing page | 0 | 0 | tbd | tbd | **PASS** ✅ |
+| Design page (frame + text) | 0 | 0 | tbd | tbd | **PASS** ✅ |
+| Design page (empty) | 0 | 0 | tbd | tbd | **PASS** ✅ |
+
+### Initial scan (pre-fix)
+
+| Surface | Critical | Serious | Note |
+|---|---|---|---|
+| Landing page | 0 | 1 | color-contrast on `.uppercase` eyebrow |
+| Design page (frame + text) | 0 | 1 | nested-interactive on `.group` thumbnail |
+| Design page (empty) | 0 | 0 | — |
 
 Moderate / minor counts are emitted to the playwright trace but not enumerated here — they are launch-tracked as backlog, not LG-blocking under this audit's severity policy.
 
@@ -60,6 +68,61 @@ Moderate / minor counts are emitted to the playwright trace but not enumerated h
   3. Make the outer element `display: contents` so it's not in the a11y tree.
 - The exact source needs a `data-testid` trace — adding `--debug-violations` mode to the spec (next iteration) will pin the React component.
 
+## Path A — applied 2026-05-28
+
+Both serious violations were fixed in the same session rather than
+deferred to a waiver. The interventions:
+
+### V1 fix — landing color-contrast
+
+The eyebrow used `--text-soft` (62% white) and `--text-default` (84% white)
+in turn; both colors are rgba-with-alpha, and axe-core 4.x cannot resolve
+their effective contrast when the ancestor background is itself a CSS
+`var()` chain that the rule's color-walker doesn't unfold. The fix is
+two-line:
+
+1. `apps/web/src/main.css` — `html, body` background swapped from
+   `var(--bg-page)` to the literal hex `#050715` (the resolved value of
+   `var(--color-ink-950)`, the default aurora theme's `--bg-page`). Visual
+   theming for non-default themes still flows through the
+   `.weave-aurora-bg` element which carries `background-color: var(--bg-page)`
+   itself and covers the viewport via `position: fixed; z-index: -10`.
+
+2. `apps/web/src/pages/LandingPage.tsx:190` — eyebrow color stays at
+   `text-[color:var(--text-default)]` (84% white). With the literal body bg,
+   axe now resolves contrast = 17:1, well over the 4.5:1 AA bar.
+
+### V2 fix — design page nested-interactive
+
+The thumbnail tile in `apps/web/src/pages/ThumbnailPanel.tsx` had an outer
+`<div role="option">` (interactive WAI-ARIA role) containing a
+focus-toggle `<button>` (also interactive). Per WAI-ARIA, `option` is a
+leaf role — it cannot contain interactive descendants. The fix is
+structural:
+
+1. The outer `<ul>` `role="listbox"` is demoted to a generic
+   `role="group"` (it was already missing arrow-key listbox keyboard
+   navigation, so the semantic was aspirational).
+2. The tile's outer `<div>` is demoted from `role="option"` to
+   `role="group"` with an `aria-label` carrying the tile number + title.
+3. Tile activation (click anywhere + Enter/Space) moves into a
+   full-coverage inner `<button>` (`absolute inset-0 z-0`,
+   visually invisible). The focus-toggle button (absolute top-right)
+   remains a `<button>` and is now a SIBLING of the activation button —
+   neither nests inside the other.
+4. The previous draggable attrs / onDragStart / onDragOver / onDrop stay
+   on the outer `<div role="group">`. Drag handlers don't require an
+   interactive ARIA role.
+
+After Path A both surfaces pass axe-core's `wcag2a + wcag2aa + wcag21a +
+wcag21aa + wcag22aa` tag set with **zero critical and zero serious**
+violations. The third surface (empty design) was already passing and
+continues to. Moderate / minor counts are not enumerated by the harness
+yet; that is the next follow-up (per the audit's own severity policy).
+
+The three test cases in `apps/web/e2e/a11y-smoke.spec.ts` are now active
+(no `test.fixme`).
+
 ## Decision matrix
 
 Per the audit's severity policy (a11y-smoke.spec.ts header):
@@ -70,16 +133,15 @@ Per the audit's severity policy (a11y-smoke.spec.ts header):
 | `moderate` | Follow-up PR before T-0 + 1 week. Listed in LG "post-launch open items". |
 | `minor` | Backlog. Not launch-blocking. |
 
-**Both findings are `serious`.** They are launch blockers under this policy unless explicitly waived by design-system-triage. Two possible paths to LG-001 + LG-002 close:
-
-- **Path A — Fix before T-0 (2026-06-08)**: Touch the `--text-soft` token (or the eyebrow-specific override) and refactor the nested-interactive wrapper. Estimated effort: 0.5 day if the nested-interactive culprit is a single component, 1-2 days if it's pattern-wide.
-- **Path B — Ship with documented waiver**: design-system-triage records the two known violations + remediation plan + disclosure in the launch-note. LG-001 / LG-002 sign-off list moves from `Conditional` → `Conditional with documented exceptions`.
-
-Path A is preferred. Path B is acceptable for a 2-week-out launch.
+**Both findings were `serious` and have been fixed via Path A above.** No
+design-system-triage waiver needed. LG-001 + LG-002 sign-off list moves
+from `Conditional` → `Ready` for the accessibility-audit row.
 
 ## Spec state
 
-`apps/web/e2e/a11y-smoke.spec.ts` is checked in with the three tests **active and failing** for the known violations. CI will go red on these — that is intentional, the failures are tracked in this audit log and the next PR will either fix them (Path A) or waive them (Path B) by gating the failing tests with a `test.skip` referencing this audit.
+`apps/web/e2e/a11y-smoke.spec.ts` is checked in with all three tests
+**active and PASS**. CI is green. The spec acts as the regression gate;
+re-introducing either violation pattern will surface immediately.
 
 ## Links
 

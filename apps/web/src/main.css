@@ -10,7 +10,16 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg-page);
+  /* AUDIT-003 V1 — literal hex (not var) so axe-core 4.x can resolve
+   * the effective background for contrast computation. The value
+   * matches the default aurora theme's `--bg-page` (= --color-ink-950).
+   * Visual theming is owned by the `.weave-aurora-bg` element (position:
+   * fixed, inset:0, z-index:-10, background-color: var(--bg-page)),
+   * which covers the viewport and carries theme-aware paint — so the
+   * literal body bg below shows only where AuroraBg is absent (e.g.,
+   * pages that opt out), in which case the user is in the default
+   * theme anyway. */
+  background: #050715;
   color: var(--text-default);
   font-family: var(--font-sans);
   line-height: 1.55;
