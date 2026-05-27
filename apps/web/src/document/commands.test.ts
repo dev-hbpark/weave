@@ -82,6 +82,59 @@ function makeCtx(): CommandContext {
   };
 }
 
+// Nested-tree fixture — a top-level frame with one nested child frame.
+// Used by the "delete a nested item" regression tests below. Kept as a
+// separate helper so the legacy `makeCtx` shape (rooted at slide /
+// canvas-design Items) stays untouched.
+function makeNestedCtx(): CommandContext {
+  const cam: CameraTargetBehavior = {
+    kind: "camera-target",
+    id: "cam-n",
+    position: { x: 0, y: 0 },
+    scale: 1,
+    order: 0,
+  };
+  const child: Item = {
+    id: "child-1",
+    kind: "frame",
+    attrs: { frame: FULL_FRAME },
+    behaviors: [],
+    createdAt: META_DATE,
+  } as unknown as Item;
+  const parent: Item = {
+    id: "parent-1",
+    kind: "frame",
+    attrs: { frame: FULL_FRAME },
+    behaviors: [cam],
+    createdAt: META_DATE,
+  } as unknown as Item;
+  const weave: WeaveDocument = {
+    id: "doc-nested",
+    title: "Nested",
+    items: [parent],
+    updatedAt: META_DATE,
+    schemaVersion: 3,
+  };
+  // Build the doc with `parent` at root and then add `child` underneath
+  // it using the same `addChild` helper the host uses, so the structure
+  // matches what `findParentAndIndex` sees in production.
+  const root = toAgocraftDocument(weave);
+  const childAgocraft = {
+    id: makeItemId("child-1"),
+    kind: "frame",
+    attrs: child.attrs as unknown as AgocraftItem["attrs"],
+    units: [],
+    children: [] as ReadonlyArray<AgocraftItem>,
+    meta: { createdAt: META_DATE, updatedAt: META_DATE, schemaVersion: 9 },
+  } as unknown as AgocraftItem;
+  const doc: AgocraftDocument = addChild(root, childAgocraft, "parent-1");
+  return {
+    document: doc,
+    resolve: () => null as never,
+    skipRelations: false,
+  };
+}
+
 describe("buildWeaveCommands — direct (Phase 2)", () => {
   it("weave.item.add calls targets.addItem and returns empty patches", () => {
     const targets = spyTargets();
@@ -97,12 +150,65 @@ describe("buildWeaveCommands — direct (Phase 2)", () => {
     const targets = spyTargets();
     const cmd = buildWeaveCommands(targets).find((c) => c.name === "weave.item.remove");
     if (cmd === undefined) throw new Error("command not found");
-    const result = cmd.run(makeCtx(), { itemId: "slide-1" });
+    const ctx = makeCtx();
+    const rootId = String(ctx.document.root.id);
+    const result = cmd.run(ctx, { itemId: "slide-1" });
     expect(targets.removeItem).toHaveBeenCalledWith("slide-1");
     if (!result.ok) throw new Error("unexpected fail");
     expect(result.patches).toHaveLength(1);
     const patch = result.patches[0];
-    expect(patch).toMatchObject({ type: "item.children", removed: expect.any(Array) });
+    expect(patch).toMatchObject({
+      type: "item.children",
+      itemId: makeItemId(rootId),
+      removed: [makeItemId("slide-1")],
+    });
+  });
+
+  // Regression — WI-XXX: nested items were silently failing to delete
+  // because the command always built the removal patch against the
+  // caller's `containerId` (defaulting to root). The patch then targeted
+  // root.children and the reducer's deep walk could find no `itemId` to
+  // strip there. Fix: derive the actual parent from the itemId.
+  it("weave.item.remove derives the actual parent for a nested item", () => {
+    const targets = spyTargets();
+    const cmd = buildWeaveCommands(targets).find((c) => c.name === "weave.item.remove");
+    if (cmd === undefined) throw new Error("command not found");
+    const ctx = makeNestedCtx();
+    const result = cmd.run(ctx, { itemId: "child-1" });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error?.code ?? "?"}`);
+    expect(result.patches).toHaveLength(1);
+    const patch = result.patches[0];
+    // The patch must target the *parent frame*, not the root.
+    expect(patch).toMatchObject({
+      type: "item.children",
+      itemId: makeItemId("parent-1"),
+      removed: [makeItemId("child-1")],
+    });
+  });
+
+  it("weave.item.remove ignores a wrong containerId hint and still derives the right parent", () => {
+    const targets = spyTargets();
+    const cmd = buildWeaveCommands(targets).find((c) => c.name === "weave.item.remove");
+    if (cmd === undefined) throw new Error("command not found");
+    const ctx = makeNestedCtx();
+    const rootId = String(ctx.document.root.id);
+    // Caller passes the wrong containerId (root) — the command must
+    // still emit a patch against the actual parent.
+    const result = cmd.run(ctx, { itemId: "child-1", containerId: rootId });
+    if (!result.ok) throw new Error("unexpected fail");
+    const patch = result.patches[0];
+    expect(patch).toMatchObject({ itemId: makeItemId("parent-1") });
+  });
+
+  it("weave.item.remove fails when the itemId is not in the doc", () => {
+    const targets = spyTargets();
+    const cmd = buildWeaveCommands(targets).find((c) => c.name === "weave.item.remove");
+    if (cmd === undefined) throw new Error("command not found");
+    const result = cmd.run(makeCtx(), { itemId: "does-not-exist" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("item-not-found");
+    }
   });
 
   it("weave.doc.reset calls targets.reset and emits no patches", () => {

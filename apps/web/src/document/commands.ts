@@ -245,15 +245,29 @@ export function buildWeaveCommands(
   const removeItem: Command<RemoveItemInput, void> = {
     name: "weave.item.remove",
     run: (ctx: CommandContext, input: RemoveItemInput) => {
-      const container = findContainer(ctx.document, input.containerId);
-      if (container === undefined) {
+      // The `containerId` input is treated as a hint only — the command
+      // derives the *actual* parent of `input.itemId` so a caller that
+      // doesn't (or can't) re-derive the parent per call (e.g. a multi-
+      // delete loop, a hover-action slot that only knows the item id)
+      // still emits a correct structural patch.
+      //
+      // Without this derivation, a nested item's removal would emit a
+      // patch against the root (the default containerId) → the
+      // reducer's `mapItemDeep(root.id, ...)` walk lands on the root
+      // and tries to remove `itemId` from `root.children`, which is a
+      // no-op because the item lives deeper. The bug surfaced as "only
+      // items at the design root delete; children don't" — fixed here
+      // at the command boundary so every caller benefits.
+      const found = findParentAndIndex(ctx.document, input.itemId);
+      if (found === undefined) {
         return fail(
-          "container-not-found",
-          `weave.item.remove: container ${input.containerId} not in doc`,
+          "item-not-found",
+          `weave.item.remove: itemId ${input.itemId} not in doc`,
         );
       }
+      const parent = found.parent;
       if (pending !== undefined) {
-        const target = container.children.find((c) => String(c.id) === input.itemId);
+        const target = parent.children[found.indexInParent];
         if (target !== undefined) {
           pending.stage(target);
         }
@@ -264,7 +278,7 @@ export function buildWeaveCommands(
       const patches: Patch[] = [
         {
           type: "item.children",
-          itemId: container.id,
+          itemId: parent.id,
           added: [],
           removed: [removed],
         },
@@ -1107,16 +1121,22 @@ export function buildWeaveCommands(
       };
       clipboardStore.write(payload);
       pasteStackIndex = 0;
-      // Now the structural removal — mirrors `weave.item.remove`.
+      // Now the structural removal — mirrors `weave.item.remove`. The
+      // patch must target the *actual* parent of `id`, not the
+      // (possibly hinted) `input.containerId`. The actual parent has
+      // been resolved into `parent.parent.id` above. Falling back to
+      // `container.id` would re-introduce the silent-no-op-for-nested-
+      // items bug.
       if (pending !== undefined) {
         pending.stage(item); // so undo can restore the original Item shape
       } else {
         targets.removeItem(id);
       }
+      const removalContainerId = parent !== undefined ? parent.parent.id : container.id;
       const patches: Patch[] = [
         {
           type: "item.children",
-          itemId: container.id,
+          itemId: removalContainerId,
           added: [],
           removed: [makeItemId(id)],
         },
