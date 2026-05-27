@@ -115,7 +115,7 @@ export const NumberSlider = forwardRef<HTMLDivElement, NumberSliderProps>(
     return (
       <div
         ref={ref}
-        className={cn("inline-flex items-center gap-2 min-w-[140px]", className)}
+        className={cn("inline-flex items-center gap-2 min-w-[100px] max-w-[180px]", className)}
       >
         <SliderPrimitive.Root
           value={[value]}

@@ -268,7 +268,7 @@ function MoreOverflow({
   readonly moreLabel: string;
 }): JSX.Element {
   return (
-    <div className="flex items-stretch" data-toolbar-more>
+    <div className="flex items-stretch shrink-0 ml-auto" data-toolbar-more>
       {/* Match the divider treatment used between regular sections. */}
       <div
         aria-hidden
@@ -321,7 +321,15 @@ interface ToolbarSectionProps extends HTMLAttributes<HTMLDivElement> {
   children?: ReactNode;
 }
 
-const sectionLayoutClass = "flex flex-col justify-center gap-1 px-2.5 py-0.5";
+// In-flow: tight inline row, no label caption (label travels through
+// `aria-label` + `title` only). `shrink-0` is critical — without it the
+// browser auto-compresses children to fit the bar's maxWidth, and the
+// resulting `getBoundingClientRect().width` returns the SHRUNK width which
+// silently disables the fold algorithm (sum-of-shrunk ≤ maxWidth → "all
+// visible"). With `shrink-0` the natural width is preserved → fold triggers.
+const sectionLayoutClass = "flex items-center px-1.5 py-0 shrink-0";
+// In the More popover: vertical stack with the label restored. Context is
+// needed there because the user is scanning a list of property names.
 const sectionLayoutClassFolded = "flex flex-col gap-1 px-1 py-1.5";
 
 const ToolbarSection = forwardRef<HTMLDivElement, ToolbarSectionProps>(
@@ -384,18 +392,14 @@ const ToolbarSection = forwardRef<HTMLDivElement, ToolbarSectionProps>(
         className={cn(folded ? sectionLayoutClassFolded : sectionLayoutClass, className)}
         role="group"
         aria-label={label}
+        title={folded ? undefined : label}
         data-toolbar-section-priority={priority}
         data-toolbar-section-folded={folded ? "true" : undefined}
       >
-        {label !== undefined ? (
+        {folded && label !== undefined ? (
           <span
             aria-hidden
-            className={cn(
-              "font-mono uppercase leading-none text-[color:var(--text-overlay-muted)]",
-              folded
-                ? "text-[10px] tracking-[1.2px]"
-                : "text-[9px] tracking-[1px]",
-            )}
+            className="font-mono uppercase leading-none text-[color:var(--text-overlay-muted)] text-[10px] tracking-[1.2px]"
           >
             {label}
           </span>
@@ -423,7 +427,7 @@ const ToolbarDivider = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>
         aria-hidden
         {...rest}
         className={cn(
-          "self-stretch w-px my-1 bg-[color:var(--surface-overlay-border)]",
+          "self-stretch w-px my-1 mx-1 shrink-0 bg-[color:var(--surface-overlay-border)]",
           // Hidden inside the More popover (vertical stack) — the divider
           // is a horizontal-flow detail.
           "[[data-toolbar-more-stack]_&]:hidden",

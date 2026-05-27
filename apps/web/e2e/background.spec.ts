@@ -80,9 +80,10 @@ test("toolbar mounts a Background section when a slide is selected", async ({
   const toolbar = page.getByTestId("contextual-toolbar");
   await expect(toolbar).toBeVisible();
   await expect(toolbar).toHaveAttribute("data-kind", "frame");
-  // Background section label appears in the toolbar.
-  await expect(toolbar.getByText("Background", { exact: false }))
-    .toBeVisible();
+  // Background section is mounted. DR-design-014 stripped the visible
+  // caption to keep the bar compact; the section's identity now lives in
+  // `aria-label` / `role="group"`.
+  await expect(toolbar.getByRole("group", { name: "Background" })).toBeVisible();
 });
 
 test("setting attrs.background paints the frame", async ({ page }) => {
