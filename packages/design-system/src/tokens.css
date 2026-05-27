@@ -111,6 +111,17 @@
   --accent-strong: var(--color-magenta-300);
   --accent-gradient: linear-gradient(135deg, var(--color-magenta-500), var(--color-violet-500));
 
+  /* WI-040 Phase 2 / DR-design-016 — HoverAffordanceLayer 3-tier.
+     같은 hue (--accent) 안에서 stroke style + 채도로 위계 분리:
+       hovered  — 가장 강한 시각 신호 (solid + glow)
+       sibling  — dashed, 채도 낮춤 (관계 있음 / 타겟 아님)
+       parent   — thin solid + 내부 tint (containment 강조) */
+  --hover-affordance-stroke-hovered: var(--accent);
+  --hover-affordance-glow-hovered: color-mix(in oklch, var(--accent) 12%, transparent);
+  --hover-affordance-stroke-sibling: color-mix(in oklch, var(--accent) 55%, transparent);
+  --hover-affordance-stroke-parent: color-mix(in oklch, var(--accent) 35%, transparent);
+  --hover-affordance-tint-parent: color-mix(in oklch, var(--accent) 4%, transparent);
+
   /* border / focus */
   --border-default: rgba(255, 255, 255, 0.12);
   --border-strong: rgba(255, 255, 255, 0.22);
@@ -290,4 +301,16 @@
  * symmetric — flipping `data-bg-tone` is the only thing FrameStage does. */
 [data-canvas="document"][data-bg-tone="dark"] {
   /* inherits global theme tokens */
+}
+
+/* WI-040 Phase 2 / DR-design-016 — reduced-motion neutralises the
+ * hover-affordance glow + parent tint so the overlay reads as flat
+ * outlines only. Box-shadow / background are driven by tokens, so
+ * overriding the tokens cascades to every consumer without per-rule
+ * media queries. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --hover-affordance-glow-hovered: transparent;
+    --hover-affordance-tint-parent: transparent;
+  }
 }
