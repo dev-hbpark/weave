@@ -17,7 +17,7 @@
 // (Phase 3) will compute the same filter from real selection state.
 
 import { HoverAffordanceLayer, type HoverAffordanceRect, useTheme } from "@weave/design-system";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const PARENT: HoverAffordanceRect = { x: 40, y: 40, width: 720, height: 380, id: "parent" };
 const SIBLINGS: ReadonlyArray<HoverAffordanceRect> = [
@@ -31,6 +31,7 @@ export function HoverAffordanceLayerDemo() {
   // [data-theme] to <html>. Otherwise the demo would always show the
   // base @theme block (aurora-equivalent magenta).
   const { theme, setTheme } = useTheme();
+  const hostRef = useRef<HTMLDivElement>(null);
   const [showHovered, setShowHovered] = useState(true);
   const [showSiblings, setShowSiblings] = useState(true);
   const [showParent, setShowParent] = useState(true);
@@ -185,6 +186,7 @@ export function HoverAffordanceLayerDemo() {
       </fieldset>
 
       <div
+        ref={hostRef}
         style={{
           position: "relative",
           width: 800,
@@ -239,6 +241,7 @@ export function HoverAffordanceLayerDemo() {
           hovered={renderedHovered}
           siblings={renderedSiblingsList}
           parent={renderedParent}
+          hostRef={hostRef}
         />
       </div>
     </div>

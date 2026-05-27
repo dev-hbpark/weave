@@ -17,27 +17,35 @@
 // signals. Adding a fourth color (or a different hue per tier) breaks
 // the intent (사용자 명시 / DR-design-016 §"3-tier 시각 토큰").
 //
-// Pure presentational primitive. The host (DesignPage, Phase 3) computes
-// rects from the document tree and the InteractionMode / Peek state;
-// this component does no math beyond placement and no event handling.
+// **Constant stroke width across camera zoom.** Input rects are
+// expressed in design-plane local CSS px (the same coords the document
+// projector emits). The layer portals to `document.body` and on every
+// rAF tick measures the host element's bounding rect to derive the
+// camera's effective scale + translation. Each tier is positioned in
+// viewport coords (`position: fixed`); the outline strokes therefore
+// stay at their declared CSS pixel width regardless of how far the user
+// has zoomed in or out — matching SelectionLayer / MarqueeSelectionLayer
+// behaviour. This is the contract the user requested 2026-05-27:
+// "셀렉션 핸들과 러버벤드처럼 항상 동일한 선두께를 유지해야해."
 
-import type { CSSProperties } from "react";
+import { type CSSProperties, type RefObject, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface Rect {
-  /** Design-plane absolute pixels. Host owns the conversion from
-   *  document ratio → host coords. */
+  /** Design-plane local CSS pixels. The host (production: FrameStage's
+   *  design plane; demo: any element with `data-design-plane="true"`)
+   *  is the coordinate origin. The layer converts to viewport coords
+   *  internally using the host's live bounding rect. */
   readonly x: number;
   readonly y: number;
   readonly width: number;
   readonly height: number;
   /** Optional rotation in radians. Applied via CSS transform around
-   *  the rect's center. */
+   *  the rect's center, after the design-plane → viewport conversion. */
   readonly rotation?: number;
   /** Optional stable identity (typically the source item id). When
    *  provided, used as the React key for sibling rects so reordering
-   *  re-keys correctly. Falls back to index when omitted — fine for
-   *  static rect lists; pass an `id` once the source data changes
-   *  during the layer's lifetime. */
+   *  re-keys correctly. */
   readonly id?: string;
 }
 
@@ -46,34 +54,53 @@ export interface HoverAffordanceLayerProps {
    *  Host wires this from `useEditAffordancesAllowed()` + a non-null
    *  hovered id. */
   readonly visible: boolean;
-  /** The directly-hovered rect. `null` when nothing is hovered (e.g.,
-   *  the user just left the canvas but the layer is staying mounted
-   *  during a grace window). */
+  /** The directly-hovered rect. `null` when nothing is hovered. */
   readonly hovered: Rect | null;
-  /** Every other child of the hovered item's parent. Empty when the
-   *  hovered item has no siblings. */
+  /** Every other child of the hovered item's parent. */
   readonly siblings: ReadonlyArray<Rect>;
   /** The hovered item's parent container. `null` when the hovered
-   *  item is at the design root (no parent to highlight). */
+   *  item is at the design root. */
   readonly parent: Rect | null;
+  /** Optional explicit host. When omitted the layer queries
+   *  `[data-design-plane="true"]` (FrameStage's design plane). The
+   *  host's `offsetWidth/offsetHeight` define the natural design-plane
+   *  size; its live `getBoundingClientRect` defines the viewport
+   *  position + effective scale. */
+  readonly hostRef?: RefObject<HTMLElement | null>;
 }
 
+interface HostBox {
+  readonly left: number;
+  readonly top: number;
+  readonly scale: number;
+}
+
+/** Wrapper that establishes a fixed coordinate root at (0, 0) so
+ *  child tiers can position themselves via viewport-fixed `left`/`top`
+ *  without inheriting any ancestor transform. */
 const LAYER_STYLE: CSSProperties = {
-  position: "absolute",
-  top: 0,
+  position: "fixed",
   left: 0,
+  top: 0,
   width: 0,
   height: 0,
   pointerEvents: "none",
+  // Sits below SelectionLayer (z 40) and MarqueeSelectionLayer (z 42)
+  // so selection chrome paints on top of hover affordance.
+  zIndex: 35,
 };
 
-function tierStyle(rect: Rect): CSSProperties {
+function tierStyle(rect: Rect, host: HostBox): CSSProperties {
+  const x = host.left + rect.x * host.scale;
+  const y = host.top + rect.y * host.scale;
+  const w = rect.width * host.scale;
+  const h = rect.height * host.scale;
   const base: CSSProperties = {
-    position: "absolute",
-    left: `${rect.x}px`,
-    top: `${rect.y}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
+    position: "fixed",
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `${w}px`,
+    height: `${h}px`,
     boxSizing: "border-box",
     pointerEvents: "none",
   };
@@ -92,15 +119,56 @@ export function HoverAffordanceLayer({
   hovered,
   siblings,
   parent,
+  hostRef,
 }: HoverAffordanceLayerProps): React.ReactElement | null {
+  const [host, setHost] = useState<HostBox | null>(null);
+
+  useEffect(() => {
+    if (!visible) {
+      setHost(null);
+      return undefined;
+    }
+    if (typeof document === "undefined") return undefined;
+    let raf = 0;
+    let lastKey = "";
+    const measure = () => {
+      const el =
+        hostRef?.current ?? document.querySelector<HTMLElement>('[data-design-plane="true"]');
+      if (el === null) {
+        if (lastKey !== "") {
+          lastKey = "";
+          setHost(null);
+        }
+      } else {
+        const r = el.getBoundingClientRect();
+        const naturalW = el.offsetWidth;
+        // Effective scale = rendered width / natural (pre-transform)
+        // width. Camera transform applies translate + uniform scale
+        // (FrameStage's design plane uses scale, not skew), so scaleX
+        // === scaleY and one factor suffices.
+        const scale = naturalW === 0 ? 1 : r.width / naturalW;
+        const key = `${r.left.toFixed(1)}|${r.top.toFixed(1)}|${scale.toFixed(4)}`;
+        if (key !== lastKey) {
+          lastKey = key;
+          setHost({ left: r.left, top: r.top, scale });
+        }
+      }
+      raf = requestAnimationFrame(measure);
+    };
+    raf = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(raf);
+  }, [visible, hostRef]);
+
   if (!visible) return null;
-  return (
+  if (typeof document === "undefined" || host === null) return null;
+
+  return createPortal(
     <div data-testid="hover-affordance-layer" aria-hidden="true" style={LAYER_STYLE}>
       {parent !== null ? (
         <div
           data-hover-tier="parent"
           style={{
-            ...tierStyle(parent),
+            ...tierStyle(parent, host),
             outline: "1px solid var(--hover-affordance-stroke-parent)",
             outlineOffset: "0px",
             background: "var(--hover-affordance-tint-parent)",
@@ -112,7 +180,7 @@ export function HoverAffordanceLayer({
           key={rect.id ?? `sibling-${i}-${rect.x}x${rect.y}`}
           data-hover-tier="sibling"
           style={{
-            ...tierStyle(rect),
+            ...tierStyle(rect, host),
             outline: "1px dashed var(--hover-affordance-stroke-sibling)",
             outlineOffset: "-1px",
           }}
@@ -122,13 +190,14 @@ export function HoverAffordanceLayer({
         <div
           data-hover-tier="hovered"
           style={{
-            ...tierStyle(hovered),
+            ...tierStyle(hovered, host),
             outline: "2px solid var(--hover-affordance-stroke-hovered)",
             outlineOffset: "0px",
             boxShadow: "0 0 0 4px var(--hover-affordance-glow-hovered)",
           }}
         />
       ) : null}
-    </div>
+    </div>,
+    document.body,
   );
 }
