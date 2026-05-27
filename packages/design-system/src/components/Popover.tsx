@@ -5,8 +5,15 @@
 // collision-aware floating via `@floating-ui/react-dom`. We add the aurora-
 // glass surface + token-based motion only.
 //
+// DR-design-013 — Outside-click dismiss is reinforced with a capture-phase
+// backstop (`useDismissOnOutsidePointer`). Radix's default listener is
+// bubble-phase, so any consumer that calls `e.stopPropagation()` on
+// `pointerdown` (e.g. weave's canvas) silently breaks dismiss. The wrapper
+// promotes Radix to controlled state and runs the backstop in parallel,
+// guaranteeing close even when bubble is swallowed.
+//
 // Exports:
-//   - `Popover` — root (= Radix `Root`).
+//   - `Popover` — root wrapper (always controlled open state internally).
 //   - `PopoverTrigger` — wrap the element that opens the popover (asChild).
 //   - `PopoverAnchor` — *separately* declare the positioning anchor. Useful
 //      when the click target is not the anchor (WI-017's rubber band drag —
@@ -17,11 +24,76 @@
 
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { motion, useReducedMotion } from "motion/react";
-import { forwardRef, type ReactNode } from "react";
+import {
+  createContext,
+  forwardRef,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "../cn.js";
+import { useDismissOnOutsidePointer } from "../lib/use-dismiss-on-outside-pointer.js";
 
-export const Popover = PopoverPrimitive.Root;
-export const PopoverTrigger = PopoverPrimitive.Trigger;
+// Context lets `PopoverTrigger` register its DOM node with the root wrapper
+// so the dismiss hook can exempt trigger presses from "outside".
+interface PopoverInternalContext {
+  readonly triggerRef: React.MutableRefObject<HTMLElement | null>;
+}
+const PopoverInternalContext = createContext<PopoverInternalContext | null>(null);
+
+export type PopoverProps = PopoverPrimitive.PopoverProps;
+
+export function Popover({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
+  ...rest
+}: PopoverProps): ReactNode {
+  const [internalOpen, setInternalOpen] = useState(defaultOpen ?? false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen = useCallback(
+    (v: boolean) => {
+      if (!isControlled) setInternalOpen(v);
+      onOpenChange?.(v);
+    },
+    [isControlled, onOpenChange],
+  );
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const handleDismiss = useCallback(() => setOpen(false), [setOpen]);
+  useDismissOnOutsidePointer({ open, onDismiss: handleDismiss, triggerRef });
+  const ctx = useMemo<PopoverInternalContext>(() => ({ triggerRef }), []);
+  return (
+    <PopoverInternalContext.Provider value={ctx}>
+      <PopoverPrimitive.Root open={open} onOpenChange={setOpen} {...rest} />
+    </PopoverInternalContext.Provider>
+  );
+}
+
+export type PopoverTriggerProps = PopoverPrimitive.PopoverTriggerProps;
+
+export const PopoverTrigger = forwardRef<HTMLButtonElement, PopoverTriggerProps>(
+  function PopoverTrigger(props, ref) {
+    const ctx = useContext(PopoverInternalContext);
+    // Merge the consumer's ref + the internal triggerRef. Radix Trigger
+    // forwards `ref` to the rendered element (or its asChild slot).
+    const setRef = useCallback(
+      (node: HTMLButtonElement | null) => {
+        if (ctx !== null) ctx.triggerRef.current = node;
+        if (typeof ref === "function") ref(node);
+        else if (ref !== null && ref !== undefined) {
+          (ref as React.MutableRefObject<HTMLButtonElement | null>).current = node;
+        }
+      },
+      [ctx, ref],
+    );
+    return <PopoverPrimitive.Trigger ref={setRef} {...props} />;
+  },
+);
+
 export const PopoverAnchor = PopoverPrimitive.Anchor;
 export const PopoverClose = PopoverPrimitive.Close;
 

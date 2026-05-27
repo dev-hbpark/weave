@@ -35,6 +35,7 @@ import {
   useState,
 } from "react";
 import { cn } from "../cn.js";
+import { useDismissOnOutsidePointer } from "../lib/use-dismiss-on-outside-pointer.js";
 
 // ─── EyeDropper API typing (Chromium-only) ──────────────────────────────
 interface ColorSelectionResult {
@@ -424,6 +425,26 @@ export const ColorPicker = forwardRef<HTMLButtonElement, ColorPickerProps>(funct
   ref,
 ) {
   const [open, setOpen] = useState(false);
+  // DR-design-013 — capture-phase backstop so canvas presses that stop bubble-
+  // phase propagation still close the picker. `triggerRef` mirrors the
+  // forwarded ref so the hook can exempt clicks on the trigger itself.
+  const triggerRefInternal = useRef<HTMLElement | null>(null);
+  const setTriggerRef = useCallback(
+    (node: HTMLButtonElement | null) => {
+      triggerRefInternal.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref !== null && ref !== undefined) {
+        (ref as React.MutableRefObject<HTMLButtonElement | null>).current = node;
+      }
+    },
+    [ref],
+  );
+  const handleDismiss = useCallback(() => setOpen(false), []);
+  useDismissOnOutsidePointer({
+    open,
+    onDismiss: handleDismiss,
+    triggerRef: triggerRefInternal,
+  });
 
   // ── Mode + per-mode state ──
   // The mode is initialized once from the mount-time `value`. After that,
@@ -829,7 +850,7 @@ export const ColorPicker = forwardRef<HTMLButtonElement, ColorPickerProps>(funct
       <PopoverPrimitive.Trigger asChild>
         {children ?? (
           <button
-            ref={ref}
+            ref={setTriggerRef}
             type="button"
             aria-label={ariaLabel}
             disabled={disabled}

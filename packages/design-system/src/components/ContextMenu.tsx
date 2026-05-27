@@ -21,6 +21,13 @@ import { cn } from "../cn.js";
  *    </ContextMenuContent>
  *  </ContextMenu>
  *  ``` */
+// DR-design-013 — ContextMenu is intentionally not wrapped with the
+// capture-phase dismiss backstop: Radix's ContextMenu has no controlled
+// `open` prop, so we cannot programmatically close it. If the canvas's
+// `stopPropagation` ever surfaces an outside-click dismiss regression in
+// ContextMenu, the fix path is to dispatch a synthetic `Escape` keydown
+// from the backstop (Radix listens for Esc at the document level in capture
+// phase). Deferred — no user-reported symptom for ContextMenu today.
 export const ContextMenu = ContextMenuPrimitive.Root;
 export const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
 

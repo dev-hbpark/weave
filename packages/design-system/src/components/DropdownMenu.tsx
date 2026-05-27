@@ -1,10 +1,36 @@
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { type ReactNode } from "react";
+import { type ReactNode, useCallback, useRef, useState } from "react";
 import { cn } from "../cn.js";
+import { useDismissOnOutsidePointer } from "../lib/use-dismiss-on-outside-pointer.js";
 
 /** Trigger-based menu (button click → menu). Shares its visual surface with
- *  ContextMenu — same Aurora-glass tokens, same row treatment. */
-export const DropdownMenu = DropdownMenuPrimitive.Root;
+ *  ContextMenu — same Aurora-glass tokens, same row treatment.
+ *
+ *  DR-design-013 — Promoted to controlled state internally so a capture-
+ *  phase outside-pointer backstop runs alongside Radix's bubble-phase
+ *  detection. Without it, canvas presses that `stopPropagation` swallow
+ *  Radix's dismiss signal and the menu stays open. */
+export function DropdownMenu({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
+  ...rest
+}: DropdownMenuPrimitive.DropdownMenuProps): ReactNode {
+  const [internalOpen, setInternalOpen] = useState(defaultOpen ?? false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen = useCallback(
+    (v: boolean) => {
+      if (!isControlled) setInternalOpen(v);
+      onOpenChange?.(v);
+    },
+    [isControlled, onOpenChange],
+  );
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const handleDismiss = useCallback(() => setOpen(false), [setOpen]);
+  useDismissOnOutsidePointer({ open, onDismiss: handleDismiss, triggerRef });
+  return <DropdownMenuPrimitive.Root open={open} onOpenChange={setOpen} {...rest} />;
+}
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 
 export function DropdownMenuContent({
