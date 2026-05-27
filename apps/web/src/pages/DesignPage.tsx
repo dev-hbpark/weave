@@ -29,8 +29,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   HoverAffordanceLayer,
+  IconAlignBottom,
+  IconAlignHorizontalCenter,
+  IconAlignLeft,
+  IconAlignRight,
+  IconAlignTop,
+  IconAlignVerticalCenter,
   IconButton,
   IconCursor,
+  IconDistributeHorizontal,
+  IconDistributeVertical,
   IconHand,
   IconLayers,
   IconPlay,
@@ -69,6 +77,7 @@ import {
 } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
+import { computeAlignedFrames } from "../document/multi/align-ops.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import { useIsTextEditing } from "../document/clipboard/use-is-text-editing.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
@@ -101,11 +110,13 @@ import {
   editorCommandMetadata,
   type ItemAdderKind,
   type SelectionNavDir,
+  type MultiAlignOp,
   setFrameDeleter,
   setFrameDuplicator,
   setHoverFrameChildAdder,
   setItemAdder,
   setMediaSrcOpener,
+  setMultiAligner,
   setMultiDeleter,
   setPaletteOpener,
   setSelectionNavigator,
@@ -402,6 +413,29 @@ function FrameContextMenu({
  *  See `records/work-items/WI-028-collaborative-sync.md` § "Paused
  *  2026-05-25" for the trade-off discussion. */
 const SYNC_ENABLED = false;
+
+// Multi-selection align / distribute command id → Icon component. The
+// QuickActionBar's renderItem looks each id up here so the bar's icon
+// dispatch stays a single registry read instead of an 8-arm `switch`
+// (CODE_STRUCTURE_DESIGN_RULES Rule 6). Adding a 9th align op = add
+// the Icon component, then one Map entry here + the editor-hotkeys
+// command + the helper handler in align-ops.ts.
+const ALIGN_ICONS: ReadonlyMap<
+  string,
+  React.ForwardRefExoticComponent<
+    React.PropsWithoutRef<React.SVGAttributes<SVGSVGElement> & { readonly size?: number | string }> &
+      React.RefAttributes<SVGSVGElement>
+  >
+> = new Map([
+  ["multi.align-left", IconAlignLeft],
+  ["multi.align-horizontal-center", IconAlignHorizontalCenter],
+  ["multi.align-right", IconAlignRight],
+  ["multi.align-top", IconAlignTop],
+  ["multi.align-vertical-center", IconAlignVerticalCenter],
+  ["multi.align-bottom", IconAlignBottom],
+  ["multi.distribute-horizontal", IconDistributeHorizontal],
+  ["multi.distribute-vertical", IconDistributeVertical],
+]);
 
 export function DesignPage() {
   return <DesignPageBody />;
@@ -1188,6 +1222,25 @@ function DesignPageBody() {
   // poll loop.
   const isTextEditing = useIsTextEditing();
 
+  // Multi-selection same-parent invariant — drives the enabledWhen
+  // for every `multi.align-*` / `multi.distribute-*` command. v1 align
+  // is same-parent-only; the QuickActionBar greys the buttons out
+  // (and hotkeys decline to fire) when the selection straddles parents
+  // so the user gets a clear "this combination isn't supported" signal
+  // instead of a wrong-coordinate-space operation.
+  const multiSameParent = useMemo(() => {
+    if (selectedIds.size < 2) return true;
+    let firstParentId: string | undefined;
+    for (const id of selectedIds) {
+      const found = findParentAndIndex(docInAgocraft, id);
+      if (found === undefined) return false;
+      const pid = String(found.parent.id);
+      if (firstParentId === undefined) firstParentId = pid;
+      else if (pid !== firstParentId) return false;
+    }
+    return true;
+  }, [selectedIds, docInAgocraft]);
+
   const commandContext = useMemo<Readonly<Record<string, unknown>>>(
     () => ({
       canUndo,
@@ -1213,6 +1266,8 @@ function DesignPageBody() {
       // surface that reads `commandContext` (ContextMenu Paste row,
       // future CommandButtons) greys out while Lexical owns focus.
       isTextEditing,
+      // multi.align-* / multi.distribute-* enabledWhen gate.
+      multiSameParent,
     }),
     [
       canUndo,
@@ -1225,6 +1280,7 @@ function DesignPageBody() {
       hoverContext.hoveredRole,
       clipboardCommands.hasItems,
       isTextEditing,
+      multiSameParent,
     ],
   );
 
@@ -1351,6 +1407,70 @@ function DesignPageBody() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- removeItem
     // / selectFrame are stable from useDesign / useSelection.
+  }, []);
+  // Multi-selection align / distribute — single slot dispatched by the
+  // 8 `multi.align-*` / `multi.distribute-*` commands. Steps:
+  //   1. Read the live selected ids + doc through refs (selection /
+  //      doc swap on every commit; capturing them in a fresh closure
+  //      each render would re-register the slot constantly). The doc
+  //      ref `docInAgocraftRef` is already established earlier (for
+  //      the z-order capability adapter) — we reuse it here.
+  //   2. Build the `{ id, frame }[]` input from each item's live frame.
+  //      Anything that is not a domain item with a `frame` attribute is
+  //      skipped — the same-parent gate above prevents most weirdness
+  //      but the helper still needs uniform shapes.
+  //   3. Pipe through `computeAlignedFrames(items, op)` — pure math.
+  //   4. Dispatch `weave.items.resizeMulti` so the batch lands as one
+  //      Change → one undo step (instead of N entries from looping
+  //      `weave.item.update`).
+  // The hotkey path bypasses each command's `enabledWhen`, so the
+  // multiAligner slot has to enforce the same-parent invariant itself
+  // — otherwise Alt+A on a cross-parent multi-selection would feed
+  // mixed-coordinate-space frames into `computeAlignedFrames` and
+  // produce visually wrong results. Captured via ref so the closure
+  // stays mount-stable while the value moves with each commit.
+  const multiSameParentRef = useRef(multiSameParent);
+  multiSameParentRef.current = multiSameParent;
+  useEffect(() => {
+    return setMultiAligner((op: MultiAlignOp) => {
+      const ids = Array.from(selectedIdsRef.current);
+      if (ids.length < 2) return;
+      if (!multiSameParentRef.current) return;
+      const doc = docInAgocraftRef.current;
+      const inputs: ReadonlyArray<{
+        readonly id: string;
+        readonly frame: { x: number; y: number; width: number; height: number };
+      }> = ids.flatMap((id) => {
+        const item = findItemDeep(doc, id);
+        if (item === undefined) return [];
+        const f = (item.attrs as { frame?: ItemFrame }).frame;
+        if (f === undefined) return [];
+        return [
+          { id, frame: { x: f.x, y: f.y, width: f.width, height: f.height } },
+        ];
+      });
+      if (inputs.length < 2) return;
+      const out = computeAlignedFrames(inputs, op);
+      // Resize batch — emit only items whose frame actually changed so
+      // history stays clean (no zero-delta entries for already-aligned
+      // input). Approx-equal guard tolerates the FP drift from
+      // bbox-center math (`(min + max) / 2 - w / 2`).
+      const updates = out.flatMap((o, i) => {
+        const prev = inputs[i]!.frame;
+        const moved =
+          Math.abs(prev.x - o.frame.x) > 1e-9 ||
+          Math.abs(prev.y - o.frame.y) > 1e-9 ||
+          Math.abs(prev.width - o.frame.width) > 1e-9 ||
+          Math.abs(prev.height - o.frame.height) > 1e-9;
+        if (!moved) return [];
+        return [{ itemId: o.id, frame: o.frame }];
+      });
+      if (updates.length === 0) return;
+      editor.exec("weave.items.resizeMulti", { updates });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs
+    // capture the live selection + doc, so this effect only needs to
+    // (re)bind the slot once. `editor` is mount-stable.
   }, []);
   useEffect(() => {
     return setFrameDuplicator((frameId) => {
@@ -2740,6 +2860,11 @@ function QuickActionBarAnchored({
     >
       <QuickActionBar
         data-testid="hover-quick-actions"
+        // Bumped from the default 6 — a multi-selection bar now lists
+        // 8 align/distribute commands plus `multi.delete` (9 total)
+        // and the single-frame bar lists 5. 12 covers both with
+        // headroom; anything beyond that should move to a submenu.
+        maxItems={12}
         renderItem={(id) => {
           // WI-036 follow-up — the `+` button doubles as a hover-
           // open submenu listing every add option (frame / text /
@@ -2749,6 +2874,21 @@ function QuickActionBarAnchored({
           // without learning a separate path.
           if (id === "frame.addChild") {
             return <FrameAddSubmenu frameId={anchor.frameId} onInsert={onInsertInFrame} />;
+          }
+          // Multi-selection align / distribute — each id maps to a
+          // dedicated Icon component (project rule: no emoji glyphs
+          // in UI). The lookup uses a Map registry instead of a
+          // switch / if-else chain so adding a 9th alignment op is
+          // one entry here + the editor-hotkeys command + the helper
+          // handler. (CODE_STRUCTURE_DESIGN_RULES Rule 6.)
+          const alignIcon = ALIGN_ICONS.get(id);
+          if (alignIcon !== undefined) {
+            const IconComp = alignIcon;
+            return (
+              <CommandIconButton commandId={id} size="sm">
+                <IconComp size={14} />
+              </CommandIconButton>
+            );
           }
           const glyph =
             id === "frame.delete" || id === "multi.delete"

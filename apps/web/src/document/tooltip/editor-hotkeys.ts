@@ -88,6 +88,30 @@ export function setMultiDeleter(fn: () => void): () => void {
   };
 }
 
+/** Multi-selection align / distribute dispatch slot. The 8 `multi.align.*`
+ *  / `multi.distribute.*` commands all route through one slot — the
+ *  host owns the live selection + doc and computes the new frames via
+ *  the pure `computeAlignedFrames` helper, then dispatches the existing
+ *  `weave.items.resizeMulti` batch command so the operation lands as a
+ *  single undoable Change. Op name is a closed union matching the
+ *  `AlignOp` type in `document/multi/align-ops.ts`. */
+export type MultiAlignOp =
+  | "align-left"
+  | "align-horizontal-center"
+  | "align-right"
+  | "align-top"
+  | "align-vertical-center"
+  | "align-bottom"
+  | "distribute-horizontal"
+  | "distribute-vertical";
+let multiAligner: ((op: MultiAlignOp) => void) | undefined;
+export function setMultiAligner(fn: (op: MultiAlignOp) => void): () => void {
+  multiAligner = fn;
+  return () => {
+    if (multiAligner === fn) multiAligner = undefined;
+  };
+}
+
 let paletteOpener: (() => void) | undefined;
 
 /** Host registration — DesignPage calls this so the `palette.open`
@@ -568,7 +592,155 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       // Dispatched via multiDeleter slot.
     },
   },
+  // Multi-selection align / distribute. The 8 ids match `AlignOp`
+  // exactly so the host slot can pass the id through to the
+  // `computeAlignedFrames` registry without translation. `enabledWhen`
+  // gates the same-parent invariant: the host's commandContext sets
+  // `multiSameParent: true` only when every selected id shares one
+  // parent frame in the doc tree, so the QuickActionBar greys out the
+  // buttons (and hotkeys decline to fire) when the selection straddles
+  // parents — v1 contract; cross-parent align is a follow-up.
+  //
+  // Hotkeys follow Figma's defaults (Alt+letter) for the 6 align ops.
+  // Distribute uses Alt+Shift+H/V to avoid colliding with the
+  // pre-existing Mod+Alt+V "paste special" binding. Counts ≥ 2 are
+  // sufficient for align (a single item is treated as already-aligned
+  // by the helper); distribute needs ≥ 3 (math degenerates with two).
+  {
+    id: "multi.align-left",
+    label: { en: "Align left", ko: "왼쪽 정렬" },
+    description: {
+      en: "Snap every selected item's left edge to the leftmost edge.",
+      ko: "선택한 항목의 왼쪽 모서리를 가장 왼쪽 모서리에 맞춥니다.",
+    },
+    hotkey: { keys: "⌥ + A", binding: "Alt+A", scope: "editor" },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      multiAligner?.("align-left");
+    },
+  },
+  {
+    id: "multi.align-horizontal-center",
+    label: { en: "Align horizontal centers", ko: "가로 가운데 정렬" },
+    description: {
+      en: "Center every selected item about the selection's horizontal midpoint.",
+      ko: "선택한 항목을 선택 영역의 가로 중심으로 정렬합니다.",
+    },
+    hotkey: { keys: "⌥ + H", binding: "Alt+H", scope: "editor" },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      multiAligner?.("align-horizontal-center");
+    },
+  },
+  {
+    id: "multi.align-right",
+    label: { en: "Align right", ko: "오른쪽 정렬" },
+    description: {
+      en: "Snap every selected item's right edge to the rightmost edge.",
+      ko: "선택한 항목의 오른쪽 모서리를 가장 오른쪽 모서리에 맞춥니다.",
+    },
+    hotkey: { keys: "⌥ + D", binding: "Alt+D", scope: "editor" },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      multiAligner?.("align-right");
+    },
+  },
+  {
+    id: "multi.align-top",
+    label: { en: "Align top", ko: "위쪽 정렬" },
+    description: {
+      en: "Snap every selected item's top edge to the topmost edge.",
+      ko: "선택한 항목의 위쪽 모서리를 가장 위쪽 모서리에 맞춥니다.",
+    },
+    hotkey: { keys: "⌥ + W", binding: "Alt+W", scope: "editor" },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      multiAligner?.("align-top");
+    },
+  },
+  {
+    id: "multi.align-vertical-center",
+    label: { en: "Align vertical centers", ko: "세로 가운데 정렬" },
+    description: {
+      en: "Center every selected item about the selection's vertical midpoint.",
+      ko: "선택한 항목을 선택 영역의 세로 중심으로 정렬합니다.",
+    },
+    hotkey: { keys: "⌥ + V", binding: "Alt+V", scope: "editor" },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      multiAligner?.("align-vertical-center");
+    },
+  },
+  {
+    id: "multi.align-bottom",
+    label: { en: "Align bottom", ko: "아래쪽 정렬" },
+    description: {
+      en: "Snap every selected item's bottom edge to the bottommost edge.",
+      ko: "선택한 항목의 아래쪽 모서리를 가장 아래쪽 모서리에 맞춥니다.",
+    },
+    hotkey: { keys: "⌥ + S", binding: "Alt+S", scope: "editor" },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      multiAligner?.("align-bottom");
+    },
+  },
+  {
+    id: "multi.distribute-horizontal",
+    label: { en: "Distribute horizontal spacing", ko: "가로 같은 간격" },
+    description: {
+      en: "Equalize the horizontal gap between adjacent items along the x axis.",
+      ko: "선택한 항목들 사이의 가로 간격을 같게 만듭니다.",
+    },
+    hotkey: { keys: "⌥ + ⇧ + H", binding: "Alt+Shift+H", scope: "editor" },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: (ctx) => multiAlignEnabled(ctx) && (ctx.selectionCount as number) >= 3,
+    action: () => {
+      multiAligner?.("distribute-horizontal");
+    },
+  },
+  {
+    id: "multi.distribute-vertical",
+    label: { en: "Distribute vertical spacing", ko: "세로 같은 간격" },
+    description: {
+      en: "Equalize the vertical gap between adjacent items along the y axis.",
+      ko: "선택한 항목들 사이의 세로 간격을 같게 만듭니다.",
+    },
+    hotkey: { keys: "⌥ + ⇧ + V", binding: "Alt+Shift+V", scope: "editor" },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: (ctx) => multiAlignEnabled(ctx) && (ctx.selectionCount as number) >= 3,
+    action: () => {
+      multiAligner?.("distribute-vertical");
+    },
+  },
 ];
+
+/** Shared enabledWhen predicate for the 6 align ops. Reused by the
+ *  distribute ops (which add a `>= 3` count gate on top). The host's
+ *  commandContext is expected to expose:
+ *   • `selectionCount: number` — size of the current selection
+ *   • `multiSameParent: boolean` — true when every selected id shares
+ *     one parent frame. v1 align is same-parent-only, so a `false`
+ *     value disables the buttons + declines the hotkey. */
+function multiAlignEnabled(ctx: Readonly<Record<string, unknown>>): boolean {
+  const count = ctx.selectionCount;
+  if (typeof count !== "number" || count < 2) return false;
+  if (ctx.multiSameParent === false) return false;
+  return true;
+}
 
 /** Bridge between dispatchEditorCommand and host-supplied action slots.
  *  Called from dispatchEditorCommand for command ids whose static
