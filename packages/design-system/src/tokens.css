@@ -113,9 +113,10 @@
 
   /* WI-040 Phase 2 / DR-design-016 — HoverAffordanceLayer 3-tier.
      같은 hue (--accent) 안에서 stroke style + glow 로 위계 분리:
-       hovered     — focal 시각 신호 (solid + glow)
-       descendants — focal 과 동일 outline, glow 없음
-                     (호버 효과가 자식 트리 전체로 확장됨을 표시)
+       hovered     — focal (2px solid + glow)
+       descendants — focal 과 동일 hue+weight, dashed + glow 없음
+                     (호버 효과가 자식 트리로 확장됨을 표시하면서도
+                      focal 의 primary-target 위계는 유지)
        parent      — 한 단계 위 부모 강조 (thin solid + 내부 tint)
      2026-05-27 정정: sibling 토큰 폐기 — sibling 시각은 사용자 명시로
      제거. 호버 효과는 자식 트리로만 확장되고 형제로는 가지 않는다. */

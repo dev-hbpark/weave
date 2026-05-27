@@ -7,9 +7,10 @@
 //   • hovered     — the item the pointer is directly over
 //                   (2px solid accent + glow — focal emphasis)
 //   • descendants — every Item inside the hovered item's own subtree
-//                   (2px solid accent, no glow — same outline as the
-//                   focal item to signal "you're also targeting these",
-//                   no glow so nested children don't pile halos)
+//                   (2px DASHED accent, no glow — same hue+weight as
+//                   the focal item but dashed so the focal hovered
+//                   keeps the primary-target hierarchy; glow dropped
+//                   so nested children don't pile halos)
 //   • parent      — the direct parent of the hovered item, one level up
 //                   (1px solid, low-chroma accent + 4% inset tint)
 //
@@ -190,12 +191,15 @@ export function HoverAffordanceLayer({
           key={rect.id ?? `descendant-${i}-${rect.x}x${rect.y}`}
           data-hover-tier="descendant"
           style={{
-            // Same outline as the focal tier so descendants read as
-            // "part of the same hover target". The glow is dropped on
-            // purpose — stacking glows on nested children would create
-            // a halo soup; the focal tier owns the single glow.
+            // Same accent + weight as the focal tier so descendants
+            // read as "part of the same hover target", but DASHED so
+            // the focal hovered (solid + glow) keeps its visual
+            // hierarchy as the primary target. User-confirmed
+            // 2026-05-27. Glow is dropped on purpose — stacking glows
+            // on nested children would create a halo soup; the focal
+            // tier owns the single glow.
             ...tierStyle(rect, host),
-            outline: "2px solid var(--hover-affordance-stroke-hovered)",
+            outline: "2px dashed var(--hover-affordance-stroke-hovered)",
             outlineOffset: "0px",
           }}
         />
