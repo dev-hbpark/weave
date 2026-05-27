@@ -32,6 +32,16 @@ export interface QuickActionBarProps {
   readonly renderItem: (commandId: string) => ReactNode;
   /** Render when zero commands match. Default: render nothing. */
   readonly emptyFallback?: ReactNode;
+  /** Drop these ids before rendering. Use when a command is registered
+   *  for hotkey / palette / future surfaces but should NOT appear as
+   *  a separate inline button on the bar (e.g. a set of fine-grained
+   *  ops that are surfaced via one submenu button instead). */
+  readonly excludeIds?: ReadonlySet<string>;
+  /** Pin these ids to the END of the visible list, preserving their
+   *  relative order. Use to anchor "destructive" actions like delete
+   *  (✕) on the rightmost edge regardless of registry order. Ids that
+   *  aren't present after `excludeIds` filtering are silently ignored. */
+  readonly pinToEndIds?: ReadonlySet<string>;
   /** WI-036 / DR-design-012 — hover target union. When true, the root
    *  div carries `data-quick-actions-bar="true"` so a host's hover
    *  tracker can treat pointer-over-the-bar as a continuation of the
@@ -50,6 +60,8 @@ export function QuickActionBar({
   maxItems = 6,
   renderItem,
   emptyFallback = null,
+  excludeIds,
+  pinToEndIds,
   hoverTargetUnion = true,
   className,
   "data-testid": testid = "quick-action-bar",
@@ -68,8 +80,26 @@ export function QuickActionBar({
         ? lister.call(host.registry, ctx)
         : host.registry.list().filter((m) => m.visibleWhen !== undefined && m.visibleWhen(ctx));
     const filtered = category !== undefined ? all.filter((m) => m.category === category) : all;
-    return filtered.slice(0, maxItems).map((m) => m.id);
-  }, [host, category, contextOverride, maxItems]);
+    let ids = filtered.map((m) => m.id);
+    if (excludeIds !== undefined) {
+      ids = ids.filter((id) => !excludeIds.has(id));
+    }
+    if (pinToEndIds !== undefined) {
+      // Stable partition — non-pinned ids keep their registry order,
+      // pinned ids are appended in registry order. So a host can pin
+      // multiple ids (e.g. both `frame.delete` AND `multi.delete`) and
+      // each ends up rightmost in the context where it's visible
+      // without the host having to know which one is active.
+      const head: string[] = [];
+      const tail: string[] = [];
+      for (const id of ids) {
+        if (pinToEndIds.has(id)) tail.push(id);
+        else head.push(id);
+      }
+      ids = [...head, ...tail];
+    }
+    return ids.slice(0, maxItems);
+  }, [host, category, contextOverride, maxItems, excludeIds, pinToEndIds]);
 
   if (host === null) return null;
   if (commandIds.length === 0) return emptyFallback;
