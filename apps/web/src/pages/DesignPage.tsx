@@ -128,6 +128,7 @@ import {
   useEditorHotkeys,
   type ZOrderDir,
 } from "../document/tooltip/editor-hotkeys.js";
+import { MigrationResultBanner } from "../document/MigrationResultBanner.js";
 import { useMigrateInlineMedia } from "../document/use-migrate-inline-media.js";
 import { useWeaveEditor } from "../document/use-weave-editor.js";
 import { registerZOrderAdapters } from "../document/zorder/register.js";
@@ -921,8 +922,12 @@ function DesignPageBody() {
   // walks the loaded design for `data:` URL image attrs.src, uploads
   // each to `/api/resources`, then POSTs a NEW design entity carrying
   // the cloud URLs. The source design (with data URLs) stays untouched
-  // on the server. localStorage is not involved on either side.
-  useMigrateInlineMedia({ design, document: docInAgocraft });
+  // on the server. localStorage is not involved on either side. The
+  // returned status flows into MigrationResultBanner below — done /
+  // failed terminals surface a non-blocking announcement; idle and
+  // running are intentionally suppressed so quick migrations do not
+  // flash.
+  const migrationStatus = useMigrateInlineMedia({ design, document: docInAgocraft });
 
   // WI-030 — Slide preset picker open state. The Add menu's "슬라이드" item
   // opens this dialog instead of immediately inserting a blank slide.
@@ -1994,6 +1999,7 @@ function DesignPageBody() {
                           <div className="absolute inset-x-0 top-12 z-30 px-4 pt-2 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
                             <TextV1LaunchBanner />
                             <FigmaSelectionLaunchBanner />
+                            <MigrationResultBanner status={migrationStatus} />
                           </div>
 
                           {/* LS-miss cloud-fetch spinner. Covers the

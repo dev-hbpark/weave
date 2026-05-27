@@ -21,7 +21,7 @@
 //
 // localStorage is not touched anywhere in this flow.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import { createSerializer } from "@agocraft/core";
 import { postDesignBlobAsNew, uploadResourceCloud } from "./cloud-sync.js";
@@ -49,6 +49,27 @@ export interface UseMigrateInlineMediaDeps {
   readonly document: AgocraftDocument;
 }
 
+/** Lifecycle of the retro-active migration, surfaced to the host so a
+ *  banner / toast can announce the outcome instead of relying on the
+ *  dev-only console log. `idle` covers both the "nothing to migrate"
+ *  case and the pre-scan window, so hosts can render a banner only
+ *  for the three terminal states they care about (`done`, `failed`,
+ *  `running`). */
+export type MigrationStatus =
+  | { readonly kind: "idle" }
+  | { readonly kind: "running"; readonly total: number }
+  | {
+      readonly kind: "done";
+      readonly uploaded: number;
+      readonly total: number;
+      readonly newDesignId: string;
+    }
+  | {
+      readonly kind: "failed";
+      readonly uploaded: number;
+      readonly total: number;
+    };
+
 /** Runs the migration exactly once per editor mount, but only after the
  *  document has settled to its real shape.
  *
@@ -66,10 +87,11 @@ export interface UseMigrateInlineMediaDeps {
  *  After claim, the effect refuses to re-run even on subsequent doc
  *  mutations: new uploads added through MediaSrcDialog are handled by
  *  the live `uploadResourceCloud` path at the time they're picked. */
-export function useMigrateInlineMedia(deps: UseMigrateInlineMediaDeps): void {
+export function useMigrateInlineMedia(deps: UseMigrateInlineMediaDeps): MigrationStatus {
   const claimedRef = useRef(false);
   const designRef = useRef(deps.design);
   designRef.current = deps.design;
+  const [status, setStatus] = useState<MigrationStatus>({ kind: "idle" });
 
   useEffect(() => {
     if (claimedRef.current) return undefined;
@@ -80,6 +102,7 @@ export function useMigrateInlineMedia(deps: UseMigrateInlineMediaDeps): void {
     if (targets.length === 0) return undefined;
 
     let cancelled = false;
+    setStatus({ kind: "running", total: targets.length });
     void (async () => {
       const urlMap = new Map<string, string>();
       for (const t of targets) {
@@ -90,7 +113,14 @@ export function useMigrateInlineMedia(deps: UseMigrateInlineMediaDeps): void {
         if (cloud === null) continue; // partial migration is allowed
         urlMap.set(t.itemId, cloud.src);
       }
-      if (cancelled || urlMap.size === 0) return;
+      if (cancelled) return;
+      if (urlMap.size === 0) {
+        setStatus({ kind: "failed", uploaded: 0, total: targets.length });
+        if (import.meta.env.DEV) {
+          console.warn("[migrate-inline-media] every upload failed; source untouched");
+        }
+        return;
+      }
 
       const source = designRef.current;
       const docBlob = serializer.toJSON(doc);
@@ -112,21 +142,33 @@ export function useMigrateInlineMedia(deps: UseMigrateInlineMediaDeps): void {
         },
       };
       const result = await postDesignBlobAsNew(newBlob);
-      if (import.meta.env.DEV) {
-        if (result === null) {
-          console.warn(
-            "[migrate-inline-media] post failed; source design untouched",
-            { uploaded: urlMap.size, targets: targets.length },
-          );
-        } else {
-          console.info(
-            `[migrate-inline-media] migrated ${urlMap.size}/${targets.length} image(s) → new design ${result}`,
-          );
+      if (cancelled) return;
+      if (result === null) {
+        setStatus({ kind: "failed", uploaded: urlMap.size, total: targets.length });
+        if (import.meta.env.DEV) {
+          console.warn("[migrate-inline-media] post failed; source design untouched", {
+            uploaded: urlMap.size,
+            targets: targets.length,
+          });
         }
+        return;
+      }
+      setStatus({
+        kind: "done",
+        uploaded: urlMap.size,
+        total: targets.length,
+        newDesignId: result,
+      });
+      if (import.meta.env.DEV) {
+        console.info(
+          `[migrate-inline-media] migrated ${urlMap.size}/${targets.length} image(s) → new design ${result}`,
+        );
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [deps.document]);
+
+  return status;
 }
