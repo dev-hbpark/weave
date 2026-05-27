@@ -121,11 +121,8 @@ export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(
       // textContent (Enter is preventDefaulted, so there are no breaks
       // to worry about, and `innerText` triggers a layout flush we'd
       // rather avoid on every commit).
-      const raw = el === null
-        ? ""
-        : multiline
-          ? (el as HTMLElement).innerText
-          : (el.textContent ?? "");
+      const raw =
+        el === null ? "" : multiline ? (el as HTMLElement).innerText : (el.textContent ?? "");
       const next = raw.trim();
       if (next !== value) {
         onCommit(next);
@@ -169,7 +166,9 @@ export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(
     function handleDoubleClick(): void {
       if (typeof window !== "undefined") {
         (window as unknown as Record<string, unknown>).__editableDblClick =
-          (((window as unknown as Record<string, unknown>).__editableDblClick as number | undefined) ?? 0) + 1;
+          (((window as unknown as Record<string, unknown>).__editableDblClick as
+            | number
+            | undefined) ?? 0) + 1;
       }
       if (clickToEdit !== "double") return;
       setIsEditing(true);

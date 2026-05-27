@@ -97,7 +97,10 @@ export function DropdownMenuItem({
       )}
     >
       {icon !== undefined ? (
-        <span aria-hidden className="mt-0.5 inline-flex w-4 h-4 items-center justify-center text-[color:var(--text-overlay-soft)]">
+        <span
+          aria-hidden
+          className="mt-0.5 inline-flex w-4 h-4 items-center justify-center text-[color:var(--text-overlay-soft)]"
+        >
           {icon}
         </span>
       ) : null}
@@ -119,10 +122,7 @@ export function DropdownMenuItem({
 export function DropdownMenuSeparator({ className }: { readonly className?: string }) {
   return (
     <DropdownMenuPrimitive.Separator
-      className={cn(
-        "h-px my-1 bg-[color:var(--surface-overlay-border)] -mx-1",
-        className,
-      )}
+      className={cn("h-px my-1 bg-[color:var(--surface-overlay-border)] -mx-1", className)}
     />
   );
 }

@@ -5,7 +5,7 @@
 // Text-edit mode disables the hotkey via `commandContext.isTextEditing`
 // (same guard as A3 keyboard nav).
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {

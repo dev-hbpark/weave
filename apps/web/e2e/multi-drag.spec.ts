@@ -5,7 +5,7 @@
 // frame that's NOT in the selection collapses to single-select and drags
 // only that one.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -19,16 +19,12 @@ async function selectedIds(page: Page): Promise<string[]> {
         itemSelection: { items: () => ReadonlyArray<unknown> };
       };
     };
-    return (w.__weaveVm?.itemSelection.items() ?? [])
-      .map((x) => String(x))
-      .sort();
+    return (w.__weaveVm?.itemSelection.items() ?? []).map((x) => String(x)).sort();
   });
 }
 
 /** Read each frame's (x, y) ratio from the doc, keyed by id. */
-async function framePositions(
-  page: Page,
-): Promise<Record<string, { x: number; y: number }>> {
+async function framePositions(page: Page): Promise<Record<string, { x: number; y: number }>> {
   return await page.evaluate(() => {
     type Ch = { id: unknown; attrs: { frame?: { x: number; y: number } } };
     const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<Ch> } } };
@@ -124,9 +120,7 @@ test("marquee → drag one selected frame → all selected frames move by the sa
   expect(Math.abs(dy0 - dy1)).toBeLessThan(0.005);
 });
 
-test("pressing an unselected frame collapses selection to that frame", async ({
-  page,
-}) => {
+test("pressing an unselected frame collapses selection to that frame", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Multi-Drag-B" });
 

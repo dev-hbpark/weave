@@ -9,10 +9,7 @@ import { designIndexKey, designKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
 import { isValidId } from "../_lib/validate.js";
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-): Promise<void> {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!assertKvAvailable(res)) return;
   const idParam = req.query.id;
   const id = Array.isArray(idParam) ? idParam[0] : idParam;

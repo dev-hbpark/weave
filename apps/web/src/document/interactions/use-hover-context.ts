@@ -95,10 +95,11 @@ function readHoverInfo(target: EventTarget | null): HoverContext {
         kind = k;
       }
     }
-    const id = el.getAttribute("data-frame-id")
-      ?? el.getAttribute("data-shape-id")
-      ?? el.getAttribute("data-hotspot-id")
-      ?? value;
+    const id =
+      el.getAttribute("data-frame-id") ??
+      el.getAttribute("data-shape-id") ??
+      el.getAttribute("data-hotspot-id") ??
+      value;
     const role = el.getAttribute("data-hover-role") ?? probe.kind;
     return { hoveredKind: kind, hoveredId: id ?? undefined, hoveredRole: role };
   }
@@ -115,9 +116,7 @@ const HOVER_GRACE_MS = 200;
  *  context as React state so re-renders happen on transitions. Designed
  *  to be cheap: one listener on the host, no per-element wiring,
  *  deduped state writes (no re-render when the kind/id are unchanged). */
-export function useHoverContext(
-  hostRef: { readonly current: HTMLElement | null },
-): HoverContext {
+export function useHoverContext(hostRef: { readonly current: HTMLElement | null }): HoverContext {
   const [ctx, setCtx] = useState<HoverContext>(EMPTY);
   const lastRef = useRef<HoverContext>(EMPTY);
   const graceTimerRef = useRef<number | null>(null);
@@ -136,10 +135,11 @@ export function useHoverContext(
     const update = (next: HoverContext): void => {
       const prev = lastRef.current;
       if (
-        prev.hoveredKind === next.hoveredKind
-        && prev.hoveredId === next.hoveredId
-        && prev.hoveredRole === next.hoveredRole
-      ) return;
+        prev.hoveredKind === next.hoveredKind &&
+        prev.hoveredId === next.hoveredId &&
+        prev.hoveredRole === next.hoveredRole
+      )
+        return;
       lastRef.current = next;
       setCtx(next);
     };
@@ -158,8 +158,7 @@ export function useHoverContext(
       if (info.hoveredKind === "none") {
         const t = e.target;
         const insideHost = t instanceof Node ? host.contains(t) : false;
-        const onBar =
-          t instanceof Element ? t.closest("[data-quick-actions-bar]") !== null : false;
+        const onBar = t instanceof Element ? t.closest("[data-quick-actions-bar]") !== null : false;
         if (!insideHost && !onBar) {
           // Mouse left both the canvas host and the bar — start the
           // grace window the same way `pointerleave` would.

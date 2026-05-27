@@ -65,7 +65,10 @@ test("editor.exec reparent moves an item between two root frames + visual positi
   });
   // Locate the child under parentB (the most recently added frame).
   const childInfo = await page.evaluate((bid) => {
-    interface Node { readonly id: string | number; readonly children: ReadonlyArray<Node>; }
+    interface Node {
+      readonly id: string | number;
+      readonly children: ReadonlyArray<Node>;
+    }
     type Doc = { root: Node };
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     if (doc === undefined) return null;

@@ -6,12 +6,7 @@
 import { forwardRef } from "react";
 import { cn } from "../cn.js";
 
-export type DashPattern =
-  | "solid"
-  | "dashed"
-  | "dotted"
-  | "dash-dot"
-  | "long-dash";
+export type DashPattern = "solid" | "dashed" | "dotted" | "dash-dot" | "long-dash";
 
 export interface DashPatternPickerProps {
   readonly value: DashPattern;
@@ -24,27 +19,29 @@ export interface DashPatternPickerProps {
  *  to compose StrokeSpec.dashArray. */
 export function dashPatternToArray(p: DashPattern): ReadonlyArray<number> {
   switch (p) {
-    case "solid":    return [];
-    case "dashed":   return [6, 4];
-    case "dotted":   return [1, 3];
-    case "dash-dot": return [6, 3, 1, 3];
-    case "long-dash":return [12, 6];
+    case "solid":
+      return [];
+    case "dashed":
+      return [6, 4];
+    case "dotted":
+      return [1, 3];
+    case "dash-dot":
+      return [6, 3, 1, 3];
+    case "long-dash":
+      return [12, 6];
   }
 }
 
 const ALL_PATTERNS: ReadonlyArray<{ readonly value: DashPattern; readonly label: string }> = [
-  { value: "solid",     label: "Solid" },
-  { value: "dashed",    label: "Dashed" },
-  { value: "dotted",    label: "Dotted" },
-  { value: "dash-dot",  label: "Dash-dot" },
+  { value: "solid", label: "Solid" },
+  { value: "dashed", label: "Dashed" },
+  { value: "dotted", label: "Dotted" },
+  { value: "dash-dot", label: "Dash-dot" },
   { value: "long-dash", label: "Long dash" },
 ];
 
 export const DashPatternPicker = forwardRef<HTMLDivElement, DashPatternPickerProps>(
-  function DashPatternPicker(
-    { value, onValueChange, "aria-label": ariaLabel, className },
-    ref,
-  ) {
+  function DashPatternPicker({ value, onValueChange, "aria-label": ariaLabel, className }, ref) {
     return (
       <div
         ref={ref}
@@ -85,15 +82,9 @@ export const DashPatternPicker = forwardRef<HTMLDivElement, DashPatternPickerPro
                   y1={3}
                   x2={21}
                   y2={3}
-                  stroke={
-                    pressed
-                      ? "var(--accent)"
-                      : "var(--text-overlay-soft)"
-                  }
+                  stroke={pressed ? "var(--accent)" : "var(--text-overlay-soft)"}
                   strokeWidth={1.75}
-                  strokeDasharray={
-                    dashPatternToArray(p.value).join(" ") || undefined
-                  }
+                  strokeDasharray={dashPatternToArray(p.value).join(" ") || undefined}
                   strokeLinecap="round"
                 />
               </svg>

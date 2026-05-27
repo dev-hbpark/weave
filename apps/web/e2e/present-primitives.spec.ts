@@ -21,9 +21,7 @@ test.beforeEach(async ({ page }) => {
 // (frame 안의 shape primitive) 인데 renderer 가 frame 전용 경로 누락 —
 // PresentFrameTree 의 update 가 별도 PR. 그때 unskip + frame paradigm
 // 시나리오로 재작성.
-test.skip("shape nested inside a slide is visible in present mode", async ({
-  page,
-}) => {
+test.skip("shape nested inside a slide is visible in present mode", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const id = await prepareDesign(page, { flavor: "mixed", title: "P-A" });
   await addFrame(page, "slide");
@@ -76,9 +74,7 @@ test.skip("shape nested inside a slide is visible in present mode", async ({
         };
       };
     };
-    const slide = w.__weaveDoc?.root.children.find(
-      (c) => String(c.id) === parentId,
-    );
+    const slide = w.__weaveDoc?.root.children.find((c) => String(c.id) === parentId);
     return slide?.children.filter((c) => c.kind === "shape").length ?? 0;
   }, slideId);
   expect(nested).toBe(1);
@@ -88,17 +84,13 @@ test.skip("shape nested inside a slide is visible in present mode", async ({
 
   // The nested shape renders inside its parent frame's scene body via
   // PresentFrameTree.
-  await expect(
-    page.locator("[data-testid='present-primitive'][data-kind='shape']"),
-  ).toHaveCount(1);
+  await expect(page.locator("[data-testid='present-primitive'][data-kind='shape']")).toHaveCount(1);
 });
 
 // WI-032 Phase 3c — design-layer rendering 경로가 frame kind 와 image
 // primitive 의 조합을 PresentFrameTree 가 surface 하지 않음. 같은 path
 // update 후 unskip.
-test.skip("image at the design root is visible in the design-layer scene", async ({
-  page,
-}) => {
+test.skip("image at the design root is visible in the design-layer scene", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const id = await prepareDesign(page, { flavor: "mixed", title: "P-B" });
   await addFrame(page, "slide");
@@ -106,9 +98,7 @@ test.skip("image at the design root is visible in the design-layer scene", async
   // Add an image at root via the Add menu.
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-image").click();
-  await page
-    .getByTestId("media-src-input")
-    .fill("https://example.com/bg.png");
+  await page.getByTestId("media-src-input").fill("https://example.com/bg.png");
   await page.getByTestId("media-src-confirm").click();
 
   // Two root children now: 1 slide + 1 image.
@@ -127,9 +117,7 @@ test.skip("image at the design root is visible in the design-layer scene", async
   ).toHaveCount(1);
 });
 
-test("design layer is omitted when root has no non-frame primitives", async ({
-  page,
-}) => {
+test("design layer is omitted when root has no non-frame primitives", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const id = await prepareDesign(page, { flavor: "mixed", title: "P-C" });
   await addFrame(page, "slide");

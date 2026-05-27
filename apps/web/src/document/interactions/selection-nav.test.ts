@@ -3,15 +3,10 @@
 // The hotkey wiring through editor-hotkeys.ts + DesignPage is covered
 // by the e2e (figma-keyboard-selection-nav.spec.ts).
 
-import { itemId as makeItemId } from "@agocraft/core";
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
+import { itemId as makeItemId } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
-import {
-  firstChildOf,
-  nextSiblingOf,
-  parentOf,
-  prevSiblingOf,
-} from "./selection-context.js";
+import { firstChildOf, nextSiblingOf, parentOf, prevSiblingOf } from "./selection-context.js";
 
 function frame(id: string, children: AgocraftItem[] = []): AgocraftItem {
   return {
@@ -40,11 +35,7 @@ function doc(root: AgocraftItem): AgocraftDocument {
 //   ├── B
 //   └── C
 const TREE = doc(
-  frame("root", [
-    frame("A", [frame("A1", [frame("A1a")]), frame("A2")]),
-    frame("B"),
-    frame("C"),
-  ]),
+  frame("root", [frame("A", [frame("A1", [frame("A1a")]), frame("A2")]), frame("B"), frame("C")]),
 );
 
 describe("firstChildOf — Enter drill-down", () => {

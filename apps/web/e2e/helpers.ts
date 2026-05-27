@@ -67,11 +67,7 @@ export async function prepareDesign(
       __weaveDoc?: unknown;
       __weaveVm?: unknown;
     };
-    return (
-      w.__weaveEditor !== undefined &&
-      w.__weaveDoc !== undefined &&
-      w.__weaveVm !== undefined
-    );
+    return w.__weaveEditor !== undefined && w.__weaveDoc !== undefined && w.__weaveVm !== undefined;
   });
   // Also let the network settle — `saveDesign` triggers a fire-and-forget
   // `cloud-sync.ts` dynamic import + push, and racing the next spec
@@ -108,15 +104,8 @@ export async function addFrame(
   kind: DomainKind | "slide" | "canvas-design" | "block-doc" | "media",
   opts: AddFrameOptions = {},
 ): Promise<void> {
-  const LEGACY_TO_FRAME = new Set([
-    "slide",
-    "canvas-design",
-    "block-doc",
-    "media",
-  ]);
-  const resolvedKind: DomainKind = (
-    LEGACY_TO_FRAME.has(kind) ? "frame" : kind
-  ) as DomainKind;
+  const LEGACY_TO_FRAME = new Set(["slide", "canvas-design", "block-doc", "media"]);
+  const resolvedKind: DomainKind = (LEGACY_TO_FRAME.has(kind) ? "frame" : kind) as DomainKind;
   const defaultFrame: ItemFrame = {
     x: 0.4,
     y: 0.4,
@@ -173,7 +162,10 @@ export async function readParentInfo(
     type Doc = { root: Node };
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     if (doc === undefined) return null;
-    function walk(node: Node, parent: Node | null): {
+    function walk(
+      node: Node,
+      parent: Node | null,
+    ): {
       parentId: string;
       indexInParent: number;
     } | null {
@@ -248,10 +240,7 @@ export async function execReparent(
 
 /** WI-039 — set the editor's item selection to the given ids. Mirrors
  *  the multi-toolbar / multi-marquee helpers. */
-export async function setSelection(
-  page: Page,
-  ids: ReadonlyArray<string>,
-): Promise<void> {
+export async function setSelection(page: Page, ids: ReadonlyArray<string>): Promise<void> {
   await page.evaluate((targets) => {
     type Vm = {
       itemSelection: {

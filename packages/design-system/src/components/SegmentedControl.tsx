@@ -77,8 +77,6 @@ function _SegmentedControl<V extends string>(
   );
 }
 
-export const SegmentedControl = forwardRef(_SegmentedControl) as <
-  V extends string,
->(
+export const SegmentedControl = forwardRef(_SegmentedControl) as <V extends string>(
   props: SegmentedControlProps<V> & { ref?: React.Ref<HTMLDivElement> },
 ) => ReturnType<typeof _SegmentedControl>;

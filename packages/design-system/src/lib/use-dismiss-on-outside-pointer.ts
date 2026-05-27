@@ -19,7 +19,7 @@
 //   • Any element under a Radix portal wrapper / overlay role.
 //   • Any element marked `data-dismiss-exempt="true"`.
 
-import { useEffect, type RefObject } from "react";
+import { type RefObject, useEffect } from "react";
 
 export interface UseDismissOnOutsidePointerArgs {
   /** Listener is mounted only while this is true. */

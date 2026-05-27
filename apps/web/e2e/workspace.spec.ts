@@ -9,7 +9,7 @@
 //      picker; clicking a thumbnail re-uses the prior src without a
 //      fresh upload.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // 1×1 transparent PNG used for image upload paths.
@@ -35,9 +35,7 @@ test.beforeEach(async ({ page }) => {
   await clearResources(page);
 });
 
-test("saved designs appear on the workspace and open on click", async ({
-  page,
-}) => {
+test("saved designs appear on the workspace and open on click", async ({ page }) => {
   const id = await prepareDesign(page, { flavor: "mixed", title: "My A" });
   // Bounce back to /; the workspace lists the design.
   await page.goto("/");
@@ -51,9 +49,7 @@ test("saved designs appear on the workspace and open on click", async ({
   expect(page.url()).toContain(`/design/${id}`);
 });
 
-test("uploading an image registers it in the resource library", async ({
-  page,
-}) => {
+test("uploading an image registers it in the resource library", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Upload-A" });
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-image").click();
@@ -67,20 +63,13 @@ test("uploading an image registers it in the resource library", async ({
 
   // Workspace lists the resource.
   await page.goto("/");
-  const resCard = page
-    .locator('[data-testid="resource-card"][data-resource-kind="image"]')
-    .first();
+  const resCard = page.locator('[data-testid="resource-card"][data-resource-kind="image"]').first();
   await expect(resCard).toBeVisible();
   // The thumbnail's img carries the data: URL.
-  await expect(resCard.locator("img")).toHaveAttribute(
-    "src",
-    /^data:image\/png;base64,/,
-  );
+  await expect(resCard.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
 });
 
-test("resource picker shows prior uploads + reusing one skips re-upload", async ({
-  page,
-}) => {
+test("resource picker shows prior uploads + reusing one skips re-upload", async ({ page }) => {
   // First design — upload once so the library has an entry.
   await prepareDesign(page, { flavor: "mixed", title: "Setup" });
   await page.getByTestId("toolbar-add").click();
@@ -107,9 +96,7 @@ test("resource picker shows prior uploads + reusing one skips re-upload", async 
   // Click the existing resource → URL field gets the data: URL; uploaded
   // chip shows the original filename.
   await first.click();
-  await expect(page.getByTestId("media-src-uploaded-name")).toHaveText(
-    "shared.png",
-  );
+  await expect(page.getByTestId("media-src-uploaded-name")).toHaveText("shared.png");
   // Confirm → a new image item appears using the same src.
   await page.getByTestId("media-src-confirm").click();
   await expect(page.locator(`img[src^="data:image/png;base64,"]`)).toHaveCount(1);
@@ -117,9 +104,7 @@ test("resource picker shows prior uploads + reusing one skips re-upload", async 
   expect(page.url()).toContain(`/design/${designId}`);
 });
 
-test("deleting a design from the workspace removes its card", async ({
-  page,
-}) => {
+test("deleting a design from the workspace removes its card", async ({ page }) => {
   const id = await prepareDesign(page, { flavor: "mixed", title: "DeleteMe" });
   await page.goto("/");
   const card = page.locator(`[data-testid="design-card"][data-design-id="${id}"]`);

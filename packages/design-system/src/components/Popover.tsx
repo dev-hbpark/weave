@@ -102,7 +102,10 @@ export interface PopoverContentProps extends PopoverPrimitive.PopoverContentProp
 }
 
 export const PopoverContent = forwardRef<HTMLDivElement, PopoverContentProps>(
-  function PopoverContent({ className, children, sideOffset = 8, collisionPadding = 16, ...rest }, ref) {
+  function PopoverContent(
+    { className, children, sideOffset = 8, collisionPadding = 16, ...rest },
+    ref,
+  ) {
     const reduced = useReducedMotion();
     const initial = reduced ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.98 };
     const animate = reduced ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 };

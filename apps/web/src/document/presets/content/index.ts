@@ -4,12 +4,7 @@
 
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { paintSolid } from "@agocraft/core";
-import {
-  type BuildContext,
-  buildFrameRoot,
-  buildShapeChild,
-  buildTextChild,
-} from "../builders.js";
+import { type BuildContext, buildFrameRoot, buildShapeChild, buildTextChild } from "../builders.js";
 import type { Preset, PresetCategory, PresetFactoryContext } from "../types.js";
 import { resolveLocalizedText } from "../types.js";
 
@@ -28,7 +23,13 @@ const SAMPLE_BODY = {
   ko: "여기에 본문 단락을 작성하세요. 핵심 메시지 1~2 문장으로 충분합니다.",
   en: "Write the body paragraph here. One or two sentences are usually enough.",
 } as const;
-const BULLETS_KO = ["첫 번째 핵심", "두 번째 핵심", "세 번째 핵심", "네 번째 핵심", "다섯 번째 핵심"] as const;
+const BULLETS_KO = [
+  "첫 번째 핵심",
+  "두 번째 핵심",
+  "세 번째 핵심",
+  "네 번째 핵심",
+  "다섯 번째 핵심",
+] as const;
 const BULLETS_EN = [
   "First key point",
   "Second key point",
@@ -37,11 +38,7 @@ const BULLETS_EN = [
   "Fifth key point",
 ] as const;
 
-function titleAt(
-  build: BuildContext,
-  ctx: PresetFactoryContext,
-  width = 0.84,
-): AgocraftItem {
+function titleAt(build: BuildContext, ctx: PresetFactoryContext, width = 0.84): AgocraftItem {
   return buildTextChild(
     build,
     { x: 0.08, y: 0.1, width, height: 0.14, rotation: 0 },
@@ -147,11 +144,10 @@ const bulletListPreset: Preset = {
         },
       ),
     );
-    return buildFrameRoot(
-      build,
-      { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-      [title, ...bullets],
-    );
+    return buildFrameRoot(build, { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 }, [
+      title,
+      ...bullets,
+    ]);
   },
 };
 

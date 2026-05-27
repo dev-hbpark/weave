@@ -22,9 +22,7 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("Redo tooltip — single Slot layer (AITooltip → IconButton)", async ({
-  page,
-}) => {
+test("Redo tooltip — single Slot layer (AITooltip → IconButton)", async ({ page }) => {
   // Need an undo-able action so the Redo button becomes enabled. Bypass
   // the toolbar dropdown (its menu item placement on small viewports can be
   // outside the actionable area in headless) and add the item directly via
@@ -36,7 +34,9 @@ test("Redo tooltip — single Slot layer (AITooltip → IconButton)", async ({
     () => (window as unknown as { __weaveEditor?: unknown }).__weaveEditor !== undefined,
   );
   await page.evaluate(() => {
-    const editor = (window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }).__weaveEditor;
+    const editor = (
+      window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }
+    ).__weaveEditor;
     const doc = (window as unknown as { __weaveDoc: { root: { id: string } } }).__weaveDoc;
     editor.exec("weave.item.add", {
       kind: "frame",
@@ -51,10 +51,7 @@ test("Redo tooltip — single Slot layer (AITooltip → IconButton)", async ({
   await expect(redo).toBeEnabled();
   // aria-describedby flows through the AITooltip Slot to the IconButton's
   // underlying <button> — single-Slot chain.
-  await expect(redo).toHaveAttribute(
-    "aria-describedby",
-    "weave-ai-tooltip-surface",
-  );
+  await expect(redo).toHaveAttribute("aria-describedby", "weave-ai-tooltip-surface");
 
   await redo.hover();
   await page.waitForTimeout(260);
@@ -73,9 +70,7 @@ test.skip("+ Add tooltip — two Slot layers (DropdownMenuTrigger asChild → AI
   void page;
 });
 
-test("Undo tooltip — hotkeyId resolves from the editor hotkey table", async ({
-  page,
-}) => {
+test("Undo tooltip — hotkeyId resolves from the editor hotkey table", async ({ page }) => {
   // The Undo tooltip references `hotkeyId="undo"` instead of a literal
   // shortcut string. The provider's `hotkeyTable` (built by
   // useEditorHotkeys) supplies the canonical display value. This test proves
@@ -86,7 +81,9 @@ test("Undo tooltip — hotkeyId resolves from the editor hotkey table", async ({
     () => (window as unknown as { __weaveEditor?: unknown }).__weaveEditor !== undefined,
   );
   await page.evaluate(() => {
-    const editor = (window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }).__weaveEditor;
+    const editor = (
+      window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }
+    ).__weaveEditor;
     const doc = (window as unknown as { __weaveDoc: { root: { id: string } } }).__weaveDoc;
     editor.exec("weave.item.add", {
       kind: "frame",
@@ -118,7 +115,9 @@ test("Cmd+Z hotkey still triggers undo (regression after useHistoryHotkeys remov
     () => (window as unknown as { __weaveEditor?: unknown }).__weaveEditor !== undefined,
   );
   await page.evaluate(() => {
-    const editor = (window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }).__weaveEditor;
+    const editor = (
+      window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => void } }
+    ).__weaveEditor;
     const doc = (window as unknown as { __weaveDoc: { root: { id: string } } }).__weaveDoc;
     editor.exec("weave.item.add", {
       kind: "frame",

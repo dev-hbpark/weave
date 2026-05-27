@@ -27,9 +27,7 @@ const renderers = createDomainRendererRegistry(
   // works on a generic `DomainRendererProps`; the structural cast is
   // safe because all weave renderers accept `{ item, onUpdate?,
   // onUpdateShape?, onRemoveShape? }` (extra fields ignored).
-  DOMAIN_RENDERERS as unknown as Readonly<
-    Record<string, ComponentType<DomainRendererProps>>
-  >,
+  DOMAIN_RENDERERS as unknown as Readonly<Record<string, ComponentType<DomainRendererProps>>>,
 );
 
 export interface FrameContentProps {

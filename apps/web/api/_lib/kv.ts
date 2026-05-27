@@ -15,10 +15,14 @@ interface KvClient {
   get<T = unknown>(key: string): Promise<T | null>;
   set(key: string, value: unknown): Promise<unknown>;
   del(...keys: string[]): Promise<number>;
-  scan(cursor: number | string, opts?: { match?: string; count?: number }): Promise<[string, string[]]>;
+  scan(
+    cursor: number | string,
+    opts?: { match?: string; count?: number },
+  ): Promise<[string, string[]]>;
 }
 
-const env = typeof process !== "undefined" ? process.env : ({} as Record<string, string | undefined>);
+const env =
+  typeof process !== "undefined" ? process.env : ({} as Record<string, string | undefined>);
 const remoteUrl = env.KV_REST_API_URL ?? env.UPSTASH_REDIS_REST_URL ?? "";
 const remoteToken = env.KV_REST_API_TOKEN ?? env.UPSTASH_REDIS_REST_TOKEN ?? "";
 const hasRemoteKv = remoteUrl.length > 0 && remoteToken.length > 0;
@@ -45,9 +49,7 @@ const memoryClient: KvClient = {
     const matcher = opts?.match;
     const re =
       matcher !== undefined
-        ? new RegExp(
-            "^" + matcher.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$",
-          )
+        ? new RegExp("^" + matcher.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$")
         : null;
     const out: string[] = [];
     for (const k of memory.keys()) {

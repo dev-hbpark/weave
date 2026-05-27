@@ -4,7 +4,7 @@
 // (Space, Cmd+Z, ↑↓). When `combo` is true, ` + ` separators become visible
 // pills so the user can read multi-key combos at a glance.
 
-import { type HTMLAttributes, forwardRef, type ReactNode } from "react";
+import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
 import { cn } from "../cn.js";
 
 type KbdSize = "sm" | "md";
@@ -44,11 +44,7 @@ export const Kbd = forwardRef<HTMLElement, KbdProps>(function Kbd(
 ) {
   if (!combo || typeof children !== "string") {
     return (
-      <kbd
-        ref={ref}
-        {...rest}
-        className={cn(baseClass, sizeClass[size], className)}
-      >
+      <kbd ref={ref} {...rest} className={cn(baseClass, sizeClass[size], className)}>
         {children}
       </kbd>
     );

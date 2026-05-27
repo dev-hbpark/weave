@@ -22,9 +22,7 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("Add menu surfaces 'Slide' entry that opens the preset picker", async ({
-  page,
-}) => {
+test("Add menu surfaces 'Slide' entry that opens the preset picker", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Preset-A" });
 
   await expect(page.locator("[data-frame-id]")).toHaveCount(0);
@@ -92,9 +90,7 @@ test("Picking cover.bold inserts slide + multiple children; history drain revert
   await expect(page.locator("[data-frame-id]")).toHaveCount(5, { timeout: 3000 });
 });
 
-test("Cancel button closes the picker without inserting anything", async ({
-  page,
-}) => {
+test("Cancel button closes the picker without inserting anything", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Preset-C" });
 
   await page.getByTestId("toolbar-add").click();

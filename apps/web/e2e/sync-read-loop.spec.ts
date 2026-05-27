@@ -27,17 +27,13 @@ import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 // which are only exposed when sync is mounted, so the test cannot run
 // while the gate is OFF. Flip the constant in DesignPage back to
 // `true` and remove the skip below to re-validate the read loop.
-test.skip(
-  true,
-  "WI-028 sync subsystem paused — re-enable via SYNC_ENABLED in DesignPage.tsx",
-);
+test.skip(true, "WI-028 sync subsystem paused — re-enable via SYNC_ENABLED in DesignPage.tsx");
 
 test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
 test("remote Y.Doc update reflects in React state via Phase 3b observer", async ({ page }) => {
-
   await prepareDesign(page, { flavor: "mixed", title: "Sync read loop" });
   await addFrame(page, "slide");
 
@@ -95,9 +91,7 @@ test("remote Y.Doc update reflects in React state via Phase 3b observer", async 
 
       // Append the new id into the root's children array.
       const root = items.get(rootId);
-      const rootChildren = root?.get("children") as
-        | import("yjs").Array<string>
-        | undefined;
+      const rootChildren = root?.get("children") as import("yjs").Array<string> | undefined;
       rootChildren?.push([injectedId]);
 
       // Encode the delta and apply back with the remote origin tag.
@@ -107,8 +101,12 @@ test("remote Y.Doc update reflects in React state via Phase 3b observer", async 
       // Diagnostics so a failure isn't a black box.
       const pageItems = yDoc.getMap("items");
       const pageRoot = pageItems.get(rootId) as import("yjs").Map<unknown> | undefined;
-      const pageChildren = (pageRoot?.get("children") as import("yjs").Array<string> | undefined)?.toArray();
-      const w2 = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } } };
+      const pageChildren = (
+        pageRoot?.get("children") as import("yjs").Array<string> | undefined
+      )?.toArray();
+      const w2 = window as unknown as {
+        __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+      };
       const reactChildIds = w2.__weaveDoc?.root.children.map((c) => String(c.id));
       return {
         applied: true,

@@ -15,10 +15,7 @@
 
 import { createElement } from "react";
 import type { DomainKind } from "../types.js";
-import type {
-  InsertableCapability,
-  InsertableRecommendation,
-} from "./types.js";
+import type { InsertableCapability, InsertableRecommendation } from "./types.js";
 
 const KIND_MAP: Record<string, DomainKind> = {
   "wide-frame": "frame",

@@ -57,12 +57,7 @@ export function SelectionHandleButton({
   onPointerDown,
   ariaLabel,
 }: SelectionHandleButtonProps) {
-  const cursor =
-    kind === "rotation"
-      ? "grab"
-      : dir !== undefined
-        ? CURSOR_BY_DIR[dir]
-        : "default";
+  const cursor = kind === "rotation" ? "grab" : dir !== undefined ? CURSOR_BY_DIR[dir] : "default";
   const sizePx = kind === "edge" ? 8 : 10;
   const style: CSSProperties = {
     width: sizePx,
@@ -89,18 +84,8 @@ export function SelectionHandleButton({
   );
 }
 
-export function SelectionHandle({
-  kind,
-  dir,
-  onPointerDown,
-  ariaLabel,
-}: SelectionHandleProps) {
-  const cursor =
-    kind === "rotation"
-      ? "grab"
-      : dir !== undefined
-        ? CURSOR_BY_DIR[dir]
-        : "default";
+export function SelectionHandle({ kind, dir, onPointerDown, ariaLabel }: SelectionHandleProps) {
+  const cursor = kind === "rotation" ? "grab" : dir !== undefined ? CURSOR_BY_DIR[dir] : "default";
 
   // Position: corner/edge from CORNER_POS; rotation sits 22px above top
   // centre with a stem rendered via box-shadow on a pseudo-strategy

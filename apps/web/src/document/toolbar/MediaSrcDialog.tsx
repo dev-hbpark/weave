@@ -19,13 +19,7 @@ import {
   DialogHeader,
   TextField,
 } from "@weave/design-system";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type DragEvent,
-} from "react";
+import { type ChangeEvent, type DragEvent, useEffect, useRef, useState } from "react";
 import { addResource, listResources, type MediaResource } from "../resource-storage.js";
 
 export interface MediaSrcDialogProps {
@@ -97,8 +91,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
       return;
     }
     try {
-      const src =
-        kind === "image" ? await fileToDataUrl(file) : URL.createObjectURL(file);
+      const src = kind === "image" ? await fileToDataUrl(file) : URL.createObjectURL(file);
       setValue(src);
       setUploadedName(file.name);
       // WI-024 — register the upload in the workspace resource library so
@@ -197,11 +190,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
                   title={r.name}
                 >
                   {r.kind === "image" ? (
-                    <img
-                      src={r.src}
-                      alt={r.name}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={r.src} alt={r.name} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-black/40 text-white text-[16px]">
                       ▶
@@ -306,9 +295,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
         <TextField
           label={kind === "image" ? "이미지 URL" : "비디오 URL"}
           placeholder={
-            kind === "image"
-              ? "https://example.com/image.jpg"
-              : "https://example.com/video.mp4"
+            kind === "image" ? "https://example.com/image.jpg" : "https://example.com/video.mp4"
           }
           value={uploadedName ? "" : value}
           disabled={uploadedName !== null}
@@ -332,12 +319,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
               취소
             </Button>
           </DialogClose>
-          <Button
-            variant="primary"
-            size="md"
-            onClick={submit}
-            data-testid="media-src-confirm"
-          >
+          <Button variant="primary" size="md" onClick={submit} data-testid="media-src-confirm">
             {kind === "image" ? "이미지 추가" : "비디오 추가"}
           </Button>
         </div>

@@ -10,12 +10,7 @@
 //      is a no-op (Radix swallows the select on disabled items).
 
 import { expect, test } from "@playwright/test";
-import {
-  addFrame,
-  clearAllDesigns,
-  prepareDesign,
-  readParentInfo,
-} from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign, readParentInfo } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
@@ -29,9 +24,7 @@ async function rootIds(page: import("@playwright/test").Page): Promise<string[]>
   });
 }
 
-test('"다른 부모로 이동" sub-menu opens and lists root + every frame', async ({
-  page,
-}) => {
+test('"다른 부모로 이동" sub-menu opens and lists root + every frame', async ({ page }) => {
   await prepareDesign(page, { flavor: "slide-deck" });
   await addFrame(page, "frame", {
     frame: { x: 0.6, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
@@ -105,7 +98,10 @@ test("cycle-blocked rows render as disabled (right-clicked frame itself + its de
   });
   // Find the child id under `parent`.
   const childId = await page.evaluate((pid) => {
-    interface Node { readonly id: string | number; readonly children: ReadonlyArray<Node>; }
+    interface Node {
+      readonly id: string | number;
+      readonly children: ReadonlyArray<Node>;
+    }
     type Doc = { root: Node };
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     if (doc === undefined) return null;
@@ -136,10 +132,13 @@ test("cycle-blocked rows render as disabled (right-clicked frame itself + its de
   // row in the picker) is a cycle (moving self into self) — the
   // command's guard rejects, so doc state is unchanged after the click.
   const beforeParentInfo = await readParentInfo(page, parent);
-  await page.getByTestId(`ctx-move-to-row-${parent}`).click().catch(() => {
-    // Radix may swallow the click on a disabled item; either way the
-    // contract is "parent is not reparented".
-  });
+  await page
+    .getByTestId(`ctx-move-to-row-${parent}`)
+    .click()
+    .catch(() => {
+      // Radix may swallow the click on a disabled item; either way the
+      // contract is "parent is not reparented".
+    });
   await page.waitForTimeout(150);
   const afterParentInfo = await readParentInfo(page, parent);
   expect(afterParentInfo?.parentId).toBe(beforeParentInfo?.parentId);

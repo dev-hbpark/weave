@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 /**
  * Korean IME composition — CDP `Input.imeSetComposition` 으로 부분 자동화.

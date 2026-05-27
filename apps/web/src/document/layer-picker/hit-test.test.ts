@@ -3,8 +3,8 @@
 // plane coordinate transform is covered by the e2e
 // (figma-right-click-layer-picker.spec.ts).
 
-import { itemId as makeItemId } from "@agocraft/core";
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
+import { itemId as makeItemId } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
 import { findFramesAtPoint } from "./hit-test.js";
 
@@ -60,11 +60,9 @@ function root(children: AgocraftItem[]): AgocraftDocument {
 // │                └──────────────┘  │
 // └──────────────────────────────────┘
 const TREE = root([
-  frame(
-    "A",
-    { x: 0, y: 0, width: 0.5, height: 0.5, label: "Top" },
-    [frame("A1", { x: 0.4, y: 0.4, width: 0.2, height: 0.2, label: "Nested" })],
-  ),
+  frame("A", { x: 0, y: 0, width: 0.5, height: 0.5, label: "Top" }, [
+    frame("A1", { x: 0.4, y: 0.4, width: 0.2, height: 0.2, label: "Nested" }),
+  ]),
   frame("B", { x: 0.5, y: 0.5, width: 0.5, height: 0.5 }),
 ]);
 

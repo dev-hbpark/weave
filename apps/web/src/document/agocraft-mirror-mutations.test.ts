@@ -1,11 +1,11 @@
 // WI-013 Phase 4 — pure-function mutation helpers on AgocraftDocument.
 
+import type { Item as AgocraftItem, Change, ItemMeta } from "@agocraft/core";
 import {
   itemId as makeItemId,
   transactionId as makeTransactionId,
   unitId as makeUnitId,
 } from "@agocraft/core";
-import type { Change, Item as AgocraftItem, ItemMeta } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
 import {
   addChild,
@@ -16,8 +16,8 @@ import {
   updateChild,
   updateUnitAttrs,
 } from "./agocraft-mirror.js";
-import { FULL_FRAME } from "./types.js";
 import type { Document as WeaveDocument } from "./types.js";
+import { FULL_FRAME } from "./types.js";
 
 const META: ItemMeta = {
   createdAt: "2026-05-22T00:00:00Z",

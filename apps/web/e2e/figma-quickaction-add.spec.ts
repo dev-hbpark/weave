@@ -5,7 +5,7 @@
 // options; clicking an option only closes the submenu, leaving the
 // bar visible for further actions.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -52,16 +52,21 @@ async function clearSelection(page: Page): Promise<void> {
 }
 
 async function selectFrames(page: Page, ids: ReadonlyArray<string>): Promise<void> {
-  await page.evaluate((arr) => {
-    const w = window as unknown as {
-      __weaveVm?: { itemSelection: { setMany: (ids: Iterable<string>) => void } };
-    };
-    w.__weaveVm?.itemSelection.setMany(arr);
-  }, [...ids]);
+  await page.evaluate(
+    (arr) => {
+      const w = window as unknown as {
+        __weaveVm?: { itemSelection: { setMany: (ids: Iterable<string>) => void } };
+      };
+      w.__weaveVm?.itemSelection.setMany(arr);
+    },
+    [...ids],
+  );
   await page.waitForTimeout(50);
 }
 
-test("WI-036 — selecting a frame surfaces the bar; clicking + adds a child frame", async ({ page }) => {
+test("WI-036 — selecting a frame surfaces the bar; clicking + adds a child frame", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-select" });
   await addFrame(page, "frame", {
     frame: { x: 0.2, y: 0.4, width: 0.4, height: 0.3, rotation: 0 },
@@ -86,7 +91,9 @@ test("WI-036 — selecting a frame surfaces the bar; clicking + adds a child fra
   await expect.poll(() => childCountOf(page, parentId)).toBe(before + 1);
 });
 
-test("WI-036 — bar persists when the mouse leaves the frame (selection-driven, hover-agnostic)", async ({ page }) => {
+test("WI-036 — bar persists when the mouse leaves the frame (selection-driven, hover-agnostic)", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-leave" });
   await addFrame(page, "frame", {
     frame: { x: 0.2, y: 0.4, width: 0.4, height: 0.3, rotation: 0 },
@@ -127,7 +134,9 @@ test("WI-036 — clearing selection unmounts the bar", async ({ page }) => {
   await expect(page.getByTestId("cmd-frame-addChild")).toHaveCount(0, { timeout: 1_000 });
 });
 
-test("WI-036 — `+` button hover opens submenu; clicking 'text' inserts a text child and closes the submenu only (bar stays)", async ({ page }) => {
+test("WI-036 — `+` button hover opens submenu; clicking 'text' inserts a text child and closes the submenu only (bar stays)", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-submenu" });
   await addFrame(page, "frame", {
     frame: { x: 0.2, y: 0.4, width: 0.4, height: 0.3, rotation: 0 },
@@ -171,7 +180,9 @@ test("WI-036 — `+` button hover opens submenu; clicking 'text' inserts a text 
   expect(kinds).toContain("text");
 });
 
-test("WI-036 — multi-selection surfaces the `multi.delete` command and clearing the selection removes the bar", async ({ page }) => {
+test("WI-036 — multi-selection surfaces the `multi.delete` command and clearing the selection removes the bar", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-multi" });
   await addFrame(page, "frame", {
     frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
@@ -209,7 +220,9 @@ test("WI-036 — multi-selection surfaces the `multi.delete` command and clearin
   await expect(page.getByTestId("cmd-multi-delete")).toHaveCount(0);
 });
 
-test("WI-036 — clicking a multi-selection corner handle does NOT clear the selection (pointerdown is swallowed)", async ({ page }) => {
+test("WI-036 — clicking a multi-selection corner handle does NOT clear the selection (pointerdown is swallowed)", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-corner-swallow" });
   await addFrame(page, "frame", {
     frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
@@ -240,7 +253,9 @@ test("WI-036 — clicking a multi-selection corner handle does NOT clear the sel
   expect(stillTwo).toBe(true);
 });
 
-test("WI-036 — multi-selection mounts a bounding-box marquee + 4 corner handles; single selection does not", async ({ page }) => {
+test("WI-036 — multi-selection mounts a bounding-box marquee + 4 corner handles; single selection does not", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-overlay" });
   await addFrame(page, "frame", {
     frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
@@ -274,7 +289,9 @@ test("WI-036 — multi-selection mounts a bounding-box marquee + 4 corner handle
   await expect(overlay).toHaveCount(0, { timeout: 1_000 });
 });
 
-test("WI-036 — dragging a multi-selection corner handle resizes every selected frame proportionally", async ({ page }) => {
+test("WI-036 — dragging a multi-selection corner handle resizes every selected frame proportionally", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-resize" });
   await addFrame(page, "frame", {
     frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
@@ -349,7 +366,9 @@ test("WI-036 — dragging a multi-selection corner handle resizes every selected
   }
 });
 
-test("WI-036 — multi-resize is a single undoable step (Cmd+Z reverts every frame in one stroke)", async ({ page }) => {
+test("WI-036 — multi-resize is a single undoable step (Cmd+Z reverts every frame in one stroke)", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-036-undo" });
   await addFrame(page, "frame", {
     frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },

@@ -4,21 +4,21 @@ import { createHotkeyRegistry } from "@agocraft/input/hotkey";
 import { PresentChrome, Stage, type StageScene } from "@weave/design-system";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import {
   type AgoItem,
   type ButtonTriggerBehavior,
   type CameraTargetBehavior,
-  effectivePresentationOrder,
   type EntranceAnimationBehavior,
+  effectivePresentationOrder,
   FRAME_KINDS,
   type HotspotAction,
   type HoverEffectBehavior,
-  interactionRegistry,
   type ItemFrame,
+  interactionRegistry,
   type PresentContext,
   useDesign,
 } from "../document";
+import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 
 // Phase 13d-3 — entrance-animation Web Animations API keyframes per mode.
@@ -197,8 +197,7 @@ export function PresentPage() {
     }[] = [];
     const rootId = String(docInAgocraft.root.id);
     ids.forEach((entryId, idx) => {
-      const found =
-        entryId === rootId ? docInAgocraft.root : findItemDeep(docInAgocraft, entryId);
+      const found = entryId === rootId ? docInAgocraft.root : findItemDeep(docInAgocraft, entryId);
       if (found === undefined) return;
       // Compose the absolute frame: start full-design (x=0,y=0,w=1,h=1) and
       // multiply each frame along the trail. Root entry stays as the full
@@ -223,9 +222,11 @@ export function PresentPage() {
       // honor its position/scale; otherwise compute the camera that fits the
       // frame's absolute frame to the viewport.
       const manualCam = (() => {
-        const cam = (found as { units?: ReadonlyArray<{ kind: string; attrs: { behavior?: CameraTargetBehavior } }> }).units?.find(
-          (u) => u.kind === "camera-target",
-        );
+        const cam = (
+          found as {
+            units?: ReadonlyArray<{ kind: string; attrs: { behavior?: CameraTargetBehavior } }>;
+          }
+        ).units?.find((u) => u.kind === "camera-target");
         const b = cam?.attrs.behavior;
         if (b !== undefined && b.manual === true) return b;
         return undefined;
@@ -234,13 +235,8 @@ export function PresentPage() {
         kind: "camera-target",
         id: `present-${entryId}`,
         position:
-          manualCam !== undefined
-            ? manualCam.position
-            : { x: absX + absW / 2, y: absY + absH / 2 },
-        scale:
-          manualCam !== undefined
-            ? manualCam.scale
-            : 1 / Math.max(absW, absH, 0.01),
+          manualCam !== undefined ? manualCam.position : { x: absX + absW / 2, y: absY + absH / 2 },
+        scale: manualCam !== undefined ? manualCam.scale : 1 / Math.max(absW, absH, 0.01),
         order: idx,
         manual: manualCam !== undefined,
       };
@@ -407,10 +403,7 @@ export function PresentPage() {
       size: { width: design.width, height: design.height },
       scale: 1, // never the active scene; scale unused
       children: (
-        <div
-          data-testid="present-design-layer"
-          style={{ position: "absolute", inset: 0 }}
-        >
+        <div data-testid="present-design-layer" style={{ position: "absolute", inset: 0 }}>
           {rootPrimitives.map((child) => {
             const f = (child.attrs as { frame?: ItemFrame }).frame;
             if (f === undefined) return null;
@@ -455,7 +448,11 @@ export function PresentPage() {
         // Phase 13d-3 — entrance-animation behavior (if any) drives a Web
         // Animations API call when this entry becomes the active step.
         const units =
-          (item as unknown as { units?: ReadonlyArray<{ kind: string; attrs: { behavior?: unknown } }> }).units ?? [];
+          (
+            item as unknown as {
+              units?: ReadonlyArray<{ kind: string; attrs: { behavior?: unknown } }>;
+            }
+          ).units ?? [];
         const findBehavior = <T,>(kind: string): T | undefined =>
           units.find((u) => u.kind === kind)?.attrs.behavior as T | undefined;
         const entranceBehavior = findBehavior<EntranceAnimationBehavior>("entrance-animation");
@@ -490,7 +487,9 @@ export function PresentPage() {
               hoverBehavior={hoverBehavior}
               buttonBehavior={buttonBehavior}
               isActiveStep={isActiveStep}
-              ariaCurrent={behavior.id === activeCameraId(safeStep, cameraTargets) ? "true" : undefined}
+              ariaCurrent={
+                behavior.id === activeCameraId(safeStep, cameraTargets) ? "true" : undefined
+              }
               isDimmed={isDimmed}
               isRevealedByHover={isRevealedByHover}
               onHoverChange={setHoveredEntry}
@@ -509,10 +508,7 @@ export function PresentPage() {
   // activeId is always a camera target id, so the design layer is never the
   // active scene.
   const scenes = useMemo<StageScene[]>(
-    () =>
-      designLayerScene
-        ? [designLayerScene, ...cameraTargetScenes]
-        : cameraTargetScenes,
+    () => (designLayerScene ? [designLayerScene, ...cameraTargetScenes] : cameraTargetScenes),
     [designLayerScene, cameraTargetScenes],
   );
 

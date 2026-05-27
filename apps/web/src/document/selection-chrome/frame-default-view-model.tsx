@@ -20,14 +20,8 @@
 //   • Open / Closed — adding a new kind = new view-model. Existing
 //     code unchanged.
 
-import type {
-  ItemSelectionViewModel,
-  SelectionHandleSpec,
-} from "@agocraft/editor";
-import {
-  type SelectionHandleDir as HandleDir,
-  SelectionHandleButton,
-} from "@weave/design-system";
+import type { ItemSelectionViewModel, SelectionHandleSpec } from "@agocraft/editor";
+import { type SelectionHandleDir as HandleDir, SelectionHandleButton } from "@weave/design-system";
 
 const RESIZE_DIRS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const;
 
@@ -40,9 +34,7 @@ export interface FrameDefaultDeps {
   readonly disableRotate?: boolean;
 }
 
-export function createFrameDefaultViewModel(
-  deps: FrameDefaultDeps,
-): ItemSelectionViewModel {
+export function createFrameDefaultViewModel(deps: FrameDefaultDeps): ItemSelectionViewModel {
   const dirs = deps.resizeDirs ?? RESIZE_DIRS;
 
   return {
@@ -53,9 +45,7 @@ export function createFrameDefaultViewModel(
         const isEdge = dir === "n" || dir === "e" || dir === "s" || dir === "w";
         out.push({
           id: `resize-${dir}`,
-          anchor: isEdge
-            ? { type: "edge", side: dir }
-            : { type: "corner", corner: dir },
+          anchor: isEdge ? { type: "edge", side: dir } : { type: "corner", corner: dir },
           render: () => (
             // GestureRouter intercepts at capture phase; the button's
             // React onPointerDown is a no-op safety net for the rare

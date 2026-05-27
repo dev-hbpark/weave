@@ -18,9 +18,7 @@ export function SelectionChromeProvider({
   readonly children: ReactNode;
 }) {
   return (
-    <SelectionChromeContext.Provider value={registry}>
-      {children}
-    </SelectionChromeContext.Provider>
+    <SelectionChromeContext.Provider value={registry}>{children}</SelectionChromeContext.Provider>
   );
 }
 

@@ -22,8 +22,8 @@
 //      flagged.
 
 import {
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
   useEffect,
   useState,
@@ -87,10 +87,7 @@ interface SelectionLayerProps {
    *  haven't migrated to the registry yet. */
   readonly capability?: SelectionLayerCapability;
   readonly onMoveStart?: (e: ReactPointerEvent<HTMLButtonElement>) => void;
-  readonly onResizeStart?: (
-    dir: HandleDir,
-    e: ReactPointerEvent<HTMLButtonElement>,
-  ) => void;
+  readonly onResizeStart?: (dir: HandleDir, e: ReactPointerEvent<HTMLButtonElement>) => void;
   readonly onRotateStart?: (e: ReactPointerEvent<HTMLButtonElement>) => void;
   readonly moveLabel?: string;
   /** WI-036 follow-up v3 — when true, the layer skips its own accent
@@ -205,57 +202,53 @@ export function SelectionLayer({
           render; SelectionLayer's rAF tick triggers re-render on
           bounds change. Shape / color / behavior all flow from the
           host. */}
-      {resolveHandles !== undefined
-        ? resolveHandles(box).map((p) => (
-            <div
-              key={p.id}
-              data-selection-handle-id={p.id}
-              data-selection-handle-item-id={p.itemId}
-              style={{
-                position: "absolute",
-                // Convert viewport-coords to layer-local coords (the
-                // layer's wrapper sits at box.left/box.top, so we
-                // offset by that origin).
-                left: p.x - box.left,
-                top: p.y - box.top,
-                transform: "translate(-50%, -50%)",
-                pointerEvents: "auto",
-              }}
-            >
-              {p.node}
-            </div>
-          ))
-        : // Legacy fallback — built-in 8 resize + 1 rotate. Triggered
-          // only when `resolveHandles` is omitted; eventually removed
-          // once all call sites adopt the registry.
-          capability !== undefined
-          ? (
-              <>
-                {capability.resizable && onResizeStart
-                  ? capability.resizeHandles.map((dir) => (
-                      <SelectionHandle
-                        key={dir}
-                        kind={
-                          dir === "n" || dir === "e" || dir === "s" || dir === "w"
-                            ? "edge"
-                            : "corner"
-                        }
-                        dir={dir}
-                        ariaLabel={`Resize ${dir}`}
-                        onPointerDown={(e) => onResizeStart(dir, e)}
-                      />
-                    ))
-                  : null}
-                {capability.rotatable && onRotateStart ? (
-                  <SelectionHandle
-                    kind="rotation"
-                    ariaLabel="Rotate selection"
-                    onPointerDown={onRotateStart}
-                  />
-                ) : null}
-              </>
-            )
-          : null}
+      {resolveHandles !== undefined ? (
+        resolveHandles(box).map((p) => (
+          <div
+            key={p.id}
+            data-selection-handle-id={p.id}
+            data-selection-handle-item-id={p.itemId}
+            style={{
+              position: "absolute",
+              // Convert viewport-coords to layer-local coords (the
+              // layer's wrapper sits at box.left/box.top, so we
+              // offset by that origin).
+              left: p.x - box.left,
+              top: p.y - box.top,
+              transform: "translate(-50%, -50%)",
+              pointerEvents: "auto",
+            }}
+          >
+            {p.node}
+          </div>
+        ))
+      ) : // Legacy fallback — built-in 8 resize + 1 rotate. Triggered
+      // only when `resolveHandles` is omitted; eventually removed
+      // once all call sites adopt the registry.
+      capability !== undefined ? (
+        <>
+          {capability.resizable && onResizeStart
+            ? capability.resizeHandles.map((dir) => (
+                <SelectionHandle
+                  key={dir}
+                  kind={
+                    dir === "n" || dir === "e" || dir === "s" || dir === "w" ? "edge" : "corner"
+                  }
+                  dir={dir}
+                  ariaLabel={`Resize ${dir}`}
+                  onPointerDown={(e) => onResizeStart(dir, e)}
+                />
+              ))
+            : null}
+          {capability.rotatable && onRotateStart ? (
+            <SelectionHandle
+              kind="rotation"
+              ariaLabel="Rotate selection"
+              onPointerDown={onRotateStart}
+            />
+          ) : null}
+        </>
+      ) : null}
     </div>,
     document.body,
   );

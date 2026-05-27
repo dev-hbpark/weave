@@ -456,11 +456,7 @@ describe("weave.item.reparent (WI-039)", () => {
       schemaVersion: 3,
     };
     let doc = toAgocraftDocument(weave);
-    doc = addChild(
-      doc,
-      nestedFrame("c1", { x: 0.1, y: 0.1, width: 0.2, height: 0.2 }),
-      "p1",
-    );
+    doc = addChild(doc, nestedFrame("c1", { x: 0.1, y: 0.1, width: 0.2, height: 0.2 }), "p1");
     return {
       document: doc,
       resolve: () => null as never,
@@ -510,11 +506,7 @@ describe("weave.item.reparent (WI-039)", () => {
     const ctx = makeReparentCtx();
     // Add another root-level frame and a second nested c2 under p1.
     let doc = ctx.document;
-    doc = addChild(
-      doc,
-      nestedFrame("c2", { x: 0.3, y: 0.3, width: 0.2, height: 0.2 }),
-      "p1",
-    );
+    doc = addChild(doc, nestedFrame("c2", { x: 0.3, y: 0.3, width: 0.2, height: 0.2 }), "p1");
     const ctx2: CommandContext = { ...ctx, document: doc };
     const result = runReparent(ctx2, [
       { itemId: "c1", newParentId: "p2" },

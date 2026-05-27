@@ -5,20 +5,11 @@
 // getItem/setItem/removeItem methods, so we test the serialize / deserialize /
 // projection pipeline in isolation here).
 
-import {
-  createFeatureRegistry,
-  createSchema,
-  createSerializer,
-} from "@agocraft/core";
+import { createFeatureRegistry, createSchema, createSerializer } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
 import { fromAgocraftDocument, toAgocraftDocument } from "./agocraft-mirror.js";
+import type { CameraTargetBehavior, Document, HotspotBehavior, Item } from "./types.js";
 import { FULL_FRAME } from "./types.js";
-import type {
-  CameraTargetBehavior,
-  Document,
-  HotspotBehavior,
-  Item,
-} from "./types.js";
 
 const META_DATE = "2026-05-22T00:00:00Z";
 const camBehavior: CameraTargetBehavior = {

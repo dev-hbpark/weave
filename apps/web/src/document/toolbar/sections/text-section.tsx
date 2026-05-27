@@ -18,9 +18,9 @@ import type {
   TextWeight,
 } from "@agocraft/core";
 import {
+  ContextualToolbar as Bar,
   Button,
   ColorPicker,
-  ContextualToolbar as Bar,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,

@@ -9,8 +9,7 @@ import { cn } from "../cn.js";
 
 type SwitchSize = "default" | "small";
 
-export interface SwitchProps
-  extends Omit<SwitchPrimitive.SwitchProps, "asChild" | "size"> {
+export interface SwitchProps extends Omit<SwitchPrimitive.SwitchProps, "asChild" | "size"> {
   /** Inline label rendered next to the track. Optional — omit for label-less. */
   children?: ReactNode;
   size?: SwitchSize;

@@ -18,13 +18,13 @@
 // (anchorId, text). The configured `editorState` initializer reads `text`
 // once; subsequent updates flow through `OnChangePlugin`.
 
+import type { PartialTextStyle, TextRun } from "@agocraft/core";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
-import type { PartialTextStyle, TextRun } from "@agocraft/core";
 import {
   $createParagraphNode,
   $createTextNode,

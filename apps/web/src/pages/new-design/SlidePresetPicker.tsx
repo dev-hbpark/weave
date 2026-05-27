@@ -41,8 +41,7 @@ import {
   resolveLocalizedText,
 } from "../../document/presets/types.js";
 
-const FROSTED_PANEL_CLASS =
-  "bg-[rgba(15,23,42,0.72)] border-[color:var(--surface-overlay-border)]";
+const FROSTED_PANEL_CLASS = "bg-[rgba(15,23,42,0.72)] border-[color:var(--surface-overlay-border)]";
 
 export interface SlidePresetPickerProps {
   readonly open: boolean;

@@ -12,9 +12,7 @@ async function countDomainItems(page: import("@playwright/test").Page): Promise<
     type Doc = { root: { children: ReadonlyArray<{ kind: string }> } };
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     if (doc === undefined) return -1;
-    return doc.root.children.filter((c) =>
-      ["frame"].includes(c.kind),
-    ).length;
+    return doc.root.children.filter((c) => ["frame"].includes(c.kind)).length;
   });
 }
 

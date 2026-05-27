@@ -2,11 +2,11 @@
 // create `<new-kind>-section.tsx` + one new `register` line below + nothing
 // else. ContextualToolbar.tsx is NOT edited.
 
-import { createToolbarSectionRegistry } from "./types.js";
 import { FrameBackgroundSection } from "./frame-background-section.js";
 import { ImageSection } from "./image-section.js";
 import { ShapeSection } from "./shape-section.js";
 import { TextSection } from "./text-section.js";
+import { createToolbarSectionRegistry } from "./types.js";
 import { VideoSection } from "./video-section.js";
 
 export const toolbarSectionRegistry = createToolbarSectionRegistry();

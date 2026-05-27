@@ -183,9 +183,9 @@ export interface MediaAttrs {
 // without re-declaring the shapes locally.
 import type {
   ImageAttrs as AgocraftImageAttrs,
-  VideoAttrs as AgocraftVideoAttrs,
   ShapeAttrs as AgocraftShapeAttrs,
   TextAttrs as AgocraftTextAttrs,
+  VideoAttrs as AgocraftVideoAttrs,
 } from "@agocraft/core";
 export type ImageAttrs = AgocraftImageAttrs;
 export type VideoAttrs = AgocraftVideoAttrs;
@@ -223,12 +223,7 @@ export interface DocFlavorMeta {
 // uniform. `suggestedKinds` is now the same primitive set per flavor; the
 // flavor only nudges the wizard's hero copy. v2 will revive data-driven
 // flavor that infers from preset history.
-const PRIMITIVE_SUGGESTIONS: ReadonlyArray<DomainKind> = [
-  "frame",
-  "text",
-  "image",
-  "shape",
-];
+const PRIMITIVE_SUGGESTIONS: ReadonlyArray<DomainKind> = ["frame", "text", "image", "shape"];
 
 export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
   mixed: {

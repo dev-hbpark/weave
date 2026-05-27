@@ -18,7 +18,13 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
   void onUpdate; // editing happens via ContextualToolbar, not inline
   const a = item.attrs;
   const objectFit: CSSProperties["objectFit"] =
-    a.fit === "fill" ? "fill" : a.fit === "contain" ? "contain" : a.fit === "none" ? "none" : "cover";
+    a.fit === "fill"
+      ? "fill"
+      : a.fit === "contain"
+        ? "contain"
+        : a.fit === "none"
+          ? "none"
+          : "cover";
 
   const shadow = a.shadow ? shadowToCss(a.shadow) : undefined;
   const filterCss = filterToCss(a.filter);

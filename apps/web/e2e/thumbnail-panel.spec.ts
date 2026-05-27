@@ -18,7 +18,7 @@ test("panel hides for empty designs; one tile per frame thereafter", async ({ pa
   await addFrame(page, "slide");
 
   await expect(page.getByTestId("thumbnail-panel")).toBeVisible();
-  await expect(page.locator('[data-thumbnail-id]')).toHaveCount(2);
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
 });
 
 test("drag reorder updates the panel sequence", async ({ page }) => {
@@ -27,10 +27,10 @@ test("drag reorder updates the panel sequence", async ({ page }) => {
   await addFrame(page, "canvas-design");
   await addFrame(page, "slide");
   await expect(page.getByTestId("thumbnail-panel")).toBeVisible();
-  await expect(page.locator('[data-thumbnail-id]')).toHaveCount(3);
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(3);
 
   const initial = await page.evaluate(() => {
-    const tiles = Array.from(document.querySelectorAll('[data-thumbnail-id]'));
+    const tiles = Array.from(document.querySelectorAll("[data-thumbnail-id]"));
     return tiles.map((t) => (t as HTMLElement).dataset.thumbnailId);
   });
 
@@ -40,7 +40,7 @@ test("drag reorder updates the panel sequence", async ({ page }) => {
   await page.waitForTimeout(80);
 
   const after = await page.evaluate(() => {
-    const tiles = Array.from(document.querySelectorAll('[data-thumbnail-id]'));
+    const tiles = Array.from(document.querySelectorAll("[data-thumbnail-id]"));
     return tiles.map((t) => (t as HTMLElement).dataset.thumbnailId);
   });
   expect(after[0]).toBe(initial[2]);
@@ -55,7 +55,7 @@ test.skip("reorder is reflected in present mode step count + order", async ({ pa
   await prepareDesign(page, { flavor: "mixed", title: "Present order" });
   await addFrame(page, "slide");
   await addFrame(page, "slide");
-  await expect(page.locator('[data-thumbnail-id]')).toHaveCount(2);
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
 
   // Phase 12d — Present button is in the toolbar.
   await page.getByTestId("toolbar-present").click();

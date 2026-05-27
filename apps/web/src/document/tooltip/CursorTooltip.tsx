@@ -134,9 +134,7 @@ export function CursorTooltip() {
           <span className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--text-overlay-soft)]">
             Context
           </span>
-          <span className="text-[13px] text-[color:var(--text-overlay)]">
-            {hover.context}
-          </span>
+          <span className="text-[13px] text-[color:var(--text-overlay)]">{hover.context}</span>
           {hover.actions.length > 0 ? (
             <ul className="mt-1.5 flex flex-col gap-1 text-[12px] text-[color:var(--text-overlay)]">
               {hover.actions.map((a, i) => (

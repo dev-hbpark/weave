@@ -13,12 +13,10 @@
 // verified manually; the e2e path for it is too flaky against
 // Playwright's hover-then-click race to pin reliably.)
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { prepareDesign } from "./helpers";
 
-test("frame click dismisses an open rubber-band popover", async ({
-  page,
-}) => {
+test("frame click dismisses an open rubber-band popover", async ({ page }) => {
   await prepareDesign(page, { flavor: "canvas-board" });
   const stage = page.locator('[data-testid="frame-stage"]');
   const sbox = await stage.boundingBox();
@@ -30,13 +28,12 @@ test("frame click dismisses an open rubber-band popover", async ({
   await page.keyboard.down("Alt");
   await page.mouse.move(cx - 80, cy - 60);
   await page.mouse.down();
-  for (let i = 1; i <= 6; i++)
-    await page.mouse.move(cx - 80 + 25 * i, cy - 60 + 20 * i);
+  for (let i = 1; i <= 6; i++) await page.mouse.move(cx - 80 + 25 * i, cy - 60 + 20 * i);
   await page.mouse.up();
   await page.keyboard.up("Alt");
-  await expect(page.locator('[data-side]')).toHaveCount(1);
+  await expect(page.locator("[data-side]")).toHaveCount(1);
 
-  const frame = page.locator('[data-frame-id]').first();
+  const frame = page.locator("[data-frame-id]").first();
   const fbox = await frame.boundingBox();
   if (fbox === null) throw new Error("frame box gone");
   // Frame body drag crosses FrameMove's threshold → vm.frameManip
@@ -47,5 +44,5 @@ test("frame click dismisses an open rubber-band popover", async ({
     await page.mouse.move(fbox.x + 30 + 6 * i, fbox.y + 30 + 6 * i);
   }
   await page.mouse.up();
-  await expect(page.locator('[data-side]')).toHaveCount(0);
+  await expect(page.locator("[data-side]")).toHaveCount(0);
 });

@@ -19,16 +19,8 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { bootstrapFromCloud } from "../document/cloud-sync.js";
-import {
-  clearDesign,
-  type DesignSummary,
-  listAllDesigns,
-} from "../document/storage.js";
-import {
-  listResources,
-  type MediaResource,
-  removeResource,
-} from "../document/resource-storage.js";
+import { listResources, type MediaResource, removeResource } from "../document/resource-storage.js";
+import { clearDesign, type DesignSummary, listAllDesigns } from "../document/storage.js";
 import { NewDesignWizard } from "./new-design/NewDesignWizard.js";
 
 function formatDate(iso: string): string {
@@ -76,10 +68,7 @@ export function LandingPage() {
     // saves a design). Same-tab refresh after bootstrap is handled above.
     const onStorage = (e: StorageEvent) => {
       if (e.key === null) return;
-      if (
-        e.key.startsWith("weave.design.v5.") ||
-        e.key.startsWith("weave.resource.v1.")
-      ) {
+      if (e.key.startsWith("weave.design.v5.") || e.key.startsWith("weave.resource.v1.")) {
         refresh();
       }
     };
@@ -125,8 +114,7 @@ export function LandingPage() {
             내 디자인
           </h1>
           <p className="mt-4 text-[16px] text-[color:var(--text-default)] max-w-[640px]">
-            저장된 디자인을 다시 열거나, 새로 시작하거나, 업로드한 이미지/비디오를
-            확인할 수 있어요.
+            저장된 디자인을 다시 열거나, 새로 시작하거나, 업로드한 이미지/비디오를 확인할 수 있어요.
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -154,23 +142,15 @@ export function LandingPage() {
           {designs.length === 0 ? (
             <Card tone="default">
               <p className="text-[14px] text-[color:var(--text-soft)]">
-                아직 저장된 디자인이 없어요. 위의 "새 디자인 시작" 버튼으로
-                만들어 보세요.
+                아직 저장된 디자인이 없어요. 위의 "새 디자인 시작" 버튼으로 만들어 보세요.
               </p>
             </Card>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {designs.map((d) => (
                 <Reveal key={d.id} delay={0.05}>
-                  <div
-                    data-testid="design-card"
-                    data-design-id={d.id}
-                    className="group relative"
-                  >
-                    <Link
-                      to={`/design/${d.id}`}
-                      className="block no-underline"
-                    >
+                  <div data-testid="design-card" data-design-id={d.id} className="group relative">
+                    <Link to={`/design/${d.id}`} className="block no-underline">
                       <Card tone="raised" className="h-full">
                         {/* Thumbnail surface — paints the design's background
                             color so the user at least recognises tone. */}
@@ -245,8 +225,8 @@ export function LandingPage() {
           {resources.length === 0 ? (
             <Card tone="default">
               <p className="text-[14px] text-[color:var(--text-soft)]">
-                업로드한 이미지나 비디오가 아직 없어요. 디자인 안에서 미디어를
-                추가하면 여기에도 표시됩니다.
+                업로드한 이미지나 비디오가 아직 없어요. 디자인 안에서 미디어를 추가하면 여기에도
+                표시됩니다.
               </p>
             </Card>
           ) : (
@@ -261,11 +241,7 @@ export function LandingPage() {
                   className="group relative aspect-square rounded-[var(--radius-md)] border border-[color:var(--surface-1-border)] bg-[color:var(--surface-1)] overflow-hidden"
                 >
                   {r.kind === "image" ? (
-                    <img
-                      src={r.src}
-                      alt={r.name}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={r.src} alt={r.name} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-black/40 text-[color:var(--text-strong)]">
                       <div className="text-center">

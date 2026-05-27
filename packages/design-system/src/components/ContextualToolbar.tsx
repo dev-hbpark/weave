@@ -23,12 +23,7 @@
 // Supersedes DR-design-014's priority/fold machinery — that whole algorithm
 // is gone. Fixed compact layout instead.
 
-import {
-  forwardRef,
-  type HTMLAttributes,
-  type JSX,
-  type ReactNode,
-} from "react";
+import { forwardRef, type HTMLAttributes, type JSX, type ReactNode } from "react";
 import { cn } from "../cn.js";
 import { IconMore } from "./Icon.js";
 import { Popover, PopoverContent, PopoverTrigger } from "./Popover.js";
@@ -65,9 +60,7 @@ function ToolbarRoot(
   );
 }
 
-const ForwardedToolbarRoot = forwardRef<HTMLDivElement, ToolbarRootProps>(
-  ToolbarRoot,
-);
+const ForwardedToolbarRoot = forwardRef<HTMLDivElement, ToolbarRootProps>(ToolbarRoot);
 
 // ─── Kind chip ────────────────────────────────────────────────────────────
 
@@ -202,9 +195,7 @@ function ToolbarField({ label, children, className }: ToolbarFieldProps): JSX.El
 // ─── Compound exposure ────────────────────────────────────────────────────
 
 interface ContextualToolbarCompound
-  extends React.ForwardRefExoticComponent<
-    ToolbarRootProps & React.RefAttributes<HTMLDivElement>
-  > {
+  extends React.ForwardRefExoticComponent<ToolbarRootProps & React.RefAttributes<HTMLDivElement>> {
   Kind: typeof ToolbarKind;
   Quick: typeof ToolbarQuick;
   More: typeof ToolbarMore;
@@ -219,9 +210,9 @@ ContextualToolbar.Field = ToolbarField;
 
 export {
   ContextualToolbar,
-  type ToolbarRootProps as ContextualToolbarProps,
-  type ToolbarKindProps as ContextualToolbarKindProps,
-  type ToolbarQuickProps as ContextualToolbarQuickProps,
-  type ToolbarMoreProps as ContextualToolbarMoreProps,
   type ToolbarFieldProps as ContextualToolbarFieldProps,
+  type ToolbarKindProps as ContextualToolbarKindProps,
+  type ToolbarMoreProps as ContextualToolbarMoreProps,
+  type ToolbarQuickProps as ContextualToolbarQuickProps,
+  type ToolbarRootProps as ContextualToolbarProps,
 };

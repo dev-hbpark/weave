@@ -9,7 +9,7 @@
 //      shapes — values become uniform → Mixed badge disappears.
 //   4. Multi-selection of mixed kinds (slide + shape) → toolbar hides.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -41,10 +41,7 @@ async function addShape(
     ({ color, kind }) => {
       const w = window as unknown as {
         __weaveEditor?: {
-          exec: (
-            name: string,
-            input: unknown,
-          ) => { ok: boolean; value: unknown };
+          exec: (name: string, input: unknown) => { ok: boolean; value: unknown };
         };
         __weaveDoc?: { root: { id: unknown } };
       };
@@ -74,10 +71,7 @@ async function addShape(
   );
 }
 
-async function readShapeFills(
-  page: Page,
-  ids: ReadonlyArray<string>,
-): Promise<string[]> {
+async function readShapeFills(page: Page, ids: ReadonlyArray<string>): Promise<string[]> {
   return await page.evaluate((arr) => {
     type Ch = { id: unknown; attrs: { fill?: { type?: string; color?: string } } };
     const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<Ch> } } };
@@ -86,15 +80,13 @@ async function readShapeFills(
     for (const c of w.__weaveDoc?.root.children ?? []) {
       if (!ids.has(String(c.id))) continue;
       const fill = c.attrs.fill;
-      out.push(fill?.type === "solid" ? fill.color ?? "" : "");
+      out.push(fill?.type === "solid" ? (fill.color ?? "") : "");
     }
     return out;
   }, ids);
 }
 
-test("multi-select shapes with same color → toolbar mounts, no Mixed badge", async ({
-  page,
-}) => {
+test("multi-select shapes with same color → toolbar mounts, no Mixed badge", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Toolbar-A" });
 
@@ -111,9 +103,7 @@ test("multi-select shapes with same color → toolbar mounts, no Mixed badge", a
   await expect(toolbar.getByTestId("mixed-badge")).toHaveCount(0);
 });
 
-test("multi-select shapes with different colors → Mixed badge appears", async ({
-  page,
-}) => {
+test("multi-select shapes with different colors → Mixed badge appears", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Toolbar-B" });
 
@@ -124,14 +114,10 @@ test("multi-select shapes with different colors → Mixed badge appears", async 
   const toolbar = page.getByTestId("contextual-toolbar");
   await expect(toolbar).toBeVisible();
   // Fill color diverges → Mixed badge in the Fill section.
-  await expect(
-    toolbar.getByTestId("mixed-badge").first(),
-  ).toBeVisible();
+  await expect(toolbar.getByTestId("mixed-badge").first()).toBeVisible();
 });
 
-test("setting fill on a Mixed selection applies to all → Mixed clears", async ({
-  page,
-}) => {
+test("setting fill on a Mixed selection applies to all → Mixed clears", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Toolbar-C" });
 
@@ -143,24 +129,27 @@ test("setting fill on a Mixed selection applies to all → Mixed clears", async 
   // user picking a color in the ColorPicker (the underlying onValueCommit
   // path is what the toolbar wires up). This avoids the visual-only
   // ColorPicker DOM dance.
-  await page.evaluate((ids) => {
-    const w = window as unknown as {
-      __weaveEditor?: {
-        exec: (name: string, input: unknown) => unknown;
+  await page.evaluate(
+    (ids) => {
+      const w = window as unknown as {
+        __weaveEditor?: {
+          exec: (name: string, input: unknown) => unknown;
+        };
       };
-    };
-    for (const id of ids) {
-      w.__weaveEditor?.exec("weave.item.update", {
-        itemId: id,
-        patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-          attrs: {
-            ...prev.attrs,
-            fill: { type: "solid", color: "#0000ff" },
-          } as unknown as Readonly<Record<string, unknown>>,
-        }),
-      });
-    }
-  }, [a, b]);
+      for (const id of ids) {
+        w.__weaveEditor?.exec("weave.item.update", {
+          itemId: id,
+          patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+            attrs: {
+              ...prev.attrs,
+              fill: { type: "solid", color: "#0000ff" },
+            } as unknown as Readonly<Record<string, unknown>>,
+          }),
+        });
+      }
+    },
+    [a, b],
+  );
 
   // Doc state — both shapes now share #0000ff.
   const fills = await readShapeFills(page, [a, b]);
@@ -180,10 +169,7 @@ test("mixed kinds (slide + shape) → toolbar hides", async ({ page }) => {
   const slideId = await page.evaluate(() => {
     const w = window as unknown as {
       __weaveEditor?: {
-        exec: (
-          name: string,
-          input: unknown,
-        ) => { ok: boolean; value: unknown };
+        exec: (name: string, input: unknown) => { ok: boolean; value: unknown };
       };
       __weaveDoc?: { root: { id: unknown } };
     };

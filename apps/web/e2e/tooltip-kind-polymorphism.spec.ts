@@ -31,9 +31,7 @@ async function addItem(
           __weaveEditor: { exec: (n: string, i: unknown) => void };
         }
       ).__weaveEditor;
-      const doc = (
-        window as unknown as { __weaveDoc: { root: { id: string } } }
-      ).__weaveDoc;
+      const doc = (window as unknown as { __weaveDoc: { root: { id: string } } }).__weaveDoc;
       editor.exec("weave.item.add", {
         kind: "frame",
         containerId: String(doc.root.id),
@@ -75,10 +73,7 @@ test.skip("kind dispatch — slide vs canvas-design vs block-doc vs media surfac
   });
   await addItem(page, "media", { x: 0.4, y: 0.45, width: 0.25, height: 0.25 });
 
-  const expectContext = async (
-    testid: string,
-    needle: RegExp,
-  ): Promise<void> => {
+  const expectContext = async (testid: string, needle: RegExp): Promise<void> => {
     // Hover the frame's outer chrome (top-left 4px) to avoid selecting any
     // inner shape / contenteditable.
     await page.locator(`[data-frame-id="${testid}"]`).hover({

@@ -139,11 +139,7 @@ export const OnboardingCoachmark = forwardRef<HTMLDivElement, OnboardingCoachmar
           ref={ref}
           side={side}
           align={align}
-          className={cn(
-            "max-w-[320px] p-0",
-            "border-[color:var(--accent-strong)]",
-            className,
-          )}
+          className={cn("max-w-[320px] p-0", "border-[color:var(--accent-strong)]", className)}
           // Coachmark is non-blocking — don't steal focus on open.
           onOpenAutoFocus={(e) => e.preventDefault()}
         >

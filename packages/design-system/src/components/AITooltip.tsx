@@ -21,12 +21,12 @@ import { Slot } from "@radix-ui/react-slot";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   createContext,
-  type FocusEvent as ReactFocusEvent,
   forwardRef,
   type MutableRefObject,
-  type PointerEvent as ReactPointerEvent,
   type ReactElement,
+  type FocusEvent as ReactFocusEvent,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   type Ref,
   type RefCallback,
   useCallback,
@@ -45,9 +45,7 @@ import { cn } from "../cn.js";
  * `composeRefs` so we don't have to add the dedicated package as a separate
  * dependency — we already use @radix-ui/react-slot here.
  */
-function mergeRefs<T>(
-  ...refs: ReadonlyArray<Ref<T> | undefined>
-): RefCallback<T> {
+function mergeRefs<T>(...refs: ReadonlyArray<Ref<T> | undefined>): RefCallback<T> {
   return (value: T | null) => {
     for (const ref of refs) {
       if (typeof ref === "function") {
@@ -357,10 +355,8 @@ export function AITooltipProvider({
       if (disabledRef.current) return;
       const t = e.target as Element | null;
       const r = e.relatedTarget as Element | null;
-      const next =
-        (t?.closest?.('[data-ai-tooltip="true"]') as HTMLElement | null) ?? null;
-      const prev =
-        (r?.closest?.('[data-ai-tooltip="true"]') as HTMLElement | null) ?? null;
+      const next = (t?.closest?.('[data-ai-tooltip="true"]') as HTMLElement | null) ?? null;
+      const prev = (r?.closest?.('[data-ai-tooltip="true"]') as HTMLElement | null) ?? null;
       if (next === prev) return;
       if (prev !== null) close(prev);
       if (next !== null) open(next, readTooltipDataset(next));
@@ -371,25 +367,22 @@ export function AITooltipProvider({
     };
   }, [scan, open, close]);
 
-  const refresh = useCallback(
-    (element: HTMLElement, data: TooltipData) => {
-      const st = stateRef.current;
-      // Only the currently visible (or pending-hide) target's data is live.
-      // Pending-show is harder: technically we could update the queued data so
-      // when the timer fires the *latest* content shows — that's the right
-      // behavior and costs nothing extra.
-      if (st.target !== element) return;
-      if (st.status === "idle") return;
-      stateRef.current = { ...st, data };
-      // The visible / pending-hide path drives the floating render; pending-
-      // show defers the actual render until the timer fires. Only update
-      // React state when we're currently displaying.
-      if (st.status === "visible" || st.status === "pending-hide") {
-        setActive({ element, data });
-      }
-    },
-    [],
-  );
+  const refresh = useCallback((element: HTMLElement, data: TooltipData) => {
+    const st = stateRef.current;
+    // Only the currently visible (or pending-hide) target's data is live.
+    // Pending-show is harder: technically we could update the queued data so
+    // when the timer fires the *latest* content shows — that's the right
+    // behavior and costs nothing extra.
+    if (st.target !== element) return;
+    if (st.status === "idle") return;
+    stateRef.current = { ...st, data };
+    // The visible / pending-hide path drives the floating render; pending-
+    // show defers the actual render until the timer fires. Only update
+    // React state when we're currently displaying.
+    if (st.status === "visible" || st.status === "pending-hide") {
+      setActive({ element, data });
+    }
+  }, []);
 
   const value = useMemo<AITooltipContextValue>(
     () => ({ open, close, refresh }),
@@ -458,8 +451,7 @@ function Floating({ active }: FloatingProps): ReactElement | null {
   }, [active]);
 
   const { data } = active;
-  const showContext =
-    data.showContext && data.context !== undefined && data.context.length > 0;
+  const showContext = data.showContext && data.context !== undefined && data.context.length > 0;
   const hasActions = (data.actions?.length ?? 0) > 0;
   const showActions = data.showActions && hasActions;
   const showShortcuts = data.showShortcuts;
@@ -503,9 +495,7 @@ function Floating({ active }: FloatingProps): ReactElement | null {
       transition={{
         duration: reduce ? 0 : 0.14,
         ease: [0.22, 1, 0.36, 1],
-        layout: reduce
-          ? { duration: 0 }
-          : { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+        layout: reduce ? { duration: 0 } : { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
       }}
     >
       {showContext && data.context !== undefined ? (
@@ -513,17 +503,12 @@ function Floating({ active }: FloatingProps): ReactElement | null {
           <span className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-overlay-soft)]">
             Context
           </span>
-          <span className="text-[13px] text-[color:var(--text-overlay)]">
-            {data.context}
-          </span>
+          <span className="text-[13px] text-[color:var(--text-overlay)]">{data.context}</span>
         </div>
       ) : null}
 
       {showContext && showActions ? (
-        <div
-          aria-hidden
-          className="my-2 h-px bg-[color:var(--surface-overlay-border)]"
-        />
+        <div aria-hidden className="my-2 h-px bg-[color:var(--surface-overlay-border)]" />
       ) : null}
 
       {showActions && data.actions !== undefined ? (
@@ -533,10 +518,7 @@ function Floating({ active }: FloatingProps): ReactElement | null {
             // a one-off display string), then `hotkeyId` looked up in the
             // provider's hotkeyTable. If neither resolves, no keycap renders.
             const resolvedShortcut =
-              a.shortcut ??
-              (a.hotkeyId !== undefined
-                ? hotkeyTable[a.hotkeyId]?.keys
-                : undefined);
+              a.shortcut ?? (a.hotkeyId !== undefined ? hotkeyTable[a.hotkeyId]?.keys : undefined);
             return (
               <li
                 // Action labels are user-supplied display strings; pairs may
@@ -597,20 +579,15 @@ export interface AITooltipBinding {
  * Defaults: `show*` toggles are inferred from the presence of the matching
  * data. Explicit `showContext={false}` etc. always win.
  */
-export function useAITooltipTarget(
-  options: UseAITooltipTargetOptions,
-): AITooltipBinding {
+export function useAITooltipTarget(options: UseAITooltipTargetOptions): AITooltipBinding {
   const ctx = useContext(AITooltipContext);
   const elRef = useRef<HTMLElement | null>(null);
 
   const data = useMemo<TooltipData>(() => {
-    const hasContext =
-      options.context !== undefined && options.context.length > 0;
+    const hasContext = options.context !== undefined && options.context.length > 0;
     const hasActions = (options.actions?.length ?? 0) > 0;
     const hasShortcut =
-      options.actions?.some(
-        (a) => a.shortcut !== undefined || a.hotkeyId !== undefined,
-      ) ?? false;
+      options.actions?.some((a) => a.shortcut !== undefined || a.hotkeyId !== undefined) ?? false;
     // exactOptionalPropertyTypes — only attach `context`/`actions` keys when
     // they have a concrete value. Spread-merge avoids assigning `undefined` to
     // a `string | undefined` slot.
@@ -702,15 +679,8 @@ export interface AITooltipProps extends UseAITooltipTargetOptions {
  */
 export const AITooltip = forwardRef<HTMLElement, AITooltipProps>(
   function AITooltip(props, forwardedRef) {
-    const {
-      children,
-      context,
-      actions,
-      showContext,
-      showActions,
-      showShortcuts,
-      ...rest
-    } = props as AITooltipProps & Record<string, unknown>;
+    const { children, context, actions, showContext, showActions, showShortcuts, ...rest } =
+      props as AITooltipProps & Record<string, unknown>;
     const targetOptions: UseAITooltipTargetOptions = {
       ...(context !== undefined ? { context } : {}),
       ...(actions !== undefined ? { actions } : {}),
@@ -805,11 +775,8 @@ export function readTooltipDataset(el: HTMLElement): {
   return {
     ...(context !== null && context.length > 0 ? { context } : {}),
     ...(actions !== undefined ? { actions } : {}),
-    showContext:
-      parseBool(el.getAttribute("data-tooltip-show-context")) ?? hasContext,
-    showActions:
-      parseBool(el.getAttribute("data-tooltip-show-actions")) ?? hasActions,
-    showShortcuts:
-      parseBool(el.getAttribute("data-tooltip-show-shortcuts")) ?? hasShortcut,
+    showContext: parseBool(el.getAttribute("data-tooltip-show-context")) ?? hasContext,
+    showActions: parseBool(el.getAttribute("data-tooltip-show-actions")) ?? hasActions,
+    showShortcuts: parseBool(el.getAttribute("data-tooltip-show-shortcuts")) ?? hasShortcut,
   };
 }

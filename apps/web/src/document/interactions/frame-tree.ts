@@ -4,10 +4,7 @@
 // tree so the ContextMenu sub-menu can render the available reparent
 // targets in document order with indentation. Pure — no React, no DOM.
 
-import type {
-  Document as AgocraftDocument,
-  Item as AgocraftItem,
-} from "@agocraft/core";
+import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
 import { findDescendantSet } from "../agocraft-mirror.js";
 
 export interface FrameTreeNode {
@@ -83,10 +80,7 @@ function labelFor(item: AgocraftItem): string {
 
 /** Resolve the picker's `id` field to the document's actual root id when
  *  the user picks the synthetic root row. Pass-through for any other id. */
-export function resolvePickerTargetId(
-  doc: AgocraftDocument,
-  pickerId: string,
-): string {
+export function resolvePickerTargetId(doc: AgocraftDocument, pickerId: string): string {
   if (pickerId === "@root") return String(doc.root.id);
   return pickerId;
 }

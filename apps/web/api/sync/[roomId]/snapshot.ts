@@ -12,28 +12,18 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { apiError } from "../../_lib/errors.js";
-import {
-  syncSnapshotKey,
-  syncSnapshotVectorKey,
-  syncUpdatesKey,
-} from "../../_lib/keys.js";
+import { syncSnapshotKey, syncSnapshotVectorKey, syncUpdatesKey } from "../../_lib/keys.js";
 import { assertKvAvailable, kv } from "../../_lib/kv.js";
 import {
   isValidRoomId,
   MAX_UPDATE_B64_BYTES,
   MAX_VECTOR_B64_BYTES,
 } from "../../_lib/sync-base64.js";
-import {
-  enforceContentLength,
-  enforceJsonContentType,
-} from "../../_lib/validate.js";
+import { enforceContentLength, enforceJsonContentType } from "../../_lib/validate.js";
 
 const MAX_BODY = MAX_UPDATE_B64_BYTES + MAX_VECTOR_B64_BYTES + 1024;
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-): Promise<void> {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!assertKvAvailable(res)) return;
   const roomIdParam = req.query.roomId;
   const roomId = Array.isArray(roomIdParam) ? roomIdParam[0] : roomIdParam;
@@ -54,13 +44,13 @@ export default async function handler(
     if (!enforceJsonContentType(req, res)) return;
     const body = req.body as { snapshot?: unknown; vector?: unknown } | undefined;
     if (
-      body === undefined
-      || typeof body.snapshot !== "string"
-      || typeof body.vector !== "string"
-      || body.snapshot.length === 0
-      || body.snapshot.length > MAX_UPDATE_B64_BYTES
-      || body.vector.length === 0
-      || body.vector.length > MAX_VECTOR_B64_BYTES
+      body === undefined ||
+      typeof body.snapshot !== "string" ||
+      typeof body.vector !== "string" ||
+      body.snapshot.length === 0 ||
+      body.snapshot.length > MAX_UPDATE_B64_BYTES ||
+      body.vector.length === 0 ||
+      body.vector.length > MAX_VECTOR_B64_BYTES
     ) {
       apiError(res, 400, "INVALID_FIELD", "body requires snapshot + vector base64");
       return;

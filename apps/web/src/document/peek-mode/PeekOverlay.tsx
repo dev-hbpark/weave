@@ -14,8 +14,8 @@
 //   - Pointer events are deliberately none — the capture layer in DesignPage
 //     owns event handling.
 
-import { useEffect, useSyncExternalStore } from "react";
 import type { PeekModeController } from "@agocraft/interaction";
+import { useEffect, useSyncExternalStore } from "react";
 
 export interface PeekOverlayProps {
   readonly controller: PeekModeController;
@@ -193,8 +193,7 @@ export function PeekOverlay(props: PeekOverlayProps): JSX.Element | null {
           position: "absolute",
           inset: 0,
           pointerEvents: "none",
-          background:
-            "radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.18) 80%)",
+          background: "radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.18) 80%)",
           zIndex: 25,
         }}
       />

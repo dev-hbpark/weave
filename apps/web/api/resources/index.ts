@@ -9,17 +9,17 @@
 // BLOB_READ_WRITE_TOKEN) we accept the data URL as-is and store it
 // directly in KV (works for small files).
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { put } from "@vercel/blob";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { apiError } from "../_lib/errors.js";
 import { blobPath, resourceIndexKey, resourceKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
 import {
-  MAX_RESOURCE_BYTES,
   enforceContentLength,
   enforceJsonContentType,
   isAllowedSrc,
   isBoundedString,
+  MAX_RESOURCE_BYTES,
 } from "../_lib/validate.js";
 
 interface ResourceRecord {
@@ -32,7 +32,7 @@ interface ResourceRecord {
 }
 
 async function readIndex(): Promise<string[]> {
-  return ((await kv.get<string[]>(resourceIndexKey())) ?? []);
+  return (await kv.get<string[]>(resourceIndexKey())) ?? [];
 }
 
 function generateId(kind: ResourceRecord["kind"]): string {
@@ -53,7 +53,9 @@ interface ParsedBody {
   dataUrl?: string;
 }
 
-function validateResourceBody(body: unknown):
+function validateResourceBody(
+  body: unknown,
+):
   | { ok: true; value: ParsedBody }
   | { ok: false; code: "MISSING_FIELD" | "INVALID_FIELD"; message: string } {
   if (body === null || typeof body !== "object") {
@@ -86,10 +88,7 @@ function validateResourceBody(body: unknown):
   return { ok: true, value: parsed };
 }
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-): Promise<void> {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!assertKvAvailable(res)) return;
 
   if (req.method === "GET") {

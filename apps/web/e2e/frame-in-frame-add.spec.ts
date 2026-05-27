@@ -7,7 +7,7 @@
 // (c) adapter 의 hit-test 로 drop 위치의 deepest frame 을
 //     containerId 로 사용 — 의 세 변경으로 path 활성.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -78,9 +78,7 @@ test("Alt+drag inside a parent frame adds the new item as that parent's child (n
 
   // The RubberBand 's recommendation popover opens on release. Pick the
   // first recommendation to commit the add.
-  const recommendation = page
-    .locator('[data-testid^="rubber-band-popover-item-"]')
-    .first();
+  const recommendation = page.locator('[data-testid^="rubber-band-popover-item-"]').first();
   await expect(recommendation).toBeVisible({ timeout: 5_000 });
   await recommendation.click();
 

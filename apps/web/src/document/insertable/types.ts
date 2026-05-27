@@ -22,9 +22,7 @@ import type { DomainKind } from "../types.js";
  * `slide` and `media` are explicitly NOT containers (their interiors are
  * structured, not free-form).
  */
-export type ContainerKind =
-  | "design"
-  | Extract<DomainKind, "canvas-design" | "block-doc">;
+export type ContainerKind = "design" | Extract<DomainKind, "canvas-design" | "block-doc">;
 
 export type AspectBucket = "wide" | "square" | "tall";
 
@@ -94,12 +92,8 @@ export interface InsertableCapability<K extends ContainerKind = ContainerKind> {
 }
 
 export interface InsertableRegistry {
-  readonly register: <K extends ContainerKind>(
-    capability: InsertableCapability<K>,
-  ) => () => void;
-  readonly get: <K extends ContainerKind>(
-    kind: K,
-  ) => InsertableCapability<K> | undefined;
+  readonly register: <K extends ContainerKind>(capability: InsertableCapability<K>) => () => void;
+  readonly get: <K extends ContainerKind>(kind: K) => InsertableCapability<K> | undefined;
   readonly list: () => ReadonlyArray<InsertableCapability>;
 }
 

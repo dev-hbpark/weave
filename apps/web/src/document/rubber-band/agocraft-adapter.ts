@@ -18,11 +18,11 @@
 // agocraft 's binding only owns the gesture lifecycle.
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
-import type { Editor } from "@agocraft/editor";
 import type {
   InsertableCapability as AgoCapability,
   InsertableRecommendation as AgoRec,
   NormalizedDragRect as AgoRect,
+  Editor,
 } from "@agocraft/editor";
 import type {
   InsertableCapability as WeaveCapability,
@@ -54,7 +54,13 @@ export interface RubberBandHitTestContext {
  *
  *  When `box` is undefined the rect is already container-local (or the
  *  container is root, which IS the design plane) — passthrough. */
-function rebaseWeaveRect(weave: WeaveRect, ago: AgoRect, box: AbsoluteFrame | undefined, designWidth: number, designHeight: number): WeaveRect {
+function rebaseWeaveRect(
+  weave: WeaveRect,
+  ago: AgoRect,
+  box: AbsoluteFrame | undefined,
+  designWidth: number,
+  designHeight: number,
+): WeaveRect {
   if (box === undefined) return weave;
   // Drag rect's absolute design-plane px (left, top, width, height).
   const absLeft = ago.left;
@@ -114,7 +120,10 @@ export function adaptWeaveCapabilityToAgocraft(
    *  - hit-test context is missing (caller didn't pass dimensions),
    *  - no frame covers the point (drag in pure root background),
    *  - the deepest hit IS the static container itself. */
-  function resolveContainer(agoRect: AgoRect, fallback: string): { id: string; box: AbsoluteFrame | undefined } {
+  function resolveContainer(
+    agoRect: AgoRect,
+    fallback: string,
+  ): { id: string; box: AbsoluteFrame | undefined } {
     if (hitTest === undefined) return { id: fallback, box: undefined };
     const doc = hitTest.getDocument();
     if (doc === undefined) return { id: fallback, box: undefined };

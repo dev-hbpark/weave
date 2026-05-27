@@ -9,7 +9,7 @@
 // design-system primitive; this is content composition.
 
 import { cn } from "@weave/design-system";
-import { type ReactElement } from "react";
+import type { ReactElement } from "react";
 import type { InsertableRecommendation } from "../insertable/types.js";
 
 export interface RecommendationPopoverProps {

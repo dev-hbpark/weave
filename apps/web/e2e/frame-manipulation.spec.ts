@@ -24,7 +24,10 @@ test("selecting a frame shows resize + rotation handles", async ({ page }) => {
   await addFrame(page, "slide");
 
   // Selecting the slide should reveal the handles.
-  await page.locator('[data-frame-id]').first().click({ position: { x: 4, y: 4 } });
+  await page
+    .locator("[data-frame-id]")
+    .first()
+    .click({ position: { x: 4, y: 4 } });
   const dirs = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
   for (const dir of dirs) {
     await expect(page.getByRole("button", { name: `Resize ${dir}`, exact: true })).toBeVisible();
@@ -60,7 +63,7 @@ test("move drag updates the frame's x/y (0..1 ratio)", async ({ page }) => {
   // events go to the motion.div regardless of where it ends up
   // visually, and the post-press setPointerCapture in
   // NestedFrame.startMove takes over for the subsequent moves.
-  const frame = page.locator('[data-frame-id]').first();
+  const frame = page.locator("[data-frame-id]").first();
   // Wait for the frame's box to stabilise before measuring — two equal
   // reads ≈ ResizeObserver / layout have settled. This avoids the
   // pre-resize / post-resize race noted above.

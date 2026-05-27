@@ -58,20 +58,16 @@ export function QuickActionBar({
 
   const commandIds = useMemo<ReadonlyArray<string>>(() => {
     if (host === null) return [];
-    const ctx = contextOverride !== undefined
-      ? { ...host.context, ...contextOverride }
-      : host.context;
+    const ctx =
+      contextOverride !== undefined ? { ...host.context, ...contextOverride } : host.context;
     // Older registries (pre-WI-027) may not implement listVisible —
     // fall back to filtering list() in that case.
     const lister = host.registry.listVisible;
     const all =
       typeof lister === "function"
         ? lister.call(host.registry, ctx)
-        : host.registry
-            .list()
-            .filter((m) => m.visibleWhen !== undefined && m.visibleWhen(ctx));
-    const filtered =
-      category !== undefined ? all.filter((m) => m.category === category) : all;
+        : host.registry.list().filter((m) => m.visibleWhen !== undefined && m.visibleWhen(ctx));
+    const filtered = category !== undefined ? all.filter((m) => m.category === category) : all;
     return filtered.slice(0, maxItems).map((m) => m.id);
   }, [host, category, contextOverride, maxItems]);
 

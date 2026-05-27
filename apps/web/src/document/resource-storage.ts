@@ -36,11 +36,7 @@ function generateId(kind: ResourceKind): string {
 }
 
 /** Adds a new resource. Returns the persisted record. */
-export function addResource(
-  kind: ResourceKind,
-  src: string,
-  name: string,
-): MediaResource {
+export function addResource(kind: ResourceKind, src: string, name: string): MediaResource {
   const record: MediaResource = {
     id: generateId(kind),
     kind,
@@ -52,10 +48,7 @@ export function addResource(
     sessionOnly: kind === "video",
   };
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(
-      KEY_PREFIX + record.id,
-      JSON.stringify(record),
-    );
+    window.localStorage.setItem(KEY_PREFIX + record.id, JSON.stringify(record));
   }
   // WI-025 — mirror to cloud. For images the server transcodes the
   // data: URL into a Blob URL and writes that back; we update the LS
@@ -66,10 +59,7 @@ export function addResource(
       if (cloud !== null && typeof window !== "undefined") {
         // Persist under the cloud's id so future bootstraps don't dupe.
         window.localStorage.removeItem(KEY_PREFIX + record.id);
-        window.localStorage.setItem(
-          KEY_PREFIX + cloud.id,
-          JSON.stringify(cloud),
-        );
+        window.localStorage.setItem(KEY_PREFIX + cloud.id, JSON.stringify(cloud));
       }
     })
     .catch(() => {
@@ -102,10 +92,7 @@ export function listResources(): ReadonlyArray<MediaResource> {
     if (raw === null) continue;
     try {
       const parsed = JSON.parse(raw) as MediaResource;
-      if (
-        typeof parsed.id !== "string" ||
-        (parsed.kind !== "image" && parsed.kind !== "video")
-      ) {
+      if (typeof parsed.id !== "string" || (parsed.kind !== "image" && parsed.kind !== "video")) {
         continue;
       }
       out.push({

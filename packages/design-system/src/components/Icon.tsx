@@ -98,21 +98,25 @@ export const IconPlus = forwardRef<SVGSVGElement, IconProps>(function IconPlus(p
   );
 });
 
-export const IconChevronLeft = forwardRef<SVGSVGElement, IconProps>(function IconChevronLeft(props, ref) {
-  return (
-    <SvgRoot ref={ref} {...props}>
-      <path d="M15 5l-7 7 7 7" />
-    </SvgRoot>
-  );
-});
+export const IconChevronLeft = forwardRef<SVGSVGElement, IconProps>(
+  function IconChevronLeft(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M15 5l-7 7 7 7" />
+      </SvgRoot>
+    );
+  },
+);
 
-export const IconChevronRight = forwardRef<SVGSVGElement, IconProps>(function IconChevronRight(props, ref) {
-  return (
-    <SvgRoot ref={ref} {...props}>
-      <path d="M9 5l7 7-7 7" />
-    </SvgRoot>
-  );
-});
+export const IconChevronRight = forwardRef<SVGSVGElement, IconProps>(
+  function IconChevronRight(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M9 5l7 7-7 7" />
+      </SvgRoot>
+    );
+  },
+);
 
 export const IconClose = forwardRef<SVGSVGElement, IconProps>(function IconClose(props, ref) {
   return (
@@ -140,13 +144,15 @@ export const IconItalic = forwardRef<SVGSVGElement, IconProps>(function IconItal
   );
 });
 
-export const IconUnderline = forwardRef<SVGSVGElement, IconProps>(function IconUnderline(props, ref) {
-  return (
-    <SvgRoot ref={ref} {...props}>
-      <path d="M6 4v8a6 6 0 0 0 12 0V4M5 20h14" />
-    </SvgRoot>
-  );
-});
+export const IconUnderline = forwardRef<SVGSVGElement, IconProps>(
+  function IconUnderline(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M6 4v8a6 6 0 0 0 12 0V4M5 20h14" />
+      </SvgRoot>
+    );
+  },
+);
 
 export const IconText = forwardRef<SVGSVGElement, IconProps>(function IconText(props, ref) {
   return (

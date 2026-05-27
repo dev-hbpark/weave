@@ -1,7 +1,7 @@
 import { createInteractionRegistry } from "@agocraft/interaction";
 import { describe, expect, it, vi } from "vitest";
-import { type InteractionAdapter, toAgocraftInteractionAdapter } from "./types.js";
 import type { HotspotBehavior } from "../types.js";
+import { type InteractionAdapter, toAgocraftInteractionAdapter } from "./types.js";
 
 describe("toAgocraftInteractionAdapter", () => {
   it("preserves the kind and registers cleanly on agocraft's registry", () => {

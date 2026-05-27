@@ -4,6 +4,7 @@
 // common video setting — quiet by default, click to toggle).
 // More: Fit · Loop · Volume slider.
 
+import type { VideoAttrs, VideoFit } from "@agocraft/core";
 import {
   ContextualToolbar as Bar,
   Button,
@@ -15,14 +16,7 @@ import {
   SegmentedControl,
   Switch,
 } from "@weave/design-system";
-import type { VideoAttrs, VideoFit } from "@agocraft/core";
-import {
-  isMixed,
-  MixedBadge,
-  sharedValue,
-  truncateUrl,
-  updateAll,
-} from "../multi-edit.js";
+import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 const FIT_OPTIONS = [

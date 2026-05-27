@@ -22,18 +22,12 @@ export interface ToolbarSectionProps {
    *  show Mixed badges + Mixed-aware default values for controls. */
   readonly multi: boolean;
   /** Image / video sections only. */
-  readonly onEditMediaSrc:
-    | ((kind: "image" | "video", current: string) => void)
-    | undefined;
+  readonly onEditMediaSrc: ((kind: "image" | "video", current: string) => void) | undefined;
   /** Shape section only — open the dialog with shape-fill semantics. */
-  readonly onEditShapeFill:
-    | ((kind: "image" | "video", current: string) => void)
-    | undefined;
+  readonly onEditShapeFill: ((kind: "image" | "video", current: string) => void) | undefined;
 }
 
-export type ToolbarSectionComponent = (
-  props: ToolbarSectionProps,
-) => JSX.Element | null;
+export type ToolbarSectionComponent = (props: ToolbarSectionProps) => JSX.Element | null;
 
 export interface ToolbarSection {
   readonly Component: ToolbarSectionComponent;

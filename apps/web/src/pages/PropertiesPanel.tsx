@@ -10,17 +10,11 @@
 // 영향 작게 유지 + dismissible.
 
 import type { Item as AgocraftItem, Unit as AgocraftUnit } from "@agocraft/core";
-import {
-  Card,
-  CardEyebrow,
-  FieldGroup,
-  IconButton,
-  TextField,
-} from "@weave/design-system";
+import { Card, CardEyebrow, FieldGroup, IconButton, TextField } from "@weave/design-system";
 import { useMemo } from "react";
 import {
-  DOMAIN_REGISTRY,
   type CameraTargetBehavior,
+  DOMAIN_REGISTRY,
   type DomainKind,
   type InteractionBehavior,
   type ItemFrame,
@@ -112,7 +106,8 @@ export function PropertiesPanel({
         step: 1,
         min: ROTATION_MIN,
         max: ROTATION_MAX,
-        onChange: (v) => commit({ rotation: (clamp(v, ROTATION_MIN, ROTATION_MAX) * Math.PI) / 180 }),
+        onChange: (v) =>
+          commit({ rotation: (clamp(v, ROTATION_MIN, ROTATION_MAX) * Math.PI) / 180 }),
       },
     ];
   }, [frame, itemId, onCommitFrame]);
@@ -130,9 +125,7 @@ export function PropertiesPanel({
         <div className="flex items-start justify-between gap-2 mb-3">
           <div>
             <CardEyebrow>{meta.label} frame</CardEyebrow>
-            <p className="text-[12px] text-[color:var(--text-muted)] mt-0.5">
-              {meta.tagline}
-            </p>
+            <p className="text-[12px] text-[color:var(--text-muted)] mt-0.5">{meta.tagline}</p>
           </div>
           <IconButton
             aria-label="Close properties"
@@ -162,9 +155,7 @@ export function PropertiesPanel({
                     key={row.key}
                     label={row.label}
                     value={String(row.value)}
-                    onChange={(e) =>
-                      onCommitAttrs(itemId, { [row.key]: e.currentTarget.value })
-                    }
+                    onChange={(e) => onCommitAttrs(itemId, { [row.key]: e.currentTarget.value })}
                     data-testid={`properties-attr-${row.key}`}
                   />
                 ))}
@@ -387,7 +378,10 @@ function InteractionRow({
                       }
                       return {
                         ...cam,
-                        position: { ...cam.position, [field]: v } as CameraTargetBehavior["position"],
+                        position: {
+                          ...cam.position,
+                          [field]: v,
+                        } as CameraTargetBehavior["position"],
                         manual: true,
                       };
                     });
@@ -626,12 +620,7 @@ function InteractionRow({
                 onCommitBehavior(itemId, unitId, (b) => {
                   if (b.kind !== "entrance-animation") return b;
                   const v = e.target.value;
-                  if (
-                    v !== "fade" &&
-                    v !== "slide-up" &&
-                    v !== "slide-down" &&
-                    v !== "zoom-in"
-                  )
+                  if (v !== "fade" && v !== "slide-up" && v !== "slide-down" && v !== "zoom-in")
                     return b;
                   return { ...b, mode: v };
                 })
@@ -708,7 +697,13 @@ function InteractionRow({
 
 function describeInteraction(
   kind: string,
-  behavior?: { kind: string; label?: string; order?: number; step?: number; action?: { type?: string } },
+  behavior?: {
+    kind: string;
+    label?: string;
+    order?: number;
+    step?: number;
+    action?: { type?: string };
+  },
 ): string {
   if (behavior === undefined) return "—";
   switch (kind) {
@@ -716,7 +711,7 @@ function describeInteraction(
       return `step ${(behavior.order ?? 0) + 1}` + (behavior.label ? ` · ${behavior.label}` : "");
     case "hotspot": {
       const a = (behavior as { action?: { type?: string } }).action;
-      return `${(behavior.label ?? "Hotspot")} → ${a?.type ?? "—"}`;
+      return `${behavior.label ?? "Hotspot"} → ${a?.type ?? "—"}`;
     }
     case "reveal-on-step":
       return `reveal at step ${(behavior.step ?? 0) + 1}`;

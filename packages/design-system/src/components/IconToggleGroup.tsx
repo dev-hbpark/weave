@@ -11,7 +11,7 @@ import { cn } from "../cn.js";
 export interface IconToggleOption<V extends string> {
   readonly value: V;
   readonly icon: ReactNode;
-  readonly label: string;        // for aria-label / tooltip
+  readonly label: string; // for aria-label / tooltip
 }
 
 export interface IconToggleGroupProps<V extends string> {
@@ -76,8 +76,6 @@ function _IconToggleGroup<V extends string>(
   );
 }
 
-export const IconToggleGroup = forwardRef(_IconToggleGroup) as <
-  V extends string,
->(
+export const IconToggleGroup = forwardRef(_IconToggleGroup) as <V extends string>(
   props: IconToggleGroupProps<V> & { ref?: React.Ref<HTMLDivElement> },
 ) => ReturnType<typeof _IconToggleGroup>;

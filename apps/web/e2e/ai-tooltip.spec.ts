@@ -22,9 +22,7 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("show-delay debounce — hover under 175ms does not open the tooltip", async ({
-  page,
-}) => {
+test("show-delay debounce — hover under 175ms does not open the tooltip", async ({ page }) => {
   // The DesignPage toolbar Undo button is wrapped with <AITooltip> — perfect
   // hook-path target. We hover briefly and confirm no tooltip appears.
   await prepareDesign(page, { flavor: "mixed", title: "Tip-A" });
@@ -37,9 +35,7 @@ test("show-delay debounce — hover under 175ms does not open the tooltip", asyn
   await page.mouse.move(0, 0);
 });
 
-test("show-delay debounce — hover past 175ms opens the tooltip", async ({
-  page,
-}) => {
+test("show-delay debounce — hover past 175ms opens the tooltip", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Tip-B" });
   const undo = page.getByTestId("toolbar-undo");
   await undo.hover();
@@ -51,9 +47,7 @@ test("show-delay debounce — hover past 175ms opens the tooltip", async ({
   await expect(tip).toContainText("되돌리기");
 });
 
-test("hide-buffer — leaving and returning within 100ms keeps tooltip visible", async ({
-  page,
-}) => {
+test("hide-buffer — leaving and returning within 100ms keeps tooltip visible", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Tip-C" });
   const undo = page.getByTestId("toolbar-undo");
   await undo.hover();
@@ -70,9 +64,7 @@ test("hide-buffer — leaving and returning within 100ms keeps tooltip visible",
   await expect(page.locator(TOOLTIP)).toHaveCount(1);
 });
 
-test("dataset auto-discover — [data-ai-tooltip] is picked up by the provider", async ({
-  page,
-}) => {
+test("dataset auto-discover — [data-ai-tooltip] is picked up by the provider", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Tip-D" });
   // Inject a tooltip target directly into the page. The App-root provider has
   // scan="dataset", so any element with [data-ai-tooltip="true"] should be
@@ -235,9 +227,7 @@ test("a11y — aria-describedby is wired, Escape dismisses without the hide buff
   await expect(page.locator(TOOLTIP)).toHaveCount(0);
 });
 
-test("reduced motion — morph snaps without transform interpolation", async ({
-  browser,
-}) => {
+test("reduced motion — morph snaps without transform interpolation", async ({ browser }) => {
   // Independent context so reducedMotion takes effect for the whole page life.
   const ctx = await browser.newContext({ reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -249,10 +239,7 @@ test("reduced motion — morph snaps without transform interpolation", async ({
       el.setAttribute("data-testid", id);
       el.setAttribute("data-ai-tooltip", "true");
       el.setAttribute("data-tooltip-context", id);
-      el.setAttribute(
-        "data-tooltip-actions",
-        JSON.stringify([{ action: "OK" }]),
-      );
+      el.setAttribute("data-tooltip-actions", JSON.stringify([{ action: "OK" }]));
       el.style.position = "fixed";
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
@@ -307,9 +294,7 @@ test("reduced motion — morph snaps without transform interpolation", async ({
   await ctx.close();
 });
 
-test("edge-flip — target near the viewport bottom flips the tooltip above", async ({
-  page,
-}) => {
+test("edge-flip — target near the viewport bottom flips the tooltip above", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Tip-Flip" });
   await page.evaluate(() => {
     const el = document.createElement("button");
@@ -338,12 +323,8 @@ test("edge-flip — target near the viewport bottom flips the tooltip above", as
   await page.getByTestId("flip-target").hover();
   await page.waitForTimeout(260);
   const rects = await page.evaluate(() => {
-    const target = document.querySelector(
-      '[data-testid="flip-target"]',
-    ) as HTMLElement;
-    const tip = document.querySelector(
-      "[data-ai-tooltip-surface]",
-    ) as HTMLElement;
+    const target = document.querySelector('[data-testid="flip-target"]') as HTMLElement;
+    const tip = document.querySelector("[data-ai-tooltip-surface]") as HTMLElement;
     const tr = target.getBoundingClientRect();
     const pr = tip.getBoundingClientRect();
     return { targetTop: tr.top, targetBottom: tr.bottom, tipTop: pr.top, tipBottom: pr.bottom };
@@ -364,10 +345,7 @@ test("overlay surface — AITooltip stays theme-independent so it stays readable
   await prepareDesign(page, { flavor: "mixed", title: "Tip-Th" });
   const tip = page.locator(TOOLTIP);
   const measure = async (theme: string) => {
-    await page.evaluate(
-      (t) => document.documentElement.setAttribute("data-theme", t),
-      theme,
-    );
+    await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
     await page.waitForTimeout(80);
     await page.getByTestId("toolbar-undo").hover();
     await page.waitForTimeout(260);
@@ -441,9 +419,7 @@ test("live data refresh — tooltip content updates in place when the bound data
   // SAME relatedTarget so it hits the "visible same target re-entering"
   // path inside the provider (which copies fresh data via open()).
   await page.evaluate(() => {
-    const t = document.querySelector(
-      '[data-testid="refresh-target"]',
-    ) as HTMLElement;
+    const t = document.querySelector('[data-testid="refresh-target"]') as HTMLElement;
     t.setAttribute("data-tooltip-context", "갱신된 컨텍스트");
     t.setAttribute(
       "data-tooltip-actions",
@@ -466,9 +442,7 @@ test("live data refresh — tooltip content updates in place when the bound data
   await expect(tip).toHaveCount(1);
 });
 
-test("region On/Off — explicit show-context=false hides the context block", async ({
-  page,
-}) => {
+test("region On/Off — explicit show-context=false hides the context block", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Tip-E" });
   await page.evaluate(() => {
     const el = document.createElement("button");

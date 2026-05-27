@@ -8,7 +8,7 @@
 // Text-editing surfaces (Lexical / contenteditable / input / textarea)
 // bypass these hotkeys — `editor-hotkeys.ts:isTextEditingTarget`.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -84,9 +84,7 @@ async function setupSiblingsAndChild(page: Page): Promise<{
   return { topA, topB, topC, childA1 };
 }
 
-test("Enter drills down to the first child of the current selection", async ({
-  page,
-}) => {
+test("Enter drills down to the first child of the current selection", async ({ page }) => {
   const { topA, childA1 } = await setupSiblingsAndChild(page);
   await preselect(page, topA);
   expect(await singleSelectionId(page)).toBe(topA);
@@ -102,9 +100,7 @@ test("Shift+Enter drills up to the parent", async ({ page }) => {
   expect(await singleSelectionId(page)).toBe(topA);
 });
 
-test("Tab moves to the next sibling and wraps around at the end", async ({
-  page,
-}) => {
+test("Tab moves to the next sibling and wraps around at the end", async ({ page }) => {
   const { topA, topB, topC } = await setupSiblingsAndChild(page);
   await preselect(page, topA);
   await page.keyboard.press("Tab");
@@ -116,9 +112,7 @@ test("Tab moves to the next sibling and wraps around at the end", async ({
   expect(await singleSelectionId(page)).toBe(topA);
 });
 
-test("Shift+Tab moves to the previous sibling and wraps around at the start", async ({
-  page,
-}) => {
+test("Shift+Tab moves to the previous sibling and wraps around at the start", async ({ page }) => {
   const { topA, topB, topC } = await setupSiblingsAndChild(page);
   await preselect(page, topA);
   await page.keyboard.press("Shift+Tab");

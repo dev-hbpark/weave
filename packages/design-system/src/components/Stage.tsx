@@ -1,18 +1,12 @@
 import {
   animate,
-  motion,
   type MotionValue,
+  motion,
   useMotionValue,
   useReducedMotion,
   useTransform,
 } from "motion/react";
-import {
-  type ReactNode,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../cn.js";
 
 export interface StageScene {
@@ -83,7 +77,7 @@ interface CameraState {
 function transitionCamera(a: CameraState, b: CameraState, p: number): CameraState {
   if (p <= 0) return a;
   if (p >= 1) return b;
-  const scale = Math.pow(a.scale, 1 - p) * Math.pow(b.scale, p);
+  const scale = a.scale ** (1 - p) * b.scale ** p;
   const ratio = scale === 0 ? 0 : a.scale / scale;
   const cx = b.cx - (1 - p) * (b.cx - a.cx) * ratio;
   const cy = b.cy - (1 - p) * (b.cy - a.cy) * ratio;
@@ -106,9 +100,9 @@ export function Stage({
   // fits the entire design plane to the viewport. The explicit `viewportSize`
   // prop wins if given.
   const outerRef = useRef<HTMLDivElement | null>(null);
-  const [measured, setMeasured] = useState<
-    { width: number; height: number } | undefined
-  >(undefined);
+  const [measured, setMeasured] = useState<{ width: number; height: number } | undefined>(
+    undefined,
+  );
 
   useLayoutEffect(() => {
     if (viewportSize !== undefined) return;
@@ -136,9 +130,7 @@ export function Stage({
   }, [viewportSize]);
 
   const vp = viewportSize ?? measured;
-  const baseScale = vp
-    ? Math.min(vp.width / designSize.width, vp.height / designSize.height)
-    : 1;
+  const baseScale = vp ? Math.min(vp.width / designSize.width, vp.height / designSize.height) : 1;
   const targetScale = Math.max((active ? active.scale : 1) * baseScale, 0.0001);
   const targetCx = active ? active.position.x : designSize.width / 2;
   const targetCy = active ? active.position.y : designSize.height / 2;
@@ -175,11 +167,7 @@ export function Stage({
     }
     // If a previous animation is still in flight, freeze the camera at its
     // current spot so the new tween starts smoothly from wherever we are.
-    const liveFrom = transitionCamera(
-      fromRef.current,
-      toRef.current,
-      progressMV.get(),
-    );
+    const liveFrom = transitionCamera(fromRef.current, toRef.current, progressMV.get());
     fromRef.current = liveFrom;
     toRef.current = next;
     progressMV.set(0);
@@ -201,19 +189,11 @@ export function Stage({
     //   - positionMag: design-pixel distance the camera pans (Euclidean).
     //   - scaleMag: log of the scale ratio. Perceived "zoom" is log-
     //     proportional, so log-distance is the natural metric here.
-    const positionMag = Math.hypot(
-      toRef.current.cx - liveFrom.cx,
-      toRef.current.cy - liveFrom.cy,
-    );
+    const positionMag = Math.hypot(toRef.current.cx - liveFrom.cx, toRef.current.cy - liveFrom.cy);
     const scaleMag = Math.abs(
-      Math.log(
-        Math.max(toRef.current.scale, 0.0001) / Math.max(liveFrom.scale, 0.0001),
-      ),
+      Math.log(Math.max(toRef.current.scale, 0.0001) / Math.max(liveFrom.scale, 0.0001)),
     );
-    const duration = Math.max(
-      0.45,
-      Math.min(1.8, 0.4 + positionMag / 1500 + scaleMag * 0.55),
-    );
+    const duration = Math.max(0.45, Math.min(1.8, 0.4 + positionMag / 1500 + scaleMag * 0.55));
     const controls = animate(progressMV, 1, {
       type: "tween",
       duration,
@@ -230,8 +210,9 @@ export function Stage({
   // Derive screen-space transform values from progress. Each useTransform
   // re-runs whenever progressMV changes; the ref reads inside the mapper
   // always see the latest from/to endpoints.
-  const scaleMV = useTransform(progressMV, (p) =>
-    transitionCamera(fromRef.current, toRef.current, p).scale,
+  const scaleMV = useTransform(
+    progressMV,
+    (p) => transitionCamera(fromRef.current, toRef.current, p).scale,
   );
   const txMV = useTransform(progressMV, (p) => {
     const c = transitionCamera(fromRef.current, toRef.current, p);
@@ -254,9 +235,7 @@ export function Stage({
       data-bg-tone={bgTone}
       style={{
         ...(background !== undefined ? { background } : {}),
-        ...(viewportSize
-          ? { width: viewportSize.width, height: viewportSize.height }
-          : {}),
+        ...(viewportSize ? { width: viewportSize.width, height: viewportSize.height } : {}),
       }}
     >
       <motion.div
@@ -386,9 +365,7 @@ function SceneItem({ scene, dimmed, progressMV, reduce, activeKey }: SceneItemPr
   // stagger map. The useTransform's read function runs every animation
   // frame while progressMV is moving — refs are stable by then.
   const opacity = useTransform(progressMV, (p) =>
-    reduce
-      ? toRef.current
-      : computeStaggered(fromRef.current, toRef.current, p),
+    reduce ? toRef.current : computeStaggered(fromRef.current, toRef.current, p),
   );
 
   return (

@@ -57,10 +57,7 @@ export function enforceContentLength(
   return true;
 }
 
-export function enforceJsonContentType(
-  req: VercelRequest,
-  res: VercelResponse,
-): boolean {
+export function enforceJsonContentType(req: VercelRequest, res: VercelResponse): boolean {
   const ctype = req.headers["content-type"];
   const value = typeof ctype === "string" ? ctype.toLowerCase() : "";
   if (!value.includes("application/json")) {

@@ -46,28 +46,20 @@ export interface CommandMetaLike {
     readonly scope?: string;
   };
   readonly category?: string;
-  readonly enabledWhen?: (
-    ctx: Readonly<Record<string, unknown>>,
-  ) => boolean;
-  readonly visibleWhen?: (
-    ctx: Readonly<Record<string, unknown>>,
-  ) => boolean;
+  readonly enabledWhen?: (ctx: Readonly<Record<string, unknown>>) => boolean;
+  readonly visibleWhen?: (ctx: Readonly<Record<string, unknown>>) => boolean;
 }
 
 /** Structural mirror of agocraft's `CommandMetadataRegistry`. */
 export interface CommandRegistryLike {
   resolve(id: string): CommandMetaLike | undefined;
-  list(filter?: {
-    readonly category?: string;
-  }): ReadonlyArray<CommandMetaLike>;
+  list(filter?: { readonly category?: string }): ReadonlyArray<CommandMetaLike>;
   isEnabled(id: string, ctx: Readonly<Record<string, unknown>>): boolean;
   /** WI-027 — snapshot of every command whose `visibleWhen(ctx)` is true.
    *  Hover affordances / quick-action bars read from here. Optional on
    *  the structural type so older registries (without listVisible) still
    *  compile; consumers should null-guard. */
-  listVisible?(
-    ctx: Readonly<Record<string, unknown>>,
-  ): ReadonlyArray<CommandMetaLike>;
+  listVisible?(ctx: Readonly<Record<string, unknown>>): ReadonlyArray<CommandMetaLike>;
 }
 
 export interface CommandHostValue {
@@ -83,37 +75,26 @@ export interface CommandHostValue {
   readonly dispatch: (id: string) => void;
 }
 
-const CommandHostContext = createContext<CommandHostValue | undefined>(
-  undefined,
-);
+const CommandHostContext = createContext<CommandHostValue | undefined>(undefined);
 
 export interface CommandHostProviderProps extends CommandHostValue {
   readonly children: ReactNode;
 }
 
-export function CommandHostProvider({
-  children,
-  ...value
-}: CommandHostProviderProps) {
+export function CommandHostProvider({ children, ...value }: CommandHostProviderProps) {
   // Stable value identity — caller is expected to memoize each field;
   // we don't recreate the object unless one changes.
   const memo = useMemo<CommandHostValue>(
     () => value,
     [value.registry, value.context, value.locale, value.dispatch],
   );
-  return (
-    <CommandHostContext.Provider value={memo}>
-      {children}
-    </CommandHostContext.Provider>
-  );
+  return <CommandHostContext.Provider value={memo}>{children}</CommandHostContext.Provider>;
 }
 
 export function useCommandHost(): CommandHostValue {
   const ctx = useContext(CommandHostContext);
   if (ctx === undefined) {
-    throw new Error(
-      "useCommandHost() called outside <CommandHostProvider>.",
-    );
+    throw new Error("useCommandHost() called outside <CommandHostProvider>.");
   }
   return ctx;
 }
@@ -149,9 +130,8 @@ export function useResolvedCommand(commandId: string): ResolvedCommand {
   const host = useCommandHost();
   return useMemo<ResolvedCommand>(() => {
     const meta = host.registry.resolve(commandId);
-    const label = meta !== undefined
-      ? (pickLocalized(meta.label, host.locale) ?? commandId)
-      : commandId;
+    const label =
+      meta !== undefined ? (pickLocalized(meta.label, host.locale) ?? commandId) : commandId;
     return {
       id: commandId,
       meta,
@@ -255,50 +235,42 @@ export interface CommandIconButtonProps {
   readonly onClick?: (e: MouseEvent<HTMLElement>) => void;
 }
 
-export const CommandIconButton = forwardRef<
-  HTMLButtonElement,
-  CommandIconButtonProps
->(function CommandIconButton(props, ref) {
-  const {
-    commandId,
-    children,
-    variant = "ghost",
-    size = "sm",
-    className,
-    onClick,
-  } = props;
-  const host = useCommandHost();
-  const resolved = useResolvedCommand(commandId);
-  const handleClick = useCallback(
-    (e: MouseEvent<HTMLElement>) => {
-      if (!resolved.enabled) return;
-      host.dispatch(commandId);
-      onClick?.(e);
-    },
-    [host, commandId, resolved.enabled, onClick],
-  );
-  const titleParts: string[] = [];
-  if (resolved.hint !== undefined) titleParts.push(resolved.hint);
-  if (resolved.hotkeyDisplay !== undefined) titleParts.push(resolved.hotkeyDisplay);
-  const title = titleParts.length > 0 ? titleParts.join(" · ") : undefined;
-  return (
-    <IconButton
-      ref={ref}
-      aria-label={resolved.label}
-      aria-keyshortcuts={resolved.hotkeyDisplay}
-      title={title}
-      variant={variant}
-      size={size}
-      className={className}
-      disabled={!resolved.enabled}
-      onClick={handleClick}
-      data-testid={`cmd-${commandId.replace(/\./g, "-")}`}
-      data-cmd-id={commandId}
-    >
-      {children}
-    </IconButton>
-  );
-});
+export const CommandIconButton = forwardRef<HTMLButtonElement, CommandIconButtonProps>(
+  function CommandIconButton(props, ref) {
+    const { commandId, children, variant = "ghost", size = "sm", className, onClick } = props;
+    const host = useCommandHost();
+    const resolved = useResolvedCommand(commandId);
+    const handleClick = useCallback(
+      (e: MouseEvent<HTMLElement>) => {
+        if (!resolved.enabled) return;
+        host.dispatch(commandId);
+        onClick?.(e);
+      },
+      [host, commandId, resolved.enabled, onClick],
+    );
+    const titleParts: string[] = [];
+    if (resolved.hint !== undefined) titleParts.push(resolved.hint);
+    if (resolved.hotkeyDisplay !== undefined) titleParts.push(resolved.hotkeyDisplay);
+    const title = titleParts.length > 0 ? titleParts.join(" · ") : undefined;
+    return (
+      <IconButton
+        ref={ref}
+        aria-label={resolved.label}
+        aria-keyshortcuts={resolved.hotkeyDisplay}
+        title={title}
+        variant={variant}
+        size={size}
+        className={className}
+        disabled={!resolved.enabled}
+        onClick={handleClick}
+        data-testid={`cmd-${commandId.replace(/\./g, "-")}`}
+        data-cmd-id={commandId}
+      >
+        {children}
+      </IconButton>
+    );
+  },
+);
 
 // ---------------------------------------------------------------------------
 // CommandKeycap — keycap only (no button).
@@ -310,11 +282,7 @@ export interface CommandKeycapProps {
   readonly className?: string;
 }
 
-export function CommandKeycap({
-  commandId,
-  size = "sm",
-  className,
-}: CommandKeycapProps) {
+export function CommandKeycap({ commandId, size = "sm", className }: CommandKeycapProps) {
   const resolved = useResolvedCommand(commandId);
   if (resolved.hotkeyDisplay === undefined) return null;
   return (

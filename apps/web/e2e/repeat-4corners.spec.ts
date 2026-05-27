@@ -12,7 +12,7 @@
 // Fix: the adapter computes `aspectRatio` and `bucket` from raw px
 // (`ago.width`, `ago.height`), matching weave's native helper.
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { prepareDesign } from "./helpers";
 
 // WI-032 Phase 3c — rubber-band drag-add 의 popover commit 흐름이

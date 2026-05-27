@@ -16,13 +16,13 @@
 // round-trip unit test in `migrate-frame-only.test.ts`.
 
 import {
-  type Item as AgocraftItem,
   type Document as AgocraftDocument,
+  type Item as AgocraftItem,
   type BuiltinItemFrame as ItemFrame,
-  itemId as makeItemId,
   type ItemMeta,
-  paintSolid,
+  itemId as makeItemId,
   type PaintSpec,
+  paintSolid,
 } from "@agocraft/core";
 
 /** Keep in sync with `agocraft-mirror.ts:31` `SCHEMA_VERSION`. */
@@ -33,9 +33,7 @@ type LegacyKind = "slide" | "canvas-design" | "block-doc" | "media";
 /** Public entry point — walk the doc's tree and rewrite legacy domain Items
  *  to `frame` + primitive children. Idempotent: docs already free of legacy
  *  kinds are returned with `===` identity. */
-export function migrateLegacyKindsToFrame(
-  doc: AgocraftDocument,
-): AgocraftDocument {
+export function migrateLegacyKindsToFrame(doc: AgocraftDocument): AgocraftDocument {
   const nextRoot = migrateItem(doc.root);
   if (nextRoot === doc.root) return doc;
   return { ...doc, root: nextRoot };
@@ -179,9 +177,7 @@ const CONVERTERS: Readonly<
   media: (attrs, ctx) => {
     const caption = (attrs.caption as string | undefined) ?? "";
     const tone = (attrs.tone as "image" | "video" | undefined) ?? "image";
-    const out: AgocraftItem[] = [
-      buildMedia(ctx, "media", tone, rectFrame(0.05, 0.05, 0.9, 0.85)),
-    ];
+    const out: AgocraftItem[] = [buildMedia(ctx, "media", tone, rectFrame(0.05, 0.05, 0.9, 0.85))];
     if (caption.length > 0) {
       out.push(
         buildText(ctx, "caption", caption, {
@@ -206,29 +202,17 @@ function convertLegacy(
 // ── helpers ─────────────────────────────────────────────────────────────
 
 function isLegacyKind(kind: string): kind is LegacyKind {
-  return (
-    kind === "slide" ||
-    kind === "canvas-design" ||
-    kind === "block-doc" ||
-    kind === "media"
-  );
+  return kind === "slide" || kind === "canvas-design" || kind === "block-doc" || kind === "media";
 }
 
-function rectFrame(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): ItemFrame {
+function rectFrame(x: number, y: number, width: number, height: number): ItemFrame {
   return { x, y, width, height, rotation: 0 };
 }
 
 function pickFrame(
   attrs: Readonly<Record<string, unknown>>,
 ): Readonly<{ frame: ItemFrame; background?: string }> {
-  const frame =
-    (attrs.frame as ItemFrame | undefined) ??
-    rectFrame(0, 0, 1, 1);
+  const frame = (attrs.frame as ItemFrame | undefined) ?? rectFrame(0, 0, 1, 1);
   const background = attrs.background as string | undefined;
   if (background === undefined) return { frame };
   return { frame, background };
@@ -250,8 +234,7 @@ function buildText(
   const attrs: Readonly<Record<string, unknown>> = {
     frame: override.frame,
     text,
-    fontFamily:
-      "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
     fontSize: override.fontSize,
     fontWeight: override.fontWeight ?? "normal",
     fontStyle: "normal",

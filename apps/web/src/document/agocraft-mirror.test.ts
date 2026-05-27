@@ -6,13 +6,13 @@ import {
   toAgocraftItem,
   unitToBehavior,
 } from "./agocraft-mirror.js";
-import { FULL_FRAME } from "./types.js";
 import type {
   CameraTargetBehavior,
-  Document as WeaveDocument,
   HotspotBehavior,
+  Document as WeaveDocument,
   Item as WeaveItem,
 } from "./types.js";
+import { FULL_FRAME } from "./types.js";
 
 const META_DATE = "2026-05-22T00:00:00Z";
 

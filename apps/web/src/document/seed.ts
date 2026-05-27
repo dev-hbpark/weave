@@ -134,8 +134,7 @@ export function createDefaultItem<K extends DomainKind>(
     text: {
       frame: FULL_FRAME,
       text: "텍스트",
-      fontFamily:
-        "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
       fontSize: 24,
       fontWeight: "normal",
       fontStyle: "normal",

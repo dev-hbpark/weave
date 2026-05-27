@@ -11,7 +11,7 @@
 // fans out `onCancel` to every attached host's active binding and
 // clears `vm.rubberBand`. This regression spec pins that flow.
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { prepareDesign } from "./helpers";
 
 // WI-032 Phase 3c — rubber-band 가 빈 frame-stage 위에서 시작하는데
@@ -71,5 +71,5 @@ test.skip("Esc mid-drag cancels — subsequent pointerup does NOT open the popov
     )
     .toBe("idle");
   // No popover content rendered.
-  await expect(page.locator('[data-side]')).toHaveCount(0);
+  await expect(page.locator("[data-side]")).toHaveCount(0);
 });

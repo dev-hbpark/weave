@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import type { Document, Item } from "@agocraft/core";
 import { itemId } from "@agocraft/core";
+import { describe, expect, it } from "vitest";
 import { createDesignFrameZOrderAdapter } from "./design-frame.zorder.js";
 
 function frame(id: string, kind: string): Item {
@@ -81,11 +81,7 @@ describe("createDesignFrameZOrderAdapter", () => {
   });
 
   it("moveToTop uses listSiblings to find the max sibling z (returns empty Patch in Phase 2)", () => {
-    const d = doc([
-      frame("a", "slide"),
-      frame("b", "slide"),
-      frame("c", "slide"),
-    ]);
+    const d = doc([frame("a", "slide"), frame("b", "slide"), frame("c", "slide")]);
     const adapter = createDesignFrameZOrderAdapter({ getDocument: () => d });
     // Phase 2 returns empty Patch; verify the call path doesn't throw.
     expect(adapter.moveToTop("a")).toEqual([]);

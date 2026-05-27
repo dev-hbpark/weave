@@ -1,14 +1,14 @@
-import { LexicalComposer } from "@lexical/react/LexicalComposer";
-import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
-import { ContentEditable } from "@lexical/react/LexicalContentEditable";
-import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
-import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { CollaborationPlugin } from "@lexical/react/LexicalCollaborationPlugin";
+import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { ContentEditable } from "@lexical/react/LexicalContentEditable";
+import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
+import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
+import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { $patchStyleText } from "@lexical/selection";
 import { $getSelection, $isRangeSelection } from "lexical";
-import * as Y from "yjs";
 import { useCallback, useMemo } from "react";
+import type * as Y from "yjs";
 
 /**
  * Minimal Lexical editor wrapped for the PoC.
@@ -94,11 +94,7 @@ export function LexicalTextBox({ label, yDoc, anchorId }: LexicalTextBoxProps) {
           />
         </div>
         <HistoryPlugin />
-        <CollaborationPlugin
-          id={anchorId}
-          providerFactory={providerFactory}
-          shouldBootstrap
-        />
+        <CollaborationPlugin id={anchorId} providerFactory={providerFactory} shouldBootstrap />
         <ApplyRangeToolbar />
       </LexicalComposer>
     </div>

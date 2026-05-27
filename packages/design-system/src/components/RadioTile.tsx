@@ -1,5 +1,5 @@
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
-import { type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "../cn.js";
 
 /** Radio group rendered as visual tiles (icon + title + tagline). Used by the
@@ -10,18 +10,8 @@ export interface RadioTileGroupProps extends RadioGroupPrimitive.RadioGroupProps
   readonly cols?: 2 | 3 | 4;
 }
 
-export function RadioTileGroup({
-  className,
-  children,
-  cols = 2,
-  ...rest
-}: RadioTileGroupProps) {
-  const colClass =
-    cols === 2
-      ? "md:grid-cols-2"
-      : cols === 3
-        ? "md:grid-cols-3"
-        : "md:grid-cols-4";
+export function RadioTileGroup({ className, children, cols = 2, ...rest }: RadioTileGroupProps) {
+  const colClass = cols === 2 ? "md:grid-cols-2" : cols === 3 ? "md:grid-cols-3" : "md:grid-cols-4";
   return (
     <RadioGroupPrimitive.Root
       {...rest}
@@ -38,13 +28,7 @@ export interface RadioTileProps extends Omit<RadioGroupPrimitive.RadioGroupItemP
   readonly tagline?: ReactNode;
 }
 
-export function RadioTile({
-  className,
-  icon,
-  title,
-  tagline,
-  ...rest
-}: RadioTileProps) {
+export function RadioTile({ className, icon, title, tagline, ...rest }: RadioTileProps) {
   return (
     <RadioGroupPrimitive.Item
       {...rest}
@@ -68,9 +52,7 @@ export function RadioTile({
           {icon}
         </div>
       ) : null}
-      <div className="text-[14px] font-medium text-[color:var(--text-strong)]">
-        {title}
-      </div>
+      <div className="text-[14px] font-medium text-[color:var(--text-strong)]">{title}</div>
       {tagline !== undefined ? (
         <div className="text-[12px] text-[color:var(--text-soft)] mt-1">{tagline}</div>
       ) : null}

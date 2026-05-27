@@ -77,42 +77,40 @@ const stateStyles: Record<RubberBandState, string> = {
   ].join(" "),
 };
 
-export const RubberBand = forwardRef<HTMLDivElement, RubberBandProps>(
-  function RubberBand(
-    { rect, state, showDimensions, displayDimensions, children, className },
-    ref,
-  ) {
-    const showChip = showDimensions ?? state === "drawing";
-    const chipDims = displayDimensions ?? { width: rect.width, height: rect.height };
-    return (
-      <div
-        ref={ref}
-        // The custom `data-rubber-band-state` attribute is what
-        // `rubber-band.css` keys the pulse animation off. We keep `data-state`
-        // too (matches Radix convention) for test selectors.
-        data-state={state}
-        data-rubber-band-state={state}
-        data-testid="rubber-band"
-        aria-hidden
-        className={cn(
-          "absolute pointer-events-none",
-          "rounded-[var(--radius-sm)]",
-          stateStyles[state],
-          className,
-        )}
-        style={{
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-        }}
-      >
-        {children}
-        {showChip ? <DimensionsChip width={chipDims.width} height={chipDims.height} /> : null}
-      </div>
-    );
-  },
-);
+export const RubberBand = forwardRef<HTMLDivElement, RubberBandProps>(function RubberBand(
+  { rect, state, showDimensions, displayDimensions, children, className },
+  ref,
+) {
+  const showChip = showDimensions ?? state === "drawing";
+  const chipDims = displayDimensions ?? { width: rect.width, height: rect.height };
+  return (
+    <div
+      ref={ref}
+      // The custom `data-rubber-band-state` attribute is what
+      // `rubber-band.css` keys the pulse animation off. We keep `data-state`
+      // too (matches Radix convention) for test selectors.
+      data-state={state}
+      data-rubber-band-state={state}
+      data-testid="rubber-band"
+      aria-hidden
+      className={cn(
+        "absolute pointer-events-none",
+        "rounded-[var(--radius-sm)]",
+        stateStyles[state],
+        className,
+      )}
+      style={{
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      }}
+    >
+      {children}
+      {showChip ? <DimensionsChip width={chipDims.width} height={chipDims.height} /> : null}
+    </div>
+  );
+});
 
 interface DimensionsChipProps {
   readonly width: number;

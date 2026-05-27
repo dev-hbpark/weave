@@ -13,11 +13,7 @@
 // public design-system exports (ContextMenuLabel + ContextMenuGroup +
 // ContextMenuItem with `tagline` / `icon` slots) added by DR-design-011.
 
-import {
-  ContextMenuGroup,
-  ContextMenuItem,
-  ContextMenuLabel,
-} from "@weave/design-system";
+import { ContextMenuGroup, ContextMenuItem, ContextMenuLabel } from "@weave/design-system";
 import type { ReactNode } from "react";
 import type { LayerHit } from "./hit-test.js";
 
@@ -74,14 +70,8 @@ export function LayerPickerMenu({
             icon={<LayerSwatch depth={hit.depth} />}
             tagline={sizeTagline(hit)}
             onSelect={() => onPickLayer(hit.id)}
-            onMouseEnter={
-              onHoverPreview === undefined
-                ? undefined
-                : () => onHoverPreview(hit.id)
-            }
-            onMouseLeave={
-              onHoverPreview === undefined ? undefined : () => onHoverPreview(null)
-            }
+            onMouseEnter={onHoverPreview === undefined ? undefined : () => onHoverPreview(hit.id)}
+            onMouseLeave={onHoverPreview === undefined ? undefined : () => onHoverPreview(null)}
             data-testid={`layer-pick-${hit.id}`}
           >
             {hit.label}

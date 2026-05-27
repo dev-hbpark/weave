@@ -14,13 +14,13 @@ import { apiError } from "../_lib/errors.js";
 import { designIndexKey, designKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
 import {
-  MAX_DESIGN_BYTES,
   enforceContentLength,
   enforceJsonContentType,
   isBoundedString,
   isFiniteNumber,
   isIsoDateString,
   isValidId,
+  MAX_DESIGN_BYTES,
 } from "../_lib/validate.js";
 
 interface StoredDesign {
@@ -42,7 +42,9 @@ async function writeIndex(ids: ReadonlyArray<string>): Promise<void> {
   await kv.set(designIndexKey(), [...ids]);
 }
 
-function validateDesignBody(body: unknown):
+function validateDesignBody(
+  body: unknown,
+):
   | { ok: true; value: StoredDesign }
   | { ok: false; code: "MISSING_FIELD" | "INVALID_FIELD"; message: string } {
   if (body === null || typeof body !== "object") {
@@ -56,10 +58,18 @@ function validateDesignBody(body: unknown):
     return { ok: false, code: "INVALID_FIELD", message: "title must be string ≤ 256 chars" };
   }
   if (!isFiniteNumber(b.width, 1, 100_000)) {
-    return { ok: false, code: "INVALID_FIELD", message: "width must be finite number in [1, 100000]" };
+    return {
+      ok: false,
+      code: "INVALID_FIELD",
+      message: "width must be finite number in [1, 100000]",
+    };
   }
   if (!isFiniteNumber(b.height, 1, 100_000)) {
-    return { ok: false, code: "INVALID_FIELD", message: "height must be finite number in [1, 100000]" };
+    return {
+      ok: false,
+      code: "INVALID_FIELD",
+      message: "height must be finite number in [1, 100000]",
+    };
   }
   if (!isBoundedString(b.background, 64)) {
     return { ok: false, code: "INVALID_FIELD", message: "background must be string ≤ 64 chars" };
@@ -78,10 +88,7 @@ function validateDesignBody(body: unknown):
   return { ok: true, value: b as StoredDesign };
 }
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-): Promise<void> {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!assertKvAvailable(res)) return;
 
   if (req.method === "GET") {
@@ -129,12 +136,11 @@ export default async function handler(
       // cap (1 MB on the free tier, 10 MB on Pro). Surface this as a
       // separate stable code so the client can fall back to localStorage-
       // only mode for this design without disabling cloud sync entirely.
-      const message =
-        err instanceof Error ? err.message : "Unknown storage error";
+      const message = err instanceof Error ? err.message : "Unknown storage error";
       const isSizeError =
-        /size|too large|max-?value/i.test(message)
-        || (typeof (err as { status?: number }).status === "number"
-          && (err as { status: number }).status === 413);
+        /size|too large|max-?value/i.test(message) ||
+        (typeof (err as { status?: number }).status === "number" &&
+          (err as { status: number }).status === 413);
       if (isSizeError) {
         apiError(
           res,

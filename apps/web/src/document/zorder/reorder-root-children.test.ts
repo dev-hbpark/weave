@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import type { Document, Item } from "@agocraft/core";
 import { itemId } from "@agocraft/core";
+import { describe, expect, it } from "vitest";
 import { reorderRootChildren } from "../agocraft-mirror.js";
 
 function frame(id: string, kind: string): Item {

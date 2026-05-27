@@ -11,7 +11,7 @@
 //     every selected frame.
 //   • Single → no chrome (the existing per-frame SelectionLayer covers it).
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -25,9 +25,7 @@ async function selectedIds(page: Page): Promise<string[]> {
         itemSelection: { items: () => ReadonlyArray<unknown> };
       };
     };
-    return (w.__weaveVm?.itemSelection.items() ?? [])
-      .map((x) => String(x))
-      .sort();
+    return (w.__weaveVm?.itemSelection.items() ?? []).map((x) => String(x)).sort();
   });
 }
 
@@ -49,10 +47,7 @@ async function setupTwoSlides(page: Page): Promise<[string, string]> {
   return [ids[0] as string, ids[1] as string];
 }
 
-async function centerOf(
-  page: Page,
-  id: string,
-): Promise<{ x: number; y: number }> {
+async function centerOf(page: Page, id: string): Promise<{ x: number; y: number }> {
   return await page.evaluate((fid) => {
     const el = document.querySelector(`[data-frame-id="${fid}"]`) as HTMLElement | null;
     if (el === null) return { x: 0, y: 0 };
@@ -61,10 +56,7 @@ async function centerOf(
   }, id);
 }
 
-async function multiPreselect(
-  page: Page,
-  ids: ReadonlyArray<string>,
-): Promise<void> {
+async function multiPreselect(page: Page, ids: ReadonlyArray<string>): Promise<void> {
   await page.evaluate((arr) => {
     const w = window as unknown as {
       __weaveVm?: { itemSelection: { setMany: (xs: Iterable<unknown>) => void } };
@@ -83,9 +75,7 @@ async function multiPreselect(
   );
 }
 
-test("plain click on a multi-selected frame preserves the selection", async ({
-  page,
-}) => {
+test("plain click on a multi-selected frame preserves the selection", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const [a, b] = await setupTwoSlides(page);
   await multiPreselect(page, [a, b]);
@@ -101,9 +91,7 @@ test("plain click on a multi-selected frame preserves the selection", async ({
   expect(await selectedIds(page)).toEqual([a, b].sort());
 });
 
-test("Shift+click on an already-selected frame removes it from the multi", async ({
-  page,
-}) => {
+test("Shift+click on an already-selected frame removes it from the multi", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const [a, b] = await setupTwoSlides(page);
   await multiPreselect(page, [a, b]);
@@ -117,9 +105,7 @@ test("Shift+click on an already-selected frame removes it from the multi", async
   expect(await selectedIds(page)).toEqual([b]);
 });
 
-test("Shift+click on an unselected frame adds it to the selection", async ({
-  page,
-}) => {
+test("Shift+click on an unselected frame adds it to the selection", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const [a, b] = await setupTwoSlides(page);
   await page.evaluate((id) => {
@@ -138,9 +124,7 @@ test("Shift+click on an unselected frame adds it to the selection", async ({
   expect(await selectedIds(page)).toEqual([a, b].sort());
 });
 
-test("multi-selection renders a union chrome; single does not", async ({
-  page,
-}) => {
+test("multi-selection renders a union chrome; single does not", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const [a, b] = await setupTwoSlides(page);
 
@@ -157,11 +141,6 @@ test("multi-selection renders a union chrome; single does not", async ({
   // Multi — chrome appears with the correct count.
   await multiPreselect(page, [a, b]);
   await expect(page.getByTestId("multi-selection-chrome")).toBeVisible();
-  await expect(page.getByTestId("multi-selection-chrome")).toHaveAttribute(
-    "data-count",
-    "2",
-  );
-  await expect(page.getByTestId("multi-selection-count")).toHaveText(
-    "2 selected",
-  );
+  await expect(page.getByTestId("multi-selection-chrome")).toHaveAttribute("data-count", "2");
+  await expect(page.getByTestId("multi-selection-count")).toHaveText("2 selected");
 });

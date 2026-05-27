@@ -4,10 +4,7 @@
 // and the cycle-blocked set computation — all pure functions safe to
 // unit-test without jsdom.
 
-import type {
-  Document as AgocraftDocument,
-  Item as AgocraftItem,
-} from "@agocraft/core";
+import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
 import { itemId as makeItemId } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
 import { addChild, toAgocraftDocument } from "../agocraft-mirror.js";

@@ -8,12 +8,7 @@
 
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { paintSolid } from "@agocraft/core";
-import {
-  type BuildContext,
-  buildFrameRoot,
-  buildShapeChild,
-  buildTextChild,
-} from "../builders.js";
+import { type BuildContext, buildFrameRoot, buildShapeChild, buildTextChild } from "../builders.js";
 import type { Preset, PresetCategory, PresetFactoryContext } from "../types.js";
 import { resolveLocalizedText } from "../types.js";
 
@@ -76,11 +71,10 @@ function buildAgendaBullets(ctx: PresetFactoryContext): AgocraftItem {
       },
     ),
   );
-  return buildFrameRoot(
-    build,
-    { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-    [title, ...rows],
-  );
+  return buildFrameRoot(build, { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 }, [
+    title,
+    ...rows,
+  ]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -139,11 +133,7 @@ function buildAgendaNumbered(ctx: PresetFactoryContext): AgocraftItem {
     );
     children.push(num, label);
   });
-  return buildFrameRoot(
-    build,
-    { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-    children,
-  );
+  return buildFrameRoot(build, { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 }, children);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -209,11 +199,7 @@ function buildAgendaThreeColumn(ctx: PresetFactoryContext): AgocraftItem {
     );
     children.push(card, num, label);
   });
-  return buildFrameRoot(
-    build,
-    { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-    children,
-  );
+  return buildFrameRoot(build, { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 }, children);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -274,11 +260,7 @@ function buildAgendaTimeline(ctx: PresetFactoryContext): AgocraftItem {
     );
     children.push(dot, label);
   });
-  return buildFrameRoot(
-    build,
-    { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-    children,
-  );
+  return buildFrameRoot(build, { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 }, children);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -329,11 +311,11 @@ function buildAgendaMinimal(ctx: PresetFactoryContext): AgocraftItem {
         },
       ),
     );
-  return buildFrameRoot(
-    build,
-    { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-    [title, divider, ...rows],
-  );
+  return buildFrameRoot(build, { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 }, [
+    title,
+    divider,
+    ...rows,
+  ]);
 }
 
 export const agendaPresets = [

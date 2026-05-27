@@ -31,14 +31,14 @@ test("ColorPicker closes when the canvas (with stopPropagation pointerdown) is c
   // Open the header design-background ColorPicker.
   await page.getByTestId("header-design-background").locator("button").first().click();
   // Radix popover content is portaled; the content carries data-state="open".
-  const popoverContent = page.locator('[data-radix-popper-content-wrapper]');
+  const popoverContent = page.locator("[data-radix-popper-content-wrapper]");
   await expect(popoverContent).toBeVisible();
 
   // Click inside the frame body — this is where FrameStage's
   // `e.stopPropagation()` on pointerdown lives (FrameStage.tsx:565 path).
   // Use the frame's bounding rect interior, not the testid, so we hit the
   // actual canvas surface rather than any portal element.
-  const frame = page.locator('[data-frame-id]').first();
+  const frame = page.locator("[data-frame-id]").first();
   const box = await frame.boundingBox();
   if (box === null) throw new Error("frame bounding box unavailable");
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -61,7 +61,7 @@ test("DropdownMenu closes when the canvas (with stopPropagation pointerdown) is 
   const menu = page.locator('[role="menu"]');
   await expect(menu).toBeVisible();
 
-  const frame = page.locator('[data-frame-id]').first();
+  const frame = page.locator("[data-frame-id]").first();
   const box = await frame.boundingBox();
   if (box === null) throw new Error("frame bounding box unavailable");
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);

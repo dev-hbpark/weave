@@ -27,10 +27,7 @@ export function isCloudAvailable(): boolean {
   return cloudAvailable;
 }
 
-async function safeFetch(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response | null> {
+async function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response | null> {
   try {
     const resp = await fetch(input, {
       credentials: "same-origin",
@@ -70,23 +67,17 @@ interface CloudDesignSummary {
   readonly updatedAt: string;
 }
 
-export async function fetchAllDesignsCloud(): Promise<
-  ReadonlyArray<CloudDesignSummary>
-> {
+export async function fetchAllDesignsCloud(): Promise<ReadonlyArray<CloudDesignSummary>> {
   const resp = await safeFetch("/api/designs");
   if (resp === null) return [];
-  const body = (await resp.json().catch(() => null)) as
-    | { designs?: CloudDesignSummary[] }
-    | null;
+  const body = (await resp.json().catch(() => null)) as { designs?: CloudDesignSummary[] } | null;
   return body?.designs ?? [];
 }
 
 export async function fetchDesignCloud(id: string): Promise<Design | null> {
   const resp = await safeFetch(`/api/designs/${encodeURIComponent(id)}`);
   if (resp === null || resp.status !== 200) return null;
-  const body = (await resp.json().catch(() => null)) as
-    | { design?: Design }
-    | null;
+  const body = (await resp.json().catch(() => null)) as { design?: Design } | null;
   return body?.design ?? null;
 }
 
@@ -153,14 +144,10 @@ interface CloudResource {
   readonly sessionOnly: boolean;
 }
 
-export async function fetchAllResourcesCloud(): Promise<
-  ReadonlyArray<CloudResource>
-> {
+export async function fetchAllResourcesCloud(): Promise<ReadonlyArray<CloudResource>> {
   const resp = await safeFetch("/api/resources");
   if (resp === null) return [];
-  const body = (await resp.json().catch(() => null)) as
-    | { resources?: CloudResource[] }
-    | null;
+  const body = (await resp.json().catch(() => null)) as { resources?: CloudResource[] } | null;
   return body?.resources ?? [];
 }
 
@@ -175,19 +162,14 @@ export async function uploadResourceCloud(
   // Images come in as data: URLs (we let the server transcode to Blob);
   // videos come in as blob: URLs (those die outside the browser, so we
   // pass src as-is + accept sessionOnly).
-  const body =
-    src.startsWith("data:")
-      ? { kind, name, dataUrl: src }
-      : { kind, name, src };
+  const body = src.startsWith("data:") ? { kind, name, dataUrl: src } : { kind, name, src };
   const resp = await safeFetch("/api/resources", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (resp === null || resp.status !== 200) return null;
-  const parsed = (await resp.json().catch(() => null)) as
-    | { resource?: CloudResource }
-    | null;
+  const parsed = (await resp.json().catch(() => null)) as { resource?: CloudResource } | null;
   return parsed?.resource ?? null;
 }
 

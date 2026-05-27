@@ -8,7 +8,7 @@
 //      (Figma parity).
 //   4. Edge-resize on a text frame does NOT change fontSize.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -32,25 +32,18 @@ async function addTextViaMenu(page: Page): Promise<string> {
   });
 }
 
-async function readAttrs(
-  page: Page,
-  id: string,
-): Promise<Record<string, unknown>> {
+async function readAttrs(page: Page, id: string): Promise<Record<string, unknown>> {
   return await page.evaluate((fid) => {
     type Ch = { id: unknown; attrs: Readonly<Record<string, unknown>> };
     const w = window as unknown as {
       __weaveDoc?: { root: { children: ReadonlyArray<Ch> } };
     };
-    const item = (w.__weaveDoc?.root.children ?? []).find(
-      (c) => String(c.id) === fid,
-    );
+    const item = (w.__weaveDoc?.root.children ?? []).find((c) => String(c.id) === fid);
     return item?.attrs as Record<string, unknown>;
   }, id);
 }
 
-test("Add menu → 텍스트 creates a text item with default attrs", async ({
-  page,
-}) => {
+test("Add menu → 텍스트 creates a text item with default attrs", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-A" });
   const id = await addTextViaMenu(page);
@@ -67,9 +60,7 @@ test("Add menu → 텍스트 creates a text item with default attrs", async ({
   await expect(page.getByTestId("text-block")).toBeVisible();
 });
 
-test("Toolbar text section appears; changing fontSize updates the item", async ({
-  page,
-}) => {
+test("Toolbar text section appears; changing fontSize updates the item", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-B" });
   const id = await addTextViaMenu(page);
@@ -150,9 +141,7 @@ test("DR-016 regression — corner-resize keeps fontSize unchanged (Fixed mode)"
   expect(after.fontSize).toBe(20);
 });
 
-test("font-family picker offers presets and applies the selected stack", async ({
-  page,
-}) => {
+test("font-family picker offers presets and applies the selected stack", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-Font" });
   const id = await addTextViaMenu(page);
@@ -168,9 +157,7 @@ test("font-family picker offers presets and applies the selected stack", async (
   expect(String(attrs.fontFamily)).toContain("Playfair Display");
 });
 
-test("Enter inserts a newline inside the text box (multiline)", async ({
-  page,
-}) => {
+test("Enter inserts a newline inside the text box (multiline)", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-Multiline" });
   const id = await addTextViaMenu(page);
@@ -210,9 +197,9 @@ test("text item does NOT render n/s resize handles", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Text-NoNS" });
   const id = await addTextViaMenu(page);
   // Item is selected on add → SelectionLayer mounts.
-  await expect(
-    page.locator(`[data-selection-handle-item-id="${id}"]`).first(),
-  ).toBeVisible({ timeout: 3000 });
+  await expect(page.locator(`[data-selection-handle-item-id="${id}"]`).first()).toBeVisible({
+    timeout: 3000,
+  });
 
   // Edge handles n/s should be absent.
   await expect(
@@ -238,9 +225,7 @@ test("text item does NOT render n/s resize handles", async ({ page }) => {
   ).toHaveCount(1);
 });
 
-test("typing newlines (Enter) grows frame.height automatically", async ({
-  page,
-}) => {
+test("typing newlines (Enter) grows frame.height automatically", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-Auto-Enter" });
   const id = await addTextViaMenu(page);
@@ -272,9 +257,7 @@ test("typing newlines (Enter) grows frame.height automatically", async ({
       const w = window as unknown as {
         __weaveDoc?: { root: { children: ReadonlyArray<Ch> } };
       };
-      const it = (w.__weaveDoc?.root.children ?? []).find(
-        (c) => String(c.id) === fid,
-      );
+      const it = (w.__weaveDoc?.root.children ?? []).find((c) => String(c.id) === fid);
       return (it?.attrs.frame?.height ?? 1) < 0.3;
     },
     id,
@@ -302,9 +285,7 @@ test("typing newlines (Enter) grows frame.height automatically", async ({
   expect(after.height).toBeGreaterThan(before.height);
 });
 
-test("narrowing width via the e handle wraps the text — height grows", async ({
-  page,
-}) => {
+test("narrowing width via the e handle wraps the text — height grows", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-Auto-Wrap" });
   const id = await addTextViaMenu(page);
@@ -322,8 +303,7 @@ test("narrowing width via the e handle wraps the text — height grows", async (
           ...prev.attrs,
           frame: { x: 0.1, y: 0.3, width: 0.7, height: 0.1, rotation: 0 },
           fontSize: 32,
-          text:
-            "the quick brown fox jumps over the lazy dog and then it jumps again over another lazy dog repeatedly",
+          text: "the quick brown fox jumps over the lazy dog and then it jumps again over another lazy dog repeatedly",
         },
       }),
     });
@@ -363,9 +343,7 @@ test("narrowing width via the e handle wraps the text — height grows", async (
   expect((await readAttrs(page, id)).fontSize).toBe(32);
 });
 
-test("cannot narrow width below ≈ one character (min-width clamp)", async ({
-  page,
-}) => {
+test("cannot narrow width below ≈ one character (min-width clamp)", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-Min" });
   const id = await addTextViaMenu(page);
@@ -541,9 +519,7 @@ test("WI-029 — V-Align CENTER applies flex justify-content", async ({ page }) 
   expect(justify).toBe("center");
 });
 
-test("WI-029 — Decoration UNDERLINE applies text-decoration: underline", async ({
-  page,
-}) => {
+test("WI-029 — Decoration UNDERLINE applies text-decoration: underline", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-Decoration" });
   const id = await addTextViaMenu(page);
@@ -572,9 +548,7 @@ test("WI-029 — Decoration UNDERLINE applies text-decoration: underline", async
   expect(decoration).toContain("underline");
 });
 
-test("WI-029 — Hyperlink wraps text in <a target=_blank> in read mode", async ({
-  page,
-}) => {
+test("WI-029 — Hyperlink wraps text in <a target=_blank> in read mode", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-Hyperlink" });
   const id = await addTextViaMenu(page);

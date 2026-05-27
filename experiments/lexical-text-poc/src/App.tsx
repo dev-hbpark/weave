@@ -38,11 +38,7 @@ export function App() {
 
       {mounted ? (
         <div className="grid">
-          <LexicalTextBox
-            label="Actor A (Y.Doc A)"
-            yDoc={sharedDocs.docA}
-            anchorId="poc-root"
-          />
+          <LexicalTextBox label="Actor A (Y.Doc A)" yDoc={sharedDocs.docA} anchorId="poc-root" />
           <LexicalTextBox
             label="Actor B (Y.Doc B, mirrors A)"
             yDoc={sharedDocs.docB}
@@ -57,10 +53,12 @@ export function App() {
         <summary>검증 체크리스트 (RESULT.md 박제 전)</summary>
         <ul>
           <li>
-            Tree-shaking 3-gate: <code>pnpm size</code> + <code>pnpm tree-shake-gate</code>{" "}
-            (또는 README §실행 의 grep 명령)
+            Tree-shaking 3-gate: <code>pnpm size</code> + <code>pnpm tree-shake-gate</code> (또는
+            README §실행 의 grep 명령)
           </li>
-          <li>한국어 IME 100자 (Test M-1) — Galaxy Chrome / iOS Safari / Mac Chrome / Mac Safari</li>
+          <li>
+            한국어 IME 100자 (Test M-1) — Galaxy Chrome / iOS Safari / Mac Chrome / Mac Safari
+          </li>
           <li>StrictMode mount/unmount/remount (Test M-2) — 위 버튼으로 시뮬레이션</li>
           <li>2-actor concurrent edit + format LWW (Test M-3) — 양 editor 동시 입력</li>
         </ul>

@@ -12,9 +12,7 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("'+' button opens add menu with image / video / shape options", async ({
-  page,
-}) => {
+test("'+' button opens add menu with image / video / shape options", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Add-A" });
   const addBtn = page.getByTestId("toolbar-add");
   await expect(addBtn).toBeVisible();
@@ -50,9 +48,7 @@ test("Add shape:star → toolbar shows shape kind", async ({ page }) => {
   await expect(toolbar).toHaveAttribute("data-kind", "shape");
 });
 
-test("Add video → URL dialog opens, confirm creates video + toolbar mounts", async ({
-  page,
-}) => {
+test("Add video → URL dialog opens, confirm creates video + toolbar mounts", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Add-D" });
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-video").click();

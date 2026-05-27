@@ -4,16 +4,13 @@
 // The adapter is a singleton per editor; same impl serves all four kinds
 // (their z-stacking storage is identical = root.children array index).
 
-import { ZORDER_CAPABILITY, type CapabilityRegistry, type Document } from "@agocraft/core";
+import { type CapabilityRegistry, type Document, ZORDER_CAPABILITY } from "@agocraft/core";
 import { createDesignFrameZOrderAdapter } from "./design-frame.zorder.js";
 
 // WI-019 + WI-020 — z-order adapter applies uniformly across every
 // top-level Frame kind (their z = position in doc.root.children).
 // WI-032 Phase 3 — `frame` joins primitive kinds; legacy 4 retired.
-const DESIGN_FRAME_KINDS = [
-  "frame",
-  "image", "video", "shape", "text",
-] as const;
+const DESIGN_FRAME_KINDS = ["frame", "image", "video", "shape", "text"] as const;
 
 export interface RegisterZOrderAdaptersDeps {
   readonly capabilityRegistry: CapabilityRegistry;

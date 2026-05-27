@@ -13,7 +13,7 @@
 // helper rewrites it into `frame` + primitive children on first load.
 
 import { expect, test } from "@playwright/test";
-import { clearAllDesigns, prepareDesign, addFrame } from "./helpers.js";
+import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 interface Counts {
   readonly frame: number;
@@ -31,9 +31,7 @@ async function deepKindCounts(page: import("@playwright/test").Page): Promise<Co
   return page.evaluate(() => {
     const counts: Record<string, number> = {};
     type Item = { kind: string; children: ReadonlyArray<Item> };
-    const root = (
-      window as unknown as { __weaveDoc?: { root: Item } }
-    ).__weaveDoc?.root;
+    const root = (window as unknown as { __weaveDoc?: { root: Item } }).__weaveDoc?.root;
     function walk(items: ReadonlyArray<Item>) {
       for (const it of items) {
         counts[it.kind] = (counts[it.kind] ?? 0) + 1;
@@ -64,9 +62,7 @@ test.beforeEach(async ({ page }) => {
  * JSON to install legacy 4-domain kinds + their attrs. Returns the
  * design id so the caller can navigate to it after the mutation.
  */
-async function seedLegacyV5Blob(
-  page: import("@playwright/test").Page,
-): Promise<string> {
+async function seedLegacyV5Blob(page: import("@playwright/test").Page): Promise<string> {
   const id = await prepareDesign(page, { flavor: "mixed", title: "Legacy fixture" });
 
   // Add one frame per legacy kind, so the mutation has 4 Items to rewrite.
@@ -178,9 +174,7 @@ async function seedLegacyV5Blob(
 // children mapping (FRAME_ONLY_PARADIGM_SPEC §3) and stashes the original
 // blob under `weave.design.v9-backup.<id>` for 1-week rollback (RISK-004
 // §1 controls).
-test("legacy 4 domains → frame on first load + v9 backup persisted", async ({
-  page,
-}) => {
+test("legacy 4 domains → frame on first load + v9 backup persisted", async ({ page }) => {
   const id = await seedLegacyV5Blob(page);
 
   await page.goto(`/design/${id}`);
@@ -222,9 +216,7 @@ test("legacy 4 domains → frame on first load + v9 backup persisted", async ({
   expect(restored.id).toBe(id);
 });
 
-test("migration is idempotent — second load does not rewrite the backup", async ({
-  page,
-}) => {
+test("migration is idempotent — second load does not rewrite the backup", async ({ page }) => {
   const id = await seedLegacyV5Blob(page);
   await page.goto(`/design/${id}`);
   await page.waitForFunction(() => {

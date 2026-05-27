@@ -15,9 +15,7 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("Add → image opens URL dialog and creates the item on confirm", async ({
-  page,
-}) => {
+test("Add → image opens URL dialog and creates the item on confirm", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Src-A" });
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-image").click();
@@ -39,9 +37,7 @@ test("Add → image opens URL dialog and creates the item on confirm", async ({
   await expect(page.locator(`img[src="${url}"]`)).toBeVisible();
 });
 
-test("Add → video opens URL dialog and creates a video item on confirm", async ({
-  page,
-}) => {
+test("Add → video opens URL dialog and creates a video item on confirm", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Src-B" });
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-video").click();
@@ -57,9 +53,7 @@ test("Add → video opens URL dialog and creates a video item on confirm", async
   await expect(page.locator(`video[src="${url}"]`)).toHaveCount(1);
 });
 
-test("ContextualToolbar Source button re-opens dialog and replaces src", async ({
-  page,
-}) => {
+test("ContextualToolbar Source button re-opens dialog and replaces src", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Src-C" });
   // Add via Add menu first.
   await page.getByTestId("toolbar-add").click();
@@ -72,9 +66,7 @@ test("ContextualToolbar Source button re-opens dialog and replaces src", async (
   await page.getByTestId("image-edit-src").click();
   const dialog = page.getByTestId("media-src-dialog");
   await expect(dialog).toBeVisible();
-  await expect(page.getByTestId("media-src-input")).toHaveValue(
-    "https://example.com/old.jpg",
-  );
+  await expect(page.getByTestId("media-src-input")).toHaveValue("https://example.com/old.jpg");
 
   // Replace URL.
   await page.getByTestId("media-src-input").fill("https://example.com/new.jpg");

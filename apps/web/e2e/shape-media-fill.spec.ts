@@ -21,7 +21,15 @@ async function getSelectedShapeFill(
 ): Promise<Readonly<Record<string, unknown>> | null> {
   return await page.evaluate(() => {
     const w = window as unknown as {
-      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown; kind: string; attrs: Readonly<Record<string, unknown>> }> } };
+      __weaveDoc?: {
+        root: {
+          children: ReadonlyArray<{
+            id: unknown;
+            kind: string;
+            attrs: Readonly<Record<string, unknown>>;
+          }>;
+        };
+      };
     };
     const items = w.__weaveDoc?.root.children ?? [];
     const shape = items.find((c) => c.kind === "shape");
@@ -69,9 +77,7 @@ test("Shape → 이미지 채우기 sets fill to type:image with src", async ({ 
   await expect(page.locator(`image[href="${url}"]`)).toHaveCount(1);
 });
 
-test("Shape → 비디오 채우기 sets fill to type:video and renders <video>", async ({
-  page,
-}) => {
+test("Shape → 비디오 채우기 sets fill to type:video and renders <video>", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Fill-B" });
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-shape-ellipse").click();
@@ -103,9 +109,7 @@ test("Shape → 비디오 채우기 sets fill to type:video and renders <video>"
   await expect(page.locator(`video[src="${url}"]`)).toHaveCount(1);
 });
 
-test("Shape → × clear returns fill to solid color and restores fill buttons", async ({
-  page,
-}) => {
+test("Shape → × clear returns fill to solid color and restores fill buttons", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Fill-C" });
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-shape-rectangle").click();

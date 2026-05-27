@@ -129,9 +129,7 @@ describe("migrateLegacyKindsToFrame — canvas-design → frame", () => {
     const canvas = makeItem("canvas-B", "canvas-design", {
       frame: SLIDE_FRAME,
       summary: "",
-      shapes: [
-        { id: "s1", x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0, hue: "#000" },
-      ],
+      shapes: [{ id: "s1", x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0, hue: "#000" }],
     });
     const migrated = migrateLegacyKindsToFrame(makeDoc([canvas]));
     const frame = migrated.root.children[0];
@@ -229,12 +227,7 @@ describe("migrateLegacyKindsToFrame — semantics", () => {
       title: "Deep",
       bullets: [],
     });
-    const wrapperFrame = makeItem(
-      "wrapper-frame",
-      "frame",
-      { frame: FULL_FRAME },
-      [innerSlide],
-    );
+    const wrapperFrame = makeItem("wrapper-frame", "frame", { frame: FULL_FRAME }, [innerSlide]);
     const migrated = migrateLegacyKindsToFrame(makeDoc([wrapperFrame]));
     const wrapper = migrated.root.children[0];
     if (wrapper === undefined) throw new Error("missing wrapper");

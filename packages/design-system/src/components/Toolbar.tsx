@@ -1,4 +1,4 @@
-import { type HTMLAttributes, type ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "../cn.js";
 
 /** Horizontal control group — hosts buttons / dividers. Subtle aurora-glass
@@ -30,7 +30,10 @@ export function ToolbarDivider({ className }: { readonly className?: string }) {
   return (
     <span
       aria-hidden
-      className={cn("inline-block w-px self-stretch bg-[color:var(--surface-1-border)] mx-0.5", className)}
+      className={cn(
+        "inline-block w-px self-stretch bg-[color:var(--surface-1-border)] mx-0.5",
+        className,
+      )}
     />
   );
 }

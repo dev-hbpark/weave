@@ -14,9 +14,7 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("shape item adds, renders, and the toolbar appears on selection", async ({
-  page,
-}) => {
+test("shape item adds, renders, and the toolbar appears on selection", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Item-A" });
   await addFrame(page, "shape" as never);
   // Frame should exist in DOM
@@ -29,9 +27,7 @@ test("shape item adds, renders, and the toolbar appears on selection", async ({
   await expect(toolbar).toHaveAttribute("data-kind", "shape");
 });
 
-test("image item adds and the toolbar shows image fit options", async ({
-  page,
-}) => {
+test("image item adds and the toolbar shows image fit options", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Item-B" });
   await addFrame(page, "image" as never);
   const frames = page.locator("[data-frame-id]");
@@ -47,9 +43,7 @@ test("image item adds and the toolbar shows image fit options", async ({
   await expect(popover.getByRole("group", { name: "Fit", exact: true })).toBeVisible();
 });
 
-test("video item adds and the toolbar shows video controls", async ({
-  page,
-}) => {
+test("video item adds and the toolbar shows video controls", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Item-C" });
   await addFrame(page, "video" as never);
   const frames = page.locator("[data-frame-id]");

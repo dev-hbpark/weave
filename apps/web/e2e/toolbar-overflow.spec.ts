@@ -6,7 +6,7 @@
 // Adding a text item must surface the More trigger; clicking it must
 // expose those fields inside the popover stack.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {

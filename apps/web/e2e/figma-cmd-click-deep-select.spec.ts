@@ -4,7 +4,7 @@
 // heuristic: the clicked leaf is selected directly, regardless of how
 // deeply it sits in the nesting tree.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -26,10 +26,7 @@ async function singleSelectionId(page: Page): Promise<string | undefined> {
   });
 }
 
-async function centerOf(
-  page: Page,
-  id: string,
-): Promise<{ x: number; y: number }> {
+async function centerOf(page: Page, id: string): Promise<{ x: number; y: number }> {
   return await page.evaluate((fid) => {
     const el = document.querySelector(`[data-frame-id="${fid}"]`) as HTMLElement | null;
     if (el === null) return { x: 0, y: 0 };
@@ -82,9 +79,7 @@ test("Cmd/Ctrl + click on a nested frame selects the leaf directly (parent-first
   await expect.poll(() => singleSelectionId(page)).toBe(childId);
 });
 
-test("Cmd-click works from any starting selection state (depth-blind)", async ({
-  page,
-}) => {
+test("Cmd-click works from any starting selection state (depth-blind)", async ({ page }) => {
   const { parentId, childId } = await setupTwoLevels(page);
   // Add a sibling top-level to set an unrelated current selection.
   await addFrame(page, "frame", {

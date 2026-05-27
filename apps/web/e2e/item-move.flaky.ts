@@ -53,9 +53,7 @@ test("Shape (rectangle) can be moved by pointer drag", async ({ page }) => {
         };
       };
       const w = window as unknown as { __weaveDoc?: Doc };
-      const item = w.__weaveDoc?.root.children.find(
-        (c) => String(c.id) === id,
-      );
+      const item = w.__weaveDoc?.root.children.find((c) => String(c.id) === id);
       return item?.attrs.frame ?? null;
     }, frameId);
   const before = await target.boundingBox();
@@ -84,18 +82,14 @@ test("Shape (rectangle) can be moved by pointer drag", async ({ page }) => {
   expect(afterFrame.y).toBeGreaterThan(beforeFrame.y + 0.005);
 });
 
-test("Shape (star, SVG polygon target) can be moved — resolveTarget fix", async ({
-  page,
-}) => {
+test("Shape (star, SVG polygon target) can be moved — resolveTarget fix", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Move-B" });
   await addFrame(page, "shape" as never);
   // Re-use the +add menu instead of patching via editor — the menu wires
   // through agocraft attrsOverride which sets the star subAttrs at creation
   // time, giving us a clean SVG polygon as the pointer target.
   // (Skipped: we already have a rectangle. Replace its shape via update.)
-  await page.waitForFunction(() =>
-    Boolean((window as { __weaveEditor?: unknown }).__weaveEditor),
-  );
+  await page.waitForFunction(() => Boolean((window as { __weaveEditor?: unknown }).__weaveEditor));
   await page.evaluate(() => {
     type Editor = { exec: (name: string, input: unknown) => unknown };
     type Doc = {
@@ -135,9 +129,7 @@ test("Shape (star, SVG polygon target) can be moved — resolveTarget fix", asyn
         };
       };
       const w = window as unknown as { __weaveDoc?: Doc };
-      const item = w.__weaveDoc?.root.children.find(
-        (c) => String(c.id) === id,
-      );
+      const item = w.__weaveDoc?.root.children.find((c) => String(c.id) === id);
       return item?.attrs.frame ?? null;
     }, frameId);
   const beforeFrame = await readFrame();
@@ -182,9 +174,7 @@ test("Image item can be moved", async ({ page }) => {
         };
       };
       const w = window as unknown as { __weaveDoc?: Doc };
-      const item = w.__weaveDoc?.root.children.find(
-        (c) => String(c.id) === id,
-      );
+      const item = w.__weaveDoc?.root.children.find((c) => String(c.id) === id);
       return item?.attrs.frame ?? null;
     }, frameId);
   const beforeFrame = await readFrame();

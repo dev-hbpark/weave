@@ -4,7 +4,7 @@
 // top-level ancestor first; clicking again (with the current selection
 // already on the trail) drills to the leaf.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -26,10 +26,7 @@ async function singleSelectionId(page: Page): Promise<string | undefined> {
   });
 }
 
-async function centerOf(
-  page: Page,
-  id: string,
-): Promise<{ x: number; y: number }> {
+async function centerOf(page: Page, id: string): Promise<{ x: number; y: number }> {
   return await page.evaluate((fid) => {
     const el = document.querySelector(`[data-frame-id="${fid}"]`) as HTMLElement | null;
     if (el === null) return { x: 0, y: 0 };

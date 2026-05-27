@@ -4,7 +4,7 @@
 // machinery beyond the semantic span. Use for: z-rank chip, "RELATED" tag,
 // status indicator, role label, etc.
 
-import { type HTMLAttributes, forwardRef, type ReactNode } from "react";
+import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
 import { cn } from "../cn.js";
 
 type BadgeVariant = "default" | "accent" | "success" | "warning" | "info";
@@ -17,15 +17,13 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const variantClass: Record<BadgeVariant, string> = {
-  default: "bg-[color:var(--surface-2)] text-[color:var(--text-soft)] border-[color:var(--border-default)]",
+  default:
+    "bg-[color:var(--surface-2)] text-[color:var(--text-soft)] border-[color:var(--border-default)]",
   accent:
     "bg-[color:var(--accent-soft)] text-[color:var(--accent)] border-[color:var(--accent-soft)]",
-  success:
-    "bg-[rgba(34,197,94,0.16)] text-[rgb(74,222,128)] border-[rgba(34,197,94,0.3)]",
-  warning:
-    "bg-[rgba(234,179,8,0.16)] text-[rgb(250,204,21)] border-[rgba(234,179,8,0.3)]",
-  info:
-    "bg-[rgba(59,130,246,0.16)] text-[rgb(96,165,250)] border-[rgba(59,130,246,0.3)]",
+  success: "bg-[rgba(34,197,94,0.16)] text-[rgb(74,222,128)] border-[rgba(34,197,94,0.3)]",
+  warning: "bg-[rgba(234,179,8,0.16)] text-[rgb(250,204,21)] border-[rgba(234,179,8,0.3)]",
+  info: "bg-[rgba(59,130,246,0.16)] text-[rgb(96,165,250)] border-[rgba(59,130,246,0.3)]",
 };
 
 const sizeClass: Record<BadgeSize, string> = {

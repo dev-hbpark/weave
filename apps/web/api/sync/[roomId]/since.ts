@@ -10,11 +10,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import * as Y from "yjs";
 import { apiError } from "../../_lib/errors.js";
-import {
-  syncSnapshotKey,
-  syncSnapshotVectorKey,
-  syncUpdatesKey,
-} from "../../_lib/keys.js";
+import { syncSnapshotKey, syncSnapshotVectorKey, syncUpdatesKey } from "../../_lib/keys.js";
 import { assertKvAvailable, kv } from "../../_lib/kv.js";
 import {
   base64ToU8,
@@ -23,10 +19,7 @@ import {
   u8ToBase64,
 } from "../../_lib/sync-base64.js";
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-): Promise<void> {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!assertKvAvailable(res)) return;
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");

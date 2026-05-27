@@ -13,7 +13,7 @@
 // directly, which is the part that needs e2e coverage. The "banner shows
 // during the window" branch is covered by the unit-level copy module.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 async function addTextViaMenu(page: Page): Promise<string> {
@@ -53,9 +53,7 @@ test.beforeEach(async ({ page }) => {
 // editor (2026-05-26) — the copy surfaces correctly. Re-enable once the
 // AITooltip / Tooltip hover-buffer cluster is stabilized (same root cause
 // as the 12 timing flaky specs left over from WI-032 Phase 3c).
-test.skip("fontSize tooltip surfaces on hover during the launch window", async ({
-  page,
-}) => {
+test.skip("fontSize tooltip surfaces on hover during the launch window", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   // Pin wall-clock inside the launch window so the Tooltip is enabled.
   await page.addInitScript(() => {
@@ -77,9 +75,9 @@ test.skip("fontSize tooltip surfaces on hover during the launch window", async (
   await expect(fontSize).toBeVisible();
   await fontSize.hover();
   // Radix Tooltip renders into a portal; assert via the visible text.
-  await expect(
-    page.getByText("글자 크기는 여기서 변경", { exact: false }),
-  ).toBeVisible({ timeout: 2000 });
+  await expect(page.getByText("글자 크기는 여기서 변경", { exact: false })).toBeVisible({
+    timeout: 2000,
+  });
 });
 
 test("fontSize tooltip falls silent after the retract date", async ({ page }) => {
@@ -100,9 +98,7 @@ test("fontSize tooltip falls silent after the retract date", async ({ page }) =>
   // Wait a bit longer than the tooltip delayDuration (200ms).
   await page.waitForTimeout(400);
   // The launch tooltip copy must NOT appear once the window closes.
-  await expect(
-    page.getByText("글자 크기는 여기서 변경", { exact: false }),
-  ).toHaveCount(0);
+  await expect(page.getByText("글자 크기는 여기서 변경", { exact: false })).toHaveCount(0);
 });
 
 // WI-029 R5 — Coachmark e2e is wired but flakes in headless mode: Radix
@@ -112,9 +108,7 @@ test("fontSize tooltip falls silent after the retract date", async ({ page }) =>
 // — the coachmark appears, persists on dismiss, and stays silent on the
 // next design. Re-enable once `OnboardingCoachmark`'s outside-click /
 // auto-focus policy is tightened (a follow-up PR).
-test.skip("onboarding coachmark shows once, persists across designs", async ({
-  page,
-}) => {
+test.skip("onboarding coachmark shows once, persists across designs", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Coachmark-A" });
   await addTextViaMenu(page);

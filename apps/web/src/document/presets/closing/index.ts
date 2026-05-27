@@ -3,12 +3,7 @@
 
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { paintSolid } from "@agocraft/core";
-import {
-  type BuildContext,
-  buildFrameRoot,
-  buildShapeChild,
-  buildTextChild,
-} from "../builders.js";
+import { type BuildContext, buildFrameRoot, buildShapeChild, buildTextChild } from "../builders.js";
 import type { Preset, PresetCategory, PresetFactoryContext } from "../types.js";
 import { resolveLocalizedText } from "../types.js";
 
@@ -107,7 +102,10 @@ const ctaPreset: Preset = {
       build,
       { x: 0.15, y: 0.74, width: 0.7, height: 0.08, rotation: 0 },
       {
-        text: ctx.locale === "ko" ? "이메일로도 자세히 안내드릴게요." : "We'll follow up by email with the details.",
+        text:
+          ctx.locale === "ko"
+            ? "이메일로도 자세히 안내드릴게요."
+            : "We'll follow up by email with the details.",
         fontSize: 14,
         color: "var(--text-soft)",
         textAlignHorizontal: "CENTER",
@@ -145,9 +143,7 @@ const contactPreset: Preset = {
       },
     );
     const labels =
-      ctx.locale === "ko"
-        ? ["이메일", "웹사이트", "전화"]
-        : ["Email", "Website", "Phone"];
+      ctx.locale === "ko" ? ["이메일", "웹사이트", "전화"] : ["Email", "Website", "Phone"];
     const values = ["hello@example.com", "www.example.com", "+82 10 0000 0000"];
     const rows: AgocraftItem[] = [];
     labels.forEach((label, i) => {
@@ -177,11 +173,10 @@ const contactPreset: Preset = {
         ),
       );
     });
-    return buildFrameRoot(
-      build,
-      { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-      [head, ...rows],
-    );
+    return buildFrameRoot(build, { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 }, [
+      head,
+      ...rows,
+    ]);
   },
 };
 
@@ -210,7 +205,10 @@ const qaPreset: Preset = {
       build,
       { x: 0.15, y: 0.68, width: 0.7, height: 0.08, rotation: 0 },
       {
-        text: ctx.locale === "ko" ? "궁금한 점을 함께 이야기해요." : "Let's open the floor for questions.",
+        text:
+          ctx.locale === "ko"
+            ? "궁금한 점을 함께 이야기해요."
+            : "Let's open the floor for questions.",
         fontSize: 18,
         color: "var(--text-soft)",
         textAlignHorizontal: "CENTER",
@@ -258,11 +256,10 @@ const summaryPreset: Preset = {
         },
       ),
     );
-    return buildFrameRoot(
-      build,
-      { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-      [head, ...bullets],
-    );
+    return buildFrameRoot(build, { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 }, [
+      head,
+      ...bullets,
+    ]);
   },
 };
 

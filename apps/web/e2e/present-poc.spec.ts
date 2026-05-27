@@ -89,7 +89,9 @@ test.skip("canvas-board flavor seeds a canvas; summary inline edit + persist", a
 // are first-class Items now. The "8 resize handles" coverage still belongs
 // to shape primitives — the existing `frame-handles.spec.ts` / `frame-
 // manipulation.spec.ts` already cover that surface against the new model.
-test.skip("canvas-board: shape selection + 8 resize handles + rotation handle", async ({ page }) => {
+test.skip("canvas-board: shape selection + 8 resize handles + rotation handle", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "canvas-board" });
   // Phase 12 — clicking a shape may also select the surrounding canvas frame
   // (frame SelectionLayer + shape SelectionLayer coexist). Both expose the
@@ -135,9 +137,7 @@ test.skip("slide title Esc reverts the in-flight change", async ({ page }) => {
 // 첫-child slide 가정으로 작성됨. frame paradigm 에서 첫 frame 의 centerFrame
 // 가정 동일하지만 timing/scene-id 매칭이 안 맞음 (paint 직후 [data-stage-scene-id]
 // 미존재). PresentPage/Stage refactor 후 frame paradigm 시나리오로 재작성.
-test.skip("Stage centers the active scene and zooms it to fill the viewport", async ({
-  page,
-}) => {
+test.skip("Stage centers the active scene and zooms it to fill the viewport", async ({ page }) => {
   // Two slides at the design center (mixed flavor stacks them). Present mode
   // should zoom the active step's frame to fill the viewport, centered. The
   // wizard creates a 16:9 design (1920×1080); the slide frames default to
@@ -188,9 +188,7 @@ test.skip("Stage centers the active scene and zooms it to fill the viewport", as
   expect(Math.max(fillW, fillH)).toBeGreaterThan(0.98);
 });
 
-test("zoom and pan stay synchronized through a camera transition", async ({
-  page,
-}) => {
+test("zoom and pan stay synchronized through a camera transition", async ({ page }) => {
   // Set up two frames at very different positions AND scales: one large frame
   // covering most of the design, one small frame in the bottom-right corner.
   // The transition between them changes both camera position and scale, so we

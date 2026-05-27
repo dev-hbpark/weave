@@ -9,17 +9,11 @@ import { apiError } from "../../_lib/errors.js";
 import { syncUpdatesKey } from "../../_lib/keys.js";
 import { assertKvAvailable, kv } from "../../_lib/kv.js";
 import { isValidRoomId, MAX_UPDATE_B64_BYTES } from "../../_lib/sync-base64.js";
-import {
-  enforceContentLength,
-  enforceJsonContentType,
-} from "../../_lib/validate.js";
+import { enforceContentLength, enforceJsonContentType } from "../../_lib/validate.js";
 
 const MAX_PUSH_BODY = MAX_UPDATE_B64_BYTES + 1024; // small JSON overhead
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-): Promise<void> {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!assertKvAvailable(res)) return;
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -38,10 +32,10 @@ export default async function handler(
 
   const body = req.body as { update?: unknown } | undefined;
   if (
-    body === undefined
-    || typeof body.update !== "string"
-    || body.update.length === 0
-    || body.update.length > MAX_UPDATE_B64_BYTES
+    body === undefined ||
+    typeof body.update !== "string" ||
+    body.update.length === 0 ||
+    body.update.length > MAX_UPDATE_B64_BYTES
   ) {
     apiError(res, 400, "INVALID_FIELD", "body.update must be non-empty base64 within 512 KB");
     return;

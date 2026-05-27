@@ -11,13 +11,7 @@
 // in the parent (FrameStage / DesignPage selection state).
 
 import { AITooltip, type AITooltipHotkeyTable } from "@weave/design-system";
-import {
-  createContext,
-  forwardRef,
-  type ReactElement,
-  useContext,
-  useMemo,
-} from "react";
+import { createContext, forwardRef, type ReactElement, useContext, useMemo } from "react";
 import type { AgoItem } from "../types.js";
 import { defaultTooltipRegistry } from "./default-registry.js";
 import type { TooltipDescribeContext, TooltipRegistry } from "./types.js";
@@ -36,8 +30,7 @@ const EMPTY: DescribeContextValue = {
 
 const Context = createContext<DescribeContextValue>(EMPTY);
 
-export interface TooltipDescribeContextProviderProps
-  extends DescribeContextValue {
+export interface TooltipDescribeContextProviderProps extends DescribeContextValue {
   readonly children: ReactElement;
 }
 
@@ -111,14 +104,12 @@ export const KindTooltip = forwardRef<HTMLElement, KindTooltipProps>(
     // function. Runtime contract: registry.get(kind) is the adapter for that
     // kind, and `item.kind === kind` by construction.
     const describe = registry.get(item.kind)?.describe as
-      | ((i: AgoItem, c: TooltipDescribeContext) => ReturnType<
-          NonNullable<ReturnType<typeof registry.get>>["describe"]
-        >)
+      | ((
+          i: AgoItem,
+          c: TooltipDescribeContext,
+        ) => ReturnType<NonNullable<ReturnType<typeof registry.get>>["describe"]>)
       | undefined;
-    const options = useMemo(
-      () => (describe ? describe(item, ctx) : {}),
-      [describe, item, ctx],
-    );
+    const options = useMemo(() => (describe ? describe(item, ctx) : {}), [describe, item, ctx]);
 
     return (
       <AITooltip ref={forwardedRef} {...rest} {...options}>

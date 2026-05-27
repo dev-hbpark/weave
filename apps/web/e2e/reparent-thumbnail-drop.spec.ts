@@ -20,9 +20,7 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-test("ThumbnailPanel thumbnails carry `data-frame-id` (drop-target plumbing)", async ({
-  page,
-}) => {
+test("ThumbnailPanel thumbnails carry `data-frame-id` (drop-target plumbing)", async ({ page }) => {
   await prepareDesign(page, { flavor: "slide-deck" });
   await addFrame(page, "frame", {
     frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
@@ -69,7 +67,10 @@ test("editor.exec reparent moves a nested item onto a panel-targeted root frame 
     frame: { x: 0.25, y: 0.25, width: 0.5, height: 0.5, rotation: 0 },
   });
   const childId = await page.evaluate((bid) => {
-    interface Node { readonly id: string | number; readonly children: ReadonlyArray<Node>; }
+    interface Node {
+      readonly id: string | number;
+      readonly children: ReadonlyArray<Node>;
+    }
     type Doc = { root: Node };
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     if (doc === undefined) return null;

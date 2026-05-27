@@ -11,26 +11,16 @@
 
 import type { ReparentDragState } from "./use-reparent-drag-controller.js";
 
-export function ReparentGhostOverlay({
-  state,
-}: {
-  readonly state: ReparentDragState;
-}) {
+export function ReparentGhostOverlay({ state }: { readonly state: ReparentDragState }) {
   if (!state.active || state.cursor === null) return null;
   const valid = state.hoveredTarget?.valid ?? false;
   const hasTarget = state.hoveredTarget !== null;
   const label = `${state.entries.length} item${state.entries.length === 1 ? "" : "s"}`;
-  const verdict = !hasTarget
-    ? "이동 위치 선택"
-    : valid
-      ? "여기로 이동"
-      : "이동 불가";
+  const verdict = !hasTarget ? "이동 위치 선택" : valid ? "여기로 이동" : "이동 불가";
   return (
     <div
       data-reparent-ghost
-      data-reparent-ghost-state={
-        !hasTarget ? "pending" : valid ? "valid" : "invalid"
-      }
+      data-reparent-ghost-state={!hasTarget ? "pending" : valid ? "valid" : "invalid"}
       style={{
         position: "fixed",
         left: state.cursor.x + 14,
@@ -47,8 +37,7 @@ export function ReparentGhostOverlay({
         color: "white",
         font: "500 12px/1.2 system-ui, -apple-system, sans-serif",
         letterSpacing: 0.2,
-        boxShadow:
-          "0 6px 24px rgba(0,0,0,0.28), 0 1px 3px rgba(0,0,0,0.18)",
+        boxShadow: "0 6px 24px rgba(0,0,0,0.28), 0 1px 3px rgba(0,0,0,0.18)",
         userSelect: "none",
         whiteSpace: "nowrap",
       }}

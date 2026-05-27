@@ -17,10 +17,7 @@
 // once at mount; SelectionLayer picks it up wherever the matching kind
 // is selected.
 
-import type {
-  Editor,
-  ItemSelectionViewModel,
-} from "@agocraft/editor";
+import type { Editor, ItemSelectionViewModel } from "@agocraft/editor";
 
 export interface SlideBulletHandleDeps {
   readonly editor: Editor;

@@ -1,6 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { motion, useReducedMotion } from "motion/react";
-import { type HTMLAttributes, type ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "../cn.js";
 
 /** Weave-themed wrapper around Radix Dialog. The trigger is exposed
@@ -111,9 +111,7 @@ export function DialogHeader({
       <DialogPrimitive.Title
         className={cn(
           "font-semibold tracking-[-0.01em] text-[color:var(--text-strong)]",
-          compact
-            ? "text-[15px]"
-            : "text-[20px] md:text-[22px]",
+          compact ? "text-[15px]" : "text-[20px] md:text-[22px]",
         )}
       >
         {headline}
@@ -133,16 +131,10 @@ export function DialogHeader({
 }
 
 /** Footer for actions. */
-export function DialogFooter({
-  className,
-  ...rest
-}: HTMLAttributes<HTMLDivElement>) {
+export function DialogFooter({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn(
-        "mt-6 flex flex-wrap items-center justify-end gap-2.5",
-        className,
-      )}
+      className={cn("mt-6 flex flex-wrap items-center justify-end gap-2.5", className)}
       {...rest}
     />
   );

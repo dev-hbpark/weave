@@ -18,8 +18,8 @@
 //     with Mixed-aware controls when multi.
 //   • Mixed-kind selection (2+ items, different kinds) → no bar.
 
-import { ContextualToolbar as Bar } from "@weave/design-system";
 import type { Editor } from "@agocraft/editor";
+import { ContextualToolbar as Bar } from "@weave/design-system";
 import type { JSX } from "react";
 import type { ItemSnapshot } from "./multi-edit.js";
 import { toolbarSectionRegistry } from "./sections/index.js";
@@ -36,10 +36,7 @@ interface ContextualToolbarProps {
   readonly onEditMediaSrc?: (kind: "image" | "video", current: string) => void;
   /** Open the host's MediaSrcDialog to fill the selected shape with an
    *  image / video paint. Host owns dialog state + dispatch. */
-  readonly onEditShapeFill?: (
-    kind: "image" | "video",
-    current: string,
-  ) => void;
+  readonly onEditShapeFill?: (kind: "image" | "video", current: string) => void;
 }
 
 export function ContextualToolbar({

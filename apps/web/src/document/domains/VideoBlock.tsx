@@ -6,7 +6,7 @@
 // (browsers reject autoplay+sound combinations).
 
 import { shadowToCss } from "@agocraft/core";
-import { useEffect, useRef, type CSSProperties } from "react";
+import { type CSSProperties, useEffect, useRef } from "react";
 import type { AgoItem, VideoAttrs } from "../types.js";
 
 interface VideoBlockProps {
@@ -48,7 +48,13 @@ export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
   }, [a.volume, a.playbackRate]);
 
   const objectFit: CSSProperties["objectFit"] =
-    a.fit === "fill" ? "fill" : a.fit === "contain" ? "contain" : a.fit === "none" ? "none" : "cover";
+    a.fit === "fill"
+      ? "fill"
+      : a.fit === "contain"
+        ? "contain"
+        : a.fit === "none"
+          ? "none"
+          : "cover";
 
   const shadow = a.shadow ? shadowToCss(a.shadow) : undefined;
 

@@ -1,8 +1,8 @@
 // Phase 10c — pure-function tests for presentation order reconciliation +
 // reorder. The integration with `useDesign` and PresentPage is covered by e2e.
 
-import { itemId as makeItemId } from "@agocraft/core";
 import type { Item as AgocraftItem } from "@agocraft/core";
+import { itemId as makeItemId } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
 import {
   collectPresentationIds,
@@ -27,10 +27,7 @@ describe("collectPresentationIds", () => {
     // WI-032 Phase 3 — single `frame` kind replaces the legacy 4.
     const root = makeItem("root", "weave-doc", [
       makeItem("a", "frame"),
-      makeItem("b", "frame", [
-        makeItem("c", "frame"),
-        makeItem("d", "frame"),
-      ]),
+      makeItem("b", "frame", [makeItem("c", "frame"), makeItem("d", "frame")]),
       makeItem("e", "frame"),
     ]);
     expect(collectPresentationIds(root)).toEqual(["a", "b", "c", "d", "e"]);
@@ -53,10 +50,7 @@ describe("reconcilePresentationOrder", () => {
 
 describe("effectivePresentationOrder", () => {
   it("uses tree + saved order to derive final order", () => {
-    const root = makeItem("root", "weave-doc", [
-      makeItem("a", "frame"),
-      makeItem("b", "frame"),
-    ]);
+    const root = makeItem("root", "weave-doc", [makeItem("a", "frame"), makeItem("b", "frame")]);
     const design = {
       id: "d",
       title: "t",

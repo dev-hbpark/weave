@@ -10,7 +10,7 @@
 // Alt is reserved for the rubber-band frame-add gesture and never reaches
 // the marquee layer.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 /** Seed 3 slides at known positions that together cover most of the design
@@ -113,9 +113,7 @@ async function viewport(page: Page): Promise<{ w: number; h: number }> {
   }));
 }
 
-test("drag (no modifier) replaces selection with frames inside the box", async ({
-  page,
-}) => {
+test("drag (no modifier) replaces selection with frames inside the box", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Marquee-A" });
   await seedThreeSlides(page);
@@ -140,9 +138,7 @@ test("drag (no modifier) replaces selection with frames inside the box", async (
   expect(await selectedIds(page)).toEqual(all);
 });
 
-test("Shift+drag adds frames in the box to existing selection (union)", async ({
-  page,
-}) => {
+test("Shift+drag adds frames in the box to existing selection (union)", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Marquee-B" });
   await seedThreeSlides(page);
@@ -187,9 +183,7 @@ test("Cmd+drag toggles each frame in the box", async ({ page }) => {
   expect(await selectedIds(page)).toEqual(expected);
 });
 
-test("Alt+drag still opens the rubber-band frame-add popover (not marquee)", async ({
-  page,
-}) => {
+test("Alt+drag still opens the rubber-band frame-add popover (not marquee)", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Alt-add" });
   await clearSelection(page);
@@ -208,9 +202,7 @@ test("Alt+drag still opens the rubber-band frame-add popover (not marquee)", asy
   expect(await selectedIds(page)).toEqual([]);
 });
 
-test("drag covering nothing replaces with empty selection", async ({
-  page,
-}) => {
+test("drag covering nothing replaces with empty selection", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Marquee-D" });
   await seedThreeSlides(page);
@@ -226,11 +218,7 @@ test("drag covering nothing replaces with empty selection", async ({
   const vp = await viewport(page);
   // Need a big-enough drag to clear the 4-design-pixel minDragSize. 60 vp
   // pixels is conservative.
-  await marqueeDrag(
-    page,
-    { x: 4, y: 80 },
-    { x: 80, y: 140 },
-  );
+  await marqueeDrag(page, { x: 4, y: 80 }, { x: 80, y: 140 });
 
   // Replace with empty: nothing in the marquee region → empty selection.
   expect(await selectedIds(page)).toEqual([]);

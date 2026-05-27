@@ -6,19 +6,9 @@
 // itself is variant-free — adding new commands requires zero changes to
 // this file.
 
-import {
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../cn.js";
-import {
-  type CommandMetaLike,
-  useCommandHostOrNull,
-} from "./Command.js";
+import { type CommandMetaLike, useCommandHostOrNull } from "./Command.js";
 import { Dialog, DialogContent } from "./Dialog.js";
 import { Kbd } from "./Kbd.js";
 
@@ -32,10 +22,7 @@ export interface CommandPaletteProps {
   readonly placeholder?: string;
 }
 
-function pickLocalized(
-  bag: Readonly<Record<string, string>> | undefined,
-  locale: string,
-): string {
+function pickLocalized(bag: Readonly<Record<string, string>> | undefined, locale: string): string {
   if (bag === undefined) return "";
   return bag[locale] ?? bag.en ?? Object.values(bag)[0] ?? "";
 }
@@ -90,9 +77,7 @@ export function CommandPalette({
 
   const filtered = useMemo<ReadonlyArray<ScoredCommand>>(() => {
     if (host === null) return [];
-    const all = host.registry.list(
-      category !== undefined ? { category } : undefined,
-    );
+    const all = host.registry.list(category !== undefined ? { category } : undefined);
     const scored: ScoredCommand[] = [];
     for (const meta of all) {
       const label = pickLocalized(meta.label, host.locale);

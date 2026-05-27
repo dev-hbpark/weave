@@ -3,6 +3,7 @@
 // Quick: replace-src icon (only one common action — open the URL dialog).
 // More: Fit · Opacity · Border radius.
 
+import type { ImageAttrs, ImageFit } from "@agocraft/core";
 import {
   ContextualToolbar as Bar,
   Button,
@@ -12,14 +13,7 @@ import {
   NumberSlider,
   SegmentedControl,
 } from "@weave/design-system";
-import type { ImageAttrs, ImageFit } from "@agocraft/core";
-import {
-  isMixed,
-  MixedBadge,
-  sharedValue,
-  truncateUrl,
-  updateAll,
-} from "../multi-edit.js";
+import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 const FIT_OPTIONS = [

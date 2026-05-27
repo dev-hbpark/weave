@@ -10,7 +10,7 @@
 //      routes through `weave.design.setBackground` so the change lands in
 //      `editor.history` and survives Cmd+Z.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -35,11 +35,7 @@ async function clearSelectionViaVm(page: Page): Promise<void> {
   });
 }
 
-async function setFrameBackground(
-  page: Page,
-  id: string,
-  color: string,
-): Promise<void> {
+async function setFrameBackground(page: Page, id: string, color: string): Promise<void> {
   // Drive the multi-aware updater directly — same code path the toolbar's
   // ColorPicker onValueCommit fires. Avoids the visual ColorPicker dance.
   await page.evaluate(
@@ -61,9 +57,7 @@ async function setFrameBackground(
   );
 }
 
-test("toolbar mounts a Background section when a slide is selected", async ({
-  page,
-}) => {
+test("toolbar mounts a Background section when a slide is selected", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "BG-A" });
   await addFrame(page, "slide", {
@@ -117,9 +111,7 @@ test("setting attrs.background paints the frame", async ({ page }) => {
 // undefined 되는 검증. FrameBackgroundSection 의 clear path 가 frame
 // paradigm 의 attrs 와 align 되지 않아 single-PASS / group fail 의 race.
 // FrameBackgroundSection 의 clear 명령 추적 후 unskip.
-test.skip("clearing the background (×) removes attrs.background", async ({
-  page,
-}) => {
+test.skip("clearing the background (×) removes attrs.background", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "BG-C" });
   await addFrame(page, "slide", {
@@ -170,9 +162,7 @@ test("design background editor mounts in the header regardless of selection", as
   await expect(page.getByTestId("header-design-background")).toBeVisible();
 });
 
-test("editing design background updates the rendered canvas + persists", async ({
-  page,
-}) => {
+test("editing design background updates the rendered canvas + persists", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const designId = await prepareDesign(page, {
     flavor: "mixed",

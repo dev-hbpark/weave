@@ -3,10 +3,10 @@
 // covered by the e2e (figma-parent-first-select.spec.ts +
 // figma-cmd-click-deep-select.spec.ts).
 
-import { itemId as makeItemId } from "@agocraft/core";
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
+import { itemId as makeItemId } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
-import { selectFromHit, type Selection } from "./selection-context.js";
+import { type Selection, selectFromHit } from "./selection-context.js";
 
 function frame(id: string, children: AgocraftItem[] = []): AgocraftItem {
   return {
@@ -32,12 +32,7 @@ function doc(root: AgocraftItem): AgocraftDocument {
 //   │   └── A1
 //   │       └── A1a
 //   └── B
-const TREE = doc(
-  frame("root", [
-    frame("A", [frame("A1", [frame("A1a")])]),
-    frame("B"),
-  ]),
-);
+const TREE = doc(frame("root", [frame("A", [frame("A1", [frame("A1a")])]), frame("B")]));
 
 const sel = (id: string): Selection => ({ kind: "frame", id });
 

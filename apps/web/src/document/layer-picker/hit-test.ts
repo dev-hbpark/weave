@@ -82,12 +82,7 @@ function composeAbsolute(parent: AbsoluteFrame, child: ItemFrame): AbsoluteFrame
 }
 
 function pointInRect(px: number, py: number, rect: AbsoluteFrame): boolean {
-  return (
-    px >= rect.x &&
-    px <= rect.x + rect.width &&
-    py >= rect.y &&
-    py <= rect.y + rect.height
-  );
+  return px >= rect.x && px <= rect.x + rect.width && py >= rect.y && py <= rect.y + rect.height;
 }
 
 /** Walk the doc tree, collect every frame whose absolute bbox covers

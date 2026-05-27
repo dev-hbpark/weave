@@ -27,10 +27,10 @@
 // and calls `stopImmediatePropagation` when the modifier matches — that
 // preempts the router and the synthetic React handlers underneath.
 
+import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findDescendantSet } from "../agocraft-mirror.js";
-import type { Document as AgocraftDocument } from "@agocraft/core";
 
 const REPARENT_ACTIVE_ATTR = "data-reparent-drop-target";
 const REPARENT_INVALID_ATTR = "data-reparent-drop-invalid";
@@ -106,9 +106,7 @@ export function designPlaneFromTarget(target: EventTarget | null): Element | nul
   return target.closest("[data-design-plane='true']");
 }
 
-export function useReparentDragController(
-  deps: UseReparentDragControllerDeps,
-): ReparentDragState {
+export function useReparentDragController(deps: UseReparentDragControllerDeps): ReparentDragState {
   const { editor, getDocument, getSelectedIds, enabled } = deps;
   const [state, setState] = useState<ReparentDragState>(IDLE_STATE);
 
@@ -169,7 +167,10 @@ export function useReparentDragController(
       e.preventDefault();
       e.stopImmediatePropagation();
 
-      const blocked = disabledDropTargets(doc, entries.map((x) => x.itemId));
+      const blocked = disabledDropTargets(
+        doc,
+        entries.map((x) => x.itemId),
+      );
       sessionRef.current = {
         entries,
         blocked,
@@ -200,14 +201,11 @@ export function useReparentDragController(
     const onMove = (e: PointerEvent) => {
       const elUnder = document.elementFromPoint(e.clientX, e.clientY);
       const candidateFrameId = frameIdFromTarget(elUnder);
-      const valid =
-        candidateFrameId !== null && !session.blocked.has(candidateFrameId);
+      const valid = candidateFrameId !== null && !session.blocked.has(candidateFrameId);
       // Move the visual highlight to the candidate frame's host element.
       const candidateEl =
         candidateFrameId !== null
-          ? document.querySelector(
-              `[data-frame-id="${cssEscape(candidateFrameId)}"]`,
-            )
+          ? document.querySelector(`[data-frame-id="${cssEscape(candidateFrameId)}"]`)
           : null;
       if (session.lastHighlightedEl !== candidateEl) {
         if (session.lastHighlightedEl !== null) {
@@ -215,20 +213,14 @@ export function useReparentDragController(
           session.lastHighlightedEl.removeAttribute(REPARENT_INVALID_ATTR);
         }
         if (candidateEl !== null) {
-          candidateEl.setAttribute(
-            valid ? REPARENT_ACTIVE_ATTR : REPARENT_INVALID_ATTR,
-            "true",
-          );
+          candidateEl.setAttribute(valid ? REPARENT_ACTIVE_ATTR : REPARENT_INVALID_ATTR, "true");
         }
         session.lastHighlightedEl = candidateEl;
       }
       setState({
         active: true,
         cursor: { x: e.clientX, y: e.clientY },
-        hoveredTarget:
-          candidateFrameId !== null
-            ? { frameId: candidateFrameId, valid }
-            : null,
+        hoveredTarget: candidateFrameId !== null ? { frameId: candidateFrameId, valid } : null,
         entries: session.entries,
       });
     };
@@ -236,8 +228,7 @@ export function useReparentDragController(
     const onUp = (e: PointerEvent) => {
       const elUnder = document.elementFromPoint(e.clientX, e.clientY);
       const candidateFrameId = frameIdFromTarget(elUnder);
-      const valid =
-        candidateFrameId !== null && !session.blocked.has(candidateFrameId);
+      const valid = candidateFrameId !== null && !session.blocked.has(candidateFrameId);
       if (valid && candidateFrameId !== null && editor !== null) {
         editor.exec("weave.item.reparent", {
           entries: session.entries.map((x) => ({

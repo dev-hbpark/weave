@@ -54,7 +54,10 @@ test("multi-entry reparent moves N items in a single patch + single Cmd+Z revert
     frame: { x: 0.5, y: 0.5, width: 0.3, height: 0.3, rotation: 0 },
   });
   const aChildren = await page.evaluate((aid) => {
-    interface Node { readonly id: string | number; readonly children: ReadonlyArray<Node>; }
+    interface Node {
+      readonly id: string | number;
+      readonly children: ReadonlyArray<Node>;
+    }
     type Doc = { root: Node };
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     if (doc === undefined) return [] as string[];

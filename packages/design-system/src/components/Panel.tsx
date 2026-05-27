@@ -8,7 +8,7 @@
 // app-local ThumbnailPanel (Phase 10) + PropertiesPanel (Phase 13) in a
 // follow-up PR.
 
-import { type HTMLAttributes, forwardRef, type ReactNode } from "react";
+import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
 import { cn } from "../cn.js";
 
 type PanelPosition = "docked-right" | "docked-left" | "floating";
@@ -126,11 +126,7 @@ const PanelBody = forwardRef<HTMLDivElement, SectionProps>(function PanelBody(
   ref,
 ) {
   return (
-    <div
-      ref={ref}
-      {...rest}
-      className={cn("flex-1 min-h-0 overflow-y-auto px-3 py-2", className)}
-    >
+    <div ref={ref} {...rest} className={cn("flex-1 min-h-0 overflow-y-auto px-3 py-2", className)}>
       {children}
     </div>
   );

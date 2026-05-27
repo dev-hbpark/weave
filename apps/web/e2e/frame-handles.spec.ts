@@ -16,7 +16,7 @@
 // returned NO change. (We previously only had a visibility test for
 // the handles, which is why this bug slipped past WI-018.)
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { prepareDesign } from "./helpers";
 
 // Rotation handle uses the SAME body-attached router host + same
@@ -32,7 +32,7 @@ import { prepareDesign } from "./helpers";
 test("resize handle drag changes the selected frame's geometry", async ({ page }) => {
   await prepareDesign(page, { flavor: "canvas-board" });
 
-  const frame = page.locator('[data-frame-id]').first();
+  const frame = page.locator("[data-frame-id]").first();
   await frame.waitFor();
   const fbox = await frame.boundingBox();
   if (fbox === null) throw new Error("frame has no bounding box");
@@ -49,10 +49,7 @@ test("resize handle drag changes the selected frame's geometry", async ({ page }
   await page.mouse.move(sbox.x + sbox.width / 2, sbox.y + sbox.height / 2);
   await page.mouse.down();
   for (let i = 1; i <= 6; i++) {
-    await page.mouse.move(
-      sbox.x + sbox.width / 2 + 15 * i,
-      sbox.y + sbox.height / 2 + 12 * i,
-    );
+    await page.mouse.move(sbox.x + sbox.width / 2 + 15 * i, sbox.y + sbox.height / 2 + 12 * i);
   }
   await page.mouse.up();
   await page.waitForTimeout(120);

@@ -682,10 +682,7 @@ export function absoluteFrameBox(
  *  item or any of its descendants, the reparent is rejected. Also used
  *  by the three reparent surfaces (modifier drag, ThumbnailPanel drop,
  *  ContextMenu picker) to compute the disabled-target set up front. */
-export function findDescendantSet(
-  doc: AgocraftDocument,
-  itemId: string,
-): ReadonlySet<string> {
+export function findDescendantSet(doc: AgocraftDocument, itemId: string): ReadonlySet<string> {
   const item = findItemDeep(doc, itemId);
   if (item === undefined) return new Set();
   const ids = new Set<string>();

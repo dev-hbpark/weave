@@ -10,7 +10,7 @@
 //      known positions, then compare the chrome's getBoundingClientRect
 //      against the union of each frame's getBoundingClientRect.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -22,9 +22,7 @@ async function selectedIds(page: Page): Promise<string[]> {
     const w = window as unknown as {
       __weaveVm?: { itemSelection: { items: () => ReadonlyArray<unknown> } };
     };
-    return (w.__weaveVm?.itemSelection.items() ?? [])
-      .map((x) => String(x))
-      .sort();
+    return (w.__weaveVm?.itemSelection.items() ?? []).map((x) => String(x)).sort();
   });
 }
 
@@ -155,9 +153,7 @@ test("union chrome (after REAL marquee drag) matches the bbox of every selected 
   expect(Math.abs(chrome.bottom - unionExpected.bottom)).toBeLessThan(TOL);
 });
 
-test("union chrome follows the frames during a multi-drag", async ({
-  page,
-}) => {
+test("union chrome follows the frames during a multi-drag", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Union-Drag-Follow" });
 
@@ -180,15 +176,12 @@ test("union chrome follows the frames during a multi-drag", async ({
     };
     w.__weaveVm?.itemSelection.setMany(arr);
   }, ids);
-  await page.waitForFunction(
-    (n) => {
-      const w = window as unknown as {
-        __weaveVm?: { itemSelection: { items: () => ReadonlyArray<unknown> } };
-      };
-      return (w.__weaveVm?.itemSelection.items().length ?? 0) === n;
-    },
-    ids.length,
-  );
+  await page.waitForFunction((n) => {
+    const w = window as unknown as {
+      __weaveVm?: { itemSelection: { items: () => ReadonlyArray<unknown> } };
+    };
+    return (w.__weaveVm?.itemSelection.items().length ?? 0) === n;
+  }, ids.length);
 
   // Drag frame 0 by ~120 px right, ~60 px down. Both frames should move.
   const r = await frameRect(page, ids[0] as string);
@@ -218,9 +211,7 @@ test("union chrome follows the frames during a multi-drag", async ({
   expect(Math.abs(chrome.bottom - unionExpected.bottom)).toBeLessThan(TOL);
 });
 
-test("union chrome includes a nested selected item (not just root.children)", async ({
-  page,
-}) => {
+test("union chrome includes a nested selected item (not just root.children)", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Union-Nested" });
 
@@ -236,22 +227,25 @@ test("union chrome includes a nested selected item (not just root.children)", as
   });
 
   // One shape nested INSIDE the slide. addFrame with explicit containerId.
-  await page.evaluate(({ parentId }) => {
-    const w = window as unknown as {
-      __weaveEditor?: {
-        exec: (n: string, i: unknown) => unknown;
+  await page.evaluate(
+    ({ parentId }) => {
+      const w = window as unknown as {
+        __weaveEditor?: {
+          exec: (n: string, i: unknown) => unknown;
+        };
       };
-    };
-    w.__weaveEditor?.exec("weave.item.add", {
-      kind: "shape",
-      containerId: parentId,
-      frame: { x: 0.1, y: 0.1, width: 0.6, height: 0.6, rotation: 0 },
-      attrsOverride: {
-        shape: "rectangle",
-        fill: { type: "solid", color: "#ff0000" },
-      },
-    });
-  }, { parentId: slideId });
+      w.__weaveEditor?.exec("weave.item.add", {
+        kind: "shape",
+        containerId: parentId,
+        frame: { x: 0.1, y: 0.1, width: 0.6, height: 0.6, rotation: 0 },
+        attrsOverride: {
+          shape: "rectangle",
+          fill: { type: "solid", color: "#ff0000" },
+        },
+      });
+    },
+    { parentId: slideId },
+  );
 
   // Find the nested shape's id.
   const shapeId = await page.evaluate((sid) => {
@@ -265,16 +259,17 @@ test("union chrome includes a nested selected item (not just root.children)", as
 
   // Multi-select the slide AND the nested shape via the vm — simulating
   // what shift-click on the nested item would do.
-  await page.evaluate((arr) => {
-    const w = window as unknown as {
-      __weaveVm?: { itemSelection: { setMany: (xs: Iterable<unknown>) => void } };
-    };
-    w.__weaveVm?.itemSelection.setMany(arr);
-  }, [slideId, shapeId]);
+  await page.evaluate(
+    (arr) => {
+      const w = window as unknown as {
+        __weaveVm?: { itemSelection: { setMany: (xs: Iterable<unknown>) => void } };
+      };
+      w.__weaveVm?.itemSelection.setMany(arr);
+    },
+    [slideId, shapeId],
+  );
   await page.waitForFunction(() => {
-    return document.querySelector(
-      "[data-testid='multi-selection-chrome']",
-    ) !== null;
+    return document.querySelector("[data-testid='multi-selection-chrome']") !== null;
   });
 
   // The chrome should include the shape's bounding rect too. Since the
@@ -288,15 +283,10 @@ test("union chrome includes a nested selected item (not just root.children)", as
   expect(Math.abs(chrome.right - slideR.right)).toBeLessThan(TOL);
   expect(Math.abs(chrome.bottom - slideR.bottom)).toBeLessThan(TOL);
   // And the count is 2 even though only one is at root.
-  await expect(page.getByTestId("multi-selection-chrome")).toHaveAttribute(
-    "data-count",
-    "2",
-  );
+  await expect(page.getByTestId("multi-selection-chrome")).toHaveAttribute("data-count", "2");
 });
 
-test("union chrome (programmatic) matches the bbox of every selected frame", async ({
-  page,
-}) => {
+test("union chrome (programmatic) matches the bbox of every selected frame", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Union-Geom" });
 
@@ -327,9 +317,7 @@ test("union chrome (programmatic) matches the bbox of every selected frame", asy
   }, ids);
   await page.waitForFunction(
     () => {
-      return document.querySelector(
-        "[data-testid='multi-selection-chrome']",
-      ) !== null;
+      return document.querySelector("[data-testid='multi-selection-chrome']") !== null;
     },
     null,
     { timeout: 2000 },

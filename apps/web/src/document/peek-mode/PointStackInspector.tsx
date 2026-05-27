@@ -10,8 +10,8 @@
 //     when a row is currently being dragged.
 //   - Empty state cleaner — friendly hint + larger visual.
 
-import { useState, useSyncExternalStore, type DragEvent } from "react";
 import type { PeekLiftSet, PeekModeController } from "@agocraft/interaction";
+import { type DragEvent, useState, useSyncExternalStore } from "react";
 
 export interface PointStackInspectorProps {
   readonly controller: PeekModeController;
@@ -83,17 +83,10 @@ function StackRow(p: StackRowProps): JSX.Element {
         gap: 14,
         padding: "12px 14px",
         margin: "0",
-        background: p.isDragging
-          ? "rgba(232, 58, 147, 0.18)"
-          : "transparent",
-        borderTop:
-          p.isDropTarget === "above"
-            ? "2px solid var(--accent)"
-            : "1px solid transparent",
+        background: p.isDragging ? "rgba(232, 58, 147, 0.18)" : "transparent",
+        borderTop: p.isDropTarget === "above" ? "2px solid var(--accent)" : "1px solid transparent",
         borderBottom:
-          p.isDropTarget === "below"
-            ? "2px solid var(--accent)"
-            : "1px solid transparent",
+          p.isDropTarget === "below" ? "2px solid var(--accent)" : "1px solid transparent",
         borderLeft: "2px solid transparent",
         borderRight: "2px solid transparent",
         cursor: p.isDragging ? "grabbing" : "grab",
@@ -110,8 +103,7 @@ function StackRow(p: StackRowProps): JSX.Element {
           borderRadius: 6,
           flexShrink: 0,
           background: p.swatch,
-          boxShadow:
-            "0 0 0 1px rgba(0,0,0,0.4) inset, 0 0 0 1px rgba(255,255,255,0.16)",
+          boxShadow: "0 0 0 1px rgba(0,0,0,0.4) inset, 0 0 0 1px rgba(255,255,255,0.16)",
         }}
       />
       <span
@@ -287,8 +279,7 @@ export function PointStackInspector(props: PointStackInspectorProps): JSX.Elemen
           orderedTopDown.map((id) => {
             const z = liftSet?.orderedIds.indexOf(id) ?? 0;
             const isDragging = draggingId === id;
-            const isDropTarget =
-              dropMark && dropMark.id === id ? dropMark.pos : null;
+            const isDropTarget = dropMark && dropMark.id === id ? dropMark.pos : null;
             return (
               <StackRow
                 key={id}

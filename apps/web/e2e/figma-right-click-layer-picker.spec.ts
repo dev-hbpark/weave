@@ -8,7 +8,7 @@
 // When the cursor is over a single (top-level) frame with no overlap,
 // the section is elided and the menu renders the legacy chrome only.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -100,7 +100,7 @@ test("right-click on a nested frame shows the 'Select layer' section deepest-fir
   expect(childBox).not.toBeNull();
   expect(parentBox).not.toBeNull();
   // deepest-first → child row sits above parent row visually.
-  expect((childBox?.y ?? 0)).toBeLessThan(parentBox?.y ?? 0);
+  expect(childBox?.y ?? 0).toBeLessThan(parentBox?.y ?? 0);
 });
 
 test("clicking a layer row moves the selection to that frame", async ({ page }) => {

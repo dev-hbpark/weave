@@ -17,12 +17,12 @@
 // drops any subSelection. Matches the pre-DR-017 semantics exactly so
 // no consumer needs to change.
 
-import { useEditorVM } from "@agocraft/editor/react";
-import type { EditorViewModel } from "@agocraft/editor";
 import type { Document as AgocraftDocument } from "@agocraft/core";
+import type { EditorViewModel } from "@agocraft/editor";
+import { useEditorVM } from "@agocraft/editor/react";
 import {
-  type ReactNode,
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
@@ -99,20 +99,14 @@ export function selectFromHit(
  *  is a no-op (leaf has no children; root has no parent). Sibling
  *  navigation wraps around — last → first → last per Figma. */
 
-export function firstChildOf(
-  fromId: string,
-  doc: AgocraftDocument,
-): string | undefined {
+export function firstChildOf(fromId: string, doc: AgocraftDocument): string | undefined {
   const item = findItemDeep(doc, fromId);
   if (item === undefined) return undefined;
   const first = item.children[0];
   return first === undefined ? undefined : String(first.id);
 }
 
-export function parentOf(
-  fromId: string,
-  doc: AgocraftDocument,
-): string | undefined {
+export function parentOf(fromId: string, doc: AgocraftDocument): string | undefined {
   const trail = findTrailDeep(doc, fromId);
   if (trail === undefined || trail.length === 0) return undefined;
   // trail is [topLevel, ..., fromId]. Parent of the last element is the
@@ -127,7 +121,9 @@ export function parentOf(
 function siblingsOf(
   fromId: string,
   doc: AgocraftDocument,
-): { readonly siblings: ReadonlyArray<{ readonly id: string }>; readonly index: number } | undefined {
+):
+  | { readonly siblings: ReadonlyArray<{ readonly id: string }>; readonly index: number }
+  | undefined {
   const trail = findTrailDeep(doc, fromId);
   if (trail === undefined || trail.length === 0) return undefined;
   // Parent's children: if trail.length === 1, the frame is a top-level
@@ -140,10 +136,7 @@ function siblingsOf(
   return { siblings, index };
 }
 
-export function nextSiblingOf(
-  fromId: string,
-  doc: AgocraftDocument,
-): string | undefined {
+export function nextSiblingOf(fromId: string, doc: AgocraftDocument): string | undefined {
   const found = siblingsOf(fromId, doc);
   if (found === undefined) return undefined;
   const { siblings, index } = found;
@@ -152,10 +145,7 @@ export function nextSiblingOf(
   return next?.id;
 }
 
-export function prevSiblingOf(
-  fromId: string,
-  doc: AgocraftDocument,
-): string | undefined {
+export function prevSiblingOf(fromId: string, doc: AgocraftDocument): string | undefined {
   const found = siblingsOf(fromId, doc);
   if (found === undefined) return undefined;
   const { siblings, index } = found;
@@ -219,32 +209,29 @@ export function useSelection(explicitVm?: EditorViewModel): SelectionContextValu
   const stableNoOpVm = useStableNoOpVm();
   const activeVm = vm ?? stableNoOpVm;
 
-  const selection = useEditorVM<Selection | null>(
-    activeVm,
-    (v) => {
-      // Prefer the most-recent selection. Item-level selection wins when
-      // present so that the FrameMoveBinding's `vm.itemSelection.set(...)`
-      // is reflected even if a stale subSelection lingers from a prior
-      // shape pick (the binding only sets itemSelection, doesn't clear
-      // subSelection). When itemSelection is "none", fall through to
-      // subSelection.
-      //
-      // Multi-selection: `selection.kind` stays "frame" with the FIRST
-      // id (so single-select consumers keep working); use `selectedIds`
-      // below to read the full set.
-      const s = v.itemSelection.state.get();
-      if (s.kind === "single") return { kind: "frame", id: String(s.itemId) };
-      if (s.kind === "multi") {
-        const first = s.items.values().next().value;
-        if (first !== undefined) return { kind: "frame", id: String(first) };
-      }
-      const sub = v.subSelection.get();
-      if (sub !== null && sub.kind === "canvas-shape") {
-        return { kind: "shape", frameId: String(sub.frameId), shapeId: sub.shapeId };
-      }
-      return null;
-    },
-  );
+  const selection = useEditorVM<Selection | null>(activeVm, (v) => {
+    // Prefer the most-recent selection. Item-level selection wins when
+    // present so that the FrameMoveBinding's `vm.itemSelection.set(...)`
+    // is reflected even if a stale subSelection lingers from a prior
+    // shape pick (the binding only sets itemSelection, doesn't clear
+    // subSelection). When itemSelection is "none", fall through to
+    // subSelection.
+    //
+    // Multi-selection: `selection.kind` stays "frame" with the FIRST
+    // id (so single-select consumers keep working); use `selectedIds`
+    // below to read the full set.
+    const s = v.itemSelection.state.get();
+    if (s.kind === "single") return { kind: "frame", id: String(s.itemId) };
+    if (s.kind === "multi") {
+      const first = s.items.values().next().value;
+      if (first !== undefined) return { kind: "frame", id: String(first) };
+    }
+    const sub = v.subSelection.get();
+    if (sub !== null && sub.kind === "canvas-shape") {
+      return { kind: "shape", frameId: String(sub.frameId), shapeId: sub.shapeId };
+    }
+    return null;
+  });
 
   const selectedIds = useEditorVM<ReadonlySet<string>>(activeVm, (v) => {
     const s = v.itemSelection.state.get();
@@ -272,11 +259,7 @@ export function useSelection(explicitVm?: EditorViewModel): SelectionContextValu
       if (vm === undefined) return;
       if (shapeId === null) {
         const cur = vm.subSelection.get();
-        if (
-          cur !== null &&
-          cur.kind === "canvas-shape" &&
-          String(cur.frameId) === frameId
-        ) {
+        if (cur !== null && cur.kind === "canvas-shape" && String(cur.frameId) === frameId) {
           vm.subSelection.set(null);
         }
         return;

@@ -53,11 +53,7 @@ export interface TextOnboardingHintProps {
   readonly forceShow?: boolean;
 }
 
-export function TextOnboardingHint({
-  anchor,
-  locale,
-  forceShow = false,
-}: TextOnboardingHintProps) {
+export function TextOnboardingHint({ anchor, locale, forceShow = false }: TextOnboardingHintProps) {
   const [resolved, setResolved] = useState<Locale>("ko");
   useEffect(() => {
     setResolved(locale ?? detectLocale());

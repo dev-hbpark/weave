@@ -19,20 +19,17 @@ import {
   RadioTileGroup,
   TextField,
 } from "@weave/design-system";
-import { useState, type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  addChild,
-  toAgocraftItem,
-} from "../../document/agocraft-mirror.js";
+import { addChild, toAgocraftItem } from "../../document/agocraft-mirror.js";
 import { createDefaultItem } from "../../document/seed.js";
 import { createBlankDesign, saveDesign } from "../../document/storage.js";
 import {
   DOC_FLAVORS,
   DOC_SIZE_PRESETS,
-  FLAVOR_REGISTRY,
   type DocFlavor,
   type DomainKind,
+  FLAVOR_REGISTRY,
 } from "../../document/types.js";
 
 const FLAVOR_ICONS: Readonly<Record<DocFlavor, ReactNode>> = {

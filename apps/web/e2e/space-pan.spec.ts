@@ -8,7 +8,7 @@
 // whitelists the `hand → panning` promotion and restores "hand" on
 // release.
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { prepareDesign } from "./helpers";
 
 test("Space+drag pans the camera on the infinite canvas", async ({ page }) => {
@@ -22,9 +22,7 @@ test("Space+drag pans the camera on the infinite canvas", async ({ page }) => {
       // The pan layer is the outermost transform-bearing div inside
       // the frame-stage. We look for `matrix(1, 0, 0, 1, tx, ty)` —
       // identity scale, pure translate — that's the pan transform.
-      const stage = document.querySelector(
-        '[data-testid="frame-stage"]',
-      ) as HTMLElement | null;
+      const stage = document.querySelector('[data-testid="frame-stage"]') as HTMLElement | null;
       if (stage === null) return null;
       const all: string[] = [];
       const walk = (el: HTMLElement) => {
@@ -43,19 +41,15 @@ test("Space+drag pans the camera on the infinite canvas", async ({ page }) => {
   // Cursor should switch to grab when Space-armed.
   const armedCursor = await page.evaluate(
     () =>
-      window.getComputedStyle(
-        document.querySelector('[data-testid="frame-stage"]') as HTMLElement,
-      ).cursor,
+      window.getComputedStyle(document.querySelector('[data-testid="frame-stage"]') as HTMLElement)
+        .cursor,
   );
   expect(armedCursor).toBe("grab");
 
   await page.mouse.move(sbox.x + sbox.width / 2, sbox.y + sbox.height / 2);
   await page.mouse.down();
   for (let i = 1; i <= 6; i++) {
-    await page.mouse.move(
-      sbox.x + sbox.width / 2 + 20 * i,
-      sbox.y + sbox.height / 2 + 15 * i,
-    );
+    await page.mouse.move(sbox.x + sbox.width / 2 + 20 * i, sbox.y + sbox.height / 2 + 15 * i);
   }
   await page.mouse.up();
   await page.keyboard.up("Space");

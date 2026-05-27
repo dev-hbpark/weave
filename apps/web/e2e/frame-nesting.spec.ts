@@ -18,7 +18,7 @@ test("FrameStage renders with no drill route; all frames visible at once", async
   await addFrame(page, "canvas-design");
 
   // Both frames are visible inside the stage — no drill, no /sub/ url.
-  await expect(page.locator('[data-frame-id]')).toHaveCount(2);
+  await expect(page.locator("[data-frame-id]")).toHaveCount(2);
   expect(page.url()).not.toContain("/sub/");
 });
 
@@ -27,13 +27,13 @@ test("selecting a frame routes Toolbar Add into that frame's children", async ({
 
   // Add a slide at root.
   await addFrame(page, "slide");
-  await expect(page.locator('[data-frame-id]')).toHaveCount(1);
+  await expect(page.locator("[data-frame-id]")).toHaveCount(1);
 
   // Click the slide to select it.
   // Phase 12 — clicking the inner content (text / shapes / etc.) does NOT
   // select the frame; only clicks on the frame chrome do. Use a small offset
   // near the top-left corner so the click lands on the outline strip.
-  const slide = page.locator('[data-frame-id]').first();
+  const slide = page.locator("[data-frame-id]").first();
   const selectedFrameId = await slide.getAttribute("data-frame-id");
   if (selectedFrameId === null) throw new Error("first frame missing data-frame-id");
   await slide.click({ position: { x: 4, y: 4 } });
@@ -48,10 +48,7 @@ test("selecting a frame routes Toolbar Add into that frame's children", async ({
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     if (doc === undefined) return null;
     const rootChildren = doc.root.children;
-    const grandchildren =
-      rootChildren[0]?.children.filter((c) =>
-        ["frame"].includes(c.kind),
-      ) ?? [];
+    const grandchildren = rootChildren[0]?.children.filter((c) => ["frame"].includes(c.kind)) ?? [];
     return { rootCount: rootChildren.length, grandCount: grandchildren.length };
   });
   expect(nested).toEqual({ rootCount: 1, grandCount: 1 });
@@ -64,7 +61,7 @@ test("clicking the stage background deselects", async ({ page }) => {
   // Phase 12 — clicking the inner content (text / shapes / etc.) does NOT
   // select the frame; only clicks on the frame chrome do. Use a small offset
   // near the top-left corner so the click lands on the outline strip.
-  const slide = page.locator('[data-frame-id]').first();
+  const slide = page.locator("[data-frame-id]").first();
   await slide.click({ position: { x: 4, y: 4 } });
 
   // Click the stage chrome (outside any frame). add-target-hint was removed
