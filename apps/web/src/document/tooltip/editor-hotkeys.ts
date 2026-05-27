@@ -592,20 +592,47 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       // Dispatched via multiDeleter slot.
     },
   },
-  // Multi-selection align / distribute. The 8 ids match `AlignOp`
-  // exactly so the host slot can pass the id through to the
-  // `computeAlignedFrames` registry without translation. `enabledWhen`
-  // gates the same-parent invariant: the host's commandContext sets
-  // `multiSameParent: true` only when every selected id shares one
-  // parent frame in the doc tree, so the QuickActionBar greys out the
-  // buttons (and hotkeys decline to fire) when the selection straddles
-  // parents — v1 contract; cross-parent align is a follow-up.
+  // Multi-selection align / distribute. The 8 ids below match the
+  // `AlignOp` union exactly so the host slot can pass the id through
+  // to the `computeAlignedFrames` registry without translation.
   //
-  // Hotkeys follow Figma's defaults (Alt+letter) for the 6 align ops.
-  // Distribute uses Alt+Shift+H/V to avoid colliding with the
-  // pre-existing Mod+Alt+V "paste special" binding. Counts ≥ 2 are
+  // `multi.align` (this entry, just below) is a virtual *submenu
+  // trigger* — it sits on the QuickActionBar as a single button that
+  // opens a popover listing every individual op. The 8 fine-grained
+  // commands stay registered so their hotkeys (Alt+letter), command
+  // palette entries, and any future contextual surface keep working;
+  // the host hides them from the bar via QuickActionBar's `excludeIds`
+  // prop so the bar shows ONE align icon instead of nine. No hotkey
+  // on the trigger itself — the submenu is hover/click-driven.
+  //
+  // Hotkeys for the 8 ops follow Figma's defaults (Alt+letter) for the
+  // 6 align ops. Distribute uses Alt+Shift+H/V to avoid colliding with
+  // the pre-existing Mod+Alt+V "paste special" binding. Counts ≥ 2 are
   // sufficient for align (a single item is treated as already-aligned
   // by the helper); distribute needs ≥ 3 (math degenerates with two).
+  //
+  // `enabledWhen` on every entry gates the same-parent invariant: the
+  // host's commandContext sets `multiSameParent: true` only when every
+  // selected id shares one parent frame in the doc tree, so the
+  // QuickActionBar greys out the buttons (and hotkeys decline to fire)
+  // when the selection straddles parents — v1 contract; cross-parent
+  // align is a follow-up.
+  {
+    id: "multi.align",
+    label: { en: "Align…", ko: "정렬…" },
+    description: {
+      en: "Open the multi-selection align / distribute submenu.",
+      ko: "다중 선택 정렬 / 분포 메뉴를 엽니다.",
+    },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      // No-op — the host's QuickActionBar `renderItem` swaps this id
+      // out for a <MultiAlignSubmenu> component that owns the
+      // submenu's open state and dispatches the individual ops.
+    },
+  },
   {
     id: "multi.align-left",
     label: { en: "Align left", ko: "왼쪽 정렬" },

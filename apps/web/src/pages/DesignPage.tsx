@@ -47,9 +47,10 @@ import {
   IconUndo,
   QuickActionBar,
   ThemeSwitcher,
+  useCommandHost,
 } from "@weave/design-system";
 import type { ReactNode as ReactNodeAlias } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   type DocFlavor,
@@ -414,28 +415,76 @@ function FrameContextMenu({
  *  2026-05-25" for the trade-off discussion. */
 const SYNC_ENABLED = false;
 
-// Multi-selection align / distribute command id → Icon component. The
-// QuickActionBar's renderItem looks each id up here so the bar's icon
-// dispatch stays a single registry read instead of an 8-arm `switch`
-// (CODE_STRUCTURE_DESIGN_RULES Rule 6). Adding a 9th align op = add
-// the Icon component, then one Map entry here + the editor-hotkeys
-// command + the helper handler in align-ops.ts.
-const ALIGN_ICONS: ReadonlyMap<
-  string,
-  React.ForwardRefExoticComponent<
-    React.PropsWithoutRef<React.SVGAttributes<SVGSVGElement> & { readonly size?: number | string }> &
-      React.RefAttributes<SVGSVGElement>
-  >
-> = new Map([
-  ["multi.align-left", IconAlignLeft],
-  ["multi.align-horizontal-center", IconAlignHorizontalCenter],
-  ["multi.align-right", IconAlignRight],
-  ["multi.align-top", IconAlignTop],
-  ["multi.align-vertical-center", IconAlignVerticalCenter],
-  ["multi.align-bottom", IconAlignBottom],
-  ["multi.distribute-horizontal", IconDistributeHorizontal],
-  ["multi.distribute-vertical", IconDistributeVertical],
+// Multi-selection align / distribute — the 8 individual ops are
+// registered as commands (so their Alt+letter hotkeys and command-
+// palette entries keep working) but they are NOT surfaced as separate
+// QuickActionBar buttons. One `multi.align` submenu button on the bar
+// expands into a dropdown that lists all 8. The bar receives the set
+// below via `excludeIds` to filter the individuals out.
+const MULTI_ALIGN_INDIVIDUAL_IDS: ReadonlySet<string> = new Set([
+  "multi.align-left",
+  "multi.align-horizontal-center",
+  "multi.align-right",
+  "multi.align-top",
+  "multi.align-vertical-center",
+  "multi.align-bottom",
+  "multi.distribute-horizontal",
+  "multi.distribute-vertical",
 ]);
+
+// QuickActionBar `pinToEndIds`: any of these commands, when visible,
+// gets sorted to the rightmost slot. The user-visible rule: destructive
+// ✕ always lives on the right edge, regardless of the order the
+// commands happen to be registered in.
+const DELETE_PIN_IDS: ReadonlySet<string> = new Set(["multi.delete", "frame.delete"]);
+
+// Submenu entries — driving data for `<MultiAlignSubmenu>`. Iterating a
+// readonly array (instead of switching on the op string inside the
+// JSX) keeps the dropdown's body free of branching on the op kind
+// (CODE_STRUCTURE_DESIGN_RULES Rule 6). Adding a 9th op = one new row
+// here + the matching Icon + editor-hotkeys command + align-ops
+// handler.
+interface MultiAlignMenuEntry {
+  readonly id: string;
+  readonly label: string;
+  readonly Icon: React.ForwardRefExoticComponent<
+    React.PropsWithoutRef<
+      React.SVGAttributes<SVGSVGElement> & { readonly size?: number | string }
+    > &
+      React.RefAttributes<SVGSVGElement>
+  >;
+  /** First-row in each visual group; the submenu inserts a separator
+   *  above entries flagged with `group: "start"`. */
+  readonly group?: "start";
+}
+
+const MULTI_ALIGN_MENU_ENTRIES: ReadonlyArray<MultiAlignMenuEntry> = [
+  { id: "multi.align-left", label: "왼쪽 정렬", Icon: IconAlignLeft },
+  {
+    id: "multi.align-horizontal-center",
+    label: "가로 가운데 정렬",
+    Icon: IconAlignHorizontalCenter,
+  },
+  { id: "multi.align-right", label: "오른쪽 정렬", Icon: IconAlignRight },
+  { id: "multi.align-top", label: "위쪽 정렬", Icon: IconAlignTop, group: "start" },
+  {
+    id: "multi.align-vertical-center",
+    label: "세로 가운데 정렬",
+    Icon: IconAlignVerticalCenter,
+  },
+  { id: "multi.align-bottom", label: "아래쪽 정렬", Icon: IconAlignBottom },
+  {
+    id: "multi.distribute-horizontal",
+    label: "가로 같은 간격",
+    Icon: IconDistributeHorizontal,
+    group: "start",
+  },
+  {
+    id: "multi.distribute-vertical",
+    label: "세로 같은 간격",
+    Icon: IconDistributeVertical,
+  },
+];
 
 export function DesignPage() {
   return <DesignPageBody />;
@@ -2860,11 +2909,20 @@ function QuickActionBarAnchored({
     >
       <QuickActionBar
         data-testid="hover-quick-actions"
-        // Bumped from the default 6 — a multi-selection bar now lists
-        // 8 align/distribute commands plus `multi.delete` (9 total)
-        // and the single-frame bar lists 5. 12 covers both with
-        // headroom; anything beyond that should move to a submenu.
-        maxItems={12}
+        // 8 multi-selection align/distribute commands stay registered
+        // (so their Alt+letter hotkeys + command palette entries keep
+        // working) but are HIDDEN from the bar — one `multi.align`
+        // submenu button surfaces them instead. Single-frame bar
+        // currently shows up to 5 items; multi-bar shows 2 (align
+        // trigger + delete). 8 leaves headroom for future single-
+        // frame additions before another submenu is needed.
+        maxItems={8}
+        excludeIds={MULTI_ALIGN_INDIVIDUAL_IDS}
+        // Pin destructive ✕ to the rightmost slot regardless of
+        // registry order. Both single-frame and multi-selection deletes
+        // are pinned so the user can always reach for the right edge
+        // to remove the selection.
+        pinToEndIds={DELETE_PIN_IDS}
         renderItem={(id) => {
           // WI-036 follow-up — the `+` button doubles as a hover-
           // open submenu listing every add option (frame / text /
@@ -2875,20 +2933,13 @@ function QuickActionBarAnchored({
           if (id === "frame.addChild") {
             return <FrameAddSubmenu frameId={anchor.frameId} onInsert={onInsertInFrame} />;
           }
-          // Multi-selection align / distribute — each id maps to a
-          // dedicated Icon component (project rule: no emoji glyphs
-          // in UI). The lookup uses a Map registry instead of a
-          // switch / if-else chain so adding a 9th alignment op is
-          // one entry here + the editor-hotkeys command + the helper
-          // handler. (CODE_STRUCTURE_DESIGN_RULES Rule 6.)
-          const alignIcon = ALIGN_ICONS.get(id);
-          if (alignIcon !== undefined) {
-            const IconComp = alignIcon;
-            return (
-              <CommandIconButton commandId={id} size="sm">
-                <IconComp size={14} />
-              </CommandIconButton>
-            );
+          // Single `multi.align` button on the bar opens a submenu
+          // containing every align/distribute op (the 8 individual
+          // ids are filtered out via `excludeIds` above so they don't
+          // also surface inline). Same hover-open pattern as
+          // FrameAddSubmenu.
+          if (id === "multi.align") {
+            return <MultiAlignSubmenu />;
           }
           const glyph =
             id === "frame.delete" || id === "multi.delete"
@@ -2904,6 +2955,102 @@ function QuickActionBarAnchored({
         }}
       />
     </div>
+  );
+}
+
+// Multi-selection align / distribute submenu — a single button on the
+// QuickActionBar that opens a dropdown listing every align op. Mirrors
+// FrameAddSubmenu's hover-open pattern: the trigger is itself a
+// dispatchable CommandIconButton (`multi.align`, registered with a
+// no-op action so the click does nothing without the dropdown — the
+// dropdown trigger captures the open intent), and the dropdown body
+// holds the 8 individual align/distribute commands as DropdownMenuItems.
+//
+// Each row dispatches its command via `host.dispatch(id)` — the same
+// path the Alt+letter hotkeys use — so the host's `multiAligner` slot
+// runs and the operation lands as a single undoable Change.
+function MultiAlignSubmenu(): React.ReactElement {
+  const host = useCommandHost();
+  const [open, setOpen] = useState(false);
+  const leaveTimerRef = useRef<number | null>(null);
+  const cancelLeave = useCallback(() => {
+    if (leaveTimerRef.current !== null) {
+      window.clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+  }, []);
+  const scheduleClose = useCallback(() => {
+    cancelLeave();
+    leaveTimerRef.current = window.setTimeout(() => {
+      leaveTimerRef.current = null;
+      setOpen(false);
+    }, 200);
+  }, [cancelLeave]);
+  const handleEnter = useCallback(() => {
+    cancelLeave();
+    setOpen(true);
+  }, [cancelLeave]);
+  useEffect(() => {
+    return () => cancelLeave();
+  }, [cancelLeave]);
+
+  // Resolve enabled state through the same registry the bar uses, so
+  // the rows match the trigger's greyed-out behavior on cross-parent
+  // selections AND each row's own `enabledWhen` predicate (distribute
+  // requires ≥ 3, align only needs ≥ 2) is honored without the host
+  // re-implementing the rules.
+  const isEntryEnabled = useCallback(
+    (id: string): boolean => host.registry.isEnabled(id, host.context),
+    [host],
+  );
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <span onMouseEnter={handleEnter} onMouseLeave={scheduleClose}>
+        <DropdownMenuTrigger asChild>
+          <CommandIconButton commandId="multi.align" size="sm">
+            <IconAlignHorizontalCenter size={14} />
+          </CommandIconButton>
+        </DropdownMenuTrigger>
+      </span>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        onMouseEnter={handleEnter}
+        onMouseLeave={scheduleClose}
+        data-testid="multi-align-submenu"
+      >
+        {MULTI_ALIGN_MENU_ENTRIES.map((entry, idx) => {
+          const enabled = isEntryEnabled(entry.id);
+          const row = (
+            <DropdownMenuItem
+              key={entry.id}
+              disabled={!enabled}
+              onSelect={() => {
+                if (!enabled) return;
+                host.dispatch(entry.id);
+                setOpen(false);
+              }}
+              data-testid={`multi-align-row-${entry.id}`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <entry.Icon size={14} />
+                <span>{entry.label}</span>
+              </span>
+            </DropdownMenuItem>
+          );
+          if (entry.group === "start" && idx > 0) {
+            return (
+              <React.Fragment key={`${entry.id}-grp`}>
+                <DropdownMenuSeparator />
+                {row}
+              </React.Fragment>
+            );
+          }
+          return row;
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
