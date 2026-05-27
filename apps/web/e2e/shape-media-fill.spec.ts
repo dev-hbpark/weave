@@ -43,7 +43,9 @@ test("Shape → 이미지 채우기 sets fill to type:image with src", async ({ 
   await expect(toolbar).toBeVisible({ timeout: 3000 });
   await expect(toolbar).toHaveAttribute("data-kind", "shape");
 
-  // Image-fill button opens dialog with empty initial src.
+  // DR-design-015 — image-fill button lives inside More popover (Fill
+  // field). Open More first.
+  await page.getByTestId("toolbar-more-trigger").click();
   await page.getByTestId("shape-fill-image").click();
   const dialog = page.getByTestId("media-src-dialog");
   await expect(dialog).toBeVisible();
@@ -78,6 +80,8 @@ test("Shape → 비디오 채우기 sets fill to type:video and renders <video>"
   const toolbar = page.getByTestId("contextual-toolbar");
   await expect(toolbar).toBeVisible({ timeout: 3000 });
 
+  // DR-design-015 — video-fill lives inside More popover.
+  await page.getByTestId("toolbar-more-trigger").click();
   await page.getByTestId("shape-fill-video").click();
   const dialog = page.getByTestId("media-src-dialog");
   await expect(dialog).toBeVisible();
@@ -107,17 +111,22 @@ test("Shape → × clear returns fill to solid color and restores fill buttons",
   await page.getByTestId("add-shape-rectangle").click();
   await expect(page.locator("[data-frame-id]")).toHaveCount(1);
 
-  // Apply image fill first.
+  // DR-design-015 — open More, apply image fill, verify clear works.
+  await page.getByTestId("toolbar-more-trigger").click();
   await page.getByTestId("shape-fill-image").click();
   await page.getByTestId("media-src-input").fill("https://example.com/x.jpg");
   await page.getByTestId("media-src-confirm").click();
 
-  // Clear button is visible while media fill is active.
+  // Dialog confirm dismissed the More popover via outside-pointer. Re-open
+  // to find the clear button.
+  await page.getByTestId("toolbar-more-trigger").click();
   const clear = page.getByTestId("shape-fill-clear");
   await expect(clear).toBeVisible();
   await clear.click();
 
-  // After clear, the fill is solid again and the image/video buttons return.
+  // After clear, the fill is solid again. The popover stays open (the
+  // click landed on a child inside it, not the trigger) and the Fill field
+  // re-renders the solid branch → image/video swap buttons appear in-place.
   const fill = await getSelectedShapeFill(page);
   expect(fill?.type).toBe("solid");
   await expect(page.getByTestId("shape-fill-image")).toBeVisible();

@@ -1,6 +1,16 @@
+// DR-design-015 — video kind in Tier-2 layout.
+//
+// Quick: replace-src icon + mute toggle (volume icon doubles as the most
+// common video setting — quiet by default, click to toggle).
+// More: Fit · Loop · Volume slider.
+
 import {
-  Button,
   ContextualToolbar as Bar,
+  Button,
+  IconButton,
+  IconRefresh,
+  IconVideo,
+  IconVolume,
   NumberSlider,
   SegmentedControl,
   Switch,
@@ -29,51 +39,54 @@ export const VideoSection: ToolbarSectionComponent = ({
   multi,
   onEditMediaSrc,
 }) => {
-  const fit = sharedValue<VideoFit>(
-    items,
-    (it) => (it.attrs as unknown as VideoAttrs).fit,
-  );
-  const loop = sharedValue<boolean>(
-    items,
-    (it) => (it.attrs as unknown as VideoAttrs).loop,
-  );
-  const muted = sharedValue<boolean>(
-    items,
-    (it) => (it.attrs as unknown as VideoAttrs).muted,
-  );
-  const volume = sharedValue<number>(
-    items,
-    (it) => (it.attrs as unknown as VideoAttrs).volume,
-  );
-  const src = sharedValue<string>(
-    items,
-    (it) => (it.attrs as unknown as VideoAttrs).src,
-  );
+  const fit = sharedValue<VideoFit>(items, (it) => (it.attrs as unknown as VideoAttrs).fit);
+  const loop = sharedValue<boolean>(items, (it) => (it.attrs as unknown as VideoAttrs).loop);
+  const muted = sharedValue<boolean>(items, (it) => (it.attrs as unknown as VideoAttrs).muted);
+  const volume = sharedValue<number>(items, (it) => (it.attrs as unknown as VideoAttrs).volume);
+  const src = sharedValue<string>(items, (it) => (it.attrs as unknown as VideoAttrs).src);
   return (
     <>
-      <Bar.Section label="Source" priority={100}>
-        <div className="inline-flex items-center">
+      <Bar.Kind icon={<IconVideo size={18} />} label="Video" />
+      <Bar.Quick>
+        <IconButton
+          aria-label="비디오 교체"
+          title={isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
+          size="sm"
+          onClick={() => onEditMediaSrc?.("video", isMixed(src) ? "" : src)}
+          data-testid="video-edit-src"
+          disabled={multi && isMixed(src)}
+        >
+          <IconRefresh size={16} />
+        </IconButton>
+        <IconButton
+          aria-label={isMixed(muted) ? "음소거 (여러 값)" : muted ? "음소거됨" : "음소거"}
+          title="음소거 토글"
+          size="sm"
+          aria-pressed={isMixed(muted) ? "mixed" : muted}
+          onClick={() =>
+            updateAll(editor, ids, (prev) => ({
+              attrs: { ...prev.attrs, muted: !muted },
+            }))
+          }
+          data-testid="video-mute-toggle"
+        >
+          <IconVolume size={16} />
+        </IconButton>
+      </Bar.Quick>
+      <Bar.More>
+        <Bar.Field label="Source">
           <Button
             variant="ghost"
             size="md"
-            onClick={() =>
-              onEditMediaSrc?.("video", isMixed(src) ? "" : src)
-            }
-            data-testid="video-edit-src"
+            onClick={() => onEditMediaSrc?.("video", isMixed(src) ? "" : src)}
             disabled={multi && isMixed(src)}
+            className="w-full justify-start"
           >
-            {isMixed(src)
-              ? "여러 소스"
-              : src
-                ? truncateUrl(src)
-                : "URL 입력…"}
+            {isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
           </Button>
           <MixedBadge visible={isMixed(src)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Fit" priority={80}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Fit">
           <SegmentedControl<VideoFit>
             value={isMixed(fit) ? ("cover" as VideoFit) : fit}
             onValueChange={(v) =>
@@ -81,18 +94,17 @@ export const VideoSection: ToolbarSectionComponent = ({
                 attrs: { ...prev.attrs, fit: v },
               }))
             }
-            options={FIT_OPTIONS as unknown as ReadonlyArray<{
-              value: VideoFit;
-              label: string;
-            }>}
+            options={
+              FIT_OPTIONS as unknown as ReadonlyArray<{
+                value: VideoFit;
+                label: string;
+              }>
+            }
             aria-label="Video fit"
           />
           <MixedBadge visible={isMixed(fit)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Loop" priority={50}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Loop">
           <Switch
             checked={isMixed(loop) ? false : loop}
             onCheckedChange={(v) =>
@@ -102,24 +114,8 @@ export const VideoSection: ToolbarSectionComponent = ({
             }
           />
           <MixedBadge visible={isMixed(loop)} />
-        </div>
-      </Bar.Section>
-      <Bar.Section label="Muted" priority={50}>
-        <div className="inline-flex items-center">
-          <Switch
-            checked={isMixed(muted) ? false : muted}
-            onCheckedChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, muted: v },
-              }))
-            }
-          />
-          <MixedBadge visible={isMixed(muted)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Volume" priority={40}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Volume">
           <NumberSlider
             value={isMixed(volume) ? 1 : volume}
             onValueChange={(v) =>
@@ -131,10 +127,11 @@ export const VideoSection: ToolbarSectionComponent = ({
             max={1}
             step={0.01}
             format={(v) => `${Math.round(v * 100)}%`}
+            className="w-full"
           />
           <MixedBadge visible={isMixed(volume)} />
-        </div>
-      </Bar.Section>
+        </Bar.Field>
+      </Bar.More>
     </>
   );
 };

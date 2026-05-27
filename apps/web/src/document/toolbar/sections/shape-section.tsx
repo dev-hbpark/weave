@@ -1,8 +1,17 @@
+// DR-design-015 — shape kind in Tier-2 layout.
+//
+// Quick: fill swatch + stroke swatch (the two highest-frequency shape
+// edits). More: Shape sub-kind picker, Opacity, image/video fill ops.
+
 import type { ShapeAttrs, ShapeSubKind } from "@agocraft/core";
 import {
   ContextualToolbar as Bar,
   Button,
   ColorPicker,
+  IconClose,
+  IconImage,
+  IconShape,
+  IconVideo,
   NumberSlider,
   SegmentedControl,
 } from "@weave/design-system";
@@ -17,15 +26,17 @@ import {
 } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
+// Shape sub-kind labels — Korean text instead of emoji glyphs (project rule:
+// no emoji in UI). Order matches agocraft's enumeration.
 const SHAPE_SUB_KIND_OPTIONS = [
-  { value: "rectangle", label: "▭" },
-  { value: "ellipse", label: "◯" },
-  { value: "line", label: "─" },
-  { value: "arrow", label: "→" },
-  { value: "triangle", label: "△" },
-  { value: "star", label: "★" },
-  { value: "polygon", label: "⬡" },
-  { value: "heart", label: "♥" },
+  { value: "rectangle", label: "사각" },
+  { value: "ellipse", label: "원" },
+  { value: "line", label: "선" },
+  { value: "arrow", label: "화살" },
+  { value: "triangle", label: "삼각" },
+  { value: "star", label: "별" },
+  { value: "polygon", label: "다각" },
+  { value: "heart", label: "하트" },
 ] as const;
 
 function defaultSubAttrsForKind(
@@ -67,10 +78,6 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
     items,
     (it) => (it.attrs as unknown as ShapeAttrs).fill.type,
   );
-  // WI-040 — fill.color / stroke.paint.color may be `StyleRef` after a
-  // theme swatch pick. `useResolveSharedColor` walks the cascade per item
-  // before equality, so the picker receives CSS strings and "Mixed"
-  // detection works on semantic identity.
   const fillColor = useResolveSharedColor(items, (it) => {
     const f = (it.attrs as unknown as ShapeAttrs).fill;
     return f.type === "solid" ? f.color : "#000000";
@@ -88,8 +95,56 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
 
   return (
     <>
-      <Bar.Section label="Shape" priority={100}>
-        <div className="inline-flex items-center">
+      <Bar.Kind icon={<IconShape size={18} />} label="Shape" />
+      <Bar.Quick>
+        {/* Fill swatch — opens picker on click. Multi-aware + StyleRef
+            cascade-resolved via useResolveSharedColor. */}
+        <ColorPicker
+          aria-label="채우기"
+          value={isMixed(fillColor) ? "#cccccc" : (fillColor ?? "#000000")}
+          onValueCommit={(v) =>
+            updateAll(editor, ids, (prev) => ({
+              attrs: {
+                ...prev.attrs,
+                fill: { type: "solid", color: pickerValueToStored(v) },
+              } as unknown as Readonly<Record<string, unknown>>,
+            }))
+          }
+          onValueChange={() => {
+            /* commit-only */
+          }}
+        />
+        {/* Stroke swatch */}
+        <ColorPicker
+          aria-label="윤곽선"
+          value={isMixed(strokeColor) ? "#cccccc" : (strokeColor ?? "#000000")}
+          onValueCommit={(v) =>
+            updateAll(editor, ids, (prev) => {
+              const prevAttrs = prev.attrs as unknown as ShapeAttrs;
+              const storedColor = pickerValueToStored(v);
+              const existingStroke = prevAttrs.stroke ?? {
+                paint: { type: "solid" as const, color: storedColor },
+                width: 2,
+              };
+              return {
+                attrs: {
+                  ...prev.attrs,
+                  stroke: {
+                    ...existingStroke,
+                    paint: { type: "solid", color: storedColor },
+                  },
+                } as unknown as Readonly<Record<string, unknown>>,
+              };
+            })
+          }
+          onValueChange={() => {
+            /* commit-only */
+          }}
+        />
+        <MixedBadge visible={isMixed(fillColor) || isMixed(strokeColor)} />
+      </Bar.Quick>
+      <Bar.More>
+        <Bar.Field label="Shape">
           <SegmentedControl<ShapeSubKind>
             value={isMixed(shape) ? ("rectangle" as ShapeSubKind) : shape}
             onValueChange={(v) =>
@@ -113,82 +168,83 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
             aria-label="Shape sub-kind"
           />
           <MixedBadge visible={isMixed(shape)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Fill" priority={90}>
-        {fillIsMediaUniform && !isMixed(fillMediaSrc) ? (
-          <div className="inline-flex items-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => onEditShapeFill?.(fillType as "image" | "video", fillMediaSrc)}
-              data-testid="shape-fill-media-edit"
-              aria-label={fillType === "image" ? "이미지 채우기 편집" : "비디오 채우기 편집"}
-            >
-              {fillType === "image" ? "🖼" : "▶"}&nbsp;
-              {truncateUrl(fillMediaSrc)}
-            </Button>
-            <Button
-              variant="subtle"
-              size="md"
-              onClick={() =>
-                updateAll(editor, ids, (prev) => ({
-                  attrs: {
-                    ...prev.attrs,
-                    fill: { type: "solid", color: "#cbd5f5" },
-                  } as unknown as Readonly<Record<string, unknown>>,
-                }))
-              }
-              data-testid="shape-fill-clear"
-              aria-label="채우기 비우기"
-            >
-              ×
-            </Button>
-          </div>
-        ) : (
-          <div className="inline-flex items-center gap-1.5">
-            <ColorPicker
-              value={isMixed(fillColor) ? "#cccccc" : (fillColor ?? "#000000")}
-              onValueCommit={(v) =>
-                updateAll(editor, ids, (prev) => ({
-                  attrs: {
-                    ...prev.attrs,
-                    fill: { type: "solid", color: pickerValueToStored(v) },
-                  } as unknown as Readonly<Record<string, unknown>>,
-                }))
-              }
-              onValueChange={() => {
-                /* commit-only */
-              }}
-            />
-            <MixedBadge visible={isMixed(fillColor) || isMixed(fillType)} />
-            <Button
-              variant="subtle"
-              size="md"
-              onClick={() => onEditShapeFill?.("image", "")}
-              data-testid="shape-fill-image"
-              aria-label="이미지로 채우기"
-              title="이미지로 채우기"
-            >
-              🖼
-            </Button>
-            <Button
-              variant="subtle"
-              size="md"
-              onClick={() => onEditShapeFill?.("video", "")}
-              data-testid="shape-fill-video"
-              aria-label="비디오로 채우기"
-              title="비디오로 채우기"
-            >
-              ▶
-            </Button>
-          </div>
-        )}
-      </Bar.Section>
-      <Bar.Section label="Stroke" priority={80}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Fill">
+          {fillIsMediaUniform && !isMixed(fillMediaSrc) ? (
+            <div className="flex items-center gap-1.5 w-full">
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => onEditShapeFill?.(fillType as "image" | "video", fillMediaSrc)}
+                data-testid="shape-fill-media-edit"
+                aria-label={fillType === "image" ? "이미지 채우기 편집" : "비디오 채우기 편집"}
+                className="flex-1 justify-start gap-1.5"
+              >
+                {fillType === "image" ? <IconImage size={14} /> : <IconVideo size={14} />}
+                <span>{truncateUrl(fillMediaSrc)}</span>
+              </Button>
+              <Button
+                variant="subtle"
+                size="md"
+                onClick={() =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: {
+                      ...prev.attrs,
+                      fill: { type: "solid", color: "#cbd5f5" },
+                    } as unknown as Readonly<Record<string, unknown>>,
+                  }))
+                }
+                data-testid="shape-fill-clear"
+                aria-label="채우기 비우기"
+                title="채우기 비우기"
+              >
+                <IconClose size={14} />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <ColorPicker
+                aria-label="채우기 색상"
+                value={isMixed(fillColor) ? "#cccccc" : (fillColor ?? "#000000")}
+                onValueCommit={(v) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: {
+                      ...prev.attrs,
+                      fill: { type: "solid", color: pickerValueToStored(v) },
+                    } as unknown as Readonly<Record<string, unknown>>,
+                  }))
+                }
+                onValueChange={() => {
+                  /* commit-only */
+                }}
+              />
+              <MixedBadge visible={isMixed(fillColor) || isMixed(fillType)} />
+              <Button
+                variant="subtle"
+                size="md"
+                onClick={() => onEditShapeFill?.("image", "")}
+                data-testid="shape-fill-image"
+                aria-label="이미지로 채우기"
+                title="이미지로 채우기"
+              >
+                <IconImage size={14} />
+              </Button>
+              <Button
+                variant="subtle"
+                size="md"
+                onClick={() => onEditShapeFill?.("video", "")}
+                data-testid="shape-fill-video"
+                aria-label="비디오로 채우기"
+                title="비디오로 채우기"
+              >
+                <IconVideo size={14} />
+              </Button>
+            </div>
+          )}
+        </Bar.Field>
+        <Bar.Field label="Stroke">
           <ColorPicker
+            aria-label="윤곽선 색상"
             value={isMixed(strokeColor) ? "#cccccc" : (strokeColor ?? "#000000")}
             onValueCommit={(v) =>
               updateAll(editor, ids, (prev) => {
@@ -214,11 +270,8 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
             }}
           />
           <MixedBadge visible={isMixed(strokeColor)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Opacity" priority={50}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Opacity">
           <NumberSlider
             value={isMixed(opacity) ? 1 : opacity}
             onValueChange={(v) =>
@@ -230,10 +283,11 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
             max={1}
             step={0.01}
             format={(v) => `${Math.round(v * 100)}%`}
+            className="w-full"
           />
           <MixedBadge visible={isMixed(opacity)} />
-        </div>
-      </Bar.Section>
+        </Bar.Field>
+      </Bar.More>
     </>
   );
 };

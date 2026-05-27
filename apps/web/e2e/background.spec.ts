@@ -80,10 +80,10 @@ test("toolbar mounts a Background section when a slide is selected", async ({
   const toolbar = page.getByTestId("contextual-toolbar");
   await expect(toolbar).toBeVisible();
   await expect(toolbar).toHaveAttribute("data-kind", "frame");
-  // Background section is mounted. DR-design-014 stripped the visible
-  // caption to keep the bar compact; the section's identity now lives in
-  // `aria-label` / `role="group"`.
-  await expect(toolbar.getByRole("group", { name: "Background" })).toBeVisible();
+  // DR-design-015 — Tier-2 layout: frame's Background lives inside
+  // `Bar.Quick` as a ColorPicker. The picker is the trigger button
+  // (Radix Popover.Trigger) and carries its `aria-label`.
+  await expect(toolbar.getByLabel("Frame background")).toBeVisible();
 });
 
 test("setting attrs.background paints the frame", async ({ page }) => {

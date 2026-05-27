@@ -39,8 +39,12 @@ test("image item adds and the toolbar shows image fit options", async ({
   const toolbar = page.getByTestId("contextual-toolbar");
   await expect(toolbar).toBeVisible();
   await expect(toolbar).toHaveAttribute("data-kind", "image");
-  // Fit section should be present.
-  await expect(toolbar.getByRole("group", { name: "Fit" }).first()).toBeVisible();
+  // DR-design-015 — Fit moved into the More popover. The Bar.Field wraps
+  // the SegmentedControl; both carry role="group", so use exact match on
+  // the field's aria-label.
+  await page.getByTestId("toolbar-more-trigger").click();
+  const popover = page.getByTestId("toolbar-more-content");
+  await expect(popover.getByRole("group", { name: "Fit", exact: true })).toBeVisible();
 });
 
 test("video item adds and the toolbar shows video controls", async ({
@@ -53,9 +57,12 @@ test("video item adds and the toolbar shows video controls", async ({
   const toolbar = page.getByTestId("contextual-toolbar");
   await expect(toolbar).toBeVisible();
   await expect(toolbar).toHaveAttribute("data-kind", "video");
-  // Loop + Muted sections should be present (Switch-driven).
-  await expect(toolbar.getByRole("group", { name: "Loop" }).first()).toBeVisible();
-  await expect(toolbar.getByRole("group", { name: "Muted" }).first()).toBeVisible();
+  // DR-design-015 — Loop / Volume moved to More; only Replace+Mute icons
+  // stay in Quick. Open More to see the full controls.
+  await page.getByTestId("toolbar-more-trigger").click();
+  const popover = page.getByTestId("toolbar-more-content");
+  await expect(popover.getByRole("group", { name: "Loop", exact: true })).toBeVisible();
+  await expect(popover.getByRole("group", { name: "Volume", exact: true })).toBeVisible();
 });
 
 test("peek mode hides the contextual toolbar", async ({ page }) => {

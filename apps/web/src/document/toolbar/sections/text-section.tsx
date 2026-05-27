@@ -1,3 +1,11 @@
+// DR-design-015 — text kind in Tier-2 layout.
+//
+// Quick: Bold / Italic / Underline toggles + Color swatch (the four most-
+// frequent text edits). More: Family · Size · Align · V-Align · Mode ·
+// Decoration · Case · Background · Line height · Letter spacing · Truncate ·
+// Max lines · Hyperlink · Opacity. Each field is a labeled row inside the
+// More popover.
+
 import type {
   TextAlign,
   TextAlignVertical,
@@ -10,13 +18,19 @@ import type {
   TextWeight,
 } from "@agocraft/core";
 import {
-  ContextualToolbar as Bar,
   Button,
   ColorPicker,
+  ContextualToolbar as Bar,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  IconBold,
+  IconButton,
+  IconClose,
+  IconItalic,
+  IconText,
+  IconUnderline,
   NumberSlider,
   SegmentedControl,
   Tooltip,
@@ -34,9 +48,7 @@ import {
 } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
-/** Curated font-family presets. The webfonts are loaded from Google Fonts
- *  in `apps/web/index.html`; each stack ends with a robust fallback so
- *  text renders even if the named family hasn't downloaded yet. */
+/** Curated font-family presets. */
 const FONT_FAMILY_PRESETS = [
   {
     value: "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
@@ -85,10 +97,6 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     items,
     (it) => (it.attrs as unknown as TextAttrs).fontStyle,
   );
-  // WI-040 — color / background may be a `StyleRef` after a theme swatch
-  // pick. `useResolveSharedColor` resolves via the cascade walker BEFORE
-  // shared-value equality so the picker sees CSS strings and equality
-  // detection works on semantic identity rather than object reference.
   const color = useResolveSharedColor(items, (it) => (it.attrs as unknown as TextAttrs).color);
   const background = useResolveSharedColor(
     items,
@@ -99,7 +107,6 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     (it) => (it.attrs as unknown as TextAttrs).textAlign,
   );
   const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as TextAttrs).opacity);
-  // Phase 1 (WI-029) — Figma-equivalent additive fields
   const textAutoResize = sharedValue<TextAutoResize>(
     items,
     (it) => (it.attrs as unknown as TextAttrs).textAutoResize ?? "HEIGHT",
@@ -136,66 +143,99 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     items,
     (it) => (it.attrs as unknown as TextAttrs).hyperlink?.url ?? "",
   );
-  // Mode + truncation gating: Truncate toggle + maxLines only show in Fixed.
   const isFixedMode = !isMixed(textAutoResize) && textAutoResize === "NONE";
   const isTruncateEnding = isFixedMode && !isMixed(textTruncation) && textTruncation === "ENDING";
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
   const linkValue = linkDraft ?? (isMixed(hyperlink) ? "" : hyperlink);
   const bgHasValue = !isMixed(background) && background !== undefined;
+
+  // Quick toggle helpers. `!isMixed(x) && x === ...` is the toggled state;
+  // when mixed, the toggle reads as off and clicking sets the asserted
+  // value for every selected item.
+  const isBold = !isMixed(fontWeight) && fontWeight === "bold";
+  const isItalic = !isMixed(fontStyle) && fontStyle === "italic";
+  const isUnderline = !isMixed(textDecoration) && textDecoration === "UNDERLINE";
+
   return (
     <>
-      {/* Phase 2 (WI-029 / DR-016) — 3-mode resize toggle.
-       *   Auto-W: width grows with content (1 line)
-       *   Auto-H: width fixed, height auto-fits (default for new text)
-       *   Fixed: width + height both fixed; overflow visible or truncated
-       * Mode-specific handles are gated in FrameStage.tsx — Auto-W shows no
-       * resize handles, Auto-H shows e/w only, Fixed shows all 8. */}
-      <Bar.Section label="Mode" priority={45}>
-        <div className="inline-flex items-center">
-          {/* WI-029 R5 — wrap the 3-mode toggle in OnboardingCoachmark; the
-              first time the user opens this toolbar the hint explains what
-              ↔ ↕ □ stand for. One-shot, persists in localStorage. The anchor
-              is a wrapper div (not the SegmentedControl directly) because
-              chaining two Radix asChild slots — Popover.Trigger → Slot →
-              ToggleGroup.Root — corrupts the ref/handler attachment. */}
-          <TextOnboardingHint
-            anchor={
-              <div data-testid="text-mode-toggle">
-                <SegmentedControl<TextAutoResize>
-                  value={isMixed(textAutoResize) ? "HEIGHT" : textAutoResize}
-                  onValueChange={(v) =>
-                    updateAll(editor, ids, (prev) => ({
-                      attrs: { ...prev.attrs, textAutoResize: v },
-                    }))
-                  }
-                  options={[
-                    { value: "WIDTH_AND_HEIGHT", label: "↔" },
-                    { value: "HEIGHT", label: "↕" },
-                    { value: "NONE", label: "□" },
-                  ]}
-                  aria-label="Text resize mode"
-                />
-              </div>
-            }
-          />
-          <MixedBadge visible={isMixed(textAutoResize)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Family" priority={100}>
-        <div className="inline-flex items-center gap-1.5">
+      <Bar.Kind icon={<IconText size={18} />} label="Text" />
+      <Bar.Quick>
+        <IconButton
+          aria-label="굵게"
+          aria-pressed={isMixed(fontWeight) ? "mixed" : isBold}
+          title="굵게 (Bold)"
+          size="sm"
+          data-testid="text-quick-bold"
+          onClick={() =>
+            updateAll(editor, ids, (prev) => ({
+              attrs: {
+                ...prev.attrs,
+                fontWeight: (isBold ? "normal" : "bold") as TextWeight,
+              },
+            }))
+          }
+        >
+          <IconBold size={16} />
+        </IconButton>
+        <IconButton
+          aria-label="기울임"
+          aria-pressed={isMixed(fontStyle) ? "mixed" : isItalic}
+          title="기울임 (Italic)"
+          size="sm"
+          data-testid="text-quick-italic"
+          onClick={() =>
+            updateAll(editor, ids, (prev) => ({
+              attrs: {
+                ...prev.attrs,
+                fontStyle: (isItalic ? "normal" : "italic") as TextStyle,
+              },
+            }))
+          }
+        >
+          <IconItalic size={16} />
+        </IconButton>
+        <IconButton
+          aria-label="밑줄"
+          aria-pressed={isMixed(textDecoration) ? "mixed" : isUnderline}
+          title="밑줄 (Underline)"
+          size="sm"
+          data-testid="text-quick-underline"
+          onClick={() =>
+            updateAll(editor, ids, (prev) => ({
+              attrs: {
+                ...prev.attrs,
+                textDecoration: (isUnderline ? "NONE" : "UNDERLINE") as TextDecoration,
+              },
+            }))
+          }
+        >
+          <IconUnderline size={16} />
+        </IconButton>
+        <ColorPicker
+          aria-label="글자 색상"
+          value={isMixed(color) ? "#cccccc" : (color ?? "#1f2933")}
+          onValueCommit={(v) =>
+            updateAll(editor, ids, (prev) => ({
+              attrs: { ...prev.attrs, color: pickerValueToStored(v) },
+            }))
+          }
+          onValueChange={() => {
+            /* commit-only */
+          }}
+        />
+      </Bar.Quick>
+      <Bar.More>
+        <Bar.Field label="Family">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="md"
                 data-testid="text-font-family-trigger"
-                style={{
-                  fontFamily: isMixed(fontFamily) ? undefined : fontFamily,
-                }}
+                style={{ fontFamily: isMixed(fontFamily) ? undefined : fontFamily }}
+                className="w-full justify-between"
               >
                 {isMixed(fontFamily) ? "여러 폰트" : fontFamilyLabel(fontFamily)}
-                &nbsp;▾
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" sideOffset={6}>
@@ -215,84 +255,40 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             </DropdownMenuContent>
           </DropdownMenu>
           <MixedBadge visible={isMixed(fontFamily)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Font" priority={95}>
-        <div className="inline-flex items-center gap-1.5">
-          <SegmentedControl<TextWeight>
-            value={isMixed(fontWeight) ? "normal" : fontWeight}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, fontWeight: v },
-              }))
-            }
-            options={[
-              { value: "normal", label: "R" },
-              { value: "bold", label: "B" },
-            ]}
-            aria-label="Font weight"
-          />
-          <SegmentedControl<TextStyle>
-            value={isMixed(fontStyle) ? "normal" : fontStyle}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, fontStyle: v },
-              }))
-            }
-            options={[
-              { value: "normal", label: "—" },
-              { value: "italic", label: "I" },
-            ]}
-            aria-label="Font style"
-          />
-          <MixedBadge visible={isMixed(fontWeight) || isMixed(fontStyle)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Size" priority={90}>
-        <div className="inline-flex items-center" data-testid="text-size-section">
-          {/* WI-029 R5 — fontSize tooltip is visible for 1 week post-launch
-              (LG-001 / RISK-001 #6). After the retract date the copy module
-              returns `disabled=true` and the Tooltip falls silent. */}
+        </Bar.Field>
+        <Bar.Field label="Size">
           {(() => {
             const tip = fontSizeTooltipCopy();
             return (
               <Tooltip content={tip.content} disabled={tip.disabled} side="bottom">
-                <NumberSlider
-                  value={isMixed(fontSize) ? 24 : fontSize}
-                  onValueChange={(v) =>
-                    updateAll(editor, ids, (prev) => ({
-                      attrs: { ...prev.attrs, fontSize: v },
-                    }))
-                  }
-                  min={8}
-                  max={200}
-                  step={1}
-                  format={(v) => `${Math.round(v)}px`}
-                  aria-label="Font size"
-                />
+                <div data-testid="text-size-section" className="w-full">
+                  <NumberSlider
+                    value={isMixed(fontSize) ? 24 : fontSize}
+                    onValueChange={(v) =>
+                      updateAll(editor, ids, (prev) => ({
+                        attrs: { ...prev.attrs, fontSize: v },
+                      }))
+                    }
+                    min={8}
+                    max={200}
+                    step={1}
+                    format={(v) => `${Math.round(v)}px`}
+                    aria-label="Font size"
+                    className="w-full"
+                  />
+                </div>
               </Tooltip>
             );
           })()}
           <MixedBadge visible={isMixed(fontSize)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Align" priority={85}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Align">
           <SegmentedControl<TextAlign>
             value={isMixed(textAlign) ? "left" : textAlign}
             onValueChange={(v) =>
               updateAll(editor, ids, (prev) => ({
                 attrs: {
                   ...prev.attrs,
-                  // WI-029 follow-up — write BOTH the canonical
-                  // Phase 1.5 UPPERCASE field AND the legacy lowercase
-                  // alias. TextBlock reads `textAlignHorizontal` first
-                  // and falls back to `textAlign`; new docs are seeded
-                  // with the UPPERCASE value set to "LEFT" so updating
-                  // only the lowercase field had no visible effect.
                   textAlign: v,
                   textAlignHorizontal:
                     v === "left"
@@ -314,11 +310,8 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             aria-label="Text align"
           />
           <MixedBadge visible={isMixed(textAlign)} />
-        </div>
-      </Bar.Section>
-      {/* Phase 1 (WI-029) — vertical alignment */}
-      <Bar.Section label="V-Align" priority={40}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="V-Align">
           <SegmentedControl<TextAlignVertical>
             value={isMixed(textAlignVertical) ? "TOP" : textAlignVertical}
             onValueChange={(v) =>
@@ -327,19 +320,38 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               }))
             }
             options={[
-              { value: "TOP", label: "⤒" },
-              { value: "CENTER", label: "⤬" },
-              { value: "BOTTOM", label: "⤓" },
+              { value: "TOP", label: "상" },
+              { value: "CENTER", label: "중" },
+              { value: "BOTTOM", label: "하" },
             ]}
             aria-label="Vertical align"
           />
           <MixedBadge visible={isMixed(textAlignVertical)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      {/* Phase 1 (WI-029) — decoration + text case */}
-      <Bar.Section label="Decoration" priority={45}>
-        <div className="inline-flex items-center gap-1.5">
+        </Bar.Field>
+        <Bar.Field label="Mode">
+          <TextOnboardingHint
+            anchor={
+              <div data-testid="text-mode-toggle">
+                <SegmentedControl<TextAutoResize>
+                  value={isMixed(textAutoResize) ? "HEIGHT" : textAutoResize}
+                  onValueChange={(v) =>
+                    updateAll(editor, ids, (prev) => ({
+                      attrs: { ...prev.attrs, textAutoResize: v },
+                    }))
+                  }
+                  options={[
+                    { value: "WIDTH_AND_HEIGHT", label: "자동너비" },
+                    { value: "HEIGHT", label: "자동높이" },
+                    { value: "NONE", label: "고정" },
+                  ]}
+                  aria-label="Text resize mode"
+                />
+              </div>
+            }
+          />
+          <MixedBadge visible={isMixed(textAutoResize)} />
+        </Bar.Field>
+        <Bar.Field label="Decoration">
           <SegmentedControl<TextDecoration>
             value={isMixed(textDecoration) ? "NONE" : textDecoration}
             onValueChange={(v) =>
@@ -348,17 +360,15 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               }))
             }
             options={[
-              { value: "NONE", label: "—" },
-              { value: "UNDERLINE", label: "U" },
-              { value: "STRIKETHROUGH", label: "S" },
+              { value: "NONE", label: "없음" },
+              { value: "UNDERLINE", label: "밑줄" },
+              { value: "STRIKETHROUGH", label: "취소" },
             ]}
             aria-label="Text decoration"
           />
           <MixedBadge visible={isMixed(textDecoration)} />
-        </div>
-      </Bar.Section>
-      <Bar.Section label="Case" priority={35}>
-        <div className="inline-flex items-center gap-1.5">
+        </Bar.Field>
+        <Bar.Field label="Case">
           <SegmentedControl<TextCase>
             value={isMixed(textCase) ? "ORIGINAL" : textCase}
             onValueChange={(v) =>
@@ -375,77 +385,51 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             aria-label="Text case"
           />
           <MixedBadge visible={isMixed(textCase)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Color" priority={80}>
-        <div className="inline-flex items-center">
-          <ColorPicker
-            value={isMixed(color) ? "#cccccc" : (color ?? "#1f2933")}
-            onValueCommit={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, color: pickerValueToStored(v) },
-              }))
-            }
-            onValueChange={() => {
-              /* commit-only */
-            }}
-          />
-          <MixedBadge visible={isMixed(color)} />
-        </div>
-      </Bar.Section>
-      <Bar.Section label="Background" priority={50}>
-        <div className="inline-flex items-center gap-1.5">
-          <ColorPicker
-            value={isMixed(background) ? "#cccccc" : (background ?? "#ffffff")}
-            onValueCommit={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, background: pickerValueToStored(v) },
-              }))
-            }
-            onValueChange={() => {
-              /* commit-only */
-            }}
-          />
-          <MixedBadge visible={isMixed(background)} />
-          {bgHasValue ? (
-            <Button
-              variant="subtle"
-              size="md"
-              onClick={() =>
-                updateAll(editor, ids, (prev) => {
-                  const next = { ...prev.attrs } as Record<string, unknown>;
-                  delete next.background;
-                  return {
-                    attrs: next as Readonly<Record<string, unknown>>,
-                  };
-                })
+        </Bar.Field>
+        <Bar.Field label="Background">
+          <div className="flex items-center gap-1.5">
+            <ColorPicker
+              aria-label="텍스트 배경"
+              value={isMixed(background) ? "#cccccc" : (background ?? "#ffffff")}
+              onValueCommit={(v) =>
+                updateAll(editor, ids, (prev) => ({
+                  attrs: { ...prev.attrs, background: pickerValueToStored(v) },
+                }))
               }
-              data-testid="text-bg-clear"
-              aria-label="배경 비우기"
-              title="배경 비우기 (투명)"
-            >
-              ×
-            </Button>
-          ) : null}
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      {/* Phase 1.5 (WI-029) — line height + letter spacing sliders */}
-      <Bar.Section label="Line height" priority={30}>
-        <div className="inline-flex items-center">
+              onValueChange={() => {
+                /* commit-only */
+              }}
+            />
+            <MixedBadge visible={isMixed(background)} />
+            {bgHasValue ? (
+              <Button
+                variant="subtle"
+                size="md"
+                onClick={() =>
+                  updateAll(editor, ids, (prev) => {
+                    const next = { ...prev.attrs } as Record<string, unknown>;
+                    delete next.background;
+                    return {
+                      attrs: next as Readonly<Record<string, unknown>>,
+                    };
+                  })
+                }
+                data-testid="text-bg-clear"
+                aria-label="배경 비우기"
+                title="배경 비우기 (투명)"
+              >
+                <IconClose size={14} />
+              </Button>
+            ) : null}
+          </div>
+        </Bar.Field>
+        <Bar.Field label="Line height">
           <NumberSlider
             value={isMixed(lineHeight) ? 1.4 : lineHeight}
             onValueChange={(v) =>
               updateAll(editor, ids, (prev) => ({
                 attrs: {
                   ...prev.attrs,
-                  // WI-029 follow-up — write BOTH the canonical Phase
-                  // 1.5 `lineHeightSpec` AND the legacy `lineHeight`.
-                  // TextBlock reads `lineHeightSpec` first and falls
-                  // back to `lineHeight`; new docs are seeded with a
-                  // multiplier spec so updating only the legacy number
-                  // had no visible effect.
                   lineHeight: v,
                   lineHeightSpec: { value: v, unit: "multiplier" },
                 },
@@ -456,12 +440,11 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             step={0.1}
             format={(v) => `${v.toFixed(1)}×`}
             aria-label="Line height"
+            className="w-full"
           />
           <MixedBadge visible={isMixed(lineHeight)} />
-        </div>
-      </Bar.Section>
-      <Bar.Section label="Letter spacing" priority={25}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Letter spacing">
           <NumberSlider
             value={isMixed(letterSpacing) ? 0 : letterSpacing}
             onValueChange={(v) =>
@@ -474,16 +457,13 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             step={0.5}
             format={(v) => `${v}px`}
             aria-label="Letter spacing"
+            className="w-full"
           />
           <MixedBadge visible={isMixed(letterSpacing)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      {/* Phase 1.5 (WI-029) — Truncate toggle (Fixed mode only) + maxLines */}
-      {isFixedMode ? (
-        <>
-          <Bar.Section label="Truncate" priority={20}>
-            <div className="inline-flex items-center">
+        </Bar.Field>
+        {isFixedMode ? (
+          <>
+            <Bar.Field label="Truncate">
               <SegmentedControl<TextTruncation>
                 value={isMixed(textTruncation) ? "DISABLED" : textTruncation}
                 onValueChange={(v) =>
@@ -493,16 +473,14 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 }
                 options={[
                   { value: "DISABLED", label: "Off" },
-                  { value: "ENDING", label: "…" },
+                  { value: "ENDING", label: "끝줄임" },
                 ]}
                 aria-label="Truncate text"
               />
               <MixedBadge visible={isMixed(textTruncation)} />
-            </div>
-          </Bar.Section>
-          {isTruncateEnding ? (
-            <Bar.Section label="Max lines" priority={20}>
-              <div className="inline-flex items-center">
+            </Bar.Field>
+            {isTruncateEnding ? (
+              <Bar.Field label="Max lines">
                 <NumberSlider
                   value={isMixed(maxLines) || maxLines == null ? 3 : maxLines}
                   onValueChange={(v) =>
@@ -515,60 +493,56 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                   step={1}
                   format={(v) => `${Math.round(v)} lines`}
                   aria-label="Max lines"
+                  className="w-full"
                 />
                 <MixedBadge visible={isMixed(maxLines)} />
-              </div>
-            </Bar.Section>
-          ) : null}
-          <Bar.Divider />
-        </>
-      ) : null}
-      {/* Phase 1.5 (WI-029) — Hyperlink (box-level, v2 will be per-range) */}
-      <Bar.Section label="Hyperlink" priority={25}>
-        <div className="inline-flex items-center gap-1.5">
-          <input
-            type="url"
-            value={linkValue}
-            placeholder={isMixed(hyperlink) ? "여러 링크" : "https://..."}
-            onChange={(e) => setLinkDraft(e.target.value)}
-            onBlur={() => {
-              if (linkDraft === null) return;
-              const trimmed = linkDraft.trim();
-              updateAll(editor, ids, (prev) => ({
-                attrs: {
-                  ...prev.attrs,
-                  hyperlink: trimmed.length > 0 ? { url: trimmed } : null,
-                },
-              }));
-              setLinkDraft(null);
-            }}
-            className="rounded border border-gray-300 px-2 py-1 text-sm w-44"
-            data-testid="text-hyperlink-input"
-            aria-label="Hyperlink URL"
-          />
-          {linkValue.length > 0 && !isMixed(hyperlink) ? (
-            <Button
-              variant="subtle"
-              size="md"
-              onClick={() => {
+              </Bar.Field>
+            ) : null}
+          </>
+        ) : null}
+        <Bar.Field label="Hyperlink">
+          <div className="flex items-center gap-1.5 w-full">
+            <input
+              type="url"
+              value={linkValue}
+              placeholder={isMixed(hyperlink) ? "여러 링크" : "https://..."}
+              onChange={(e) => setLinkDraft(e.target.value)}
+              onBlur={() => {
+                if (linkDraft === null) return;
+                const trimmed = linkDraft.trim();
                 updateAll(editor, ids, (prev) => ({
-                  attrs: { ...prev.attrs, hyperlink: null },
+                  attrs: {
+                    ...prev.attrs,
+                    hyperlink: trimmed.length > 0 ? { url: trimmed } : null,
+                  },
                 }));
                 setLinkDraft(null);
               }}
-              data-testid="text-hyperlink-clear"
-              aria-label="링크 비우기"
-              title="링크 비우기"
-            >
-              ×
-            </Button>
-          ) : null}
-          <MixedBadge visible={isMixed(hyperlink)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Opacity" priority={45}>
-        <div className="inline-flex items-center">
+              className="flex-1 rounded border border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay-2)] px-2 py-1 text-[12px] text-[color:var(--text-overlay)]"
+              data-testid="text-hyperlink-input"
+              aria-label="Hyperlink URL"
+            />
+            {linkValue.length > 0 && !isMixed(hyperlink) ? (
+              <Button
+                variant="subtle"
+                size="md"
+                onClick={() => {
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: { ...prev.attrs, hyperlink: null },
+                  }));
+                  setLinkDraft(null);
+                }}
+                data-testid="text-hyperlink-clear"
+                aria-label="링크 비우기"
+                title="링크 비우기"
+              >
+                <IconClose size={14} />
+              </Button>
+            ) : null}
+            <MixedBadge visible={isMixed(hyperlink)} />
+          </div>
+        </Bar.Field>
+        <Bar.Field label="Opacity">
           <NumberSlider
             value={isMixed(opacity) ? 1 : opacity}
             onValueChange={(v) =>
@@ -581,10 +555,11 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             step={0.01}
             format={(v) => `${Math.round(v * 100)}%`}
             aria-label="Text opacity"
+            className="w-full"
           />
           <MixedBadge visible={isMixed(opacity)} />
-        </div>
-      </Bar.Section>
+        </Bar.Field>
+      </Bar.More>
     </>
   );
 };

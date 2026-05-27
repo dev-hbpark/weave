@@ -92,6 +92,8 @@ test("fontSize tooltip falls silent after the retract date", async ({ page }) =>
   await prepareDesign(page, { flavor: "mixed", title: "Tooltip-B" });
   await addTextViaMenu(page);
 
+  // DR-design-015 — Size moved to More popover.
+  await page.getByTestId("toolbar-more-trigger").click();
   const size = page.getByTestId("text-size-section");
   await expect(size).toBeVisible();
   await size.hover();

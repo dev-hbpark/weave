@@ -80,16 +80,27 @@ export {
 export { EditableText, type EditableTextHandle } from "./EditableText.js";
 export { Hotspot } from "./Hotspot.js";
 export {
+  IconBold,
   IconChevronLeft,
   IconChevronRight,
   IconClose,
   IconCursor,
+  IconFrame,
   IconHand,
+  IconImage,
+  IconItalic,
   IconLayers,
+  IconMore,
   IconPlay,
   IconPlus,
   IconRedo,
+  IconRefresh,
+  IconShape,
+  IconText,
+  IconUnderline,
   IconUndo,
+  IconVideo,
+  IconVolume,
 } from "./Icon.js";
 export { IconButton } from "./IconButton.js";
 export {

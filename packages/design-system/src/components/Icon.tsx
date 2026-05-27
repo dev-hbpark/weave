@@ -121,3 +121,102 @@ export const IconClose = forwardRef<SVGSVGElement, IconProps>(function IconClose
     </SvgRoot>
   );
 });
+
+// DR-design-015 — ContextualToolbar Tier-2 icon set.
+
+export const IconBold = forwardRef<SVGSVGElement, IconProps>(function IconBold(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z" />
+    </SvgRoot>
+  );
+});
+
+export const IconItalic = forwardRef<SVGSVGElement, IconProps>(function IconItalic(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M14 5h5M5 19h5M14 5l-4 14" />
+    </SvgRoot>
+  );
+});
+
+export const IconUnderline = forwardRef<SVGSVGElement, IconProps>(function IconUnderline(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M6 4v8a6 6 0 0 0 12 0V4M5 20h14" />
+    </SvgRoot>
+  );
+});
+
+export const IconText = forwardRef<SVGSVGElement, IconProps>(function IconText(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M4 6V4h16v2M12 4v16M9 20h6" />
+    </SvgRoot>
+  );
+});
+
+export const IconShape = forwardRef<SVGSVGElement, IconProps>(function IconShape(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="4" y="4" width="16" height="16" rx="2.5" />
+    </SvgRoot>
+  );
+});
+
+export const IconImage = forwardRef<SVGSVGElement, IconProps>(function IconImage(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="9" cy="10" r="1.5" />
+      <path d="M21 16l-5-5-9 9" />
+    </SvgRoot>
+  );
+});
+
+export const IconVideo = forwardRef<SVGSVGElement, IconProps>(function IconVideo(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="3" y="6" width="14" height="12" rx="2" />
+      <path d="M17 10l4-2v8l-4-2z" />
+    </SvgRoot>
+  );
+});
+
+export const IconFrame = forwardRef<SVGSVGElement, IconProps>(function IconFrame(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M4 8h16M4 16h16M8 4v16M16 4v16" />
+    </SvgRoot>
+  );
+});
+
+export const IconRefresh = forwardRef<SVGSVGElement, IconProps>(function IconRefresh(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+      <path d="M3 21v-5h5" />
+    </SvgRoot>
+  );
+});
+
+export const IconVolume = forwardRef<SVGSVGElement, IconProps>(function IconVolume(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M11 5L6 9H3v6h3l5 4z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+    </SvgRoot>
+  );
+});
+
+export const IconMore = forwardRef<SVGSVGElement, IconProps>(function IconMore(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    </SvgRoot>
+  );
+});

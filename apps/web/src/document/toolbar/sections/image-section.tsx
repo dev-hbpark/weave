@@ -1,6 +1,14 @@
+// DR-design-015 — image kind in Tier-2 layout.
+//
+// Quick: replace-src icon (only one common action — open the URL dialog).
+// More: Fit · Opacity · Border radius.
+
 import {
-  Button,
   ContextualToolbar as Bar,
+  Button,
+  IconButton,
+  IconImage,
+  IconRefresh,
   NumberSlider,
   SegmentedControl,
 } from "@weave/design-system";
@@ -28,47 +36,42 @@ export const ImageSection: ToolbarSectionComponent = ({
   multi,
   onEditMediaSrc,
 }) => {
-  const fit = sharedValue<ImageFit>(
-    items,
-    (it) => (it.attrs as unknown as ImageAttrs).fit,
-  );
-  const opacity = sharedValue<number>(
-    items,
-    (it) => (it.attrs as unknown as ImageAttrs).opacity,
-  );
+  const fit = sharedValue<ImageFit>(items, (it) => (it.attrs as unknown as ImageAttrs).fit);
+  const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as ImageAttrs).opacity);
   const borderRadius = sharedValue<number>(
     items,
     (it) => (it.attrs as unknown as ImageAttrs).borderRadius,
   );
-  const src = sharedValue<string>(
-    items,
-    (it) => (it.attrs as unknown as ImageAttrs).src,
-  );
+  const src = sharedValue<string>(items, (it) => (it.attrs as unknown as ImageAttrs).src);
   return (
     <>
-      <Bar.Section label="Source" priority={100}>
-        <div className="inline-flex items-center">
+      <Bar.Kind icon={<IconImage size={18} />} label="Image" />
+      <Bar.Quick>
+        <IconButton
+          aria-label="이미지 교체"
+          title={isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
+          size="sm"
+          onClick={() => onEditMediaSrc?.("image", isMixed(src) ? "" : src)}
+          data-testid="image-edit-src"
+          disabled={multi && isMixed(src)}
+        >
+          <IconRefresh size={16} />
+        </IconButton>
+      </Bar.Quick>
+      <Bar.More>
+        <Bar.Field label="Source">
           <Button
             variant="ghost"
             size="md"
-            onClick={() =>
-              onEditMediaSrc?.("image", isMixed(src) ? "" : src)
-            }
-            data-testid="image-edit-src"
+            onClick={() => onEditMediaSrc?.("image", isMixed(src) ? "" : src)}
             disabled={multi && isMixed(src)}
+            className="w-full justify-start"
           >
-            {isMixed(src)
-              ? "여러 소스"
-              : src
-                ? truncateUrl(src)
-                : "URL 입력…"}
+            {isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
           </Button>
           <MixedBadge visible={isMixed(src)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Fit" priority={80}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Fit">
           <SegmentedControl<ImageFit>
             value={isMixed(fit) ? ("cover" as ImageFit) : fit}
             onValueChange={(v) =>
@@ -76,18 +79,17 @@ export const ImageSection: ToolbarSectionComponent = ({
                 attrs: { ...prev.attrs, fit: v },
               }))
             }
-            options={FIT_OPTIONS as unknown as ReadonlyArray<{
-              value: ImageFit;
-              label: string;
-            }>}
+            options={
+              FIT_OPTIONS as unknown as ReadonlyArray<{
+                value: ImageFit;
+                label: string;
+              }>
+            }
             aria-label="Image fit"
           />
           <MixedBadge visible={isMixed(fit)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Opacity" priority={50}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Opacity">
           <NumberSlider
             value={isMixed(opacity) ? 1 : opacity}
             onValueChange={(v) =>
@@ -101,13 +103,11 @@ export const ImageSection: ToolbarSectionComponent = ({
             suffix=""
             format={(v) => `${Math.round(v * 100)}%`}
             aria-label="Image opacity"
+            className="w-full"
           />
           <MixedBadge visible={isMixed(opacity)} />
-        </div>
-      </Bar.Section>
-      <Bar.Divider />
-      <Bar.Section label="Border radius" priority={40}>
-        <div className="inline-flex items-center">
+        </Bar.Field>
+        <Bar.Field label="Border radius">
           <NumberSlider
             value={isMixed(borderRadius) ? 0 : borderRadius}
             onValueChange={(v) =>
@@ -120,10 +120,11 @@ export const ImageSection: ToolbarSectionComponent = ({
             step={0.01}
             format={(v) => `${Math.round(v * 100)}`}
             aria-label="Border radius"
+            className="w-full"
           />
           <MixedBadge visible={isMixed(borderRadius)} />
-        </div>
-      </Bar.Section>
+        </Bar.Field>
+      </Bar.More>
     </>
   );
 };
