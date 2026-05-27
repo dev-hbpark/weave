@@ -186,3 +186,34 @@ T-0 (제안: 2026-06-08) 직전 24h 안에 다음 모두 close 확인:
 - agocraft cross-project: `agocraft/records/work-items/WI-016` + `HANDOFF-007/008` (all Closed)
 - Runbook: (planned — launch -1주)
 - Rollback test trace: (planned — staging 존재 시)
+
+---
+
+## Addendum — WI-040 Cross-WI dependency (2026-05-27)
+
+**Scope**: WI-040 = canvas hover affordance (3-tier) + InteractionMode 가드 통합. Text v1 (WI-029) 자체의 acceptance 항목 아님 — 그러나 같은 DesignPage 위에서 동작하므로 launch 시점에 함께 살아 있어야 함. WI-040 Phase 1-3 모두 머지 (weave `a9458de` / `54fbe7d` / `f5a28b0` / `34e4270`, OS-root `d8bfba2` / `5175b41` / `2c5b712` / `88c3255`).
+
+**Pillar별 영향**
+
+| Pillar | 영향 | 상태 |
+|---|---|---|
+| 1 Product | + Hand/Pan, LayerPicker, Peek 모드 leak (select/move/chrome) 3종 fix. text 편집 중 다른 frame 선택 누락이 더 이상 잠재 회귀 vector 아님. | **개선** — 기존 Ready 유지 |
+| 3 Engineering | + 단일-소스 게이트 hook 3개 (`useEditAffordancesAllowed` / `useSelectionChromeVisible` / `useFrameDragBindingsAllowed`) + Rule 6 (선언적 분기) 보강. Phase 3 의 projector 는 순수 함수 + 11 unit. | **개선** — 기존 Conditional 유지 (R4 e2e + INP 잔여) |
+| 4 QA | + WI-040 신규 e2e 9 spec PASS (mode-gate 5 + demo 3 + hover-affordance 4 — 중 1 layer-picker ESC flake은 회귀 X). 회귀 0. | **개선** — 기존 Conditional 유지 |
+| 그 외 | 변화 없음 — privacy / security / payment / legal / SRE 영역 0. | — |
+
+**Bundle 영향**: 270 KB gz (Phase 1) → 298.52 (Phase 2) → 299.57 (Phase 3). text v1 의 frontend-perf conditional approve 의 30 KB threshold 안 (FR-002 §8).
+
+**판정**: WI-040 은 LG-001 의 새 blocker 추가 X. 오히려 Pillar 1 의 "non-text mode leak" 잠재 회귀 vector 를 줄여줌 → text v1 launch 안정성 ▲. Hover affordance 자체는 신규 UX 였으므로 LG-001 의 Pillar 1 Acceptance Criteria 가 아닌 *adjacent* feature.
+
+**별도 Launch Gate 필요 여부**: 미발행. WI-040 자체가 high-blast-radius 변경 아니고 (additive overlay + 게이트 hook + e2e 박제), text v1 launch 와 같이 운영 단계 진입.
+
+**Post-launch 모니터링 추가 항목** (text v1 모니터링과 합쳐 추적):
+- hover affordance 가 dense 디자인 (≥ 20 형제) 에서 시각 노이즈 — 사용자 피드백 채널 (RISK-004 §3)
+- `useFrameDragBindingsAllowed` 의 register/unregister race 가 frame-manipulating 모드 직후 발생 시 incident 보고 (WI-040 R1)
+
+**Cross-ref**:
+- `records/work-items/WI-040-hover-affordance-and-mode-gate.md`
+- `records/design-reviews/DR-design-016-hover-affordance-layer.md`
+- `features/hover-affordance/ENGINEERING_PLAN.md`
+- e2e: `apps/web/e2e/mode-gate-hardening.spec.ts`, `hover-affordance.spec.ts`, `hover-affordance-layer-demo.spec.ts`
