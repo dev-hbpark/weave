@@ -47,20 +47,14 @@ import { createPortal } from "react-dom";
 import { defaultInsertableRegistry } from "../insertable/default-registry.js";
 import {
   type ContainerKind,
-  type InsertableHoverHint,
   type InsertableRecommendation,
   type NormalizedDragRect,
   normalizeDragRect,
 } from "../insertable/types.js";
 import { useEditorVMOrNull } from "../interactions/editor-vm-context.js";
-import {
-  useEditAffordancesAllowed,
-  useInteractionMode,
-  usePeekActive,
-} from "../interactions/interaction-mode.js";
+import { useInteractionMode, usePeekActive } from "../interactions/interaction-mode.js";
 import { useRouterOrNull } from "../interactions/router-context.js";
 import { adaptWeaveCapabilityToAgocraft } from "./agocraft-adapter.js";
-import { EmptySpaceHint } from "./EmptySpaceHint.js";
 import { RecommendationPopover } from "./RecommendationPopover.js";
 
 export interface RubberBandLayerProps {
@@ -739,34 +733,13 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
       };
     }, [rb.rect, visualHost, containerSize]);
 
-    // Empty-space hover hint content.
-    const hoverHint: InsertableHoverHint | null = useMemo(() => {
-      if (capability === undefined) return null;
-      const described = capability.describeHover?.({
-        containerId,
-        canUndo: editor.history.canUndo(),
-        canRedo: editor.history.canRedo(),
-      });
-      if (described !== undefined) return described;
-      return requireAltKey === true
-        ? {
-            title: "여기에 추가",
-            hint: "⌥ 드래그 — 새 아이템 추가.",
-            kinds: [],
-          }
-        : {
-            title: "여기에 추가",
-            hint: "드래그 — 새 아이템 추가. ⌥ 드래그 — 다른 아이템 위에서도 추가.",
-            kinds: [],
-          };
-    }, [capability, containerId, editor, requireAltKey]);
-
-    // WI-040 — EmptySpaceHint is an affordance shown over the canvas
-    // background. Same gate as other affordances (hides when peek is
-    // active or any non-idle mode owns the canvas). Tighter than
-    // `useTooltipsAllowed` (which still allows the hint in hand mode).
-    const affordancesAllowed = useEditAffordancesAllowed();
-    const hintOpen = rb.state === "idle" && hoverPoint !== null && affordancesAllowed;
+    // WI-040 — EmptySpaceHint was a separate Radix Popover surface bound
+    // to the rubber-band layer. Replaced by CursorTooltip's `background`
+    // describer (apps/web/src/document/tooltip/hover-describer.ts) which
+    // shows the same context+actions card at the cursor with a unified
+    // 1s debounce — no more parallel hint mechanism.
+    // `affordancesAllowed` + `hoverPoint` retained for the dimensions chip
+    // /  drag previews below; the hint mount is removed.
 
     const composedRef = useCallback(mergeRefs<HTMLDivElement>(forwardedRef, hostElementRef), [
       forwardedRef,
@@ -792,13 +765,6 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
         data-rubber-band-pop-align={popoverAlign}
       >
         {children}
-
-        <EmptySpaceHint
-          open={hintOpen}
-          clientPoint={hoverPoint}
-          hint={hoverHint}
-          altActive={altActive}
-        />
 
         {viewportRect !== null
           ? (() => {

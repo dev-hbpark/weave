@@ -6,9 +6,7 @@ import {
 } from "@agocraft/core";
 import { EditorProvider, useEditorVM } from "@agocraft/editor/react";
 import {
-  AITooltip,
   type AITooltipHotkeyTable,
-  AITooltipProvider,
   Button,
   ColorPicker,
   CommandHostProvider,
@@ -51,10 +49,12 @@ import {
   Spinner,
   QuickActionBar,
   ThemeSwitcher,
+  UnifiedTooltip,
   useCommandHost,
 } from "@weave/design-system";
 import type { ReactNode as ReactNodeAlias } from "react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import {
   type DocFlavor,
@@ -109,7 +109,7 @@ import { createSlideBulletHandleViewModel } from "../document/selection-chrome/s
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 import { ContextualToolbar } from "../document/toolbar/ContextualToolbar.js";
 import { MediaSrcDialog } from "../document/toolbar/MediaSrcDialog.js";
-import { CursorTooltip } from "../document/tooltip/CursorTooltip.js";
+import { CursorTooltipBridge } from "../document/tooltip/CursorTooltipBridge.js";
 import {
   dispatchEditorCommand,
   editorCommandMetadata,
@@ -199,23 +199,18 @@ function collectFocusGateIds(
   return out;
 }
 
-/** AITooltipProvider that mirrors the editor-wide interaction mode. Reads
- *  `useTooltipsAllowed()` from the InteractionMode machine and passes its
- *  inverse as `disabled` so the design-system provider doesn't need to know
- *  about the host's mode enum. Lives here so the provider's hook reads the
- *  same context that NestedFrame / useRubberBand publish into. */
-function ModeAwareAITooltipProvider({
-  children,
-  hotkeyTable,
-}: {
-  readonly children: ReactNodeAlias;
-  readonly hotkeyTable: AITooltipHotkeyTable;
-}) {
+/** Mounts the single UnifiedTooltip surface and disables it whenever the
+ *  editor's InteractionMode is not in a tooltip-friendly state (rubber-
+ *  band, frame manipulating, panning, context menu open, …).  Sits one
+ *  level below the InteractionModeProvider so its hook resolves the live
+ *  mode the canvas surfaces publish into. */
+function ModeAwareTooltipSurface({ children }: { readonly children: ReactNodeAlias }) {
   const tooltipsAllowed = useTooltipsAllowed();
   return (
-    <AITooltipProvider scan="dataset" hotkeyTable={hotkeyTable} disabled={!tooltipsAllowed}>
+    <>
       {children}
-    </AITooltipProvider>
+      <UnifiedTooltip disabled={!tooltipsAllowed} />
+    </>
   );
 }
 
@@ -1681,7 +1676,7 @@ function DesignPageBody() {
                   locale="ko"
                   dispatch={dispatchCommand}
                 >
-                  <ModeAwareAITooltipProvider hotkeyTable={editorHotkeyTable}>
+                  <ModeAwareTooltipSurface>
                     <EditorProvider editor={editor}>
                       <DocumentForResolutionProvider document={docInAgocraft}>
                         {/* WI-039 — z-stack layout. The design surface (`<main>`)
@@ -1695,6 +1690,7 @@ function DesignPageBody() {
                         bg (intentionally shorter than the tile) exposed the
                         parent's `--bg-page` color through the flex gap. */}
                         <div className="fixed inset-0 bg-[color:var(--bg-page)]">
+                          {typeof document !== "undefined" && createPortal(
                           <header
                             // WI-039 — opaque self-background. The original
                             // `bg-[color:var(--surface-1)]` is a translucent
@@ -1708,7 +1704,16 @@ function DesignPageBody() {
                             // opaque `--bg-page` base reproduces the exact
                             // original perceived color but is now fully
                             // self-contained — no parent bg dependency.
-                            className="absolute inset-x-0 top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)]"
+                            //
+                            // Portal'd to document.body so its z-index
+                            // participates in the root stacking context
+                            // alongside the SelectionLayer / MarqueeSelection
+                            // / RubberBand portal layers (z 35-45). Without
+                            // the portal, the outer `fixed inset-0` wrapper
+                            // creates a stacking context that traps any
+                            // z-index inside — the chrome would always paint
+                            // below the body-portal'd selection chrome.
+                            className="fixed inset-x-0 top-0 z-[46] grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)]"
                             style={{
                               background:
                                 "linear-gradient(var(--surface-1), var(--surface-1)), var(--bg-page)",
@@ -1764,66 +1769,63 @@ function DesignPageBody() {
                         included). Peek's hold-mode (L key) remains
                         orthogonal — it engages while held and yields back
                         on release. */}
-                                  <AITooltip context="선택" actions={[{ action: "V" }]}>
-                                    <IconButton
-                                      aria-label="Select tool"
-                                      aria-pressed={!handMode && !peek.isActive}
-                                      size="sm"
-                                      onClick={() => {
-                                        setHandMode(false);
-                                        peek.deactivateSticky();
-                                      }}
-                                      data-testid="toolbar-select"
-                                      data-active={!handMode && !peek.isActive ? "true" : undefined}
-                                      className={
-                                        !handMode && !peek.isActive
-                                          ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                          : undefined
-                                      }
-                                    >
-                                      <IconCursor />
-                                    </IconButton>
-                                  </AITooltip>
-                                  <AITooltip context="이동" actions={[{ action: "H / Space" }]}>
-                                    <IconButton
-                                      aria-label="Hand tool"
-                                      aria-pressed={handMode && !peek.isActive}
-                                      size="sm"
-                                      onClick={() => {
-                                        setHandMode(true);
-                                        peek.deactivateSticky();
-                                      }}
-                                      data-testid="toolbar-hand"
-                                      data-active={handMode && !peek.isActive ? "true" : undefined}
-                                      className={
-                                        handMode && !peek.isActive
-                                          ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                          : undefined
-                                      }
-                                    >
-                                      <IconHand />
-                                    </IconButton>
-                                  </AITooltip>
-                                  <AITooltip
-                                    context="Z-순서 보기"
-                                    actions={[{ action: "L (홀드) · 클릭 고정" }]}
+                                  <IconButton
+                                    aria-label="Select tool"
+                                    aria-pressed={!handMode && !peek.isActive}
+                                    size="sm"
+                                    onClick={() => {
+                                      setHandMode(false);
+                                      peek.deactivateSticky();
+                                    }}
+                                    data-testid="toolbar-select"
+                                    data-active={!handMode && !peek.isActive ? "true" : undefined}
+                                    data-tip="선택 도구"
+                                    data-tip-kbd="V"
+                                    className={
+                                      !handMode && !peek.isActive
+                                        ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                        : undefined
+                                    }
                                   >
-                                    <IconButton
-                                      aria-label="Peek z-order"
-                                      aria-pressed={peek.isActive}
-                                      size="sm"
-                                      onClick={peek.toggle}
-                                      data-testid="toolbar-peek"
-                                      data-active={peek.isActive ? "true" : undefined}
-                                      className={
-                                        peek.isActive
-                                          ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                          : undefined
-                                      }
-                                    >
-                                      <IconLayers />
-                                    </IconButton>
-                                  </AITooltip>
+                                    <IconCursor />
+                                  </IconButton>
+                                  <IconButton
+                                    aria-label="Hand tool"
+                                    aria-pressed={handMode && !peek.isActive}
+                                    size="sm"
+                                    onClick={() => {
+                                      setHandMode(true);
+                                      peek.deactivateSticky();
+                                    }}
+                                    data-testid="toolbar-hand"
+                                    data-active={handMode && !peek.isActive ? "true" : undefined}
+                                    data-tip="이동 도구"
+                                    data-tip-kbd="H / Space"
+                                    className={
+                                      handMode && !peek.isActive
+                                        ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                        : undefined
+                                    }
+                                  >
+                                    <IconHand />
+                                  </IconButton>
+                                  <IconButton
+                                    aria-label="Peek z-order"
+                                    aria-pressed={peek.isActive}
+                                    size="sm"
+                                    onClick={peek.toggle}
+                                    data-testid="toolbar-peek"
+                                    data-active={peek.isActive ? "true" : undefined}
+                                    data-tip="Z-순서 보기"
+                                    data-tip-kbd="L"
+                                    className={
+                                      peek.isActive
+                                        ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                        : undefined
+                                    }
+                                  >
+                                    <IconLayers />
+                                  </IconButton>
                                   <span
                                     aria-hidden
                                     className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
@@ -1832,20 +1834,17 @@ function DesignPageBody() {
                               ) : null}
                               {/* WI-020 — Add menu: image / video / 9 shape sub-kinds */}
                               <DropdownMenu>
-                                <AITooltip
-                                  context="추가"
-                                  actions={[{ action: "이미지 · 비디오 · 도형" }]}
-                                >
-                                  <DropdownMenuTrigger asChild>
-                                    <IconButton
-                                      aria-label="Add new item"
-                                      size="sm"
-                                      data-testid="toolbar-add"
-                                    >
-                                      <IconPlus />
-                                    </IconButton>
-                                  </DropdownMenuTrigger>
-                                </AITooltip>
+                                <DropdownMenuTrigger asChild>
+                                  <IconButton
+                                    aria-label="Add new item"
+                                    size="sm"
+                                    data-testid="toolbar-add"
+                                    data-tip="추가"
+                                    data-tip-kbd="이미지 · 비디오 · 도형"
+                                  >
+                                    <IconPlus />
+                                  </IconButton>
+                                </DropdownMenuTrigger>
                                 <DropdownMenuContent align="start" sideOffset={6}>
                                   <DropdownMenuLabel>슬라이드</DropdownMenuLabel>
                                   <DropdownMenuItem
@@ -1996,39 +1995,36 @@ function DesignPageBody() {
                                   for 1.5s after dispatch so the user
                                   sees an explicit acknowledgement (the
                                   cloud POST itself is fire-and-forget). */}
-                              <AITooltip
-                                context={SAVE_TOOLTIP_CONTEXT[saveStatus]}
-                                actions={[{ action: SAVE_TOOLTIP_ACTION[saveStatus] }]}
+                              <IconButton
+                                aria-label="Save design to server"
+                                size="sm"
+                                onClick={() => void handleManualSave()}
+                                disabled={saveStatus === "saving"}
+                                data-testid="toolbar-save"
+                                data-state={saveStatus}
+                                data-tip={SAVE_TOOLTIP_CONTEXT[saveStatus]}
+                                data-tip-kbd={SAVE_TOOLTIP_ACTION[saveStatus]}
+                                className={
+                                  saveStatus === "failed"
+                                    ? "text-[color:var(--text-warn,#d97706)]"
+                                    : undefined
+                                }
                               >
-                                <IconButton
-                                  aria-label="Save design to server"
-                                  size="sm"
-                                  onClick={() => void handleManualSave()}
-                                  disabled={saveStatus === "saving"}
-                                  data-testid="toolbar-save"
-                                  data-state={saveStatus}
-                                  className={
-                                    saveStatus === "failed"
-                                      ? "text-[color:var(--text-warn,#d97706)]"
-                                      : undefined
-                                  }
-                                >
-                                  {SAVE_GLYPH_BY_STATUS[saveStatus]}
-                                </IconButton>
-                              </AITooltip>
+                                {SAVE_GLYPH_BY_STATUS[saveStatus]}
+                              </IconButton>
                               <Button size="md" trailingIcon={<IconPlay size={14} />} asChild>
                                 <Link
                                   to={`/design/${designId}/present`}
                                   data-testid="toolbar-present"
-                                  data-ai-tooltip="true"
-                                  data-tooltip-context="프레젠테이션"
-                                  data-tooltip-actions='[{"action":"풀스크린 발표"}]'
+                                  data-tip="프레젠테이션"
+                                  data-tip-kbd="풀스크린"
                                 >
                                   Present
                                 </Link>
                               </Button>
                             </div>
-                          </header>
+                          </header>,
+                          document.body)}
 
                           {/* WI-029 R5 + WI-033 P3 — text item v1 +
                           Figma frame selection launch announcements
@@ -2382,22 +2378,24 @@ function DesignPageBody() {
                     • selectedIds.size ≥ 1   → selection variant resolved
                       from the toolbar section registry per kind. */}
                             <SelectionChromeGate>
+                              {typeof document !== "undefined" && createPortal(
                               <div
                                 style={{
-                                  position: "absolute",
-                                  // WI-039 — z-stack layout: <main> now fills the
-                                  // entire viewport (was flex-1 below header
-                                  // before). The previous `top: 12` placed the
-                                  // bar 12px inside main, which used to be ~60px
-                                  // from viewport top; now it lands *inside* the
-                                  // 48px header. Header bottom + 12px gap:
-                                  //   48 (h-12 header) + 12 = 60
-                                  // This keeps the toolbar a few px below the
-                                  // header border in any theme.
+                                  // Portal'd to document.body for the same
+                                  // reason as the header / ThumbnailPanel —
+                                  // the outer `fixed inset-0` wrapper creates
+                                  // a stacking context that traps any z-index
+                                  // below body-portal'd SelectionLayer (40) /
+                                  // MarqueeSelection (42) / RubberBand (45).
+                                  // Hoisting to body lets the toolbar share
+                                  // the header's z-tier and sit above
+                                  // selection chrome.
+                                  position: "fixed",
+                                  // 48 (h-12 header) + 12 gap = 60 from top.
                                   top: 60,
                                   left: "50%",
                                   transform: "translateX(-50%)",
-                                  zIndex: 35,
+                                  zIndex: 46,
                                   pointerEvents: "auto",
                                 }}
                               >
@@ -2442,7 +2440,8 @@ function DesignPageBody() {
                                     });
                                   }}
                                 />
-                              </div>
+                              </div>,
+                              document.body)}
                             </SelectionChromeGate>
 
                             {/* WI-028 Phase 4 — remote cursors overlay. `project` maps the
@@ -2459,8 +2458,16 @@ function DesignPageBody() {
                           on top of the design canvas (z-stack). The panel's
                           own section uses `position: relative` to host its
                           shorter bg band; the wrapper here owns the
-                          viewport-bottom anchoring + stack order. */}
-                          <div className="absolute inset-x-0 bottom-0 z-30">
+                          viewport-bottom anchoring + stack order.
+                          Portal'd to document.body for the same reason as the
+                          header above — the outer `fixed inset-0` wrapper
+                          creates a stacking context that traps internal
+                          z-index below the body-portal'd selection chrome
+                          (SelectionLayer 40 / MarqueeSelection 42 / RubberBand
+                          45). Hoisted to body so z-[46] competes with them
+                          directly. */}
+                          {typeof document !== "undefined" && createPortal(
+                          <div className="fixed inset-x-0 bottom-0 z-[46]">
                             <ThumbnailPanel
                               design={design}
                               setPresentationOrder={setPresentationOrderViaEditor}
@@ -2472,8 +2479,16 @@ function DesignPageBody() {
                               onCycleFocus={handleCycleFocus}
                               onClearFocus={handleClearFocus}
                             />
-                          </div>
-                          <CursorTooltip />
+                          </div>,
+                          document.body)}
+                          <CursorTooltipBridge
+                            hover={hoverContext}
+                            selectedIds={selectedIds}
+                            canUndo={canUndo}
+                            canRedo={canRedo}
+                            doc={docInAgocraft}
+                            hotkeyTable={editorHotkeyTable}
+                          />
                           <EditAffordanceGate>
                             <ReparentGhostOverlay state={reparentDragState} />
                           </EditAffordanceGate>
@@ -2640,7 +2655,7 @@ function DesignPageBody() {
                         </div>
                       </DocumentForResolutionProvider>
                     </EditorProvider>
-                  </ModeAwareAITooltipProvider>
+                  </ModeAwareTooltipSurface>
                 </CommandHostProvider>
               </PeekActiveProvider>
             </InteractionModeProvider>

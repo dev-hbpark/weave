@@ -4,7 +4,10 @@
 // One adapter per item kind; new domains plug in by registering an adapter,
 // not by editing a shared switch.
 
-import type { AITooltipHotkeyTable, UseAITooltipTargetOptions } from "@weave/design-system";
+import type {
+  AITooltipHotkeyTable,
+  UseAITooltipTargetOptions,
+} from "@weave/design-system";
 import type { AgoItem, DomainKind } from "../types.js";
 
 /**
@@ -29,12 +32,19 @@ export interface TooltipDescribeContext {
  */
 export interface TooltipCapability<K extends DomainKind = DomainKind> {
   readonly targetKind: K;
-  readonly describe: (item: AgoItem<K>, ctx: TooltipDescribeContext) => UseAITooltipTargetOptions;
+  readonly describe: (
+    item: AgoItem<K>,
+    ctx: TooltipDescribeContext,
+  ) => UseAITooltipTargetOptions;
 }
 
 export interface TooltipRegistry {
   /** Register an adapter. Returns a disposer; dev-warns on duplicate kind. */
-  readonly register: <K extends DomainKind>(capability: TooltipCapability<K>) => () => void;
-  readonly get: <K extends DomainKind>(kind: K) => TooltipCapability<K> | undefined;
+  readonly register: <K extends DomainKind>(
+    capability: TooltipCapability<K>,
+  ) => () => void;
+  readonly get: <K extends DomainKind>(
+    kind: K,
+  ) => TooltipCapability<K> | undefined;
   readonly list: () => ReadonlyArray<TooltipCapability>;
 }

@@ -196,7 +196,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
                 }
                 data-testid="shape-fill-clear"
                 aria-label="채우기 비우기"
-                title="채우기 비우기"
+                data-tip="채우기 비우기"
               >
                 <IconClose size={14} />
               </Button>
@@ -225,7 +225,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
                 onClick={() => onEditShapeFill?.("image", "")}
                 data-testid="shape-fill-image"
                 aria-label="이미지로 채우기"
-                title="이미지로 채우기"
+                data-tip="이미지로 채우기"
               >
                 <IconImage size={14} />
               </Button>
@@ -235,7 +235,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
                 onClick={() => onEditShapeFill?.("video", "")}
                 data-testid="shape-fill-video"
                 aria-label="비디오로 채우기"
-                title="비디오로 채우기"
+                data-tip="비디오로 채우기"
               >
                 <IconVideo size={14} />
               </Button>

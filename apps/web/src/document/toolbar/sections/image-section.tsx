@@ -43,7 +43,7 @@ export const ImageSection: ToolbarSectionComponent = ({
       <Bar.Quick>
         <IconButton
           aria-label="이미지 교체"
-          title={isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
+          data-tip={isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
           size="sm"
           onClick={() => onEditMediaSrc?.("image", isMixed(src) ? "" : src)}
           data-testid="image-edit-src"

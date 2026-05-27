@@ -89,6 +89,17 @@ export interface InsertableCapability<K extends ContainerKind = ContainerKind> {
   /** Phase G — empty-space hover hint. Optional; layer falls back to a
    *  generic message when undefined. */
   readonly describeHover?: (ctx: InsertableDescribeContext) => InsertableHoverHint;
+  /** Declarative add-gesture policy for this container.
+   *  - `true`  → the drag-to-create gesture only fires when the user holds
+   *    `⌥` (Alt). Plain drag is reserved for marquee / selection.
+   *  - `false` / undefined → plain drag triggers insert.
+   *
+   *  Single source of truth: both the rubber-band wiring (FrameStage's
+   *  `RubberBandLayer`) AND the cursor-tooltip describer read this same
+   *  field, so registering a new container with `requireAltKey: true`
+   *  automatically (1) gates the gesture and (2) updates the tooltip
+   *  text — no parallel knob to remember to flip. */
+  readonly requireAltKey?: boolean;
 }
 
 export interface InsertableRegistry {

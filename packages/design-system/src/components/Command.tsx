@@ -189,10 +189,7 @@ export const CommandButton = forwardRef<HTMLButtonElement, CommandButtonOwnProps
       },
       [host, commandId, resolved.enabled, onClick],
     );
-    const titleParts: string[] = [];
-    if (resolved.hint !== undefined) titleParts.push(resolved.hint);
-    if (resolved.hotkeyDisplay !== undefined) titleParts.push(resolved.hotkeyDisplay);
-    const title = titleParts.length > 0 ? titleParts.join(" · ") : undefined;
+    const tipText = resolved.hint ?? resolved.label;
     const computedTrailing =
       trailingIcon ??
       (!hideHotkey && resolved.hotkeyDisplay !== undefined ? (
@@ -209,7 +206,10 @@ export const CommandButton = forwardRef<HTMLButtonElement, CommandButtonOwnProps
         disabled={!resolved.enabled}
         aria-label={resolved.label}
         aria-keyshortcuts={resolved.hotkeyDisplay}
-        title={title}
+        data-tip={tipText}
+        {...(resolved.hotkeyDisplay !== undefined ? { "data-tip-kbd": resolved.hotkeyDisplay } : {})}
+        data-tip-id={`cmd:${commandId}`}
+        data-tip-disabled={!resolved.enabled ? "true" : undefined}
         leadingIcon={leadingIcon}
         trailingIcon={computedTrailing}
         onClick={handleClick}
@@ -248,16 +248,16 @@ export const CommandIconButton = forwardRef<HTMLButtonElement, CommandIconButton
       },
       [host, commandId, resolved.enabled, onClick],
     );
-    const titleParts: string[] = [];
-    if (resolved.hint !== undefined) titleParts.push(resolved.hint);
-    if (resolved.hotkeyDisplay !== undefined) titleParts.push(resolved.hotkeyDisplay);
-    const title = titleParts.length > 0 ? titleParts.join(" · ") : undefined;
+    const tipText = resolved.hint ?? resolved.label;
     return (
       <IconButton
         ref={ref}
         aria-label={resolved.label}
         aria-keyshortcuts={resolved.hotkeyDisplay}
-        title={title}
+        data-tip={tipText}
+        {...(resolved.hotkeyDisplay !== undefined ? { "data-tip-kbd": resolved.hotkeyDisplay } : {})}
+        data-tip-id={`cmd:${commandId}`}
+        data-tip-disabled={!resolved.enabled ? "true" : undefined}
         variant={variant}
         size={size}
         className={className}

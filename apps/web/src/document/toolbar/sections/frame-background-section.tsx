@@ -67,7 +67,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
               }
               data-testid="frame-bg-clear"
               aria-label="배경 비우기"
-              title="배경 비우기 (투명)"
+              data-tip="배경 비우기 (투명)"
             >
               <IconClose size={14} />
             </Button>

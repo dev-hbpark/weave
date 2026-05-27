@@ -39,6 +39,12 @@ const KIND_GLYPHS: Record<DomainKind, string> = {
 export const designRootInsertable: InsertableCapability<"design"> = {
   containerKind: "design",
 
+  // Plain drag on the root canvas is reserved for marquee multi-selection
+  // (Figma parity).  Frame creation via drag requires Alt held.  Tooltip
+  // describer reads this flag too, so the hover hint always announces the
+  // correct modifier.
+  requireAltKey: true,
+
   recommend: (rect): ReadonlyArray<InsertableRecommendation> => {
     switch (rect.bucket) {
       case "wide":
@@ -137,8 +143,8 @@ export const designRootInsertable: InsertableCapability<"design"> = {
   },
 
   describeHover: () => ({
-    title: "프레임 추가",
-    hint: "드래그 — 새 프레임. ⌥ 드래그 — 위에 겹쳐 추가.",
+    title: "새 프레임 추가",
+    hint: "⌥ + 드래그로 이 영역에 프레임 / 텍스트 / 이미지 / 도형 추가",
     kinds: [
       { id: "frame", label: "프레임", icon: KIND_GLYPHS.frame },
       { id: "text", label: "텍스트", icon: KIND_GLYPHS.text },

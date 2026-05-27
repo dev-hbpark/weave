@@ -233,7 +233,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
                   }}
                   className="relative shrink-0 w-14 h-14 rounded-[var(--radius-sm)] border border-[color:var(--surface-overlay-border)] overflow-hidden hover:ring-2 hover:ring-[color:var(--accent)] transition"
                   aria-label={`기존 ${kind === "image" ? "이미지" : "비디오"}: ${r.name}`}
-                  title={r.name}
+                  data-tip={r.name}
                 >
                   {r.kind === "image" ? (
                     <img src={r.src} alt={r.name} className="w-full h-full object-cover" />
@@ -291,7 +291,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
                 <span
                   data-testid="media-src-uploaded-name"
                   className="text-[13px] text-[color:var(--text-strong)] max-w-[260px] truncate"
-                  title={uploadedName}
+                  data-tip={uploadedName}
                 >
                   {uploadedName}
                 </span>

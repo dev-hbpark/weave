@@ -473,7 +473,7 @@ export function ThumbnailPanel({
                   background: "linear-gradient(var(--tile-tint), var(--tile-tint)), var(--bg-page)",
                 } as CSSProperties
               }
-              title={`${idx + 1}. ${entry.title}`}
+              data-tip={`${idx + 1}. ${entry.title}`}
             >
               {/* Preview slot — placeholder until a real canvas snapshot
                     pipeline exists. Renders the design's background color so
@@ -528,7 +528,7 @@ export function ThumbnailPanel({
                           : "Isolated: above layers locked"
                     }
                     aria-pressed={ariaPressedFor(tileStage)}
-                    title={nextStageLabel(tileStage)}
+                    data-tip={nextStageLabel(tileStage)}
                     className={
                       "absolute top-1.5 right-1.5 inline-flex items-center justify-center w-6 h-6 rounded-[var(--radius-sm)] " +
                       "border transition-[opacity,background,color,border-color] duration-[var(--motion-quick)] " +

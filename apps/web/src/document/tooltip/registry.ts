@@ -9,14 +9,19 @@ import type { TooltipCapability, TooltipRegistry } from "./types.js";
 export function createTooltipRegistry(): TooltipRegistry {
   const adapters = new Map<DomainKind, TooltipCapability>();
 
-  function register<K extends DomainKind>(capability: TooltipCapability<K>): () => void {
+  function register<K extends DomainKind>(
+    capability: TooltipCapability<K>,
+  ): () => void {
     if (adapters.has(capability.targetKind)) {
       console.warn(
         `[tooltip-registry] Capability for kind "${capability.targetKind}" already registered. Keeping the first; second call ignored.`,
       );
       return () => undefined;
     }
-    adapters.set(capability.targetKind, capability as unknown as TooltipCapability);
+    adapters.set(
+      capability.targetKind,
+      capability as unknown as TooltipCapability,
+    );
     return () => {
       adapters.delete(capability.targetKind);
     };
@@ -24,7 +29,8 @@ export function createTooltipRegistry(): TooltipRegistry {
 
   return {
     register,
-    get: <K extends DomainKind>(kind: K) => adapters.get(kind) as TooltipCapability<K> | undefined,
+    get: <K extends DomainKind>(kind: K) =>
+      adapters.get(kind) as TooltipCapability<K> | undefined,
     list: () => Array.from(adapters.values()),
   };
 }

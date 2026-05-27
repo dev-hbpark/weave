@@ -39,6 +39,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../cn.js";
+import { TooltipCard } from "./TooltipCard.js";
 
 /**
  * Compose multiple refs into a single callback ref. Mirrors Radix's
@@ -124,9 +125,10 @@ const HotkeyTableContext = createContext<AITooltipHotkeyTable>({});
 export interface AITooltipProviderProps {
   /**
    * Show delay in ms — pointer must dwell on the target this long before the
-   * tooltip appears. Default 175 ms (the upper end of the spec's 150–200 ms
-   * window). Cheap to lower per-instance for surfaces where users explicitly
-   * asked for a hint.
+   * tooltip appears. Default 1000 ms (matches CursorTooltip dwell — user-
+   * confirmed 2026-05-27 that sub-second hovers on dense button rows feel
+   * "어지러움"). Cheap to lower per-instance for surfaces where users
+   * explicitly asked for a faster hint.
    */
   readonly showDelayMs?: number;
   /**
@@ -187,7 +189,7 @@ interface MachineState {
  * `active` state — the *visible* target+data — drives React renders.
  */
 export function AITooltipProvider({
-  showDelayMs = 175,
+  showDelayMs = 1000,
   hideDelayMs = 100,
   scan = "none",
   hotkeyTable,
@@ -236,15 +238,25 @@ export function AITooltipProvider({
         return;
       }
 
-      // Visible or pending-hide for a *different* target → instant switch.
-      // The tooltip is already on-screen; no second show delay should fire
-      // (that's the "adjacent target morph" UX — Phase D adds the visual
-      // morph; the state stays continuously visible regardless).
-      if (st.status === "visible" || st.status === "pending-hide") {
-        clearHideTimer();
+      // Same target, currently visible → refresh data (mode/selection flip
+      // while pointer sits still). No timer reset, no flicker.
+      if (st.status === "visible" && st.target === element) {
         stateRef.current = { status: "visible", target: element, data };
         setActive({ element, data });
         return;
+      }
+
+      // Different target while visible / pending-hide → dismiss the current
+      // surface immediately and start a fresh show timer for the new one.
+      // User-confirmed 2026-05-27: instant adjacent switching on dense
+      // toolbar rows reads as "어지러움". Re-using the show delay (default
+      // 1000 ms) buys the same dwell guarantee for follow-up targets as
+      // for the first entry.
+      if (st.status === "visible" || st.status === "pending-hide") {
+        clearHideTimer();
+        stateRef.current = { status: "idle", target: null, data: null };
+        setActive(null);
+        // Fall through to the pending-show branch below.
       }
 
       // Pending-show on the same target → keep timer running, refresh data.
@@ -498,56 +510,13 @@ function Floating({ active }: FloatingProps): ReactElement | null {
         layout: reduce ? { duration: 0 } : { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
       }}
     >
-      {showContext && data.context !== undefined ? (
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-overlay-soft)]">
-            Context
-          </span>
-          <span className="text-[13px] text-[color:var(--text-overlay)]">{data.context}</span>
-        </div>
-      ) : null}
-
-      {showContext && showActions ? (
-        <div aria-hidden className="my-2 h-px bg-[color:var(--surface-overlay-border)]" />
-      ) : null}
-
-      {showActions && data.actions !== undefined ? (
-        <ul className="flex flex-col gap-1.5 text-[13px]">
-          {data.actions.map((a, i) => {
-            // Resolution order: literal `shortcut` first (lets callers force
-            // a one-off display string), then `hotkeyId` looked up in the
-            // provider's hotkeyTable. If neither resolves, no keycap renders.
-            const resolvedShortcut =
-              a.shortcut ?? (a.hotkeyId !== undefined ? hotkeyTable[a.hotkeyId]?.keys : undefined);
-            return (
-              <li
-                // Action labels are user-supplied display strings; pairs may
-                // legitimately repeat across the list, so a stable index key is
-                // the honest choice here.
-                key={`${i}-${a.action}`}
-                className="flex items-center gap-2 text-[color:var(--text-overlay)]"
-              >
-                <span aria-hidden className="text-[color:var(--accent-strong)]">
-                  ▸
-                </span>
-                <span className="flex-1">{a.action}</span>
-                {showShortcuts && resolvedShortcut !== undefined ? (
-                  <kbd
-                    className={cn(
-                      "inline-flex items-center px-1.5 py-0.5",
-                      "rounded-[var(--radius-sm)] border",
-                      "bg-[color:var(--surface-overlay-2)] border-[color:var(--surface-overlay-border-strong)]",
-                      "text-[11px] font-mono tracking-[0.04em] text-[color:var(--text-overlay)]",
-                    )}
-                  >
-                    {resolvedShortcut}
-                  </kbd>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
+      <TooltipCard
+        {...(showContext && data.context !== undefined ? { context: data.context } : {})}
+        {...(showActions && data.actions !== undefined
+          ? { actions: showShortcuts ? data.actions : data.actions.map((a) => ({ action: a.action })) }
+          : {})}
+        hotkeyTable={hotkeyTable}
+      />
     </motion.div>
   );
 }

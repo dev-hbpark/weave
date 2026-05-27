@@ -21,7 +21,12 @@ export interface EmptySpaceHintProps {
   readonly altActive: boolean;
 }
 
-export function EmptySpaceHint({ open, clientPoint, hint, altActive }: EmptySpaceHintProps) {
+export function EmptySpaceHint({
+  open,
+  clientPoint,
+  hint,
+  altActive,
+}: EmptySpaceHintProps) {
   // Virtual anchor — a 1×1 rect at the cursor. Radix's Popover.Anchor
   // expects `virtualRef` as a `{ current: Measurable | null }` shape (it
   // calls `virtualRef?.current?.getBoundingClientRect()` internally).
@@ -80,7 +85,10 @@ export function EmptySpaceHint({ open, clientPoint, hint, altActive }: EmptySpac
             {hint.hint}
           </p>
           {hint.kinds.length > 0 ? (
-            <ul className="flex flex-wrap gap-1.5" data-testid="rubber-band-empty-hint-kinds">
+            <ul
+              className="flex flex-wrap gap-1.5"
+              data-testid="rubber-band-empty-hint-kinds"
+            >
               {hint.kinds.map((k) => (
                 <li
                   key={k.id}
@@ -88,10 +96,7 @@ export function EmptySpaceHint({ open, clientPoint, hint, altActive }: EmptySpac
                   data-testid={`rubber-band-empty-hint-kind-${k.id}`}
                 >
                   {k.icon !== undefined ? (
-                    <span
-                      aria-hidden
-                      className="text-[12px] leading-none text-[color:var(--accent-strong)]"
-                    >
+                    <span aria-hidden className="text-[12px] leading-none text-[color:var(--accent-strong)]">
                       {k.icon}
                     </span>
                   ) : null}

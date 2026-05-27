@@ -44,7 +44,7 @@ export const VideoSection: ToolbarSectionComponent = ({
       <Bar.Quick>
         <IconButton
           aria-label="비디오 교체"
-          title={isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
+          data-tip={isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
           size="sm"
           onClick={() => onEditMediaSrc?.("video", isMixed(src) ? "" : src)}
           data-testid="video-edit-src"
@@ -54,7 +54,7 @@ export const VideoSection: ToolbarSectionComponent = ({
         </IconButton>
         <IconButton
           aria-label={isMixed(muted) ? "음소거 (여러 값)" : muted ? "음소거됨" : "음소거"}
-          title="음소거 토글"
+          data-tip="음소거 토글"
           size="sm"
           aria-pressed={isMixed(muted) ? "mixed" : muted}
           onClick={() =>

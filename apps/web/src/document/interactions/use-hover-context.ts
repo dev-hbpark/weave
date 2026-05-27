@@ -57,12 +57,16 @@ interface MatchProbe {
 
 // Order matters — the first match wins. Handles / hotspots are checked
 // before frames because they are descendants of frames in the DOM.
+// `background` is checked LAST so any nested reactive surface inside the
+// design plane (frame, shape, handle, …) wins; only the bare plane reads
+// as background.
 const PROBES: ReadonlyArray<MatchProbe> = [
   { attr: "data-handle-kind", kind: "handle" },
   { attr: "data-hotspot-id", kind: "hotspot" },
   { attr: "data-shape-id", kind: "shape" },
   { attr: "data-textbox-id", kind: "text" },
   { attr: "data-frame-kind", kind: "frame" },
+  { attr: "data-design-plane", kind: "background" },
 ];
 
 function readHoverInfo(target: EventTarget | null): HoverContext {

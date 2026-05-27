@@ -116,7 +116,7 @@ function StackRow(p: StackRowProps): JSX.Element {
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         }}
-        title={p.label}
+        data-tip={p.label}
       >
         {p.label}
       </span>

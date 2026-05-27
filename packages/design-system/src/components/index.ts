@@ -193,3 +193,9 @@ export { FieldGroup, TextField } from "./TextField.js";
 export { ThemeSwitcher } from "./ThemeSwitcher.js";
 export { Toolbar, ToolbarDivider } from "./Toolbar.js";
 export { Tooltip, type TooltipProps } from "./Tooltip.js";
+export { TooltipCard, type TooltipCardProps } from "./TooltipCard.js";
+export {
+  UnifiedTooltip,
+  type UnifiedTooltipData,
+  type UnifiedTooltipProps,
+} from "./UnifiedTooltip.js";

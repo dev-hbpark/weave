@@ -999,7 +999,8 @@ export const ColorPicker = forwardRef<HTMLButtonElement, ColorPickerProps>(funct
                       background: stop.color,
                       boxShadow: "0 0 0 1px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.4)",
                     }}
-                    title={`${stop.color} · ${Math.round(stop.pos * 100)}% (더블클릭으로 삭제)`}
+                    data-tip={`${stop.color} · ${Math.round(stop.pos * 100)}%`}
+                    data-tip-kbd="더블클릭 삭제"
                   />
                 ))}
               </div>
@@ -1184,7 +1185,7 @@ export const ColorPicker = forwardRef<HTMLButtonElement, ColorPickerProps>(funct
                   "focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]",
                   "disabled:opacity-50",
                 )}
-                title="화면에서 색 추출 (스포이드)"
+                data-tip="화면에서 색 추출 (스포이드)"
               >
                 <svg
                   width="14"
@@ -1258,7 +1259,7 @@ export const ColorPicker = forwardRef<HTMLButtonElement, ColorPickerProps>(funct
                     type="button"
                     aria-label={`theme color ${t.label}`}
                     onClick={() => applyThemeColor(t.varName)}
-                    title={`${t.label} · var(${t.varName})`}
+                    data-tip={`${t.label} · var(${t.varName})`}
                     data-testid={`cp-theme-${t.varName}`}
                     className={cn(
                       "h-5 w-full rounded-[3px] border",

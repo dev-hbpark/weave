@@ -57,7 +57,7 @@ function _IconToggleGroup<V extends string>(
           key={o.value}
           value={o.value}
           aria-label={o.label}
-          title={o.label}
+          data-tip={o.label}
           className={cn(
             "h-7 w-7 inline-flex items-center justify-center",
             "rounded-[4px]",

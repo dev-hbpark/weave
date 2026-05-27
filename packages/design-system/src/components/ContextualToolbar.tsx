@@ -77,7 +77,7 @@ function ToolbarKind({ icon, label, className }: ToolbarKindProps): JSX.Element 
     <span
       role="img"
       aria-label={label}
-      title={label}
+      data-tip={label}
       data-toolbar-kind
       className={cn(
         "inline-flex items-center justify-center w-8 h-8 shrink-0",
@@ -143,7 +143,7 @@ function ToolbarMore({ label = "더보기", children }: ToolbarMoreProps): JSX.E
             type="button"
             data-testid="toolbar-more-trigger"
             aria-label={label}
-            title={label}
+            data-tip={label}
             className={cn(
               "inline-flex items-center justify-center w-8 h-8",
               "rounded-[var(--radius-sm)]",

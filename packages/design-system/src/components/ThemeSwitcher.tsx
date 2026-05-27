@@ -31,7 +31,7 @@ export function ThemeSwitcher({ className }: { className?: string }) {
         <ToggleGroup.Item
           key={t.name}
           value={t.name}
-          title={t.hint}
+          data-tip={t.hint}
           className={cn(
             "rounded-[var(--radius-pill)] h-8 px-3.5 text-[13px] font-medium",
             "text-[color:var(--text-soft)]",

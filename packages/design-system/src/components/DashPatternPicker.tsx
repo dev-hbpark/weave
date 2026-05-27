@@ -64,7 +64,7 @@ export const DashPatternPicker = forwardRef<HTMLDivElement, DashPatternPickerPro
               role="radio"
               aria-checked={pressed}
               aria-label={p.label}
-              title={p.label}
+              data-tip={p.label}
               onClick={() => onValueChange(p.value)}
               className={cn(
                 "h-7 w-9 inline-flex items-center justify-center",
