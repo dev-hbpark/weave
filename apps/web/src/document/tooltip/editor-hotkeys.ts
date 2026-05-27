@@ -124,6 +124,19 @@ export function setPaletteOpener(opener: () => void): () => void {
   };
 }
 
+let designSaver: (() => void) | undefined;
+
+/** Host registration — DesignPage hands the manual save callback (the
+ *  same one wired to the header IconButton) into this slot so the
+ *  `design.save` hotkey can dispatch without this module owning the
+ *  React state or knowing about persistNow. */
+export function setDesignSaver(fn: () => void): () => void {
+  designSaver = fn;
+  return () => {
+    if (designSaver === fn) designSaver = undefined;
+  };
+}
+
 /** WI-033 A3 — keyboard selection navigation. The host (DesignPage)
  *  registers a single navigator that owns the selection-context wiring
  *  (current selection + doc + selectFrame setter). The four hotkey
@@ -236,6 +249,23 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     category: "view",
     action: () => {
       paletteOpener?.();
+    },
+  },
+  {
+    id: "design.save",
+    label: { en: "Save design", ko: "디자인 저장" },
+    description: {
+      en: "Force an immediate save of the current design to the server, bypassing the debounced auto-save window.",
+      ko: "디버운스 자동 저장을 기다리지 않고 현재 디자인을 즉시 서버에 저장합니다.",
+    },
+    hint: {
+      en: "Manual save — also bound to the header save button.",
+      ko: "수동 저장 — 헤더의 저장 버튼과 동일한 동작입니다.",
+    },
+    hotkey: { keys: "⌘ + S", binding: "Mod+S", scope: "editor" },
+    category: "view",
+    action: () => {
+      designSaver?.();
     },
   },
   // ── Selection navigation (WI-033 A3) ──────────────────────────────────

@@ -519,6 +519,35 @@ export function saveDesign(design: Design): void {
     });
 }
 
+/** Awaitable cousin of `saveDesign`. Skips localStorage (same gate as
+ *  the sync sibling) and returns whether the cloud round-trip
+ *  succeeded. Used by the manual save button so the UI can flip to a
+ *  failure state instead of showing an always-optimistic "저장됨" flash.
+ *  Debounced auto-save keeps using the fire-and-forget `saveDesign`. */
+export async function saveDesignAwaitable(design: Design): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const docBlob = serializer.toJSON(design.document);
+  const blob: SerializedDesignV5 = {
+    id: design.id,
+    title: design.title,
+    width: design.width,
+    height: design.height,
+    background: design.background,
+    document: docBlob,
+    presentationOrder: design.presentationOrder,
+    meta: design.meta,
+  };
+  if (LOCAL_STORAGE_SAVE_ENABLED) {
+    window.localStorage.setItem(KEY_PREFIX_V5 + design.id, JSON.stringify(blob));
+  }
+  try {
+    const m = await import("./cloud-sync.js");
+    return await m.pushDesignCloudAwaitable(blob as unknown as Design);
+  } catch {
+    return false;
+  }
+}
+
 /** Lightweight summary used by the workspace listing — we don't fully
  *  deserialize the document for each entry. Reads each `weave.design.v5.*`
  *  key, parses the top-level metadata, returns the array. Newest first. */

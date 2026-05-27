@@ -99,6 +99,21 @@ export function pushDesignCloud(design: Design): void {
   });
 }
 
+/** Awaitable counterpart to `pushDesignCloud`. Used by the header
+ *  manual-save button so it can flip the icon to a failure state
+ *  when the round-trip fails. Debounced auto-save sticks with the
+ *  fire-and-forget variant — there's no UI to update on a debounced
+ *  failure. */
+export async function pushDesignCloudAwaitable(design: Design): Promise<boolean> {
+  lastPushed = design;
+  const resp = await safeFetch("/api/designs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(design),
+  });
+  return resp !== null && resp.ok;
+}
+
 function beaconFlushLast(): void {
   if (lastPushed === null) return;
   if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {

@@ -259,6 +259,20 @@ export const IconCloudCheck = forwardRef<SVGSVGElement, IconProps>(
   },
 );
 
+/** Failure pair for IconCloudUpload — same cloud silhouette with a
+ *  diagonal slash. Keeps the chrome cluster aligned during the
+ *  idle → saving → saved/failed swap. */
+export const IconCloudOff = forwardRef<SVGSVGElement, IconProps>(
+  function IconCloudOff(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M7 18a4 4 0 1 1 .8-7.92A6 6 0 0 1 19 11a4 4 0 0 1 0 8H7z" />
+        <path d="M4 4l16 16" />
+      </SvgRoot>
+    );
+  },
+);
+
 // ── alignment / distribution ────────────────────────────────────────
 // Each icon depicts a guide line (the alignment edge / axis) plus two
 // rectangles snapped to it. Distribute icons show three rectangles with

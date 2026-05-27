@@ -38,6 +38,29 @@ function makeMigratedDesignId(): string {
   return `design-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Retry a fire-and-forget-style async call up to 3 times with linear
+ *  back-off (300 ms → 600 ms → 900 ms). Used to harden the per-image
+ *  upload and the final POST against transient network blips — both
+ *  are already idempotent server-side (the resource API stores under
+ *  a content-addressed Blob; the designs API treats POST as upsert
+ *  under the supplied id). `predicate` defines what counts as a
+ *  retryable failure — `null` for the upload helpers, falsy for the
+ *  post helper. Returns the first successful result, or the final
+ *  failure value when all attempts exhaust. */
+async function retryAsync<T>(
+  fn: () => Promise<T>,
+  isFailure: (value: T) => boolean,
+  attempts = 3,
+): Promise<T> {
+  let last: T = await fn();
+  for (let i = 1; i < attempts; i += 1) {
+    if (!isFailure(last)) return last;
+    await new Promise((r) => setTimeout(r, 300 * i));
+    last = await fn();
+  }
+  return last;
+}
+
 function migratedTitleOf(sourceTitle: string): string {
   const trimmed = sourceTitle.trim();
   if (/\(migrated\)\s*$/i.test(trimmed)) return trimmed;
@@ -108,7 +131,10 @@ export function useMigrateInlineMedia(deps: UseMigrateInlineMediaDeps): Migratio
       for (const t of targets) {
         if (cancelled) return;
         const name = synthesiseResourceName(t.itemId, t.mime);
-        const cloud = await uploadResourceCloud("image", t.src, name);
+        const cloud = await retryAsync(
+          () => uploadResourceCloud("image", t.src, name),
+          (v) => v === null,
+        );
         if (cancelled) return;
         if (cloud === null) continue; // partial migration is allowed
         urlMap.set(t.itemId, cloud.src);
@@ -141,7 +167,10 @@ export function useMigrateInlineMedia(deps: UseMigrateInlineMediaDeps): Migratio
           updatedAt: now,
         },
       };
-      const result = await postDesignBlobAsNew(newBlob);
+      const result = await retryAsync(
+        () => postDesignBlobAsNew(newBlob),
+        (v) => v === null,
+      );
       if (cancelled) return;
       if (result === null) {
         setStatus({ kind: "failed", uploaded: urlMap.size, total: targets.length });

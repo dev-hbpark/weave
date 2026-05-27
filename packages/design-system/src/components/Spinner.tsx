@@ -24,7 +24,10 @@ export const Spinner = forwardRef<SVGSVGElement, SpinnerProps>(
         fill="none"
         stroke="currentColor"
         aria-hidden
-        className={cn("inline-block shrink-0 animate-spin", className)}
+        className={cn(
+          "inline-block shrink-0 animate-spin motion-reduce:animate-none",
+          className,
+        )}
         {...rest}
       >
         <circle cx="12" cy="12" r="9" strokeOpacity="0.2" strokeWidth="2.4" />

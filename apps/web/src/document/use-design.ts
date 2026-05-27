@@ -26,6 +26,7 @@ import {
   hydrateSerializedDesign,
   loadDesign,
   saveDesign,
+  saveDesignAwaitable,
   type SerializedDesignV5,
 } from "./storage.js";
 import { resolveStoredColor } from "./style/resolver.js";
@@ -76,6 +77,11 @@ interface UseDesignResult {
    *  agocraft `scheduling.debounce`. Renders stay immediate while
    *  persistence batches at the consumer's schedule. */
   readonly persistNow: () => void;
+  /** Awaitable variant of `persistNow`. Builds the same blob and
+   *  POSTs it to the cloud, but returns whether the round-trip
+   *  succeeded so callers (currently the header manual-save button)
+   *  can flip the UI to a failure state on `false`. */
+  readonly persistNowAwaitable: () => Promise<boolean>;
   /** True while the LS-miss cloud fallback is mid-fetch — the
    *  initial Design returned from this hook is a blank placeholder
    *  that the host should mask behind a spinner until the real blob
@@ -182,6 +188,10 @@ export function useDesign(id: string): UseDesignResult {
   const persistNow = useCallback(() => {
     saveDesign(designRef.current);
   }, []);
+  const persistNowAwaitable = useCallback(
+    () => saveDesignAwaitable(designRef.current),
+    [],
+  );
 
   const addItem = useCallback((kind: DomainKind, containerId?: string) => {
     setDesign((prev) => {
@@ -388,6 +398,7 @@ export function useDesign(id: string): UseDesignResult {
     addBehavior,
     setDesignBackground,
     persistNow,
+    persistNowAwaitable,
     isLoading,
   };
 }

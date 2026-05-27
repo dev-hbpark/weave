@@ -36,6 +36,36 @@ function frameItem(id: string, children: AgocraftItem[]): AgocraftItem {
   } as unknown as AgocraftItem;
 }
 
+function shapeWithImageFillItem(id: string, fillSrc: string): AgocraftItem {
+  return {
+    id: id as unknown as AgocraftItem["id"],
+    kind: "shape",
+    attrs: { fill: { type: "image", src: fillSrc, fit: "cover" } },
+    units: [],
+    children: [],
+    meta: {
+      createdAt: "2026-05-27T00:00:00Z",
+      updatedAt: "2026-05-27T00:00:00Z",
+      schemaVersion: 5,
+    },
+  } as unknown as AgocraftItem;
+}
+
+function shapeWithSolidFillItem(id: string): AgocraftItem {
+  return {
+    id: id as unknown as AgocraftItem["id"],
+    kind: "shape",
+    attrs: { fill: { type: "solid", color: "#abcdef" } },
+    units: [],
+    children: [],
+    meta: {
+      createdAt: "2026-05-27T00:00:00Z",
+      updatedAt: "2026-05-27T00:00:00Z",
+      schemaVersion: 5,
+    },
+  } as unknown as AgocraftItem;
+}
+
 function docWith(children: AgocraftItem[]): AgocraftDocument {
   return {
     id: "test-doc",
@@ -94,6 +124,23 @@ describe("findInlineImageItems", () => {
     const targets = findInlineImageItems(doc);
     expect(targets).toHaveLength(1);
     expect(targets[0]!.mime).toBe("image/png");
+  });
+
+  it("includes shape items with an image fill carrying a data URL", () => {
+    const doc = docWith([
+      shapeWithImageFillItem("s1", "data:image/jpeg;base64,SSS"),
+      shapeWithSolidFillItem("s2"),
+    ]);
+    const targets = findInlineImageItems(doc);
+    expect(targets.map((t) => t.itemId)).toEqual(["s1"]);
+    expect(targets[0]!.mime).toBe("image/jpeg");
+  });
+
+  it("skips shape items whose image fill is already a cloud URL", () => {
+    const doc = docWith([
+      shapeWithImageFillItem("s1", "https://cloud.example.com/a.png"),
+    ]);
+    expect(findInlineImageItems(doc)).toEqual([]);
   });
 });
 
@@ -172,5 +219,36 @@ describe("replaceInlineImageSrcs", () => {
       unknown
     >;
     expect((out.attrs as { src: string }).src).toBe("data:image/png;base64,ZZZ");
+  });
+
+  it("substitutes attrs.fill.src on shape items with image fill", () => {
+    const blob = {
+      id: "s1",
+      kind: "shape",
+      attrs: {
+        fill: { type: "image", src: "data:image/png;base64,FFF", fit: "cover" },
+      },
+    };
+    const out = replaceInlineImageSrcs(
+      blob,
+      new Map([["s1", "https://cloud/x.png"]]),
+    ) as Record<string, unknown>;
+    const fill = (out.attrs as { fill: { type: string; src: string; fit: string } }).fill;
+    expect(fill.src).toBe("https://cloud/x.png");
+    expect(fill.type).toBe("image");
+    expect(fill.fit).toBe("cover"); // sibling field preserved
+  });
+
+  it("leaves solid-fill shape items untouched even when their id is in the map", () => {
+    const blob = {
+      id: "s1",
+      kind: "shape",
+      attrs: { fill: { type: "solid", color: "#abcdef" } },
+    };
+    const out = replaceInlineImageSrcs(
+      blob,
+      new Map([["s1", "https://cloud/x.png"]]),
+    ) as Record<string, unknown>;
+    expect((out.attrs as { fill: { color: string } }).fill.color).toBe("#abcdef");
   });
 });

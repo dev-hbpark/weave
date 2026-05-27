@@ -101,6 +101,7 @@ export {
   IconChevronRight,
   IconClose,
   IconCloudCheck,
+  IconCloudOff,
   IconCloudUpload,
   IconCursor,
   IconDistributeHorizontal,

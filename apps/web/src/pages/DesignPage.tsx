@@ -37,6 +37,7 @@ import {
   IconAlignVerticalCenter,
   IconButton,
   IconCloudCheck,
+  IconCloudOff,
   IconCloudUpload,
   IconCursor,
   IconDistributeHorizontal,
@@ -122,6 +123,7 @@ import {
   setMediaSrcOpener,
   setMultiAligner,
   setMultiDeleter,
+  setDesignSaver,
   setPaletteOpener,
   setSelectionNavigator,
   setZOrderDispatcher,
@@ -491,6 +493,32 @@ const MULTI_ALIGN_MENU_ENTRIES: ReadonlyArray<MultiAlignMenuEntry> = [
   },
 ];
 
+// DR-design-017 — header manual-save lookup tables. Maps the
+// 4-state SaveStatus union (`idle` / `saving` / `saved` / `failed`)
+// to its glyph + AITooltip context + action. Each row is a single
+// declarative entry per state — adding a fifth state is one row
+// here + one branch in handleManualSave, no inline switch (Rule 6).
+const SAVE_GLYPH_BY_STATUS = {
+  idle: <IconCloudUpload />,
+  saving: <Spinner size={18} />,
+  saved: <IconCloudCheck />,
+  failed: <IconCloudOff />,
+} as const;
+
+const SAVE_TOOLTIP_CONTEXT = {
+  idle: "현재 디자인 저장",
+  saving: "저장 중…",
+  saved: "저장됨",
+  failed: "저장 실패",
+} as const;
+
+const SAVE_TOOLTIP_ACTION = {
+  idle: "서버로 즉시 저장",
+  saving: "서버 응답 대기 중",
+  saved: "서버에 저장됨",
+  failed: "다시 시도하려면 클릭",
+} as const;
+
 export function DesignPage() {
   return <DesignPageBody />;
 }
@@ -513,6 +541,7 @@ function DesignPageBody() {
     reorderRootChildren,
     setDesignBackground,
     persistNow,
+    persistNowAwaitable,
     isLoading,
   } = useDesign(designId);
   const { editor, vm, router, selectionChrome, sync } = useWeaveEditor({
@@ -938,23 +967,34 @@ function DesignPageBody() {
   // `persistNow`, so this button is a *force-now* affordance: the user
   // wants to commit a session-final state immediately (e.g. before
   // closing the tab on a slow network where the debounce window hasn't
-  // elapsed). `pushDesignCloud` is fire-and-forget, so the success flash
-  // is optimistic — we flip to "saved" right after dispatch and revert
-  // 1500 ms later. The timer is cleared on unmount and on overlapping
-  // clicks so re-saves restart the flash cleanly.
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
+  // elapsed).
+  //
+  // 4-state machine:
+  //   idle    → IconCloudUpload (default)
+  //   saving  → Spinner          (round-trip in flight)
+  //   saved   → IconCloudCheck   (success flash, 1500ms then idle)
+  //   failed  → IconCloudOff     (cloud round-trip failed, 4000ms then idle)
+  //
+  // Failure flash is longer than success because the user needs more
+  // time to register that the save did NOT land — and the button
+  // remains clickable in the `failed` state so the user can retry.
+  type SaveStatus = "idle" | "saving" | "saved" | "failed";
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const saveFlashTimerRef = useRef<number | null>(null);
-  const handleManualSave = useCallback(() => {
-    persistNow();
-    setSaveStatus("saved");
+  const handleManualSave = useCallback(async () => {
     if (saveFlashTimerRef.current !== null) {
       window.clearTimeout(saveFlashTimerRef.current);
+      saveFlashTimerRef.current = null;
     }
+    setSaveStatus("saving");
+    const ok = await persistNowAwaitable();
+    setSaveStatus(ok ? "saved" : "failed");
+    const flashMs = ok ? 1500 : 4000;
     saveFlashTimerRef.current = window.setTimeout(() => {
       setSaveStatus("idle");
       saveFlashTimerRef.current = null;
-    }, 1500);
-  }, [persistNow]);
+    }, flashMs);
+  }, [persistNowAwaitable]);
   useEffect(() => {
     return () => {
       if (saveFlashTimerRef.current !== null) {
@@ -1405,6 +1445,12 @@ function DesignPageBody() {
   // as a header click.
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => setPaletteOpener(() => setPaletteOpen(true)), []);
+  // Cmd+S (Mod+S) — manual save hotkey. Same callback as the header
+  // IconButton, so the two surfaces stay in lockstep on `saveStatus`
+  // ("저장됨" flash flips uniformly whether the user clicks or types).
+  // Re-registers when the callback identity changes (after
+  // `persistNow` rotates inside useDesign, etc.).
+  useEffect(() => setDesignSaver(handleManualSave), [handleManualSave]);
 
   // WI-033 A3 — register a host-side selection navigator so the four
   // `selection.*` hotkeys (Enter / Shift+Enter / Tab / Shift+Tab) can
@@ -1951,25 +1997,23 @@ function DesignPageBody() {
                                   sees an explicit acknowledgement (the
                                   cloud POST itself is fire-and-forget). */}
                               <AITooltip
-                                context={
-                                  saveStatus === "saved"
-                                    ? "저장됨"
-                                    : "현재 디자인 저장"
-                                }
-                                actions={[{ action: "서버로 즉시 저장" }]}
+                                context={SAVE_TOOLTIP_CONTEXT[saveStatus]}
+                                actions={[{ action: SAVE_TOOLTIP_ACTION[saveStatus] }]}
                               >
                                 <IconButton
                                   aria-label="Save design to server"
                                   size="sm"
-                                  onClick={handleManualSave}
+                                  onClick={() => void handleManualSave()}
+                                  disabled={saveStatus === "saving"}
                                   data-testid="toolbar-save"
                                   data-state={saveStatus}
+                                  className={
+                                    saveStatus === "failed"
+                                      ? "text-[color:var(--text-warn,#d97706)]"
+                                      : undefined
+                                  }
                                 >
-                                  {saveStatus === "saved" ? (
-                                    <IconCloudCheck />
-                                  ) : (
-                                    <IconCloudUpload />
-                                  )}
+                                  {SAVE_GLYPH_BY_STATUS[saveStatus]}
                                 </IconButton>
                               </AITooltip>
                               <Button size="md" trailingIcon={<IconPlay size={14} />} asChild>
