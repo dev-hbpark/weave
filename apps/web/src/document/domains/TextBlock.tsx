@@ -28,6 +28,7 @@ import {
 import { useSelection } from "../interactions/selection-context.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import type { AgoItem, ItemFrame, TextAttrs } from "../types.js";
+import { deriveTextAutoResize } from "./derive-text-auto-resize.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -68,7 +69,13 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // WI-029 / DR-016 — Fixed mode locks both dimensions. The ResizeObserver
   // must NOT auto-fit height in NONE; otherwise the user-set height would
   // be overwritten by content fit.
-  const autoResizeMode = a.textAutoResize ?? "HEIGHT";
+  //
+  // WI-019 B4 / T3 Modify — the legacy `textAutoResize` field was removed
+  // in agocraft schema v10. We derive the equivalent mode from
+  // `attrs.layoutChild` via `deriveTextAutoResize` — see that helper for
+  // the closed mapping table. Legacy designs migrate automatically when
+  // loaded through Serializer.fromJSON({ migrations: [...] }).
+  const autoResizeMode = deriveTextAutoResize(a.layoutChild);
   const autoResizeRef = useRef(autoResizeMode);
   autoResizeRef.current = autoResizeMode;
 
@@ -107,7 +114,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   //     until Phase 2 rich text editor renders runs)
   //   textTruncation = "ENDING" + maxLines → -webkit-line-clamp
   //   hyperlink → wrap content in <a> when set
-  //   textAutoResize = "NONE" (Fixed) → overflow: hidden (auto-height ResizeObserver no-ops)
+  //   layoutChild = Fixed (any non-scale anchor) → overflow: hidden (auto-height ResizeObserver no-ops)
   const verticalAlign = a.textAlignVertical ?? "TOP";
   // Phase 1.5 Phase A — prefer the UPPERCASE `textAlignHorizontal` (Figma-
   // convention) and fall back to legacy lowercase `textAlign` for v6
@@ -146,7 +153,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   })();
   const justifyContent =
     verticalAlign === "CENTER" ? "center" : verticalAlign === "BOTTOM" ? "flex-end" : "flex-start";
-  const isFixed = a.textAutoResize === "NONE";
+  const isFixed = autoResizeMode === "NONE";
   const truncate = isFixed && a.textTruncation === "ENDING";
   const containerStyle: CSSProperties = {
     width: "100%",

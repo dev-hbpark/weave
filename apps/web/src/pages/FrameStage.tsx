@@ -61,6 +61,7 @@ import {
   useSelectionChromeVisible,
 } from "../document";
 import { findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
+import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../document/domains/derive-text-auto-resize.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
 import { useRouterOrNull } from "../document/interactions/router-context.js";
@@ -492,17 +493,16 @@ function NestedFrame({
     // are rendered without clipping at the frame level — they show the
     // way the author placed them rather than the frame chopping them off.
     overflow: "visible",
-    // Frame chrome (outline / border) only renders in edit mode. Selected
-    // frame is highlighted; unselected frames get a hairline so users can
-    // see the frame boundary while authoring. Presentation pass renders
-    // documents as bare content on the white stage.
-    outline: editing
-      ? isSelected
-        ? "2px solid var(--accent)"
-        : "1px solid var(--surface-1-border)"
-      : undefined,
-    outlineOffset: editing ? (isSelected ? -2 : -1) : undefined,
-    borderRadius: editing ? "var(--radius-md)" : undefined,
+    // Frame chrome (outline / border) only renders in edit mode. Unselected
+    // frames get a hairline so users can see the frame boundary while
+    // authoring; the SELECTED outline is owned exclusively by SelectionLayer
+    // (portal'd to body, constant stroke under camera zoom) — painting a
+    // second outline on the wrapper produced a redundant rounded rect over
+    // SelectionLayer's sharp accent ring.
+    // Presentation pass renders documents as bare content on the white stage.
+    outline: editing && !isSelected ? "1px solid var(--surface-1-border)" : undefined,
+    outlineOffset: editing && !isSelected ? -1 : undefined,
+    borderRadius: editing && !isSelected ? "var(--radius-md)" : undefined,
     boxSizing: "border-box",
     // Document background is transparent by default — the design's white
     // canvas shows through. Each domain renderer paints its own content.
@@ -816,8 +816,10 @@ function NestedFrame({
               itemKind: kind,
               unitKinds: item.units.map((u) => u.kind),
             };
-            // WI-029 / DR-016 — text item resize handles are now mode-gated
-            // by textAutoResize. Replaces Phase 18's hardcoded set.
+            // WI-029 / DR-016 — text item resize handles are mode-gated.
+            // WI-019 B4 / T3 Modify — derives from `attrs.layoutChild`
+            // (agocraft v10) via `deriveTextAutoResize`; the legacy
+            // `textAutoResize` field is removed.
             //   WIDTH_AND_HEIGHT (Auto-W) → no handles (auto-shrinks to content)
             //   HEIGHT (Auto-H)           → e/w only (width manual, height auto)
             //   NONE (Fixed)              → all 8 (width+height locked, no auto-fit)
@@ -825,8 +827,9 @@ function NestedFrame({
             // change only the box dimensions, never fontSize. DR-016 박제.
             const textHandleDirs = (() => {
               if (kind !== "text") return undefined;
-              const attrs = item.attrs as unknown as { textAutoResize?: string };
-              switch (attrs.textAutoResize) {
+              const attrs = item.attrs as unknown as { layoutChild?: import("@agocraft/core").LayoutChildPolicy };
+              const mode = deriveTextAutoResizeForFrameStage(attrs.layoutChild);
+              switch (mode) {
                 case "WIDTH_AND_HEIGHT":
                   return [] as const;
                 case "NONE":
@@ -2012,9 +2015,13 @@ export function FrameStage(props: FrameStageProps) {
                 snapSize={20}
                 clientToLocal={clientToDesignLocal}
                 visualHost={designPlaneRef}
-                // Plain drag is reserved for marquee multi-selection (Figma
-                // parity). Frame creation via drag now requires Alt held.
-                requireAltKey
+                // Single source of truth: alt-gating reads from the
+                // InsertableCapability registry.  Same field the cursor
+                // tooltip describer consults, so any future container
+                // (a frame-as-container, a group, …) only has to set
+                // `requireAltKey` once in its capability and BOTH the
+                // gesture gate AND the hover hint update together.
+                requireAltKey={designCapability?.requireAltKey === true}
                 acceptTarget={emptyRegionAccept}
                 style={{ position: "absolute", inset: 0 }}
               >

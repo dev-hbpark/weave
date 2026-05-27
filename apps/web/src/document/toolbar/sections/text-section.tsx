@@ -10,13 +10,17 @@ import type {
   TextAlign,
   TextAlignVertical,
   TextAttrs,
-  TextAutoResize,
   TextCase,
   TextDecoration,
   TextStyle,
   TextTruncation,
   TextWeight,
 } from "@agocraft/core";
+import {
+  deriveTextAutoResize,
+  layoutChildFromTextAutoResize,
+  type LegacyTextAutoResize,
+} from "../../domains/derive-text-auto-resize.js";
 import {
   ContextualToolbar as Bar,
   Button,
@@ -107,9 +111,14 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     (it) => (it.attrs as unknown as TextAttrs).textAlign,
   );
   const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as TextAttrs).opacity);
-  const textAutoResize = sharedValue<TextAutoResize>(
+  // WI-019 B4 / T3 Modify — the legacy `textAutoResize` field is gone in
+  // agocraft v10. The 3-mode SegmentedControl below stays in v1 (familiar
+  // UX) but reads / writes through `attrs.layoutChild` via the canonical
+  // mapping in derive-text-auto-resize.ts. A full 4×4 anchor picker
+  // (WI019_LAYOUT_ENABLED) lands as a follow-up PR.
+  const textAutoResize = sharedValue<LegacyTextAutoResize>(
     items,
-    (it) => (it.attrs as unknown as TextAttrs).textAutoResize ?? "HEIGHT",
+    (it) => deriveTextAutoResize((it.attrs as unknown as TextAttrs).layoutChild),
   );
   const textAlignVertical = sharedValue<TextAlignVertical>(
     items,
@@ -163,7 +172,8 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         <IconButton
           aria-label="굵게"
           aria-pressed={isMixed(fontWeight) ? "mixed" : isBold}
-          title="굵게 (Bold)"
+          data-tip="굵게"
+          data-tip-kbd="⌘ B"
           size="sm"
           data-testid="text-quick-bold"
           onClick={() =>
@@ -180,7 +190,8 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         <IconButton
           aria-label="기울임"
           aria-pressed={isMixed(fontStyle) ? "mixed" : isItalic}
-          title="기울임 (Italic)"
+          data-tip="기울임"
+          data-tip-kbd="⌘ I"
           size="sm"
           data-testid="text-quick-italic"
           onClick={() =>
@@ -197,7 +208,8 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         <IconButton
           aria-label="밑줄"
           aria-pressed={isMixed(textDecoration) ? "mixed" : isUnderline}
-          title="밑줄 (Underline)"
+          data-tip="밑줄"
+          data-tip-kbd="⌘ U"
           size="sm"
           data-testid="text-quick-underline"
           onClick={() =>
@@ -332,11 +344,17 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
           <TextOnboardingHint
             anchor={
               <div data-testid="text-mode-toggle">
-                <SegmentedControl<TextAutoResize>
+                <SegmentedControl<LegacyTextAutoResize>
                   value={isMixed(textAutoResize) ? "HEIGHT" : textAutoResize}
                   onValueChange={(v) =>
                     updateAll(editor, ids, (prev) => ({
-                      attrs: { ...prev.attrs, textAutoResize: v },
+                      attrs: {
+                        ...prev.attrs,
+                        // WI-019 B4 — write through layoutChild instead of
+                        // the removed textAutoResize field. The legacy 3-
+                        // mode UX is preserved via canonical mapping.
+                        layoutChild: layoutChildFromTextAutoResize(v),
+                      },
                     }))
                   }
                   options={[
@@ -416,7 +434,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 }
                 data-testid="text-bg-clear"
                 aria-label="배경 비우기"
-                title="배경 비우기 (투명)"
+                data-tip="배경 비우기 (투명)"
               >
                 <IconClose size={14} />
               </Button>
@@ -534,7 +552,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 }}
                 data-testid="text-hyperlink-clear"
                 aria-label="링크 비우기"
-                title="링크 비우기"
+                data-tip="링크 비우기"
               >
                 <IconClose size={14} />
               </Button>

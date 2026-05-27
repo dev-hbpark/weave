@@ -246,7 +246,10 @@ function buildText(
     letterSpacing: 0,
     opacity: 1,
     shadow: null,
-    textAutoResize: "HEIGHT",
+    // textAutoResize removed in agocraft schema v10 (WI-019 B4, T3 Modify).
+    // Layout intent moves to attrs.layoutChild. Legacy designs are auto-
+    // migrated by migrateTextAutoResizeToLayoutChild; new seeds leave
+    // layoutChild undefined and rely on derive-from-policy at render time.
     textTruncation: "DISABLED",
     maxLines: null,
     textAlignVertical: "TOP",

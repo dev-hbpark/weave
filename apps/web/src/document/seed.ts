@@ -145,7 +145,10 @@ export function createDefaultItem<K extends DomainKind>(
       opacity: 1,
       shadow: null,
       // ─── Phase 1 (WI-016) additive defaults ─────────────────────────
-      textAutoResize: "HEIGHT",
+      // textAutoResize removed in agocraft schema v10 (WI-019 B4 / T3 Modify).
+      // Layout intent moves to attrs.layoutChild; render path derives the
+      // legacy auto-resize semantic from the anchor pair when layoutChild is
+      // populated. Legacy designs are auto-migrated on first load.
       textTruncation: "DISABLED",
       maxLines: null,
       textAlignVertical: "TOP",

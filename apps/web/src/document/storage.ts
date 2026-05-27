@@ -5,6 +5,7 @@ import {
   createSchema,
   createSerializer,
   itemId,
+  migrateTextAutoResizeToLayoutChild,
 } from "@agocraft/core";
 import { ensureRootStyleProvider, toAgocraftDocument } from "./agocraft-mirror.js";
 import { migrateLegacyKindsToFrame } from "./migrate-frame-only.js";
@@ -325,6 +326,10 @@ export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | unde
   const result = serializer.fromJSON(documentJson, {
     schema: createSchema(),
     features: createFeatureRegistry(),
+    // WI-042 / RISK-001 C1.1 — auto-upgrade v9 docs (textAutoResize) into
+    // v10's layoutChild. The helper is a no-op on already-v10 input and
+    // never clobbers a pre-existing layoutChild.
+    migrations: [migrateTextAutoResizeToLayoutChild],
     onUnknown: "preserve",
   });
   if (!result.ok) return undefined;
@@ -380,6 +385,8 @@ export function loadDesign(id: string): Design | undefined {
         const result = serializer.fromJSON(documentJson, {
           schema: createSchema(),
           features: createFeatureRegistry(),
+          // WI-042 / RISK-001 C1.1 — v9 → v10 textAutoResize auto-migration.
+          migrations: [migrateTextAutoResizeToLayoutChild],
           onUnknown: "preserve",
         });
         if (result.ok) {
@@ -617,6 +624,8 @@ function readV4Document(id: string): AgocraftDocument | undefined {
       const result = serializer.fromJSON(parsed, {
         schema: createSchema(),
         features: createFeatureRegistry(),
+        // WI-042 / RISK-001 C1.1 — v9 → v10 textAutoResize auto-migration.
+        migrations: [migrateTextAutoResizeToLayoutChild],
         onUnknown: "preserve",
       });
       if (result.ok) return result.document;

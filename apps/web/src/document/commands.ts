@@ -19,7 +19,14 @@
 // Callbacks signature (`WeaveCommandTargets`) stays the same so the host
 // (`useWeaveEditor`) can register both flavors uniformly.
 
-import type { Item as AgocraftItem, Unit as AgocraftUnit, SerializedItem } from "@agocraft/core";
+import type {
+  Item as AgocraftItem,
+  BuiltinItemFrame as AgocraftItemFrame,
+  LayoutChildPolicy,
+  LayoutSpec,
+  SerializedItem,
+  Unit as AgocraftUnit,
+} from "@agocraft/core";
 import {
   type Command,
   type CommandContext,
@@ -33,6 +40,8 @@ import {
   serializeItemSubtree,
   ref as styleRef,
 } from "@agocraft/core";
+import { computeLayoutPatchesOnParentResize } from "@agocraft/editor";
+import { getLayoutRegistry, WI019_LAYOUT_ENABLED } from "./layout/registry.js";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import {
   absoluteFrameBox,
@@ -155,6 +164,58 @@ export interface InsertPresetSlideInput {
  *  any depth, not only the top level. */
 function findChild(doc: CommandContext["document"], itemId: string) {
   return findItemDeep(doc, itemId);
+}
+
+/**
+ * WI-019 B6 — when a parent Item with a `layout` policy resizes, compute
+ * the child `item.attrs` Patches that ripple from the new frame and return
+ * them alongside the parent's own Patch. Gated by `WI019_LAYOUT_ENABLED` —
+ * default off during LG-001 stabilisation per RISK-001 C3.1.
+ *
+ * Pure helper: reads the *before* state directly off `parent.children`
+ * (which is still the pre-patch snapshot from `ctx.document`), and the
+ * *after* state from the just-computed `after` attrs map. The agocraft
+ * helper `computeLayoutPatchesOnParentResize` does the math.
+ */
+function maybeComputeLayoutRipplePatches(
+  parent: AgocraftItem,
+  after: Readonly<Record<string, unknown>>,
+): ReadonlyArray<Patch> {
+  if (!WI019_LAYOUT_ENABLED) return [];
+  // Parent must declare a layout policy to opt in (a missing `layout`
+  // attribute means "no ripple, behave like the legacy fixed-children
+  // model"). The flag check above is the outer guard; this one keeps
+  // the path opt-in per-item even after global flip.
+  const parentLayout = (parent.attrs as { layout?: LayoutSpec }).layout;
+  if (parentLayout === undefined) return [];
+  const beforeFrame = (parent.attrs as { frame?: AgocraftItemFrame }).frame;
+  const afterFrame = (after as { frame?: AgocraftItemFrame }).frame;
+  if (beforeFrame === undefined || afterFrame === undefined) return [];
+  // No-op resize → skip the whole pass (the adapter would also return []
+  // but the early-out avoids the children projection cost).
+  if (
+    Object.is(beforeFrame.width, afterFrame.width) &&
+    Object.is(beforeFrame.height, afterFrame.height)
+  ) {
+    return [];
+  }
+  return computeLayoutPatchesOnParentResize({
+    parentLayout,
+    parentOldRatio: beforeFrame,
+    parentNewRatio: afterFrame,
+    children: parent.children.map((c) => ({
+      itemId: c.id,
+      currentFrame: (c.attrs as { frame?: AgocraftItemFrame }).frame ?? {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        rotation: 0,
+      },
+      policy: (c.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild,
+    })),
+    registry: getLayoutRegistry(),
+  });
 }
 
 export function buildWeaveCommands(
@@ -333,6 +394,19 @@ export function buildWeaveCommands(
         before: child.attrs,
         after,
       };
+
+      // ── WI-019 B6 / WI-042 — layout ripple on parent frame resize ──
+      //
+      // If (a) the feature flag is on, (b) this Item carries a `layout`
+      // policy (so it acts as a layout parent), and (c) the patch changes
+      // `attrs.frame`, compute child layout patches via the agocraft
+      // helper and append them to the same CommandResult.patches array
+      // so the transaction runner emits them under one transactionId
+      // (single Cmd+Z restores the whole gesture).
+      const extraPatches = maybeComputeLayoutRipplePatches(child, after);
+      if (extraPatches.length > 0) {
+        return ok(undefined, [patch, ...extraPatches]);
+      }
       return ok(undefined, [patch]);
     },
   };
