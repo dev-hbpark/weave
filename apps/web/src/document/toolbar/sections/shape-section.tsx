@@ -88,7 +88,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
 
   return (
     <>
-      <Bar.Section label="Shape">
+      <Bar.Section label="Shape" priority={100}>
         <div className="inline-flex items-center">
           <SegmentedControl<ShapeSubKind>
             value={isMixed(shape) ? ("rectangle" as ShapeSubKind) : shape}
@@ -116,7 +116,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Fill">
+      <Bar.Section label="Fill" priority={90}>
         {fillIsMediaUniform && !isMixed(fillMediaSrc) ? (
           <div className="inline-flex items-center gap-1.5">
             <Button
@@ -186,7 +186,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
           </div>
         )}
       </Bar.Section>
-      <Bar.Section label="Stroke">
+      <Bar.Section label="Stroke" priority={80}>
         <div className="inline-flex items-center">
           <ColorPicker
             value={isMixed(strokeColor) ? "#cccccc" : (strokeColor ?? "#000000")}
@@ -217,7 +217,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Opacity">
+      <Bar.Section label="Opacity" priority={50}>
         <div className="inline-flex items-center">
           <NumberSlider
             value={isMixed(opacity) ? 1 : opacity}

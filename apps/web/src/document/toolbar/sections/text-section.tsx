@@ -150,7 +150,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
        *   Fixed: width + height both fixed; overflow visible or truncated
        * Mode-specific handles are gated in FrameStage.tsx — Auto-W shows no
        * resize handles, Auto-H shows e/w only, Fixed shows all 8. */}
-      <Bar.Section label="Mode">
+      <Bar.Section label="Mode" priority={45}>
         <div className="inline-flex items-center">
           {/* WI-029 R5 — wrap the 3-mode toggle in OnboardingCoachmark; the
               first time the user opens this toolbar the hint explains what
@@ -182,7 +182,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Family">
+      <Bar.Section label="Family" priority={100}>
         <div className="inline-flex items-center gap-1.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -218,7 +218,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Font">
+      <Bar.Section label="Font" priority={95}>
         <div className="inline-flex items-center gap-1.5">
           <SegmentedControl<TextWeight>
             value={isMixed(fontWeight) ? "normal" : fontWeight}
@@ -250,7 +250,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Size">
+      <Bar.Section label="Size" priority={90}>
         <div className="inline-flex items-center" data-testid="text-size-section">
           {/* WI-029 R5 — fontSize tooltip is visible for 1 week post-launch
               (LG-001 / RISK-001 #6). After the retract date the copy module
@@ -279,7 +279,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Align">
+      <Bar.Section label="Align" priority={85}>
         <div className="inline-flex items-center">
           <SegmentedControl<TextAlign>
             value={isMixed(textAlign) ? "left" : textAlign}
@@ -317,7 +317,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         </div>
       </Bar.Section>
       {/* Phase 1 (WI-029) — vertical alignment */}
-      <Bar.Section label="V-Align">
+      <Bar.Section label="V-Align" priority={40}>
         <div className="inline-flex items-center">
           <SegmentedControl<TextAlignVertical>
             value={isMixed(textAlignVertical) ? "TOP" : textAlignVertical}
@@ -338,7 +338,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
       </Bar.Section>
       <Bar.Divider />
       {/* Phase 1 (WI-029) — decoration + text case */}
-      <Bar.Section label="Decoration">
+      <Bar.Section label="Decoration" priority={45}>
         <div className="inline-flex items-center gap-1.5">
           <SegmentedControl<TextDecoration>
             value={isMixed(textDecoration) ? "NONE" : textDecoration}
@@ -357,7 +357,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
           <MixedBadge visible={isMixed(textDecoration)} />
         </div>
       </Bar.Section>
-      <Bar.Section label="Case">
+      <Bar.Section label="Case" priority={35}>
         <div className="inline-flex items-center gap-1.5">
           <SegmentedControl<TextCase>
             value={isMixed(textCase) ? "ORIGINAL" : textCase}
@@ -378,7 +378,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Color">
+      <Bar.Section label="Color" priority={80}>
         <div className="inline-flex items-center">
           <ColorPicker
             value={isMixed(color) ? "#cccccc" : (color ?? "#1f2933")}
@@ -394,7 +394,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
           <MixedBadge visible={isMixed(color)} />
         </div>
       </Bar.Section>
-      <Bar.Section label="Background">
+      <Bar.Section label="Background" priority={50}>
         <div className="inline-flex items-center gap-1.5">
           <ColorPicker
             value={isMixed(background) ? "#cccccc" : (background ?? "#ffffff")}
@@ -432,7 +432,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
       </Bar.Section>
       <Bar.Divider />
       {/* Phase 1.5 (WI-029) — line height + letter spacing sliders */}
-      <Bar.Section label="Line height">
+      <Bar.Section label="Line height" priority={30}>
         <div className="inline-flex items-center">
           <NumberSlider
             value={isMixed(lineHeight) ? 1.4 : lineHeight}
@@ -460,7 +460,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
           <MixedBadge visible={isMixed(lineHeight)} />
         </div>
       </Bar.Section>
-      <Bar.Section label="Letter spacing">
+      <Bar.Section label="Letter spacing" priority={25}>
         <div className="inline-flex items-center">
           <NumberSlider
             value={isMixed(letterSpacing) ? 0 : letterSpacing}
@@ -482,7 +482,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
       {/* Phase 1.5 (WI-029) — Truncate toggle (Fixed mode only) + maxLines */}
       {isFixedMode ? (
         <>
-          <Bar.Section label="Truncate">
+          <Bar.Section label="Truncate" priority={20}>
             <div className="inline-flex items-center">
               <SegmentedControl<TextTruncation>
                 value={isMixed(textTruncation) ? "DISABLED" : textTruncation}
@@ -501,7 +501,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             </div>
           </Bar.Section>
           {isTruncateEnding ? (
-            <Bar.Section label="Max lines">
+            <Bar.Section label="Max lines" priority={20}>
               <div className="inline-flex items-center">
                 <NumberSlider
                   value={isMixed(maxLines) || maxLines == null ? 3 : maxLines}
@@ -524,7 +524,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         </>
       ) : null}
       {/* Phase 1.5 (WI-029) — Hyperlink (box-level, v2 will be per-range) */}
-      <Bar.Section label="Hyperlink">
+      <Bar.Section label="Hyperlink" priority={25}>
         <div className="inline-flex items-center gap-1.5">
           <input
             type="url"
@@ -567,7 +567,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Opacity">
+      <Bar.Section label="Opacity" priority={45}>
         <div className="inline-flex items-center">
           <NumberSlider
             value={isMixed(opacity) ? 1 : opacity}

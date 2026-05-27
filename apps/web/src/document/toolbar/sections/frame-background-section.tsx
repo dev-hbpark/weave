@@ -23,7 +23,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
   );
   const bgHasValue = !isMixed(background) && background !== undefined;
   return (
-    <Bar.Section label="Background">
+    <Bar.Section label="Background" priority={100}>
       <div className="inline-flex items-center gap-1.5">
         <ColorPicker
           value={isMixed(background) ? "#cccccc" : (background ?? "#ffffff")}

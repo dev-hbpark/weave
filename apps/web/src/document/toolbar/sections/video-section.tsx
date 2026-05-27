@@ -51,7 +51,7 @@ export const VideoSection: ToolbarSectionComponent = ({
   );
   return (
     <>
-      <Bar.Section label="Source">
+      <Bar.Section label="Source" priority={100}>
         <div className="inline-flex items-center">
           <Button
             variant="ghost"
@@ -72,7 +72,7 @@ export const VideoSection: ToolbarSectionComponent = ({
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Fit">
+      <Bar.Section label="Fit" priority={80}>
         <div className="inline-flex items-center">
           <SegmentedControl<VideoFit>
             value={isMixed(fit) ? ("cover" as VideoFit) : fit}
@@ -91,7 +91,7 @@ export const VideoSection: ToolbarSectionComponent = ({
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Loop">
+      <Bar.Section label="Loop" priority={50}>
         <div className="inline-flex items-center">
           <Switch
             checked={isMixed(loop) ? false : loop}
@@ -104,7 +104,7 @@ export const VideoSection: ToolbarSectionComponent = ({
           <MixedBadge visible={isMixed(loop)} />
         </div>
       </Bar.Section>
-      <Bar.Section label="Muted">
+      <Bar.Section label="Muted" priority={50}>
         <div className="inline-flex items-center">
           <Switch
             checked={isMixed(muted) ? false : muted}
@@ -118,7 +118,7 @@ export const VideoSection: ToolbarSectionComponent = ({
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Volume">
+      <Bar.Section label="Volume" priority={40}>
         <div className="inline-flex items-center">
           <NumberSlider
             value={isMixed(volume) ? 1 : volume}

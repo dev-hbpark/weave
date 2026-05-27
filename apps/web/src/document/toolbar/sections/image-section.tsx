@@ -46,7 +46,7 @@ export const ImageSection: ToolbarSectionComponent = ({
   );
   return (
     <>
-      <Bar.Section label="Source">
+      <Bar.Section label="Source" priority={100}>
         <div className="inline-flex items-center">
           <Button
             variant="ghost"
@@ -67,7 +67,7 @@ export const ImageSection: ToolbarSectionComponent = ({
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Fit">
+      <Bar.Section label="Fit" priority={80}>
         <div className="inline-flex items-center">
           <SegmentedControl<ImageFit>
             value={isMixed(fit) ? ("cover" as ImageFit) : fit}
@@ -86,7 +86,7 @@ export const ImageSection: ToolbarSectionComponent = ({
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Opacity">
+      <Bar.Section label="Opacity" priority={50}>
         <div className="inline-flex items-center">
           <NumberSlider
             value={isMixed(opacity) ? 1 : opacity}
@@ -106,7 +106,7 @@ export const ImageSection: ToolbarSectionComponent = ({
         </div>
       </Bar.Section>
       <Bar.Divider />
-      <Bar.Section label="Border radius">
+      <Bar.Section label="Border radius" priority={40}>
         <div className="inline-flex items-center">
           <NumberSlider
             value={isMixed(borderRadius) ? 0 : borderRadius}
