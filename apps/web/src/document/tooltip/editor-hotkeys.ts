@@ -142,6 +142,19 @@ export function setZOrderDispatcher(fn: (dir: ZOrderDir) => void): () => void {
   };
 }
 
+/** WI-041 — clipboard dispatch host slot. DesignPage / FrameStage own
+ *  the live selection + pointer state needed for copy/cut/paste, so the
+ *  hotkey + ContextMenu surfaces dispatch through this slot. Verbs are
+ *  enumerated so the slot can stay React-agnostic. */
+export type ClipboardVerb = "copy" | "cut" | "paste" | "pasteSpecial";
+let clipboardDispatcher: ((verb: ClipboardVerb) => void) | undefined;
+export function setClipboardDispatcher(fn: (verb: ClipboardVerb) => void): () => void {
+  clipboardDispatcher = fn;
+  return () => {
+    if (clipboardDispatcher === fn) clipboardDispatcher = undefined;
+  };
+}
+
 /** EDITOR_COMMANDS entries combine the user-facing metadata (used by
  *  tooltips / buttons / palette) with the runtime action (used by the
  *  hotkey registry). The metadata is the same shape consumers see via
@@ -464,6 +477,74 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
       // Dispatched via mediaSrcOpener slot.
+    },
+  },
+  // WI-041 — clipboard commands. The four entries share a single
+  // host slot (`setClipboardDispatcher`) that closes over the live
+  // selection / pointer state in DesignPage. enabledWhen guards
+  // both the keyboard registration and the ContextMenu item's
+  // disabled state via `editorCommandMetadata.isEnabled(id, ctx)`.
+  // copy / cut require a non-text selection (a Lexical-focused
+  // user gets the browser's native copy instead); paste only
+  // needs a non-text focus + a non-empty clipboard store. Phase
+  // 6 will activate the pasteSpecial flow; v1 ships its dialog as
+  // an "in progress" stub so the Cmd+Opt+V hotkey is reserved.
+  {
+    id: "weave.clipboard.copy",
+    label: { en: "Copy", ko: "복사" },
+    description: {
+      en: "Copy the selected item to the clipboard.",
+      ko: "선택한 항목을 클립보드에 복사합니다.",
+    },
+    hotkey: { keys: "⌘ + C", binding: "Mod+C", scope: "editor" },
+    category: "clipboard",
+    enabledWhen: (ctx) =>
+      !ctx.isTextEditing && (Boolean(ctx.hasFrameSelection) || typeof ctx.selectedId === "string"),
+    action: () => {
+      clipboardDispatcher?.("copy");
+    },
+  },
+  {
+    id: "weave.clipboard.cut",
+    label: { en: "Cut", ko: "잘라내기" },
+    description: {
+      en: "Cut the selected item to the clipboard.",
+      ko: "선택한 항목을 잘라내어 클립보드에 보관합니다.",
+    },
+    hotkey: { keys: "⌘ + X", binding: "Mod+X", scope: "editor" },
+    category: "clipboard",
+    enabledWhen: (ctx) =>
+      !ctx.isTextEditing && (Boolean(ctx.hasFrameSelection) || typeof ctx.selectedId === "string"),
+    action: () => {
+      clipboardDispatcher?.("cut");
+    },
+  },
+  {
+    id: "weave.clipboard.paste",
+    label: { en: "Paste", ko: "붙여넣기" },
+    description: {
+      en: "Paste the most recent clipboard item into the current frame.",
+      ko: "클립보드의 항목을 현재 프레임에 붙여넣습니다.",
+    },
+    hotkey: { keys: "⌘ + V", binding: "Mod+V", scope: "editor" },
+    category: "clipboard",
+    enabledWhen: (ctx) => !ctx.isTextEditing && ctx.clipboardHasItems === true,
+    action: () => {
+      clipboardDispatcher?.("paste");
+    },
+  },
+  {
+    id: "weave.clipboard.pasteSpecial",
+    label: { en: "Paste Special…", ko: "선택하여 붙여넣기…" },
+    description: {
+      en: "Open the Paste Special dialog (style only, text only, …). Coming soon.",
+      ko: "선택하여 붙여넣기 대화상자를 엽니다 (스타일만, 텍스트만 등). 곧 제공됩니다.",
+    },
+    hotkey: { keys: "⌘ + ⌥ + V", binding: "Mod+Alt+V", scope: "editor" },
+    category: "clipboard",
+    enabledWhen: (ctx) => !ctx.isTextEditing && ctx.clipboardHasItems === true,
+    action: () => {
+      clipboardDispatcher?.("pasteSpecial");
     },
   },
   // WI-036 follow-up — multi-selection commands. visibleWhen reads

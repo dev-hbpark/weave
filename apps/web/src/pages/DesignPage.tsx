@@ -62,6 +62,8 @@ import {
   useTooltipsAllowed,
 } from "../document";
 import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../document/agocraft-mirror.js";
+import { clipboardStore } from "../document/clipboard/clipboard-store.js";
+import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import {
   buildFrameTree,
@@ -147,6 +149,8 @@ function FrameContextMenu({
   onZOrder,
   reparentTree,
   onReparent,
+  onClipboard,
+  clipboardHasItems,
   children,
   layers,
   onPickLayer,
@@ -165,6 +169,12 @@ function FrameContextMenu({
   /** WI-039 — fires with the picker's row id ("@root" or a frame id)
    *  when the user picks a Move-to target. */
   readonly onReparent?: (targetId: string) => void;
+  /** WI-041 — clipboard verb dispatch. Undefined hides the four
+   *  copy/cut/paste/paste-special rows entirely. */
+  readonly onClipboard?: (verb: "copy" | "cut" | "paste" | "pasteSpecial") => void;
+  /** WI-041 — disables the Paste / Paste Special rows when the clipboard
+   *  store is empty. */
+  readonly clipboardHasItems?: boolean;
   readonly children: ReactNodeAlias;
   readonly layers?: ReadonlyArray<LayerHit>;
   readonly onPickLayer?: (id: string) => void;
@@ -201,6 +211,41 @@ function FrameContextMenu({
             Selection-only navigation is the Figma-aligned paradigm;
             cursor / Enter hotkey / Layer Picker cover the deeper
             navigation cases. */}
+        {onClipboard !== undefined && (
+          <>
+            <ContextMenuItem
+              onSelect={() => onClipboard("copy")}
+              shortcut="⌘ C"
+              data-testid="ctx-copy"
+            >
+              복사
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => onClipboard("cut")}
+              shortcut="⌘ X"
+              data-testid="ctx-cut"
+            >
+              잘라내기
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => onClipboard("paste")}
+              shortcut="⌘ V"
+              disabled={clipboardHasItems !== true}
+              data-testid="ctx-paste"
+            >
+              붙여넣기
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => onClipboard("pasteSpecial")}
+              shortcut="⌘ ⌥ V"
+              disabled={clipboardHasItems !== true}
+              data-testid="ctx-paste-special"
+            >
+              선택하여 붙여넣기…
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         {onZOrder !== undefined && (
           <>
             <ContextMenuItem
@@ -747,6 +792,12 @@ function DesignPageBody() {
     (window as unknown as { __weaveDoc?: typeof docInAgocraft }).__weaveDoc = docInAgocraft;
     (window as unknown as { __weaveDesign?: typeof design }).__weaveDesign = design;
     (window as unknown as { __weaveVm?: typeof vm }).__weaveVm = vm;
+    // WI-041 Phase 4 — clipboard peek shim for the cross-tab e2e.
+    // `clipboardStore.peek()` is module state; this surface lets a
+    // second-tab assertion observe whether the BroadcastChannel /
+    // localStorage transport delivered the source tab's payload.
+    (window as unknown as { __weaveClipboardPeek?: () => unknown }).__weaveClipboardPeek =
+      () => clipboardStore.peek();
     // WI-028 sync diagnostics — only expose when the sync subsystem is
     // actually mounted (gated by `SYNC_ENABLED` at top of file). When
     // the feature is paused, `sync` is undefined and the e2e harness
@@ -970,6 +1021,46 @@ function DesignPageBody() {
   // canvas host so only that subtree triggers updates.
   const hoverContext = useHoverContext(canvasHostRef);
 
+  // WI-041 Phase 2/3 — register the clipboard command host slot. The
+  // hook subscribes to `clipboardStore` so `hasItems` flips reactively
+  // on copy/cut/paste, driving the paste button's enabled state.
+  const clipboardCommands = useClipboardCommands({
+    editor,
+    selectedId: selectedFrameId,
+    resolveContainerId: () => {
+      // v1 — paste into the document root. Future iterations may honour
+      // the hovered frame or the currently-selected frame's container.
+      // WI-033 P2 retired the explicit "entered frame" concept, so the
+      // host falls back to the root container until a follow-up
+      // surfaces a deliberate paste-target picker.
+      return undefined;
+    },
+    resolveSourceContainerId: () => {
+      // Cut targets the source item's parent — find it in the live doc.
+      if (selectedFrameId === undefined) return undefined;
+      const parent = findParentAndIndex(docInAgocraft, selectedFrameId);
+      return parent !== undefined ? String(parent.parent.id) : undefined;
+    },
+    resolveContainerSizePx: () => {
+      // FrameStage's host element is the live design plane — its bounding
+      // box (in CSS pixels) is the conversion factor we need to project
+      // pointer/offset into the parent's 0..1 ratio space (D5).
+      const host = canvasHostRef.current;
+      if (host === null) return null;
+      const rect = host.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      return { width: rect.width, height: rect.height };
+    },
+    resolvePointerInContainer: () => {
+      // HoverContext (v1) does not track pixel coordinates yet — only the
+      // hovered surface id. The paste resolver therefore takes its
+      // offset path, placing the new item at sourceFrame + 8px * N
+      // (D5 keyboard-paste fallback). Future PR can wire a pointer
+      // tracker if user feedback wants Figma's "paste at cursor".
+      return undefined;
+    },
+  });
+
   // WI-026 Phase 5 + WI-027 — host context for CommandMetadata.isEnabled
   // AND CommandMetadata.visibleWhen. Each CommandButton calls
   // registry.isEnabled(id, context); QuickActionBar calls
@@ -1014,6 +1105,10 @@ function DesignPageBody() {
       hoveredKind: hoverContext.hoveredKind,
       hoveredId: hoverContext.hoveredId,
       hoveredRole: hoverContext.hoveredRole,
+      // WI-041 — paste button + hotkey enabled state. Drives the
+      // ContextMenu's "Paste" / "Paste Special" disabled-look in real
+      // time as the clipboard store fills / clears.
+      clipboardHasItems: clipboardCommands.hasItems,
     }),
     [
       canUndo,
@@ -1024,6 +1119,7 @@ function DesignPageBody() {
       hoverContext.hoveredKind,
       hoverContext.hoveredId,
       hoverContext.hoveredRole,
+      clipboardCommands.hasItems,
     ],
   );
 
@@ -1705,6 +1801,16 @@ function DesignPageBody() {
                                       }}
                                       reparentTree={reparentTree}
                                       onReparent={handleReparent}
+                                      onClipboard={(verb) =>
+                                        dispatchEditorCommand(
+                                          `weave.clipboard.${
+                                            verb === "pasteSpecial" ? "pasteSpecial" : verb
+                                          }`,
+                                          { editor },
+                                          commandContext,
+                                        )
+                                      }
+                                      clipboardHasItems={clipboardCommands.hasItems}
                                       {...(ctx !== undefined
                                         ? {
                                             layers: ctx.layers,
