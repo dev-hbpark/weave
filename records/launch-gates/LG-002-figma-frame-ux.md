@@ -134,7 +134,7 @@ WI-033 의 Figma-aligned frame UX 를 사용자에게 가시화. **점진적 노
 | Item | Pillar | Owner | ETA |
 |---|---|---|---|
 | ~~RISK-005 #9 마케팅 surface grep~~ ✅ Closed 2026-05-26 | ~~Communications~~ | ~~hbpark~~ | ~~launch -3 일~~ |
-| Accessibility audit (keyboard nav focus / aria) — plan 박제, 실행만 | QA | hbpark / external | launch -2주 (broader Ops 와 묶음) |
+| ⚠️ **Audit executed 2026-05-28** ([AUDIT-003](../audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md)) — axe-core smoke (`apps/web/e2e/a11y-smoke.spec.ts`); 1 serious violation in design+frame surface: nested-interactive on `.group` wrapper (likely QuickActionBar or frame card). **Path A (fix) preferred before T-0; Path B (documented waiver via design-system-triage) acceptable.** Decision pending. | QA + design-system | hbpark / design-system | launch -1주 (decision deadline) |
 | Performance smoke test — plan 박제, 실행만 | QA + Engineering | hbpark / frontend-perf | launch -1주 (broader Ops 와 묶음) |
 | Monitoring + alerts (broader weave telemetry) | Operations | hbpark / sre | broader weave WI 와 묶음 |
 | Rollback test in staging | Operations | hbpark | staging 존재 시 의무 |

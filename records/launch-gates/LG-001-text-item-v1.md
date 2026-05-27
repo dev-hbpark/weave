@@ -127,7 +127,7 @@ WI-029 의 v1 텍스트 경험을 사용자에게 가시화. **점진적 노출*
 | ~~**Incident-scenario comms pre-write**~~ ✅ Closed 2026-05-26 | ~~Communications~~ | ~~hbpark~~ | ~~launch -3일~~ |
 | ~~**QA_PLAN.md**~~ ✅ Closed 2026-05-26 | ~~QA~~ | ~~hbpark~~ | ~~launch -1주~~ |
 | R4 e2e 4 deferred specs (Korean IME CDP / Cmd+B/I/U range style / StrictMode mount / 2-actor concurrent) | Engineering + QA | hbpark | launch -1주 권장 (안전망) |
-| Accessibility audit (WCAG 2.2 AA on text editing flow) — plan 박제, 실행만 | QA | hbpark / external | launch -2주 |
+| ⚠️ **Audit executed 2026-05-28** ([AUDIT-003](../audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md)) — axe-core smoke (`apps/web/e2e/a11y-smoke.spec.ts`); 2 serious violations: color-contrast on landing `.uppercase` + nested-interactive on design `.group`. **Path A (fix) preferred before T-0; Path B (documented waiver via design-system-triage) acceptable.** Decision pending. | QA + design-system | hbpark / design-system | launch -1주 (decision deadline) |
 | Performance smoke test (mid-tier + Slow-4G + INP measurement) — plan 박제, 실행만 | QA + Engineering | hbpark / frontend-perf | launch -1주 |
 | **M1 INP measurement (frontend-perf conditional)** | Engineering | hbpark / frontend-perf | **launch + 1개월** (post-launch 의무) |
 | Migration telemetry (sentry/datadog tag locale=ko-KR text-input-anomaly) | Operations | hbpark / sre | launch + 1주 |

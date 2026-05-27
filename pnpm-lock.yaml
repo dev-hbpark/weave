@@ -128,6 +128,9 @@ importers:
       '@agocraft/testing':
         specifier: file:vendor/agocraft/agocraft-testing-1.0.0-rc.20260528-wi019.tgz
         version: file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260528-wi019.tgz(typescript@5.9.3)
+      '@axe-core/playwright':
+        specifier: ^4.11.3
+        version: 4.11.3(playwright-core@1.60.0)
       '@playwright/test':
         specifier: ^1.60.0
         version: 1.60.0
@@ -292,6 +295,11 @@ packages:
 
   '@asamuzakjp/nwsapi@2.3.9':
     resolution: {integrity: sha512-n8GuYSrI9bF7FFZ/SjhwevlHc8xaVlb/7HmHelnc/PZXBD2ZR49NnN9sMMuDdEGPeeRQ5d0hqlSlEpgCX3Wl0Q==}
+
+  '@axe-core/playwright@4.11.3':
+    resolution: {integrity: sha512-h/kfksv4F0cVIDlKpT4700OehdRgpvuVskuQ2nb7/JmtWUXpe9ftHAPtwyXGvVSsa6SJ64A9ER7Zrzc/sIvC4w==}
+    peerDependencies:
+      playwright-core: '>= 1.0.0'
 
   '@babel/code-frame@7.29.0':
     resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
@@ -1753,6 +1761,10 @@ packages:
   async-sema@3.1.1:
     resolution: {integrity: sha512-tLRNUXati5MFePdAk8dw7Qt7DpxPB60ofAgn8WRhW6a2rcimZnYBP9oxHiv0OHy+Wz7kPMG+t4LGdt31+4EmGg==}
 
+  axe-core@4.11.4:
+    resolution: {integrity: sha512-KunSNx+TVpkAw/6ULfhnx+HWRecjqZGTOyquAoWHYLRSdK1tB5Ihce1ZW+UY3fj33bYAFWPu7W/GRSmmrCGuxA==}
+    engines: {node: '>=4'}
+
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
 
@@ -2850,6 +2862,11 @@ snapshots:
   '@asamuzakjp/generational-cache@1.0.1': {}
 
   '@asamuzakjp/nwsapi@2.3.9': {}
+
+  '@axe-core/playwright@4.11.3(playwright-core@1.60.0)':
+    dependencies:
+      axe-core: 4.11.4
+      playwright-core: 1.60.0
 
   '@babel/code-frame@7.29.0':
     dependencies:
@@ -4236,6 +4253,8 @@ snapshots:
       retry: 0.13.1
 
   async-sema@3.1.1: {}
+
+  axe-core@4.11.4: {}
 
   balanced-match@1.0.2: {}
 
