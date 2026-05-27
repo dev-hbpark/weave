@@ -226,3 +226,108 @@ export const IconMore = forwardRef<SVGSVGElement, IconProps>(function IconMore(p
     </SvgRoot>
   );
 });
+
+// ── alignment / distribution ────────────────────────────────────────
+// Each icon depicts a guide line (the alignment edge / axis) plus two
+// rectangles snapped to it. Distribute icons show three rectangles with
+// the gap markers between them. Stroke style follows the rest of this
+// file: 1.75 currentColor outlines + soft fills via fillOpacity for
+// solid surfaces. All glyphs share the same 24×24 grid.
+
+export const IconAlignLeft = forwardRef<SVGSVGElement, IconProps>(
+  function IconAlignLeft(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M4 3v18" />
+        <rect x="6" y="6" width="13" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="6" y="14" width="8" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconAlignHorizontalCenter = forwardRef<SVGSVGElement, IconProps>(
+  function IconAlignHorizontalCenter(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M12 3v18" />
+        <rect x="5" y="6" width="14" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="8" y="14" width="8" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconAlignRight = forwardRef<SVGSVGElement, IconProps>(
+  function IconAlignRight(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M20 3v18" />
+        <rect x="5" y="6" width="13" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="10" y="14" width="8" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconAlignTop = forwardRef<SVGSVGElement, IconProps>(
+  function IconAlignTop(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M3 4h18" />
+        <rect x="6" y="6" width="4" height="13" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="14" y="6" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.18" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconAlignVerticalCenter = forwardRef<SVGSVGElement, IconProps>(
+  function IconAlignVerticalCenter(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M3 12h18" />
+        <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="14" y="8" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.18" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconAlignBottom = forwardRef<SVGSVGElement, IconProps>(
+  function IconAlignBottom(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M3 20h18" />
+        <rect x="6" y="5" width="4" height="13" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="14" y="10" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.18" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconDistributeHorizontal = forwardRef<SVGSVGElement, IconProps>(
+  function IconDistributeHorizontal(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <rect x="3" y="8" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="10" y="8" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="17" y="8" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <path d="M7 19l1.5-1.5M14 19l1.5-1.5" opacity="0.55" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconDistributeVertical = forwardRef<SVGSVGElement, IconProps>(
+  function IconDistributeVertical(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <rect x="8" y="3" width="8" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="8" y="10" width="8" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <rect x="8" y="17" width="8" height="4" rx="1" fill="currentColor" fillOpacity="0.18" />
+        <path d="M19 7l-1.5 1.5M19 14l-1.5 1.5" opacity="0.55" />
+      </SvgRoot>
+    );
+  },
+);
