@@ -14,11 +14,11 @@
 // the four EDITOR_COMMANDS entries each fire one verb through it.
 
 import type { Editor } from "@agocraft/editor";
-import { useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { setClipboardDispatcher } from "../tooltip/editor-hotkeys.js";
 import { mountBroadcastChannelTransport } from "./broadcast-channel-transport.js";
 import { clipboardStore } from "./clipboard-store.js";
-import { SESSION_ORIGIN } from "./clipboard-types.js";
+import { type PasteMode, SESSION_ORIGIN } from "./clipboard-types.js";
 import { mountLocalStorageTransport } from "./local-storage-transport.js";
 
 export interface UseClipboardCommandsDeps {
@@ -43,8 +43,12 @@ export interface UseClipboardCommandsDeps {
    *  the container id explicitly so the underlying patch targets the
    *  right parent. */
   readonly resolveSourceContainerId: () => string | undefined;
-  /** Non-fatal feedback channel — currently used by the Paste Special
-   *  stub. Optional. */
+  /** All currently-selected target Item ids. v1 single-selection passes
+   *  a one-element array. Used by Paste Special modes (style / text /
+   *  size / position) to mutate every recipient at once. */
+  readonly resolveTargetIds: () => ReadonlyArray<string>;
+  /** Non-fatal feedback channel — surfaced to the user as a toast / log
+   *  by the host. Optional. */
   readonly onInfo?: (message: string) => void;
 }
 
@@ -53,6 +57,14 @@ export interface UseClipboardCommandsResult {
    *  understand. Drives the paste button's enabled state and the
    *  `ctx.clipboardHasItems` slot. */
   readonly hasItems: boolean;
+  /** Paste Special dialog open state. */
+  readonly pasteSpecialOpen: boolean;
+  /** Setter for the dialog open state (the dialog's controlled API). */
+  readonly setPasteSpecialOpen: (next: boolean) => void;
+  /** Fired when the user picks a mode and confirms — host invokes
+   *  `weave.clipboard.paste` with the chosen mode and the current
+   *  selection. */
+  readonly handlePasteSpecialConfirm: (mode: PasteMode) => void;
 }
 
 /** Subscribe to `clipboardStore` and expose a `hasItems` boolean that
@@ -69,6 +81,7 @@ function useClipboardHasItems(): boolean {
 
 export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboardCommandsResult {
   const hasItems = useClipboardHasItems();
+  const [pasteSpecialOpen, setPasteSpecialOpen] = useState(false);
 
   // Phase 4 — cross-tab transports. Both are mounted concurrently so a
   // tab opened in a BroadcastChannel-less environment still reaches its
@@ -120,10 +133,12 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
         return;
       }
       if (verb === "pasteSpecial") {
-        // Phase 6 lands the real dialog. v1 surfaces a discoverable
-        // "coming soon" message so users don't think the hotkey is
-        // broken.
-        deps.onInfo?.("Paste Special is coming in a follow-up release.");
+        // Phase 6 — open the dialog. The user picks a mode and the
+        // host invokes `weave.clipboard.paste` with that mode through
+        // `handlePasteSpecialConfirm`. We do not gate on
+        // `hasItems` here: the dialog itself shows the empty-clipboard
+        // state if the user opens it without a copy first.
+        setPasteSpecialOpen(true);
         return;
       }
     });
@@ -138,5 +153,42 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
     deps.onInfo,
   ]);
 
-  return { hasItems };
+  const handlePasteSpecialConfirm = useCallback(
+    (mode: PasteMode) => {
+      setPasteSpecialOpen(false);
+      if (mode === "everything") {
+        // Same path as plain Cmd+V — the dialog just acts as a UI nudge.
+        const containerSize = deps.resolveContainerSizePx();
+        if (containerSize === null) return;
+        const containerId = deps.resolveContainerId();
+        const pointer = deps.resolvePointerInContainer();
+        deps.editor.exec("weave.clipboard.paste", {
+          containerSizePx: containerSize,
+          ...(containerId !== undefined ? { containerId } : {}),
+          ...(pointer !== undefined ? { pointerInContainer: pointer } : {}),
+        });
+        return;
+      }
+      // The four "only" modes need targets. The command refuses with
+      // `no-targets` if the user has no selection — surface a toast
+      // via onInfo so the failure is visible (the dialog already
+      // shows a warning before the user submits, but this is the
+      // final guard).
+      const targetIds = deps.resolveTargetIds();
+      if (targetIds.length === 0) {
+        deps.onInfo?.("Paste Special needs a target selection.");
+        return;
+      }
+      const containerSize = deps.resolveContainerSizePx();
+      if (containerSize === null) return;
+      deps.editor.exec("weave.clipboard.paste", {
+        mode,
+        targetIds,
+        containerSizePx: containerSize,
+      });
+    },
+    [deps],
+  );
+
+  return { hasItems, pasteSpecialOpen, setPasteSpecialOpen, handlePasteSpecialConfirm };
 }

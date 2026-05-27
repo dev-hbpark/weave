@@ -80,6 +80,54 @@ export function countSubtreeNodes(item: SerializedItem): number {
   return n;
 }
 
+/**
+ * Paste Special — the five paste-mode flavours (DR-019 D6).
+ *
+ *   - `everything`: default Cmd+V. Insert the source as a new child
+ *     under the destination container; the existing selection is not
+ *     mutated.
+ *   - `style`: copy visual style keys (color / border / shadow /
+ *     typography) from the source onto every currently-selected target
+ *     Item, leaving frame / text / children intact.
+ *   - `text`: copy `text` / `textRuns` from the source's text node
+ *     onto each currently-selected text target.
+ *   - `size`: copy `frame.width` / `frame.height` from the source onto
+ *     each currently-selected target; position is preserved.
+ *   - `position`: copy `frame.x` / `frame.y` from the source onto each
+ *     currently-selected target; size is preserved.
+ */
+export type PasteMode = "everything" | "style" | "text" | "size" | "position";
+
+/** Whitelist of source-item attribute keys propagated by the
+ *  `style`-mode paste. Keys absent from the source's `attrs` are simply
+ *  skipped — the target keeps its existing value. */
+export const STYLE_ATTRIBUTE_KEYS: ReadonlyArray<string> = [
+  "color",
+  "backgroundColor",
+  "background",
+  "border",
+  "borderColor",
+  "borderWidth",
+  "borderRadius",
+  "shadow",
+  "opacity",
+  "fill",
+  "stroke",
+  "strokeWidth",
+  // Text-kind style — propagating these onto non-text targets is harmless
+  // (the target's renderer ignores unknown attrs).
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "fontStyle",
+  "textDecoration",
+  "textAlign",
+  "textAlignHorizontal",
+  "lineHeight",
+  "lineHeightSpec",
+  "letterSpacing",
+];
+
 /** Stable per-tab origin id, minted once when this module loads. Used
  *  by both the copy command (stamped into each payload) and the
  *  BroadcastChannel transport (drops self-receives by comparing

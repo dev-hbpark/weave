@@ -47,7 +47,9 @@ import {
   countSubtreeNodes,
   type ItemsClipboardPayload,
   MAX_PASTE_NODES,
+  type PasteMode,
   SESSION_ORIGIN,
+  STYLE_ATTRIBUTE_KEYS,
 } from "./clipboard/clipboard-types.js";
 import { type PasteCoordInput, resolvePasteFrame } from "./clipboard/paste-coord.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
@@ -859,7 +861,9 @@ export function buildWeaveCommands(
   }
 
   interface ClipboardPasteInput {
-    /** Target container. Defaults to the document root. */
+    /** Target container for the `everything` mode. Defaults to the
+     *  document root. Ignored by Paste Special modes — those mutate
+     *  `targetIds` in place. */
     readonly containerId?: string;
     /** Resolved pixel size of the destination container. Provided by the
      *  host (FrameStage knows the rendered frame box). Required for the
@@ -870,7 +874,151 @@ export function buildWeaveCommands(
      *  `undefined` for keyboard-only paste — the resolver falls back to
      *  the source frame + offset. */
     readonly pointerInContainer?: PasteCoordInput["pointerInContainer"];
+    /** Paste mode (DR-019 D6). Defaults to `"everything"` for plain
+     *  Cmd+V. Cmd+Opt+V opens the Paste Special dialog which then
+     *  invokes this command with one of the four "only" modes. */
+    readonly mode?: PasteMode;
+    /** Currently-selected target Item ids. Required by every Paste
+     *  Special mode (style / text / size / position). v1 v iterates
+     *  the list and emits one Patch per target so a single Cmd+Z
+     *  reverts every recipient at once (history's automerge collapses
+     *  same-transaction patches into one entry). */
+    readonly targetIds?: ReadonlyArray<string>;
   }
+
+  // ── Paste Special handlers — declarative registry (Rule 6) ──────────────
+  //
+  // Each handler walks the currently-selected targets and emits a list
+  // of `item.attrs` patches projecting the relevant slice of the source
+  // payload onto each. Modes that need no patch (no selection, no
+  // applicable target) return an empty patch list and the command
+  // returns `ok` — the user experience is "selected nothing useful, the
+  // clipboard didn't move".
+  type StyleHandler = (args: {
+    readonly doc: CommandContext["document"];
+    readonly sourceAttrs: Readonly<Record<string, unknown>>;
+    readonly targetIds: ReadonlyArray<string>;
+  }) => Patch[];
+
+  const pickStyleAttrs = (source: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const k of STYLE_ATTRIBUTE_KEYS) {
+      if (k in source) out[k] = source[k];
+    }
+    return out;
+  };
+
+  const pasteStyleHandler: StyleHandler = ({ doc, sourceAttrs, targetIds }) => {
+    const slice = pickStyleAttrs(sourceAttrs);
+    if (Object.keys(slice).length === 0) return [];
+    const patches: Patch[] = [];
+    for (const id of targetIds) {
+      const target = findItemDeep(doc, id);
+      if (target === undefined) continue;
+      patches.push({
+        type: "item.attrs",
+        itemId: target.id,
+        before: target.attrs,
+        after: { ...target.attrs, ...slice },
+      });
+    }
+    return patches;
+  };
+
+  const pasteTextHandler: StyleHandler = ({ doc, sourceAttrs, targetIds }) => {
+    // Text-only paste touches `text` + `textRuns`. Targets that are not
+    // text-kind silently skip — the user might have a mixed selection.
+    const sourceText = "text" in sourceAttrs ? sourceAttrs.text : undefined;
+    const sourceRuns = "textRuns" in sourceAttrs ? sourceAttrs.textRuns : undefined;
+    if (sourceText === undefined && sourceRuns === undefined) return [];
+    const patches: Patch[] = [];
+    for (const id of targetIds) {
+      const target = findItemDeep(doc, id);
+      if (target === undefined) continue;
+      if (target.kind !== "text") continue;
+      const next: Record<string, unknown> = { ...target.attrs };
+      if (sourceText !== undefined) next.text = sourceText;
+      if (sourceRuns !== undefined) next.textRuns = sourceRuns;
+      patches.push({
+        type: "item.attrs",
+        itemId: target.id,
+        before: target.attrs,
+        after: next,
+      });
+    }
+    return patches;
+  };
+
+  const pasteSizeHandler: StyleHandler = ({ doc, sourceAttrs, targetIds }) => {
+    const sourceFrame = (sourceAttrs.frame ?? undefined) as
+      | { width?: number; height?: number }
+      | undefined;
+    if (
+      sourceFrame === undefined ||
+      sourceFrame.width === undefined ||
+      sourceFrame.height === undefined
+    ) {
+      return [];
+    }
+    const patches: Patch[] = [];
+    for (const id of targetIds) {
+      const target = findItemDeep(doc, id);
+      if (target === undefined) continue;
+      const targetFrame = (target.attrs as { frame?: ItemFrame }).frame;
+      if (targetFrame === undefined) continue;
+      const nextFrame: ItemFrame = {
+        ...targetFrame,
+        width: sourceFrame.width,
+        height: sourceFrame.height,
+      };
+      patches.push({
+        type: "item.attrs",
+        itemId: target.id,
+        before: target.attrs,
+        after: { ...target.attrs, frame: nextFrame },
+      });
+    }
+    return patches;
+  };
+
+  const pastePositionHandler: StyleHandler = ({ doc, sourceAttrs, targetIds }) => {
+    const sourceFrame = (sourceAttrs.frame ?? undefined) as
+      | { x?: number; y?: number }
+      | undefined;
+    if (
+      sourceFrame === undefined ||
+      sourceFrame.x === undefined ||
+      sourceFrame.y === undefined
+    ) {
+      return [];
+    }
+    const patches: Patch[] = [];
+    for (const id of targetIds) {
+      const target = findItemDeep(doc, id);
+      if (target === undefined) continue;
+      const targetFrame = (target.attrs as { frame?: ItemFrame }).frame;
+      if (targetFrame === undefined) continue;
+      const nextFrame: ItemFrame = {
+        ...targetFrame,
+        x: sourceFrame.x,
+        y: sourceFrame.y,
+      };
+      patches.push({
+        type: "item.attrs",
+        itemId: target.id,
+        before: target.attrs,
+        after: { ...target.attrs, frame: nextFrame },
+      });
+    }
+    return patches;
+  };
+
+  const PASTE_SPECIAL_HANDLERS: Record<Exclude<PasteMode, "everything">, StyleHandler> = {
+    style: pasteStyleHandler,
+    text: pasteTextHandler,
+    size: pasteSizeHandler,
+    position: pastePositionHandler,
+  };
 
   const clipboardCopy: Command<ClipboardCopyInput, void> = {
     name: "weave.clipboard.copy",
@@ -985,12 +1133,37 @@ export function buildWeaveCommands(
         return fail("clipboard-empty", "weave.clipboard.paste: clipboard is empty");
       }
       if (payload.kind !== "weave/items.v1") {
-        // v1 only handles items payloads — style-only is Phase 6.
         return fail(
           "unsupported-kind",
           `weave.clipboard.paste: kind "${payload.kind}" not supported in v1`,
         );
       }
+
+      // Paste Special — mode-aware dispatch through the registry. The
+      // four "only" modes don't touch the document tree; they project a
+      // slice of the source's attrs onto every currently-selected target.
+      const mode: PasteMode = input.mode ?? "everything";
+      if (mode !== "everything") {
+        const handler = PASTE_SPECIAL_HANDLERS[mode];
+        const targetIds = input.targetIds ?? [];
+        if (targetIds.length === 0) {
+          return fail(
+            "no-targets",
+            `weave.clipboard.paste(${mode}): no selected targets to apply to`,
+          );
+        }
+        const patches = handler({
+          doc: ctx.document,
+          sourceAttrs: payload.data.item.attrs,
+          targetIds,
+        });
+        // Empty patch list = source had no applicable slice or none of
+        // the targets accept it (e.g., `text` mode on a non-text
+        // selection). Return ok so the clipboard stays intact and the
+        // host's Paste Special dialog closes cleanly.
+        return ok("", patches);
+      }
+
       const container = findContainer(ctx.document, input.containerId);
       if (container === undefined) {
         return fail(

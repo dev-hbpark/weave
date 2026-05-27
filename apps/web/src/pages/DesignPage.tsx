@@ -63,6 +63,7 @@ import {
 } from "../document";
 import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
+import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import { useIsTextEditing } from "../document/clipboard/use-is-text-editing.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
@@ -1041,6 +1042,13 @@ function DesignPageBody() {
       if (selectedFrameId === undefined) return undefined;
       const parent = findParentAndIndex(docInAgocraft, selectedFrameId);
       return parent !== undefined ? String(parent.parent.id) : undefined;
+    },
+    resolveTargetIds: () => {
+      // Paste Special targets the currently-selected items. v1
+      // single-selection collapses to a one-element array; once
+      // WI-036's multi-set graduates, the same call still returns
+      // every selected id.
+      return Array.from(selectedIds);
     },
     resolveContainerSizePx: () => {
       // FrameStage's host element is the live design plane — its bounding
@@ -2136,6 +2144,19 @@ function DesignPageBody() {
                               addNewItem(pending.kind, undefined, src);
                             }}
                             onCancel={() => setPendingMedia(null)}
+                          />
+                          {/* WI-041 Phase 6 — Paste Special dialog.
+                              Cmd+Opt+V (or ContextMenu "선택하여
+                              붙여넣기…") opens the dialog; on confirm
+                              the host invokes `weave.clipboard.paste`
+                              with the chosen mode and the current
+                              selection. */}
+                          <PasteSpecialDialog
+                            open={clipboardCommands.pasteSpecialOpen}
+                            onOpenChange={clipboardCommands.setPasteSpecialOpen}
+                            onConfirm={clipboardCommands.handlePasteSpecialConfirm}
+                            clipboardHasItems={clipboardCommands.hasItems}
+                            hasSelection={selectedIds.size > 0}
                           />
                           {/* WI-030 — slide preset picker. Add menu →
                           "슬라이드…" opens this Dialog. Picking a
