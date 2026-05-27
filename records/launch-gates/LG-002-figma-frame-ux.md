@@ -65,7 +65,7 @@ WI-033 의 Figma-aligned frame UX 를 사용자에게 가시화. **점진적 노
 - [x] **Unit test**: 105/105 PASS (helpers: selection-from-hit × 12, selection-nav × 16, hit-test × 9)
 - [x] **frame-drill-in.spec.ts** 의 deprecated 4 spec → `test.describe.skip` + WI-033 P2 todo 박제 (RISK-005 R4)
 - [ ] Accessibility audit (keyboard nav focus / aria roles) — plan 박제, 실행 잔여 (LG-001 의 broader Ops 와 묶임)
-- [ ] Performance smoke test (selection-heavy 시나리오) — plan 박제, 실행 잔여 (LG-001 broader Ops 와 묶임)
+- [x] Performance smoke test ✅ executed 2026-05-28 (AUDIT-004) — frame interaction INP ≈ 20 ms (well under 200 ms "Good"), CLS = 0 on the design + frame surface, LCP bundle-bound under Slow 4G (informational, audience = desktop). Regression gate in `apps/web/e2e/perf-smoke.spec.ts`.
 
 **Status: Conditional** — e2e + unit 의무 100%, accessibility / perf smoke 실행은 broader Ops maturity 와 묶임.
 
@@ -135,7 +135,7 @@ WI-033 의 Figma-aligned frame UX 를 사용자에게 가시화. **점진적 노
 |---|---|---|---|
 | ~~RISK-005 #9 마케팅 surface grep~~ ✅ Closed 2026-05-26 | ~~Communications~~ | ~~hbpark~~ | ~~launch -3 일~~ |
 | ~~Accessibility audit (keyboard nav focus / aria)~~ ✅ **Path A complete 2026-05-28** ([AUDIT-003](../audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md)) — V2 nested-interactive fixed in `ThumbnailPanel.tsx` (role="listbox"+role="option" demoted to role="group"; tile-activation moved to a sibling inner `<button>` so the focus-toggle button no longer nests). axe-core smoke 3/3 PASS. Regression gate active. | ~~QA~~ | ~~hbpark~~ | ~~launch -2주~~ |
-| Performance smoke test — plan 박제, 실행만 | QA + Engineering | hbpark / frontend-perf | launch -1주 (broader Ops 와 묶음) |
+| ~~Performance smoke test~~ ✅ **Executed 2026-05-28** ([AUDIT-004](../audits/AUDIT-004-2026-05-28-perf-smoke-core-web-vitals.md)) — frame interaction INP ≈ 20 ms, CLS = 0 on design+frame surface, LCP bundle-bound under Slow 4G (informational, audience = desktop latest-2). 3/3 PASS. Regression gate active. | ~~QA + Engineering~~ | ~~hbpark / frontend-perf~~ | ~~launch -1주~~ |
 | Monitoring + alerts (broader weave telemetry) | Operations | hbpark / sre | broader weave WI 와 묶음 |
 | Rollback test in staging | Operations | hbpark | staging 존재 시 의무 |
 | External announcement 채널 (blog / social / status page) | Communications | hbpark / marketing | broader weave maturity 와 묶음 |

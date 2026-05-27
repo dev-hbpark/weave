@@ -67,7 +67,7 @@ WI-029 의 v1 텍스트 경험을 사용자에게 가시화. **점진적 노출*
 - [x] `QA_PLAN.md` 박제 (2026-05-26) — `features/text/QA_PLAN.md`: scope, test pyramid (unit/e2e/manual), a11y checklist, perf smoke target, regression green-gate, exit criteria
 - [x] Regression suite green — 모든 verify gate PASS (typecheck + test + build + declarativecheck + lint)
 - [ ] **Accessibility (WCAG 2.2 AA on core flows)** — `QA_PLAN.md` §3 self-audit checklist 박제. 실제 audit 실행은 T-0 -2주 진행 예정. Lighthouse a11y ≥ 95 목표
-- [ ] **Performance smoke test (mid-tier device + Slow-4G)** — `QA_PLAN.md` §4 measurement plan 박제. LCP/CLS는 T-0 -1주, INP는 M1 (launch + 1mo) 측정
+- [x] **Performance smoke test (mid-tier device + Slow-4G)** ✅ executed 2026-05-28 (AUDIT-004). LCP / CLS / INP-equiv all captured; bundle-bound LCP tracked post-launch.
 - [x] Manual exploratory — Lexical PoC Korean IME 4-browser PASS (hbpark 2026-05-25) + R5 launch comm UI 4-theme PASS (2026-05-26)
 
 **Status: Conditional** — QA_PLAN.md ✅ Cleared (2026-05-26). 잔여 accessibility audit + perf smoke 는 plan 박제 완료, 실행만 남음.
@@ -128,7 +128,7 @@ WI-029 의 v1 텍스트 경험을 사용자에게 가시화. **점진적 노출*
 | ~~**QA_PLAN.md**~~ ✅ Closed 2026-05-26 | ~~QA~~ | ~~hbpark~~ | ~~launch -1주~~ |
 | R4 e2e 4 deferred specs (Korean IME CDP / Cmd+B/I/U range style / StrictMode mount / 2-actor concurrent) | Engineering + QA | hbpark | launch -1주 권장 (안전망) |
 | ~~Accessibility audit (WCAG 2.2 AA on text editing flow)~~ ✅ **Path A complete 2026-05-28** ([AUDIT-003](../audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md)) — V1 (landing color-contrast: literal body bg + 84% text) + V2 (design nested-interactive: ThumbnailPanel restructured to sibling buttons + role="group") both fixed. axe-core smoke 3/3 PASS. Regression gate active in `apps/web/e2e/a11y-smoke.spec.ts`. | ~~QA~~ | ~~hbpark~~ | ~~launch -2주~~ |
-| Performance smoke test (mid-tier + Slow-4G + INP measurement) — plan 박제, 실행만 | QA + Engineering | hbpark / frontend-perf | launch -1주 |
+| ~~Performance smoke test (mid-tier + Slow-4G + INP measurement)~~ ✅ **Executed 2026-05-28** ([AUDIT-004](../audits/AUDIT-004-2026-05-28-perf-smoke-core-web-vitals.md)) — landing LCP ≈ 14 s warm / 30 s cold (bundle-bound; LG-001 audience = desktop latest-2, not mobile-3G), design page LCP ≈ 13 s, **frame interaction INP ≈ 20 ms** (well under 200 ms "Good"), CLS = 0 on every scenario. 3/3 PASS under the 40 s regression ceiling. Bundle-optimisation post-launch backlog enumerated. Regression gate active in `apps/web/e2e/perf-smoke.spec.ts`. | ~~QA + Engineering~~ | ~~hbpark / frontend-perf~~ | ~~launch -1주~~ |
 | **M1 INP measurement (frontend-perf conditional)** | Engineering | hbpark / frontend-perf | **launch + 1개월** (post-launch 의무) |
 | Migration telemetry (sentry/datadog tag locale=ko-KR text-input-anomaly) | Operations | hbpark / sre | launch + 1주 |
 | Monitoring + alerts (broader weave telemetry) | Operations | hbpark / sre | broader weave WI 와 묶음 |
