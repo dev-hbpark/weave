@@ -64,6 +64,7 @@ import {
 import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
+import { useIsTextEditing } from "../document/clipboard/use-is-text-editing.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import {
   buildFrameTree,
@@ -1088,6 +1089,14 @@ function DesignPageBody() {
     return walk(docInAgocraft.root);
   }, [docInAgocraft, selectedFrameId, selectedIds]);
 
+  // WI-041 Phase 5 follow-up — reactive `isTextEditing` axis (DR-019 D7).
+  // Flips when focus enters / leaves Lexical or any input / textarea.
+  // The hotkey path already short-circuits via `isTextEditingTarget`;
+  // this React-reactive surface lets the ContextMenu's "Paste" /
+  // "Paste Special" entries grey out the same way without a separate
+  // poll loop.
+  const isTextEditing = useIsTextEditing();
+
   const commandContext = useMemo<Readonly<Record<string, unknown>>>(
     () => ({
       canUndo,
@@ -1109,6 +1118,10 @@ function DesignPageBody() {
       // ContextMenu's "Paste" / "Paste Special" disabled-look in real
       // time as the clipboard store fills / clears.
       clipboardHasItems: clipboardCommands.hasItems,
+      // WI-041 Phase 5 — reactive text-edit gate so any clipboard
+      // surface that reads `commandContext` (ContextMenu Paste row,
+      // future CommandButtons) greys out while Lexical owns focus.
+      isTextEditing,
     }),
     [
       canUndo,
@@ -1120,6 +1133,7 @@ function DesignPageBody() {
       hoverContext.hoveredId,
       hoverContext.hoveredRole,
       clipboardCommands.hasItems,
+      isTextEditing,
     ],
   );
 
