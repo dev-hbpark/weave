@@ -110,6 +110,22 @@ export interface HoverAffordanceLayerProps {
 - `pointer-events: none` — 클릭 / 호버 빼앗기 없음.
 - 색만으로 위계 전달하지 않음 — stroke style (solid / dashed) + width 도 함께 변화 (색맹 대응).
 
+## Selection chrome 와 겹침 방지 규칙
+
+사용자 명시 (2026-05-27): 선택된 아이템 위에 hover overlay 를 그리지 않는다. SelectionLayer 가 이미 그 frame 의 chrome (outline + handles) 을 그리고 있으므로 두 chrome 이 겹치면 시각 노이즈 + handles 클릭 영역 가림.
+
+**적용 위치 = host (Phase 3 DesignPage wiring)** — primitive 는 dumb 유지 (props 받은 그대로 render). Host 가 `useSelection` 의 selectedIds 와 hovered/siblings/parent id 를 교차해 다음 규칙 적용:
+
+| 상태 | 처리 |
+|---|---|
+| hovered 가 selected | `hovered = null` 로 전달 (overlay 의 hovered tier 자체 omit) |
+| sibling i 가 selected | `siblings` 배열에서 i 제외 |
+| parent 가 selected | `parent = null` 로 전달 |
+
+전부 selected 인 경우 layer 전체가 visible=true 라도 시각적 출력 0. visible flag 는 keep (호스트가 조건 체크 한 곳에서) — primitive 가 selection-aware 가 되면 SRP 위반.
+
+Dev demo (`/_dev/hover-affordance-demo`) 에 "selected" toggle 4 개 박제 — 각 tier 별로 selection 시뮬레이션 후 overlay 의 해당 tier 가 사라짐을 시각 확인 가능.
+
 ## API stability
 
 - `Rect` interface 가 design-plane 절대 px 라는 점 명시 (host 책임).

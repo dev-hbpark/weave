@@ -23,21 +23,44 @@ test("HoverAffordanceLayer dev demo renders all three tiers", async ({ page }) =
 
 test("toggling tiers removes the corresponding overlay", async ({ page }) => {
   await page.goto("/_dev/hover-affordance-demo");
+  const render = page.getByRole("group", { name: "render" });
 
-  await page.getByLabel("hovered").uncheck();
+  await render.getByLabel("hovered").uncheck();
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(0);
   await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(2);
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(1);
 
-  await page.getByLabel("hovered").check();
-  await page.getByLabel(/siblings/).uncheck();
+  await render.getByLabel("hovered").check();
+  await render.getByLabel(/siblings/).uncheck();
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
   await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(0);
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(1);
 
-  await page.getByLabel(/siblings/).check();
-  await page.getByLabel("parent").uncheck();
+  await render.getByLabel(/siblings/).check();
+  await render.getByLabel("parent").uncheck();
   await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
   await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(2);
+  await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(0);
+});
+
+test("selecting an item suppresses its hover overlay tier", async ({ page }) => {
+  await page.goto("/_dev/hover-affordance-demo");
+  const selected = page.getByRole("group", { name: /^selected/ });
+
+  // Selecting the hovered item removes the hovered tier (selection
+  // chrome is now its primary visual signal).
+  await selected.getByLabel("hovered").check();
+  await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(0);
+  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(2);
+  await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(1);
+
+  // Restore hovered, select sibling A — one fewer sibling outline.
+  await selected.getByLabel("hovered").uncheck();
+  await selected.getByLabel("sibling A").check();
+  await expect(page.locator('[data-hover-tier="hovered"]')).toHaveCount(1);
+  await expect(page.locator('[data-hover-tier="sibling"]')).toHaveCount(1);
+
+  // Select parent — parent outline disappears.
+  await selected.getByLabel("parent").check();
   await expect(page.locator('[data-hover-tier="parent"]')).toHaveCount(0);
 });
