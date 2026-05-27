@@ -35,8 +35,41 @@ function generateId(kind: ResourceKind): string {
   return `${kind}-${ts}-${rand}`;
 }
 
+export interface AddResourceOptions {
+  /** When supplied, skips the internal async cloud upload and stores
+   *  the pre-uploaded values verbatim. Used by MediaSrcDialog after it
+   *  awaits `uploadResourceCloud` synchronously — that path needs the
+   *  canonical cloud URL surfaced *before* the user clicks Confirm,
+   *  so the upload cannot stay fire-and-forget. The `id` is also
+   *  taken from the cloud response so two passes through this
+   *  function never dupe under different ids. */
+  readonly preuploaded?: { readonly id: string; readonly src: string };
+}
+
 /** Adds a new resource. Returns the persisted record. */
-export function addResource(kind: ResourceKind, src: string, name: string): MediaResource {
+export function addResource(
+  kind: ResourceKind,
+  src: string,
+  name: string,
+  options?: AddResourceOptions,
+): MediaResource {
+  if (options?.preuploaded !== undefined) {
+    // Caller already pushed to /api/resources and is handing us the
+    // canonical (id, src) pair. Skip the internal upload and write
+    // the cloud record straight into the library cache.
+    const record: MediaResource = {
+      id: options.preuploaded.id,
+      kind,
+      src: options.preuploaded.src,
+      name,
+      addedAt: new Date().toISOString(),
+      sessionOnly: false,
+    };
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(KEY_PREFIX + record.id, JSON.stringify(record));
+    }
+    return record;
+  }
   const record: MediaResource = {
     id: generateId(kind),
     kind,

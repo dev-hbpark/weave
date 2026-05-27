@@ -17,9 +17,11 @@ import {
   DialogClose,
   DialogContent,
   DialogHeader,
+  Spinner,
   TextField,
 } from "@weave/design-system";
 import { type ChangeEvent, type DragEvent, useEffect, useRef, useState } from "react";
+import { uploadResourceCloud } from "../cloud-sync.js";
 import { addResource, listResources, type MediaResource } from "../resource-storage.js";
 
 export interface MediaSrcDialogProps {
@@ -51,6 +53,15 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
   const [uploadedName, setUploadedName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [resources, setResources] = useState<ReadonlyArray<MediaResource>>([]);
+  // Tri-state upload lifecycle. `uploading` disables Confirm and shows
+  // a spinner inside the dropzone; `uploadWarning` is set when the
+  // cloud round-trip fails AFTER the local read succeeded — Confirm
+  // stays enabled in that case and the dialog falls back to inlining
+  // the data URL (= the legacy pre-cloud-await behavior). Without the
+  // fallback a transient network blip would block any insert until
+  // the user retries the file pick.
+  const [uploading, setUploading] = useState(false);
+  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Reset state when reopening + (re)load resources for the picker.
@@ -60,6 +71,8 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
       setError(null);
       setUploadedName(null);
       setDragging(false);
+      setUploading(false);
+      setUploadWarning(null);
       setResources(listResources());
     }
   }, [open, initialSrc]);
@@ -70,6 +83,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
 
   async function ingestFile(file: File): Promise<void> {
     setError(null);
+    setUploadWarning(null);
     const isImage = file.type.startsWith("image/");
     const isVideo = file.type.startsWith("video/");
     if (kind === "image" && !isImage) {
@@ -90,19 +104,50 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
       );
       return;
     }
+    let localSrc: string;
     try {
-      const src = kind === "image" ? await fileToDataUrl(file) : URL.createObjectURL(file);
-      setValue(src);
-      setUploadedName(file.name);
-      // WI-024 — register the upload in the workspace resource library so
-      // future dialogs (and the workspace page) can show it as a
-      // pickable, already-uploaded asset. Images persist; videos are
-      // session-scoped and the library marks them accordingly.
-      addResource(kind, src, file.name);
-      setResources(listResources());
+      localSrc = kind === "image" ? await fileToDataUrl(file) : URL.createObjectURL(file);
     } catch {
       setError("파일을 읽지 못했습니다. 다시 시도해주세요.");
+      return;
     }
+    setValue(localSrc);
+    setUploadedName(file.name);
+
+    // For images, await the cloud upload so the dialog's `value` swaps
+    // from the data URL to the canonical cloud URL BEFORE Confirm
+    // fires. This is the root-cause fix for the legacy "design carries
+    // inline base64 image bytes" problem — every new image now lands
+    // on the server first and only its URL flows into the design's
+    // item.attrs.src.
+    //
+    // For videos, `URL.createObjectURL` returns a session-scoped blob
+    // URL whose bytes are not reachable from the server. There's no
+    // meaningful cloud round-trip to await; we keep the fire-and-
+    // forget addResource path for parity with the resource library.
+    if (kind === "image") {
+      setUploading(true);
+      try {
+        const cloud = await uploadResourceCloud(kind, localSrc, file.name);
+        if (cloud === null) {
+          setUploadWarning(
+            "서버 업로드에 실패했어요. 이번에는 로컬 사본으로 추가됩니다.",
+          );
+          addResource(kind, localSrc, file.name); // existing fire-and-forget retry path
+        } else {
+          setValue(cloud.src);
+          addResource(kind, cloud.src, file.name, {
+            preuploaded: { id: cloud.id, src: cloud.src },
+          });
+        }
+      } finally {
+        setUploading(false);
+        setResources(listResources());
+      }
+      return;
+    }
+    addResource(kind, localSrc, file.name);
+    setResources(listResources());
   }
 
   function onPickFile(e: ChangeEvent<HTMLInputElement>): void {
@@ -129,6 +174,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
   }
 
   function submit(): void {
+    if (uploading) return; // cloud-await guard — Confirm is also visually disabled
     const trimmed = value.trim();
     if (trimmed.length === 0) {
       setError("URL을 입력하거나 파일을 업로드해주세요");
@@ -233,29 +279,53 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
           ].join(" ")}
         >
           {uploadedName ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[18px]" aria-hidden>
-                {kind === "image" ? "🖼" : "▶"}
-              </span>
-              <span
-                data-testid="media-src-uploaded-name"
-                className="text-[13px] text-[color:var(--text-strong)] max-w-[260px] truncate"
-                title={uploadedName}
-              >
-                {uploadedName}
-              </span>
-              <button
-                type="button"
-                data-testid="media-src-upload-clear"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearUpload();
-                }}
-                className="ml-1 text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] underline-offset-2 hover:underline"
-                aria-label="업로드 비우기"
-              >
-                비우기
-              </button>
+            <div className="flex flex-col items-center gap-1">
+              <div className="flex items-center gap-2">
+                {uploading ? (
+                  <Spinner size={16} className="text-[color:var(--text-soft)]" />
+                ) : (
+                  <span className="text-[18px]" aria-hidden>
+                    {kind === "image" ? "🖼" : "▶"}
+                  </span>
+                )}
+                <span
+                  data-testid="media-src-uploaded-name"
+                  className="text-[13px] text-[color:var(--text-strong)] max-w-[260px] truncate"
+                  title={uploadedName}
+                >
+                  {uploadedName}
+                </span>
+                {!uploading && (
+                  <button
+                    type="button"
+                    data-testid="media-src-upload-clear"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearUpload();
+                    }}
+                    className="ml-1 text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] underline-offset-2 hover:underline"
+                    aria-label="업로드 비우기"
+                  >
+                    비우기
+                  </button>
+                )}
+              </div>
+              {uploading && (
+                <span
+                  data-testid="media-src-upload-status"
+                  className="text-[11px] text-[color:var(--text-soft)]"
+                >
+                  서버에 업로드 중…
+                </span>
+              )}
+              {uploadWarning !== null && !uploading && (
+                <span
+                  data-testid="media-src-upload-warning"
+                  className="text-[11px] text-[color:var(--text-warn,#d97706)]"
+                >
+                  {uploadWarning}
+                </span>
+              )}
             </div>
           ) : (
             <>
@@ -319,8 +389,18 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
               취소
             </Button>
           </DialogClose>
-          <Button variant="primary" size="md" onClick={submit} data-testid="media-src-confirm">
-            {kind === "image" ? "이미지 추가" : "비디오 추가"}
+          <Button
+            variant="primary"
+            size="md"
+            onClick={submit}
+            disabled={uploading}
+            data-testid="media-src-confirm"
+          >
+            {uploading
+              ? "업로드 중…"
+              : kind === "image"
+                ? "이미지 추가"
+                : "비디오 추가"}
           </Button>
         </div>
       </DialogContent>
