@@ -1,6 +1,7 @@
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import type { ReactNode } from "react";
 import { cn } from "../cn.js";
+import { IconChevronRight } from "./Icon.js";
 
 /** Right-click context menu styled with weave tokens.
  *
@@ -196,9 +197,7 @@ export function ContextMenuSubTrigger({
       )}
     >
       <span className="flex-1">{children}</span>
-      <span aria-hidden className="text-[11px] text-[color:var(--text-overlay-muted)]">
-        ▸
-      </span>
+      <IconChevronRight size={14} className="text-[color:var(--text-overlay-muted)]" />
     </ContextMenuPrimitive.SubTrigger>
   );
 }

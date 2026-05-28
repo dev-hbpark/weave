@@ -50,6 +50,12 @@ export interface UseClipboardCommandsDeps {
   /** Non-fatal feedback channel — surfaced to the user as a toast / log
    *  by the host. Optional. */
   readonly onInfo?: (message: string) => void;
+  /** Called with the ids of the newly pasted root items so the host can
+   *  select them (Figma parity: a paste lands selected). A multi-select
+   *  paste passes every new id. Only fires for the "everything" paste that
+   *  creates items — the style/text/size/position-only Paste Special modes
+   *  mutate existing targets and don't change the selection. Optional. */
+  readonly onPasted?: (ids: ReadonlyArray<string>) => void;
 }
 
 export interface UseClipboardCommandsResult {
@@ -104,18 +110,20 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
   useEffect(() => {
     const dispose = setClipboardDispatcher((verb) => {
       const editor = deps.editor;
-      const id = deps.selectedId;
 
       if (verb === "copy") {
-        if (id === undefined) return;
-        editor.exec("weave.clipboard.copy", { itemIds: [id] });
+        // Copy every selected item (multi-select), in selection order.
+        const itemIds = deps.resolveTargetIds();
+        if (itemIds.length === 0) return;
+        editor.exec("weave.clipboard.copy", { itemIds });
         return;
       }
       if (verb === "cut") {
-        if (id === undefined) return;
+        const itemIds = deps.resolveTargetIds();
+        if (itemIds.length === 0) return;
         const containerId = deps.resolveSourceContainerId();
         editor.exec("weave.clipboard.cut", {
-          itemIds: [id],
+          itemIds,
           ...(containerId !== undefined ? { containerId } : {}),
         });
         return;
@@ -125,11 +133,12 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
         if (containerSize === null) return;
         const containerId = deps.resolveContainerId();
         const pointer = deps.resolvePointerInContainer();
-        editor.exec("weave.clipboard.paste", {
+        const result = editor.exec<unknown, ReadonlyArray<string>>("weave.clipboard.paste", {
           containerSizePx: containerSize,
           ...(containerId !== undefined ? { containerId } : {}),
           ...(pointer !== undefined ? { pointerInContainer: pointer } : {}),
         });
+        if (result.ok) deps.onPasted?.(result.value);
         return;
       }
       if (verb === "pasteSpecial") {
@@ -145,12 +154,12 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
     return dispose;
   }, [
     deps.editor,
-    deps.selectedId,
+    deps.resolveTargetIds,
     deps.resolveContainerId,
     deps.resolveContainerSizePx,
     deps.resolvePointerInContainer,
     deps.resolveSourceContainerId,
-    deps.onInfo,
+    deps.onPasted,
   ]);
 
   const handlePasteSpecialConfirm = useCallback(
@@ -162,11 +171,12 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
         if (containerSize === null) return;
         const containerId = deps.resolveContainerId();
         const pointer = deps.resolvePointerInContainer();
-        deps.editor.exec("weave.clipboard.paste", {
+        const result = deps.editor.exec<unknown, ReadonlyArray<string>>("weave.clipboard.paste", {
           containerSizePx: containerSize,
           ...(containerId !== undefined ? { containerId } : {}),
           ...(pointer !== undefined ? { pointerInContainer: pointer } : {}),
         });
+        if (result.ok) deps.onPasted?.(result.value);
         return;
       }
       // The four "only" modes need targets. The command refuses with

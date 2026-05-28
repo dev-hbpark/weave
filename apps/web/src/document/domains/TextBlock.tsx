@@ -257,7 +257,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // format click were all falsely dismissing).
   const [isEditing, setIsEditing] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const { selection } = useSelection();
+  const { selection, selectFrame } = useSelection();
   const selfId = String(item.id);
   const isFrameSelected =
     selection !== null && selection.kind === "frame" && selection.id === selfId;
@@ -311,6 +311,12 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       onDoubleClick={(e) => {
         if (!editable) return;
         e.stopPropagation();
+        // Select this item first so the `isFrameSelected` gate (which keeps
+        // edit mode alive) passes on the same interaction — works whether or
+        // not the item was already selected, so a single double-click enters
+        // edit mode (no extra click). The Lexical editor then auto-focuses
+        // and selects all text on mount.
+        selectFrame(selfId);
         setIsEditing(true);
       }}
     >

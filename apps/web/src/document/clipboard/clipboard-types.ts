@@ -50,10 +50,21 @@ export interface ClipboardPayload<TData = unknown> {
 /** Data shape for `kind: "weave/items.v1"` — the v1 clipboard scope. */
 export interface ItemsPayloadData {
   /**
-   * The copied subtree (already serialised). Single item per copy in v1;
-   * multi-selection paste lands when WI-036's selection model graduates.
+   * The primary copied subtree (already serialised). Always equals
+   * `items[0]`. Kept as a distinct field because (a) Paste Special's
+   * style / text / size / position modes read a single source's attrs,
+   * and (b) a reader on an older release that doesn't know `items` still
+   * pastes this one item instead of dropping the payload.
    */
   readonly item: SerializedItem;
+  /**
+   * Every copied subtree, in selection order. A multi-selection copy
+   * stores all of them; a single copy stores one. `everything`-mode paste
+   * clones each, preserving relative positions. Optional so payloads
+   * written before this field (or by an older tab) still paste via the
+   * `item` fallback.
+   */
+  readonly items?: ReadonlyArray<SerializedItem>;
   /**
    * Relations whose topology references the subtree's ItemIds, captured
    * from the source document at copy time. Pasted relations are re-mapped

@@ -12,6 +12,7 @@
 import type { ReactElement, ReactNode } from "react";
 import { cn } from "../cn.js";
 import type { AITooltipAction, AITooltipHotkeyTable } from "./AITooltip.js";
+import { IconChevronRight } from "./Icon.js";
 
 export interface TooltipCardProps {
   /** One-line label rendered under the "Context" eyebrow. Omit to skip the
@@ -57,16 +58,15 @@ export function TooltipCard({
         <ul className="flex flex-col gap-1.5 text-[13px]">
           {actions.map((a, i) => {
             const resolvedShortcut =
-              a.shortcut ?? (a.hotkeyId !== undefined ? hotkeyTable?.[a.hotkeyId]?.keys : undefined);
+              a.shortcut ??
+              (a.hotkeyId !== undefined ? hotkeyTable?.[a.hotkeyId]?.keys : undefined);
             return (
               <li
                 // biome-ignore lint/suspicious/noArrayIndexKey: action label can legitimately repeat
                 key={`${i}-${a.action}`}
                 className="flex items-center gap-2 text-[color:var(--text-overlay)]"
               >
-                <span aria-hidden className="text-[color:var(--accent-strong)]">
-                  ▸
-                </span>
+                <IconChevronRight size={12} className="text-[color:var(--accent-strong)]" />
                 <span className="flex-1">{a.action}</span>
                 {resolvedShortcut !== undefined ? (
                   <kbd

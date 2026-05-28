@@ -20,6 +20,7 @@
 
 import type { PartialTextStyle, TextRun } from "@agocraft/core";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
@@ -31,8 +32,9 @@ import {
   $getRoot,
   $isParagraphNode,
   $isTextNode,
+  $selectAll,
 } from "lexical";
-import { type CSSProperties, useMemo, useRef } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef } from "react";
 
 // Lexical TextNode format bitmask (from lexical's `LexicalConstants`).
 // We snapshot the bits here rather than import the constants — Lexical's
@@ -99,6 +101,25 @@ function readSnapshot(): RichTextSnapshot {
     text: paragraphs.join("\n"),
     textRuns: runs,
   };
+}
+
+/** On edit entry, focus the editor and select ALL text so the user can
+ *  type over it immediately (Figma double-click-to-edit parity). Runs once
+ *  per edit session — `LexicalComposer` creates the editor a single time,
+ *  so `editor` is stable and this effect does not re-fire while typing. */
+function AutoFocusSelectAllPlugin() {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    editor.focus(
+      () => {
+        editor.update(() => {
+          $selectAll();
+        });
+      },
+      { defaultSelection: "rootEnd" },
+    );
+  }, [editor]);
+  return null;
 }
 
 interface LexicalTextEditorProps {
@@ -218,6 +239,7 @@ export function LexicalTextEditor({
         ErrorBoundary={LexicalErrorBoundary}
       />
       <HistoryPlugin />
+      <AutoFocusSelectAllPlugin />
       <OnChangePlugin
         onChange={(editorState) => {
           editorState.read(() => {

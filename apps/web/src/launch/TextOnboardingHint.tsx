@@ -8,7 +8,7 @@
 // localStorage. The component below is a thin locale + copy wrapper around
 // the design-system primitive; it does not implement persistence itself.
 
-import { OnboardingCoachmark } from "@weave/design-system";
+import { IconSparkle, OnboardingCoachmark } from "@weave/design-system";
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 
@@ -30,16 +30,16 @@ interface Copy {
 const COPY: Readonly<Record<Locale, Copy>> = {
   ko: {
     headline: "새로운 점",
-    autoW: "↔ Auto-W — 글자 입력하면 박스가 가로로 자동 확장",
-    autoH: "↕ Auto-H — 폭 고정, 줄바꿈에 따라 세로 자동",
-    fixed: "□ Fixed — 폭·세로 모두 고정, 넘치는 텍스트는 잘림",
+    autoW: "Auto-W — 글자 입력하면 박스가 가로로 자동 확장",
+    autoH: "Auto-H — 폭 고정, 줄바꿈에 따라 세로 자동",
+    fixed: "Fixed — 폭·세로 모두 고정, 넘치는 텍스트는 잘림",
     dismissLabel: "닫기",
   },
   en: {
     headline: "What's new",
-    autoW: "↔ Auto-W — typing widens the box horizontally",
-    autoH: "↕ Auto-H — fixed width, height grows with line wrap",
-    fixed: "□ Fixed — width + height locked, overflow truncates",
+    autoW: "Auto-W — typing widens the box horizontally",
+    autoH: "Auto-H — fixed width, height grows with line wrap",
+    fixed: "Fixed — width + height locked, overflow truncates",
     dismissLabel: "Got it",
   },
 };
@@ -64,7 +64,7 @@ export function TextOnboardingHint({ anchor, locale, forceShow = false }: TextOn
     <OnboardingCoachmark
       persistKey="text-3-mode-toggle-v1"
       anchor={anchor}
-      icon={<span aria-hidden>💡</span>}
+      icon={<IconSparkle size={16} aria-hidden />}
       headline={copy.headline}
       dismissLabel={copy.dismissLabel}
       side="bottom"

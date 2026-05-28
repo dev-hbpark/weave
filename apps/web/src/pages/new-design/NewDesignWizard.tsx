@@ -15,6 +15,10 @@ import {
   DialogFooter,
   DialogHeader,
   FieldGroup,
+  IconDiamond,
+  IconDocLines,
+  IconFrame,
+  IconSparkle,
   RadioTile,
   RadioTileGroup,
   TextField,
@@ -33,10 +37,10 @@ import {
 } from "../../document/types.js";
 
 const FLAVOR_ICONS: Readonly<Record<DocFlavor, ReactNode>> = {
-  mixed: "✦",
-  "slide-deck": "▭",
-  "canvas-board": "◇",
-  "doc-page": "≡",
+  mixed: <IconSparkle size={18} />,
+  "slide-deck": <IconFrame size={18} />,
+  "canvas-board": <IconDiamond size={18} />,
+  "doc-page": <IconDocLines size={18} />,
 };
 
 const CUSTOM_PRESET_ID = "custom";

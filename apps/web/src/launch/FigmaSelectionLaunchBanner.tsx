@@ -8,7 +8,7 @@
 //
 // Source copy: WI-033 P3 launch note draft. Two-locale (ko / en).
 
-import { Banner, type BannerProps } from "@weave/design-system";
+import { Banner, type BannerProps, IconCursor } from "@weave/design-system";
 import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "weave.launch.figma-selection.dismissed-at";
@@ -107,7 +107,7 @@ export function FigmaSelectionLaunchBanner({
   return (
     <Banner
       tone="announcement"
-      icon={<span aria-hidden>🖱️</span>}
+      icon={<IconCursor size={16} aria-hidden />}
       headline={copy.headline}
       dismissLabel={copy.dismissLabel}
       onDismiss={() => {

@@ -112,6 +112,19 @@ export function setMultiAligner(fn: (op: MultiAlignOp) => void): () => void {
   };
 }
 
+/** WI-048 — multi-selection "arrange into Flex / Grid" dispatch slot. Same
+ *  shape as the align slot: the host owns the live selection + doc, computes
+ *  new frames via the pure `computeArrangedFrames` helper, and dispatches
+ *  `weave.items.resizeMulti` so the arrange lands as one undoable Change. */
+export type MultiArrangeLayout = "flex" | "grid";
+let multiLayoutArranger: ((layout: MultiArrangeLayout) => void) | undefined;
+export function setMultiLayoutArranger(fn: (layout: MultiArrangeLayout) => void): () => void {
+  multiLayoutArranger = fn;
+  return () => {
+    if (multiLayoutArranger === fn) multiLayoutArranger = undefined;
+  };
+}
+
 let paletteOpener: (() => void) | undefined;
 
 /** Host registration — DesignPage calls this so the `palette.open`
@@ -661,6 +674,38 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       // No-op — the host's QuickActionBar `renderItem` swaps this id
       // out for a <MultiAlignSubmenu> component that owns the
       // submenu's open state and dispatches the individual ops.
+    },
+  },
+  // WI-048 — arrange the selection into a Flex row / Grid matrix, one-shot.
+  // Same-parent + count ≥ 2 gate (multiAlignEnabled). Dispatched via the
+  // `multiLayoutArranger` host slot → `computeArrangedFrames` →
+  // `weave.items.resizeMulti` (single undoable Change).
+  {
+    id: "multi.layout-flex",
+    label: { en: "Arrange as Flex", ko: "플렉스로 정렬" },
+    description: {
+      en: "Lay the selected items out in a single auto-flex row.",
+      ko: "선택한 항목을 플렉스 한 줄로 자동 배치합니다.",
+    },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      multiLayoutArranger?.("flex");
+    },
+  },
+  {
+    id: "multi.layout-grid",
+    label: { en: "Arrange as Grid", ko: "그리드로 정렬" },
+    description: {
+      en: "Lay the selected items out in an auto-grid matrix.",
+      ko: "선택한 항목을 그리드 격자로 자동 배치합니다.",
+    },
+    category: "multi",
+    visibleWhen: (ctx) => ctx.selectedKind === "multi",
+    enabledWhen: multiAlignEnabled,
+    action: () => {
+      multiLayoutArranger?.("grid");
     },
   },
   {

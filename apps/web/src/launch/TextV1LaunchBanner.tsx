@@ -6,7 +6,7 @@
 //
 // Source copy: `docs/launch/TEXT_V1_LAUNCH_NOTE.md` § "사용자에게 전달할 메시지".
 
-import { Banner, type BannerProps } from "@weave/design-system";
+import { Banner, type BannerProps, IconSparkle } from "@weave/design-system";
 import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "weave.launch.text-v1.dismissed-at";
@@ -98,7 +98,7 @@ export function TextV1LaunchBanner({
   return (
     <Banner
       tone="announcement"
-      icon={<span aria-hidden>✨</span>}
+      icon={<IconSparkle size={16} aria-hidden />}
       headline={copy.headline}
       dismissLabel={copy.dismissLabel}
       onDismiss={() => {

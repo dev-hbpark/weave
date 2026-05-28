@@ -17,6 +17,9 @@ import {
   DialogClose,
   DialogContent,
   DialogHeader,
+  IconCloudUpload,
+  IconImage,
+  IconPlay,
   Spinner,
   TextField,
 } from "@weave/design-system";
@@ -130,9 +133,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
       try {
         const cloud = await uploadResourceCloud(kind, localSrc, file.name);
         if (cloud === null) {
-          setUploadWarning(
-            "서버 업로드에 실패했어요. 이번에는 로컬 사본으로 추가됩니다.",
-          );
+          setUploadWarning("서버 업로드에 실패했어요. 이번에는 로컬 사본으로 추가됩니다.");
           addResource(kind, localSrc, file.name); // existing fire-and-forget retry path
         } else {
           setValue(cloud.src);
@@ -238,8 +239,8 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
                   {r.kind === "image" ? (
                     <img src={r.src} alt={r.name} className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-black/40 text-white text-[16px]">
-                      ▶
+                    <div className="w-full h-full flex items-center justify-center bg-black/40 text-white">
+                      <IconPlay size={16} />
                     </div>
                   )}
                   {r.sessionOnly ? (
@@ -284,8 +285,8 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
                 {uploading ? (
                   <Spinner size={16} className="text-[color:var(--text-soft)]" />
                 ) : (
-                  <span className="text-[18px]" aria-hidden>
-                    {kind === "image" ? "🖼" : "▶"}
+                  <span aria-hidden className="text-[color:var(--text-soft)]">
+                    {kind === "image" ? <IconImage size={18} /> : <IconPlay size={18} />}
                   </span>
                 )}
                 <span
@@ -329,8 +330,8 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
             </div>
           ) : (
             <>
-              <span className="text-[20px] leading-none mb-1.5" aria-hidden>
-                ⬆
+              <span className="mb-1.5 text-[color:var(--text-soft)]" aria-hidden>
+                <IconCloudUpload size={22} />
               </span>
               <div className="text-[13px] text-[color:var(--text-strong)]">
                 파일 선택 또는 끌어 놓기
@@ -396,11 +397,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
             disabled={uploading}
             data-testid="media-src-confirm"
           >
-            {uploading
-              ? "업로드 중…"
-              : kind === "image"
-                ? "이미지 추가"
-                : "비디오 추가"}
+            {uploading ? "업로드 중…" : kind === "image" ? "이미지 추가" : "비디오 추가"}
           </Button>
         </div>
       </DialogContent>

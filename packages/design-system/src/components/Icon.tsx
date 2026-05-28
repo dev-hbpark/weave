@@ -126,6 +126,63 @@ export const IconClose = forwardRef<SVGSVGElement, IconProps>(function IconClose
   );
 });
 
+export const IconChevronDown = forwardRef<SVGSVGElement, IconProps>(
+  function IconChevronDown(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M5 9l7 7 7-7" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconCheck = forwardRef<SVGSVGElement, IconProps>(function IconCheck(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M5 12l5 5L20 7" />
+    </SvgRoot>
+  );
+});
+
+/** Four-point sparkle — decorative accent (e.g. a Hotspot label marker).
+ *  Replaces the inline sparkle glyph (icons-only rule). */
+export const IconSparkle = forwardRef<SVGSVGElement, IconProps>(function IconSparkle(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M12 3c.6 3.9 2.1 5.4 6 6-3.9.6-5.4 2.1-6 6-.6-3.9-2.1-5.4-6-6 3.9-.6 5.4-2.1 6-6z" />
+    </SvgRoot>
+  );
+});
+
+/** Camera — the camera-target presentation behavior marker. */
+export const IconCamera = forwardRef<SVGSVGElement, IconProps>(function IconCamera(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <circle cx="12" cy="13" r="3.2" />
+    </SvgRoot>
+  );
+});
+
+/** Diamond (rotated square) — the "canvas / board" doc-flavor marker. */
+export const IconDiamond = forwardRef<SVGSVGElement, IconProps>(function IconDiamond(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M12 3l9 9-9 9-9-9z" />
+    </SvgRoot>
+  );
+});
+
+/** Document with text lines — the "doc / page" doc-flavor marker. */
+export const IconDocLines = forwardRef<SVGSVGElement, IconProps>(function IconDocLines(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M8 8h8M8 12h8M8 16h5" />
+    </SvgRoot>
+  );
+});
+
 // DR-design-015 — ContextualToolbar Tier-2 icon set.
 
 export const IconBold = forwardRef<SVGSVGElement, IconProps>(function IconBold(props, ref) {
@@ -169,6 +226,102 @@ export const IconShape = forwardRef<SVGSVGElement, IconProps>(function IconShape
     </SvgRoot>
   );
 });
+
+// WI-044 — shape sub-kind glyphs for the QuickActionBar "+" add menu's
+// second-depth flyout. One icon per `ShapeSubKind` the menu offers
+// (rectangle / ellipse / line / arrow / triangle / star / polygon /
+// heart / speech-bubble). These replace the inline emoji glyphs the
+// add menu used previously (icons-only rule).
+
+export const IconShapeRectangle = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapeRectangle(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <rect x="3" y="6" width="18" height="12" rx="1.5" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconShapeEllipse = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapeEllipse(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <ellipse cx="12" cy="12" rx="9" ry="7" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconShapeLine = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapeLine(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M5 19L19 5" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconShapeArrow = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapeArrow(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M4 12h14M13 6l6 6-6 6" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconShapeTriangle = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapeTriangle(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M12 4l8 16H4z" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconShapeStar = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapeStar(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M12 3.5l2.7 5.47 6.05.88-4.38 4.27 1.03 6.02L12 17.3l-5.42 2.84 1.04-6.02-4.38-4.27 6.05-.88z" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconShapePolygon = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapePolygon(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconShapeHeart = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapeHeart(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M12 20s-7-4.4-7-9.5A3.5 3.5 0 0 1 12 7a3.5 3.5 0 0 1 7 3.5c0 5.1-7 9.5-7 9.5z" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconShapeSpeechBubble = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapeSpeechBubble(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M5 5h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-7l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+      </SvgRoot>
+    );
+  },
+);
 
 export const IconImage = forwardRef<SVGSVGElement, IconProps>(function IconImage(props, ref) {
   return (
@@ -306,16 +459,14 @@ export const IconCloudCheck = forwardRef<SVGSVGElement, IconProps>(
 /** Failure pair for IconCloudUpload — same cloud silhouette with a
  *  diagonal slash. Keeps the chrome cluster aligned during the
  *  idle → saving → saved/failed swap. */
-export const IconCloudOff = forwardRef<SVGSVGElement, IconProps>(
-  function IconCloudOff(props, ref) {
-    return (
-      <SvgRoot ref={ref} {...props}>
-        <path d="M7 18a4 4 0 1 1 .8-7.92A6 6 0 0 1 19 11a4 4 0 0 1 0 8H7z" />
-        <path d="M4 4l16 16" />
-      </SvgRoot>
-    );
-  },
-);
+export const IconCloudOff = forwardRef<SVGSVGElement, IconProps>(function IconCloudOff(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M7 18a4 4 0 1 1 .8-7.92A6 6 0 0 1 19 11a4 4 0 0 1 0 8H7z" />
+      <path d="M4 4l16 16" />
+    </SvgRoot>
+  );
+});
 
 // ── alignment / distribution ────────────────────────────────────────
 // Each icon depicts a guide line (the alignment edge / axis) plus two
@@ -360,17 +511,15 @@ export const IconAlignRight = forwardRef<SVGSVGElement, IconProps>(
   },
 );
 
-export const IconAlignTop = forwardRef<SVGSVGElement, IconProps>(
-  function IconAlignTop(props, ref) {
-    return (
-      <SvgRoot ref={ref} {...props}>
-        <path d="M3 4h18" />
-        <rect x="6" y="6" width="4" height="13" rx="1" fill="currentColor" fillOpacity="0.18" />
-        <rect x="14" y="6" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.18" />
-      </SvgRoot>
-    );
-  },
-);
+export const IconAlignTop = forwardRef<SVGSVGElement, IconProps>(function IconAlignTop(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M3 4h18" />
+      <rect x="6" y="6" width="4" height="13" rx="1" fill="currentColor" fillOpacity="0.18" />
+      <rect x="14" y="6" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.18" />
+    </SvgRoot>
+  );
+});
 
 export const IconAlignVerticalCenter = forwardRef<SVGSVGElement, IconProps>(
   function IconAlignVerticalCenter(props, ref) {

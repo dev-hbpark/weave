@@ -11,10 +11,19 @@ import {
   IconClose,
   IconImage,
   IconShape,
+  IconShapeArrow,
+  IconShapeEllipse,
+  IconShapeHeart,
+  IconShapeLine,
+  IconShapePolygon,
+  IconShapeRectangle,
+  IconShapeStar,
+  IconShapeTriangle,
   IconVideo,
   NumberSlider,
-  SegmentedControl,
+  Select,
 } from "@weave/design-system";
+import type { ReactNode } from "react";
 import {
   isMixed,
   MixedBadge,
@@ -26,17 +35,18 @@ import {
 } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
-// Shape sub-kind labels — Korean text instead of emoji glyphs (project rule:
-// no emoji in UI). Order matches agocraft's enumeration.
+// Shape sub-kind options — 8 kinds with design-system icons (icons-only
+// rule). 8 > the segmented-control sweet spot (≤6), so this is a Combobox.
+// Order matches agocraft's enumeration.
 const SHAPE_SUB_KIND_OPTIONS = [
-  { value: "rectangle", label: "사각" },
-  { value: "ellipse", label: "원" },
-  { value: "line", label: "선" },
-  { value: "arrow", label: "화살" },
-  { value: "triangle", label: "삼각" },
-  { value: "star", label: "별" },
-  { value: "polygon", label: "다각" },
-  { value: "heart", label: "하트" },
+  { value: "rectangle", label: "사각형", icon: <IconShapeRectangle size={15} /> },
+  { value: "ellipse", label: "원", icon: <IconShapeEllipse size={15} /> },
+  { value: "line", label: "선", icon: <IconShapeLine size={15} /> },
+  { value: "arrow", label: "화살표", icon: <IconShapeArrow size={15} /> },
+  { value: "triangle", label: "삼각형", icon: <IconShapeTriangle size={15} /> },
+  { value: "star", label: "별", icon: <IconShapeStar size={15} /> },
+  { value: "polygon", label: "다각형", icon: <IconShapePolygon size={15} /> },
+  { value: "heart", label: "하트", icon: <IconShapeHeart size={15} /> },
 ] as const;
 
 function defaultSubAttrsForKind(
@@ -145,8 +155,8 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
       </Bar.Quick>
       <Bar.More>
         <Bar.Field label="Shape">
-          <SegmentedControl<ShapeSubKind>
-            value={isMixed(shape) ? ("rectangle" as ShapeSubKind) : shape}
+          <Select<ShapeSubKind>
+            value={isMixed(shape) ? "" : shape}
             onValueChange={(v) =>
               updateAll(editor, ids, (prev) => {
                 const prevAttrs = prev.attrs as unknown as ShapeAttrs;
@@ -163,9 +173,12 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
               SHAPE_SUB_KIND_OPTIONS as unknown as ReadonlyArray<{
                 value: ShapeSubKind;
                 label: string;
+                icon?: ReactNode;
               }>
             }
             aria-label="Shape sub-kind"
+            placeholder="여러 모양"
+            triggerClassName="w-full"
           />
           <MixedBadge visible={isMixed(shape)} />
         </Bar.Field>

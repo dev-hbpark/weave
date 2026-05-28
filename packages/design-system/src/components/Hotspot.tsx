@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from "motion/react";
 import type { CSSProperties } from "react";
+import { IconSparkle } from "./Icon.js";
 
 interface HotspotProps {
   /** Region in item-local 0..1 coordinates. */
@@ -47,8 +48,9 @@ export function Hotspot({ region, label, onTrigger }: HotspotProps) {
         className="absolute inset-0 rounded-[var(--radius-lg)] border-2 border-[color:var(--accent)]/80 bg-[color:var(--accent)]/8 backdrop-blur-sm transition-colors duration-[var(--motion-normal)] ease-[var(--motion-spring-soft)] hover:bg-[color:var(--accent)]/18 focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)] cursor-pointer"
         {...pulseProps}
       >
-        <span className="absolute -top-7 left-0 text-[11px] font-medium uppercase tracking-[0.14em] text-[color:var(--accent-strong)] bg-[color:var(--bg-page-soft)]/70 backdrop-blur-sm rounded-full px-2 py-0.5">
-          ✦ {label}
+        <span className="absolute -top-7 left-0 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[color:var(--accent-strong)] bg-[color:var(--bg-page-soft)]/70 backdrop-blur-sm rounded-full px-2 py-0.5">
+          <IconSparkle size={11} />
+          {label}
         </span>
       </motion.button>
     </div>

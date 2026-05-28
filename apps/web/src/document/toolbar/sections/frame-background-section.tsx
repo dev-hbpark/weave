@@ -31,9 +31,14 @@ import {
   trackFr,
 } from "@agocraft/core";
 import {
+  Accordion,
+  AccordionItem,
+  AlignmentPad,
   ContextualToolbar as Bar,
   Button,
   ColorPicker,
+  type TrackSize as DSTrackSize,
+  GridSizePicker,
   IconClose,
   IconFrame,
   IconLayoutAbsolute,
@@ -41,9 +46,11 @@ import {
   IconLayoutGrid,
   NumberSlider,
   SegmentedControl,
-  type TrackSize as DSTrackSize,
+  Select,
+  Switch,
   TrackSizeEditor,
 } from "@weave/design-system";
+import type { ReactElement } from "react";
 import {
   isMixed,
   MixedBadge,
@@ -51,7 +58,6 @@ import {
   updateAll,
   useResolveSharedColor,
 } from "../multi-edit.js";
-import type { ReactElement } from "react";
 import type { ToolbarSectionComponent } from "./types.js";
 
 type LayoutKindChoice = "absolute" | "auto-flex" | "auto-grid";
@@ -82,42 +88,37 @@ function deriveLayoutChoice(spec: LayoutSpec | undefined): LayoutKindChoice {
  *  user fine-tune (direction, gap, justify, align, padding, tracks, …). */
 function specForChoice(choice: LayoutKindChoice): LayoutSpec | undefined {
   if (choice === "auto-flex") return createAutoFlexSpec();
-  if (choice === "auto-grid") return createAutoGridSpec({ columns: [trackFr(1)], rows: [trackFr(1)] });
+  if (choice === "auto-grid")
+    return createAutoGridSpec({ columns: [trackFr(1)], rows: [trackFr(1)] });
   return undefined; // "absolute"
 }
+
+/** Reconcile a track array to an exact COUNT — used by the GridSizePicker
+ *  drag-matrix. Preserve existing track sizes; append `fr(1)` for new tracks;
+ *  truncate extras. (Per-track fine sizing stays in the "트랙 세부" editor.) */
+function resizeTracks(tracks: AutoGridSpec["columns"], count: number): AutoGridSpec["columns"] {
+  if (count <= tracks.length) return tracks.slice(0, count);
+  const out = tracks.slice();
+  while (out.length < count) out.push(trackFr(1));
+  return out;
+}
+
+// AlignmentPad axis triple (start / center / end). The pad covers the 9 core
+// combinations; the extra options live in supplementary controls beside it:
+//   • align "stretch" → a Switch
+//   • flex justify "space-between / space-around" → a Select
+const ALIGN_TRIPLE = ["start", "center", "end"] as const;
+
+const FLEX_DISTRIBUTION_OPTIONS = [
+  { value: "none", label: "분포 없음" },
+  { value: "space-between", label: "사이 띄움" },
+  { value: "space-around", label: "둘레 띄움" },
+] as const;
+type FlexDistribution = (typeof FLEX_DISTRIBUTION_OPTIONS)[number]["value"];
 
 const FLEX_DIRECTION_OPTIONS: ReadonlyArray<{ value: FlexDirection; label: string }> = [
   { value: "row", label: "Row" },
   { value: "column", label: "Column" },
-];
-
-const FLEX_JUSTIFY_OPTIONS: ReadonlyArray<{ value: FlexJustify; label: string }> = [
-  { value: "start", label: "Start" },
-  { value: "center", label: "Center" },
-  { value: "end", label: "End" },
-  { value: "space-between", label: "Between" },
-  { value: "space-around", label: "Around" },
-];
-
-const FLEX_ALIGN_OPTIONS: ReadonlyArray<{ value: FlexAlign; label: string }> = [
-  { value: "start", label: "Start" },
-  { value: "center", label: "Center" },
-  { value: "end", label: "End" },
-  { value: "stretch", label: "Stretch" },
-];
-
-const GRID_JUSTIFY_OPTIONS: ReadonlyArray<{ value: GridJustify; label: string }> = [
-  { value: "start", label: "Start" },
-  { value: "center", label: "Center" },
-  { value: "end", label: "End" },
-  { value: "stretch", label: "Stretch" },
-];
-
-const GRID_ALIGN_OPTIONS: ReadonlyArray<{ value: GridAlign; label: string }> = [
-  { value: "start", label: "Start" },
-  { value: "center", label: "Center" },
-  { value: "end", label: "End" },
-  { value: "stretch", label: "Stretch" },
 ];
 
 const PADDING_SIDES = ["top", "right", "bottom", "left"] as const;
@@ -221,12 +222,21 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
     patchLayoutSpec({ ...homogeneousSpec, [key]: value } as AutoGridSpec);
   };
 
+  // AlignmentPad sets BOTH axes in one patch — calling the single-field
+  // helpers twice would race (the 2nd reads the pre-change spec and reverts
+  // the 1st). One spread, one command.
+  const onFlexAlignPad = (justify: FlexJustify, align: FlexAlign) => {
+    if (homogeneousSpec?.kind !== "auto-flex") return;
+    patchLayoutSpec({ ...homogeneousSpec, justify, align });
+  };
+  const onGridAlignPad = (justify: GridJustify, align: GridAlign) => {
+    if (homogeneousSpec?.kind !== "auto-grid") return;
+    patchLayoutSpec({ ...homogeneousSpec, justify, align });
+  };
+
   /** Padding 4-side override helper — preserves the other 3 sides. Used by
    *  both Flex and Grid Bar.More (same 4-side shape, RISK-002 C2.4). */
-  const onPaddingSideChange = (
-    side: "top" | "right" | "bottom" | "left",
-    value: number,
-  ) => {
+  const onPaddingSideChange = (side: "top" | "right" | "bottom" | "left", value: number) => {
     if (homogeneousSpec === undefined) return;
     if (homogeneousSpec.kind === "auto-flex") {
       patchLayoutSpec({
@@ -287,116 +297,191 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
           className="inline-flex items-center gap-1 ml-2"
           data-testid="frame-layout-segmented-wrap"
         >
-          {/* When mixed, the active value is intentionally `""` so no chip
-              highlights — Radix ToggleGroup treats an out-of-options value
-              as deselected. Picking any option then writes uniformly. */}
-          <SegmentedControl<LayoutKindChoice>
-            value={layoutMixed ? ("" as LayoutKindChoice) : firstLayoutChoice}
+          {/* Layout paradigm — Combobox (icon + label). Compact: shows only
+              the current value, scales as more paradigms are added. Empty
+              value renders the "여러 레이아웃" placeholder for mixed
+              multi-selections. */}
+          <Select<LayoutKindChoice>
+            value={layoutMixed ? "" : firstLayoutChoice}
             onValueChange={onLayoutChange}
             options={LAYOUT_OPTIONS}
             aria-label="레이아웃 타입"
-            className="data-testid-frame-layout"
+            placeholder="여러 레이아웃"
+            data-testid="frame-layout-select"
+            triggerClassName="min-w-[104px]"
           />
-          <MixedBadge visible={layoutMixed} />
         </div>
       </Bar.Quick>
       {homogeneousSpec?.kind === "auto-flex" ? (
         <Bar.More>
-          <Bar.Field label="Direction">
-            <SegmentedControl<FlexDirection>
-              value={homogeneousSpec.direction}
-              onValueChange={(v) => onFlexFieldChange("direction", v)}
-              options={FLEX_DIRECTION_OPTIONS}
-              aria-label="Flex direction"
-            />
-          </Bar.Field>
-          <Bar.Field label="Gap">
-            <NumberSlider
-              value={homogeneousSpec.gap}
-              onValueChange={(v) => onFlexFieldChange("gap", v)}
-              min={0}
-              max={0.2}
-              step={0.005}
-              format={(v) => `${Math.round(v * 1000) / 10}%`}
-              className="w-full"
-            />
-          </Bar.Field>
-          <Bar.Field label="Justify">
-            <SegmentedControl<FlexJustify>
-              value={homogeneousSpec.justify}
-              onValueChange={(v) => onFlexFieldChange("justify", v)}
-              options={FLEX_JUSTIFY_OPTIONS}
-              aria-label="Flex justify"
-            />
-          </Bar.Field>
-          <Bar.Field label="Align">
-            <SegmentedControl<FlexAlign>
-              value={homogeneousSpec.align}
-              onValueChange={(v) => onFlexFieldChange("align", v)}
-              options={FLEX_ALIGN_OPTIONS}
-              aria-label="Flex align"
-            />
-          </Bar.Field>
-          <PaddingFields padding={homogeneousSpec.padding} onSideChange={onPaddingSideChange} />
+          <Accordion>
+            <AccordionItem label="레이아웃" defaultOpen data-testid="frame-flex-layout-group">
+              <Bar.Field label="Direction">
+                <SegmentedControl<FlexDirection>
+                  value={homogeneousSpec.direction}
+                  onValueChange={(v) => onFlexFieldChange("direction", v)}
+                  options={FLEX_DIRECTION_OPTIONS}
+                  aria-label="Flex direction"
+                />
+              </Bar.Field>
+              <Bar.Field label="Gap">
+                <NumberSlider
+                  value={homogeneousSpec.gap}
+                  onValueChange={(v) => onFlexFieldChange("gap", v)}
+                  min={0}
+                  max={0.2}
+                  step={0.005}
+                  format={(v) => `${Math.round(v * 1000) / 10}%`}
+                  className="w-full"
+                />
+              </Bar.Field>
+              <Bar.Field label="정렬">
+                <div className="flex items-start gap-3">
+                  <AlignmentPad<FlexJustify, FlexAlign>
+                    horizontal={homogeneousSpec.justify}
+                    vertical={homogeneousSpec.align}
+                    hValues={ALIGN_TRIPLE}
+                    vValues={ALIGN_TRIPLE}
+                    onChange={onFlexAlignPad}
+                    aria-label="Flex 정렬"
+                    data-testid="flex-align-pad"
+                  />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <Select<FlexDistribution>
+                      value={
+                        homogeneousSpec.justify === "space-between" ||
+                        homogeneousSpec.justify === "space-around"
+                          ? homogeneousSpec.justify
+                          : "none"
+                      }
+                      onValueChange={(v) =>
+                        onFlexFieldChange("justify", v === "none" ? "start" : (v as FlexJustify))
+                      }
+                      options={FLEX_DISTRIBUTION_OPTIONS}
+                      aria-label="Flex 분포"
+                      triggerClassName="w-full"
+                    />
+                    <label className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                      <Switch
+                        checked={homogeneousSpec.align === "stretch"}
+                        onCheckedChange={(on) =>
+                          onFlexFieldChange("align", on ? "stretch" : "start")
+                        }
+                        aria-label="교차축 늘이기"
+                      />
+                      늘이기
+                    </label>
+                  </div>
+                </div>
+              </Bar.Field>
+            </AccordionItem>
+            <AccordionItem label="여백" data-testid="frame-flex-padding-group">
+              <PaddingFields padding={homogeneousSpec.padding} onSideChange={onPaddingSideChange} />
+            </AccordionItem>
+          </Accordion>
         </Bar.More>
       ) : null}
       {homogeneousSpec?.kind === "auto-grid" ? (
         <Bar.More>
-          <Bar.Field label="Columns">
-            <TrackSizeEditor
-              value={homogeneousSpec.columns as ReadonlyArray<DSTrackSize>}
-              onValueChange={(next) =>
-                onGridFieldChange("columns", next as AutoGridSpec["columns"])
-              }
-              aria-label="Grid columns"
-            />
-          </Bar.Field>
-          <Bar.Field label="Rows">
-            <TrackSizeEditor
-              value={homogeneousSpec.rows as ReadonlyArray<DSTrackSize>}
-              onValueChange={(next) => onGridFieldChange("rows", next as AutoGridSpec["rows"])}
-              aria-label="Grid rows"
-            />
-          </Bar.Field>
-          <Bar.Field label="Column gap">
-            <NumberSlider
-              value={homogeneousSpec.columnGap}
-              onValueChange={(v) => onGridFieldChange("columnGap", v)}
-              min={0}
-              max={0.2}
-              step={0.005}
-              format={(v) => `${Math.round(v * 1000) / 10}%`}
-              className="w-full"
-            />
-          </Bar.Field>
-          <Bar.Field label="Row gap">
-            <NumberSlider
-              value={homogeneousSpec.rowGap}
-              onValueChange={(v) => onGridFieldChange("rowGap", v)}
-              min={0}
-              max={0.2}
-              step={0.005}
-              format={(v) => `${Math.round(v * 1000) / 10}%`}
-              className="w-full"
-            />
-          </Bar.Field>
-          <Bar.Field label="Justify">
-            <SegmentedControl<GridJustify>
-              value={homogeneousSpec.justify}
-              onValueChange={(v) => onGridFieldChange("justify", v)}
-              options={GRID_JUSTIFY_OPTIONS}
-              aria-label="Grid justify"
-            />
-          </Bar.Field>
-          <Bar.Field label="Align">
-            <SegmentedControl<GridAlign>
-              value={homogeneousSpec.align}
-              onValueChange={(v) => onGridFieldChange("align", v)}
-              options={GRID_ALIGN_OPTIONS}
-              aria-label="Grid align"
-            />
-          </Bar.Field>
-          <PaddingFields padding={homogeneousSpec.padding} onSideChange={onPaddingSideChange} />
+          <Accordion>
+            <AccordionItem label="격자" defaultOpen data-testid="frame-grid-tracks-group">
+              <Bar.Field label="행 × 열">
+                <GridSizePicker
+                  columns={homogeneousSpec.columns.length}
+                  rows={homogeneousSpec.rows.length}
+                  onChange={(cols, rws) => {
+                    if (homogeneousSpec.kind !== "auto-grid") return;
+                    patchLayoutSpec({
+                      ...homogeneousSpec,
+                      columns: resizeTracks(homogeneousSpec.columns, cols),
+                      rows: resizeTracks(homogeneousSpec.rows, rws),
+                    });
+                  }}
+                  aria-label="그리드 행 열 개수"
+                />
+              </Bar.Field>
+              <Bar.Field label="Column gap">
+                <NumberSlider
+                  value={homogeneousSpec.columnGap}
+                  onValueChange={(v) => onGridFieldChange("columnGap", v)}
+                  min={0}
+                  max={0.2}
+                  step={0.005}
+                  format={(v) => `${Math.round(v * 1000) / 10}%`}
+                  className="w-full"
+                />
+              </Bar.Field>
+              <Bar.Field label="Row gap">
+                <NumberSlider
+                  value={homogeneousSpec.rowGap}
+                  onValueChange={(v) => onGridFieldChange("rowGap", v)}
+                  min={0}
+                  max={0.2}
+                  step={0.005}
+                  format={(v) => `${Math.round(v * 1000) / 10}%`}
+                  className="w-full"
+                />
+              </Bar.Field>
+            </AccordionItem>
+            <AccordionItem label="정렬" data-testid="frame-grid-align-group">
+              <Bar.Field label="정렬">
+                <div className="flex items-start gap-3">
+                  <AlignmentPad<GridJustify, GridAlign>
+                    horizontal={homogeneousSpec.justify}
+                    vertical={homogeneousSpec.align}
+                    hValues={ALIGN_TRIPLE}
+                    vValues={ALIGN_TRIPLE}
+                    onChange={onGridAlignPad}
+                    aria-label="Grid 정렬"
+                    data-testid="grid-align-pad"
+                  />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <label className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                      <Switch
+                        checked={homogeneousSpec.justify === "stretch"}
+                        onCheckedChange={(on) =>
+                          onGridFieldChange("justify", on ? "stretch" : "start")
+                        }
+                        aria-label="가로 늘이기"
+                      />
+                      가로 늘이기
+                    </label>
+                    <label className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                      <Switch
+                        checked={homogeneousSpec.align === "stretch"}
+                        onCheckedChange={(on) =>
+                          onGridFieldChange("align", on ? "stretch" : "start")
+                        }
+                        aria-label="세로 늘이기"
+                      />
+                      세로 늘이기
+                    </label>
+                  </div>
+                </div>
+              </Bar.Field>
+            </AccordionItem>
+            <AccordionItem label="트랙 세부" data-testid="frame-grid-tracksize-group">
+              <Bar.Field label="Columns">
+                <TrackSizeEditor
+                  value={homogeneousSpec.columns as ReadonlyArray<DSTrackSize>}
+                  onValueChange={(next) =>
+                    onGridFieldChange("columns", next as AutoGridSpec["columns"])
+                  }
+                  aria-label="Grid columns"
+                />
+              </Bar.Field>
+              <Bar.Field label="Rows">
+                <TrackSizeEditor
+                  value={homogeneousSpec.rows as ReadonlyArray<DSTrackSize>}
+                  onValueChange={(next) => onGridFieldChange("rows", next as AutoGridSpec["rows"])}
+                  aria-label="Grid rows"
+                />
+              </Bar.Field>
+            </AccordionItem>
+            <AccordionItem label="여백" data-testid="frame-grid-padding-group">
+              <PaddingFields padding={homogeneousSpec.padding} onSideChange={onPaddingSideChange} />
+            </AccordionItem>
+          </Accordion>
         </Bar.More>
       ) : null}
     </>

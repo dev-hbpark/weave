@@ -13,6 +13,7 @@ import {
   Card,
   CardEyebrow,
   CardTitle,
+  IconPlay,
   Reveal,
   ThemeSwitcher,
 } from "@weave/design-system";
@@ -358,8 +359,8 @@ export function LandingPage() {
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-black/40 text-[color:var(--text-strong)]">
                       <div className="text-center">
-                        <div className="text-[28px]" aria-hidden>
-                          ▶
+                        <div className="flex justify-center" aria-hidden>
+                          <IconPlay size={28} />
                         </div>
                         <div className="text-[11px] mt-1 text-white/80 break-all px-2">
                           {r.name}

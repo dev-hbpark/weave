@@ -43,11 +43,13 @@ test.skip("drag-add at 4 corners in sequence — each commits", async ({ page })
     await page.mouse.up();
     const list = page.locator('[data-testid="rubber-band-popover-list"]');
     await expect(list).toHaveCount(1);
-    const square = list
+    // WI-046 — the popover now offers three frame layout paradigms
+    // (프레임 / 플렉스 / 그리드). Pick the plain "프레임" (absolute).
+    const frameOption = list
       .locator('[role="option"]')
-      .filter({ hasText: /정사각 캔버스/ })
+      .filter({ hasText: /프레임/ })
       .first();
-    await square.click();
+    await frameOption.click();
     expected += 1;
     await expect(page.locator("[data-frame-id]")).toHaveCount(expected);
     // Esc to ensure clean state for the next drag.

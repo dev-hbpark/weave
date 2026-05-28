@@ -11,7 +11,7 @@ import {
   IconImage,
   IconRefresh,
   NumberSlider,
-  SegmentedControl,
+  Select,
 } from "@weave/design-system";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
 import type { ToolbarSectionComponent } from "./types.js";
@@ -66,8 +66,8 @@ export const ImageSection: ToolbarSectionComponent = ({
           <MixedBadge visible={isMixed(src)} />
         </Bar.Field>
         <Bar.Field label="Fit">
-          <SegmentedControl<ImageFit>
-            value={isMixed(fit) ? ("cover" as ImageFit) : fit}
+          <Select<ImageFit>
+            value={isMixed(fit) ? "" : fit}
             onValueChange={(v) =>
               updateAll(editor, ids, (prev) => ({
                 attrs: { ...prev.attrs, fit: v },
@@ -80,6 +80,8 @@ export const ImageSection: ToolbarSectionComponent = ({
               }>
             }
             aria-label="Image fit"
+            placeholder="여러 맞춤"
+            triggerClassName="w-full"
           />
           <MixedBadge visible={isMixed(fit)} />
         </Bar.Field>

@@ -25,10 +25,12 @@
 // desaturate / soften so the panel itself reflects the global lock.
 
 import type { Item as AgocraftItem } from "@agocraft/core";
+import { IconDiamond, IconDocLines, IconFrame, IconSparkle } from "@weave/design-system";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
+  ReactNode,
 } from "react";
 import { useParams } from "react-router-dom";
 import { effectivePresentationOrder, reorder } from "../document/presentation-order.js";
@@ -117,11 +119,11 @@ export interface ThumbnailPanelProps {
   readonly disabledFrameIds?: ReadonlySet<string> | undefined;
 }
 
-const FLAVOR_GLYPH: Readonly<Record<DocFlavor, string>> = {
-  mixed: "✦",
-  "slide-deck": "▭",
-  "canvas-board": "◇",
-  "doc-page": "≡",
+const FLAVOR_GLYPH: Readonly<Record<DocFlavor, ReactNode>> = {
+  mixed: <IconSparkle size={22} />,
+  "slide-deck": <IconFrame size={22} />,
+  "canvas-board": <IconDiamond size={22} />,
+  "doc-page": <IconDocLines size={22} />,
 };
 
 const DOMAIN_ACCENT_VAR: Readonly<Record<string, string>> = {

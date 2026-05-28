@@ -111,6 +111,13 @@
   --accent-strong: var(--color-magenta-300);
   --accent-gradient: linear-gradient(135deg, var(--color-magenta-500), var(--color-violet-500));
 
+  /* WI-048 — arrange preview (ghost) overlay. Intentionally a FIXED cyan,
+     not the theme accent, so the proposed-placement ghosts read as distinct
+     from the selection handles (which use --accent) in every theme. Defined
+     once in the base; themes inherit it (no per-theme override) on purpose. */
+  --arrange-preview-stroke: var(--color-cyan-300);
+  --arrange-preview-fill: color-mix(in oklch, var(--color-cyan-500) 18%, transparent);
+
   /* WI-040 Phase 2 / DR-design-016 — HoverAffordanceLayer 3-tier.
      같은 hue (--accent) 안에서 stroke style + glow 로 위계 분리:
        hovered     — focal (2px solid + glow)

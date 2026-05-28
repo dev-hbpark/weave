@@ -346,6 +346,37 @@ export function buildWeaveCommands(
       return ok(undefined, patches);
     },
   };
+  // Batch remove — every selected item removed in ONE transaction so a
+  // single Cmd+Z restores them all (multi-delete parity with paste/cut).
+  // Each item's removal patch targets its OWN parent (resolved from the
+  // pre-mutation doc), so items across different parents delete correctly.
+  interface RemoveItemsInput {
+    readonly itemIds: ReadonlyArray<string>;
+  }
+  const removeItems: Command<RemoveItemsInput, void> = {
+    name: "weave.items.remove",
+    run: (ctx: CommandContext, input: RemoveItemsInput) => {
+      const patches: Patch[] = [];
+      for (const id of input.itemIds) {
+        const found = findParentAndIndex(ctx.document, id);
+        if (found === undefined) continue;
+        const parent = found.parent;
+        if (pending !== undefined) {
+          const target = parent.children[found.indexInParent];
+          if (target !== undefined) pending.stage(target);
+        } else {
+          targets.removeItem(id);
+        }
+        patches.push({
+          type: "item.children",
+          itemId: parent.id,
+          added: [],
+          removed: [makeItemId(id)],
+        });
+      }
+      return ok(undefined, patches);
+    },
+  };
   const reset: Command<void, void> = {
     name: "weave.doc.reset",
     run: () => {
@@ -399,10 +430,25 @@ export function buildWeaveCommands(
       // resize or a child resize — position management is delegated to the
       // relevant parent frame's layout. The engine inspects the document and
       // returns full-attrs reflow Patches (empty for absolute / no-layout).
+      //
+      // WI-047 — gate on an ACTUAL frame change. A non-frame edit (opacity,
+      // fill, text, …) keeps the frame identical; running the relayout anyway
+      // makes the engine emit full-attrs reflow patches computed from the
+      // pre-update document, which get appended AFTER this patch and revert
+      // the edit. Bug surfaced only inside flex/grid frames (absolute parents
+      // return no reflow patches, so the overwrite was invisible there).
       const oldFrame = (child.attrs as { frame?: AgocraftItemFrame }).frame;
       const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
+      const frameChanged =
+        oldFrame !== undefined &&
+        newFrame !== undefined &&
+        (oldFrame.x !== newFrame.x ||
+          oldFrame.y !== newFrame.y ||
+          oldFrame.width !== newFrame.width ||
+          oldFrame.height !== newFrame.height ||
+          oldFrame.rotation !== newFrame.rotation);
       const extraPatches: ReadonlyArray<Patch> =
-        LAYOUT_FEATURE_ENABLED && oldFrame !== undefined && newFrame !== undefined
+        LAYOUT_FEATURE_ENABLED && frameChanged && oldFrame !== undefined && newFrame !== undefined
           ? getLayoutEngine().onFrameChanged({
               root: ctx.document.root,
               itemId: child.id,
@@ -983,15 +1029,15 @@ export function buildWeaveCommands(
   let pasteStackIndex = 0;
 
   interface ClipboardCopyInput {
-    /** Items to copy. v1 takes the first id only — multi-select clipboard
-     *  ships with WI-036's selection-set graduation. */
+    /** Items to copy, in selection order. Every id is serialised into the
+     *  clipboard payload (multi-select copy); paste clones them all. */
     readonly itemIds: ReadonlyArray<string>;
   }
 
   interface ClipboardCutInput extends ClipboardCopyInput {
-    /** Parent container of every cut item — required for the `item.children`
-     *  Patch. v1 takes the parent of the first id; multi-cut across
-     *  multiple parents is WI-036's job. */
+    /** Fallback parent container hint. Each cut item's removal patch
+     *  targets its own resolved parent; this is only used when an item's
+     *  parent can't be resolved from the live doc. */
     readonly containerId?: string;
   }
 
@@ -1158,26 +1204,39 @@ export function buildWeaveCommands(
   const clipboardCopy: Command<ClipboardCopyInput, void> = {
     name: "weave.clipboard.copy",
     run: (ctx: CommandContext, input: ClipboardCopyInput) => {
-      const id = input.itemIds[0];
-      if (id === undefined) return fail("nothing-selected", "No items selected to copy");
-      const item = findItemDeep(ctx.document, id);
-      if (item === undefined) {
-        return fail("item-not-found", `weave.clipboard.copy: no item with id "${id}"`);
+      if (input.itemIds.length === 0) {
+        return fail("nothing-selected", "No items selected to copy");
       }
-      const parent = findParentAndIndex(ctx.document, id);
-      const serialized: SerializedItem = serializeItemSubtree(item);
-      // Phase 4 — MAX_PASTE_NODES gate. Refused copies leave the
-      // existing clipboard untouched so users can still paste their
-      // last successful copy. The host's hotkey / context-menu
-      // dispatcher surfaces the `clipboard-too-large` code as a toast.
-      const nodes = countSubtreeNodes(serialized);
-      if (nodes > MAX_PASTE_NODES) {
+      // Serialise every selected subtree (multi-select copy). Missing ids
+      // are skipped; the order follows the selection so paste preserves it.
+      const serializedItems: SerializedItem[] = [];
+      let totalNodes = 0;
+      for (const id of input.itemIds) {
+        const item = findItemDeep(ctx.document, id);
+        if (item === undefined) continue;
+        const s = serializeItemSubtree(item);
+        totalNodes += countSubtreeNodes(s);
+        serializedItems.push(s);
+      }
+      const first = serializedItems[0];
+      if (first === undefined) {
         return fail(
-          "clipboard-too-large",
-          `weave.clipboard.copy: subtree has ${nodes} nodes, max ${MAX_PASTE_NODES}`,
-          { nodes, max: MAX_PASTE_NODES },
+          "item-not-found",
+          `weave.clipboard.copy: none of [${input.itemIds.join(", ")}] are in the doc`,
         );
       }
+      // Phase 4 — MAX_PASTE_NODES gate, now summed across the whole
+      // selection. Refused copies leave the existing clipboard untouched so
+      // users can still paste their last successful copy. The host's
+      // hotkey / context-menu dispatcher surfaces `clipboard-too-large`.
+      if (totalNodes > MAX_PASTE_NODES) {
+        return fail(
+          "clipboard-too-large",
+          `weave.clipboard.copy: selection has ${totalNodes} nodes, max ${MAX_PASTE_NODES}`,
+          { nodes: totalNodes, max: MAX_PASTE_NODES },
+        );
+      }
+      const parent = findParentAndIndex(ctx.document, String(input.itemIds[0]));
       const payload: ItemsClipboardPayload = {
         schemaVersion: 1,
         appVersion: APP_VERSION,
@@ -1185,7 +1244,8 @@ export function buildWeaveCommands(
         timestamp: Date.now(),
         kind: "weave/items.v1",
         data: {
-          item: serialized,
+          item: first,
+          items: serializedItems,
           relations: [],
           ...(parent !== undefined ? { sourceParentId: String(parent.parent.id) } : {}),
         },
@@ -1199,35 +1259,40 @@ export function buildWeaveCommands(
   const clipboardCut: Command<ClipboardCutInput, void> = {
     name: "weave.clipboard.cut",
     run: (ctx: CommandContext, input: ClipboardCutInput) => {
-      const id = input.itemIds[0];
-      if (id === undefined) return fail("nothing-selected", "No items selected to cut");
-      const item = findItemDeep(ctx.document, id);
-      if (item === undefined) {
-        return fail("item-not-found", `weave.clipboard.cut: no item with id "${id}"`);
+      if (input.itemIds.length === 0) {
+        return fail("nothing-selected", "No items selected to cut");
       }
-      const container = findContainer(ctx.document, input.containerId);
-      if (container === undefined) {
+      // First serialise the whole selection to the clipboard — a
+      // side-effect that happens BEFORE any removal so a paste right after
+      // (or in another tab) sees the snapshot, and so the cap check below
+      // can refuse before mutating the doc.
+      const serializedItems: SerializedItem[] = [];
+      let totalNodes = 0;
+      for (const id of input.itemIds) {
+        const item = findItemDeep(ctx.document, id);
+        if (item === undefined) continue;
+        const s = serializeItemSubtree(item);
+        totalNodes += countSubtreeNodes(s);
+        serializedItems.push(s);
+      }
+      const first = serializedItems[0];
+      if (first === undefined) {
         return fail(
-          "container-not-found",
-          `weave.clipboard.cut: container ${input.containerId} not in doc`,
+          "item-not-found",
+          `weave.clipboard.cut: none of [${input.itemIds.join(", ")}] are in the doc`,
         );
       }
-      const parent = findParentAndIndex(ctx.document, id);
-      // First serialise to the clipboard — this is a side-effect of the
-      // command, but happens before the removal patch so a paste right
-      // afterwards (or in another tab on Phase 4) sees the snapshot.
-      const serialized: SerializedItem = serializeItemSubtree(item);
-      // Phase 4 — MAX_PASTE_NODES gate. A cut above the cap is refused
-      // BEFORE the removal patch fires, so the source item stays in the
-      // doc and the user can recover.
-      const nodes = countSubtreeNodes(serialized);
-      if (nodes > MAX_PASTE_NODES) {
+      // Phase 4 — MAX_PASTE_NODES gate, summed across the selection. A cut
+      // above the cap is refused BEFORE any removal patch fires, so the
+      // source items stay in the doc and the user can recover.
+      if (totalNodes > MAX_PASTE_NODES) {
         return fail(
           "clipboard-too-large",
-          `weave.clipboard.cut: subtree has ${nodes} nodes, max ${MAX_PASTE_NODES}`,
-          { nodes, max: MAX_PASTE_NODES },
+          `weave.clipboard.cut: selection has ${totalNodes} nodes, max ${MAX_PASTE_NODES}`,
+          { nodes: totalNodes, max: MAX_PASTE_NODES },
         );
       }
+      const primaryParent = findParentAndIndex(ctx.document, String(input.itemIds[0]));
       const payload: ItemsClipboardPayload = {
         schemaVersion: 1,
         appVersion: APP_VERSION,
@@ -1235,38 +1300,44 @@ export function buildWeaveCommands(
         timestamp: Date.now(),
         kind: "weave/items.v1",
         data: {
-          item: serialized,
+          item: first,
+          items: serializedItems,
           relations: [],
-          ...(parent !== undefined ? { sourceParentId: String(parent.parent.id) } : {}),
+          ...(primaryParent !== undefined ? { sourceParentId: String(primaryParent.parent.id) } : {}),
         },
       };
       clipboardStore.write(payload);
       pasteStackIndex = 0;
-      // Now the structural removal — mirrors `weave.item.remove`. The
-      // patch must target the *actual* parent of `id`, not the
-      // (possibly hinted) `input.containerId`. The actual parent has
-      // been resolved into `parent.parent.id` above. Falling back to
-      // `container.id` would re-introduce the silent-no-op-for-nested-
-      // items bug.
-      if (pending !== undefined) {
-        pending.stage(item); // so undo can restore the original Item shape
-      } else {
-        targets.removeItem(id);
-      }
-      const removalContainerId = parent !== undefined ? parent.parent.id : container.id;
-      const patches: Patch[] = [
-        {
+      // Now the structural removal — one `item.children { removed }` patch
+      // per item, each targeting the item's *actual* parent (not the
+      // hinted `input.containerId`) so nested items are removed correctly.
+      // All patches land in one transaction → a single Cmd+Z restores the
+      // whole cut.
+      const fallback = findContainer(ctx.document, input.containerId);
+      const patches: Patch[] = [];
+      for (const id of input.itemIds) {
+        const item = findItemDeep(ctx.document, id);
+        if (item === undefined) continue;
+        const parent = findParentAndIndex(ctx.document, id);
+        if (pending !== undefined) {
+          pending.stage(item); // so undo can restore the original Item shape
+        } else {
+          targets.removeItem(id);
+        }
+        const removalContainerId =
+          parent !== undefined ? parent.parent.id : (fallback?.id ?? ctx.document.root.id);
+        patches.push({
           type: "item.children",
           itemId: removalContainerId,
           added: [],
           removed: [makeItemId(id)],
-        },
-      ];
+        });
+      }
       return ok(undefined, patches);
     },
   };
 
-  const clipboardPaste: Command<ClipboardPasteInput, string> = {
+  const clipboardPaste: Command<ClipboardPasteInput, ReadonlyArray<string>> = {
     name: "weave.clipboard.paste",
     run: (ctx: CommandContext, input: ClipboardPasteInput) => {
       const payload = clipboardStore.read();
@@ -1282,7 +1353,7 @@ export function buildWeaveCommands(
 
       // Paste Special — mode-aware dispatch through the registry. The
       // four "only" modes don't touch the document tree; they project a
-      // slice of the source's attrs onto every currently-selected target.
+      // slice of the (primary) source's attrs onto every selected target.
       const mode: PasteMode = input.mode ?? "everything";
       if (mode !== "everything") {
         const handler = PASTE_SPECIAL_HANDLERS[mode];
@@ -1302,7 +1373,7 @@ export function buildWeaveCommands(
         // the targets accept it (e.g., `text` mode on a non-text
         // selection). Return ok so the clipboard stays intact and the
         // host's Paste Special dialog closes cleanly.
-        return ok("", patches);
+        return ok([], patches);
       }
 
       const container = findContainer(ctx.document, input.containerId);
@@ -1323,53 +1394,198 @@ export function buildWeaveCommands(
         );
       }
 
-      // 1) Re-issue every ItemId / UnitId in the subtree (DR-019 D3) —
-      //    same-doc paste must never collide with the source.
+      // Multi-item paste: clone every copied subtree. Fall back to the
+      // single `item` for payloads written before the `items` field (or by
+      // an older tab). Pointer-centring only makes sense for a single item;
+      // for a multi-paste we keep each item's own source frame and apply
+      // the same stack offset so relative positions are preserved.
+      const sources = payload.data.items ?? [payload.data.item];
       const idGen = ctx.resolve(IdGeneratorToken);
       pasteStackIndex += 1;
-      const { subtree } = remapIds(payload.data.item, idGen, payload.data.relations);
+      const usePointer = sources.length === 1 && input.pointerInContainer !== undefined;
+      const patches: Patch[] = [];
+      const newIds: string[] = [];
+      for (const source of sources) {
+        // 1) Re-issue every ItemId / UnitId so a same-doc paste never
+        //    collides with the source (DR-019 D3).
+        const { subtree } = remapIds(source, idGen, payload.data.relations);
+        // 2) Resolve the destination frame from this item's own source frame.
+        const sourceFrame: ItemFrame = (source.attrs as { frame?: ItemFrame }).frame ?? {
+          x: 0,
+          y: 0,
+          width: 0.5,
+          height: 0.5,
+          rotation: 0,
+        };
+        const newFrame = resolvePasteFrame({
+          sourceFrame,
+          containerSizePx: input.containerSizePx,
+          pasteIndex: pasteStackIndex,
+          ...(usePointer ? { pointerInContainer: input.pointerInContainer } : {}),
+        });
+        // 3) Convert → AgocraftItem and overwrite the root frame. Children's
+        //    frames are parent-relative ratios — the layout survives.
+        const pastedRoot = serializedItemToAgocraft(subtree);
+        const pastedWithFrame: AgocraftItem = {
+          ...pastedRoot,
+          attrs: { ...pastedRoot.attrs, frame: newFrame } as typeof pastedRoot.attrs,
+        };
+        // 4) Stage each subtree and emit one `item.children { added }`
+        //    patch. All patches land in one transaction → a single Cmd+Z
+        //    reverts the whole paste.
+        pending.stage(pastedWithFrame);
+        patches.push({
+          type: "item.children",
+          itemId: container.id,
+          added: [pastedWithFrame.id],
+          removed: [],
+        });
+        newIds.push(String(pastedWithFrame.id));
+      }
+      return ok(newIds, patches);
+    },
+  };
 
-      // 2) Compute the destination frame via the D5 resolver. The source
-      //    frame is the only piece we read off the payload's attrs; the
-      //    rest of the subtree is opaque to the host.
-      const sourceFrame: ItemFrame = (payload.data.item.attrs as { frame?: ItemFrame }).frame ?? {
+  // Cmd+D duplicate — deep-clone the selected subtree in place (no
+  // clipboard involvement, so the user's copy buffer is untouched). Reuses
+  // the same serialize → remap-ids → convert pipeline as paste, reads the
+  // source from the live doc, offsets the root frame slightly so the copy
+  // is visible, and stages it as a sibling under the source's parent. One
+  // `item.children { added }` patch → a single Cmd+Z reverts the whole copy.
+  interface DuplicateItemInput {
+    readonly itemId: string;
+  }
+  const duplicateItem: Command<DuplicateItemInput, string> = {
+    name: "weave.item.duplicate",
+    run: (ctx: CommandContext, input: DuplicateItemInput) => {
+      const item = findItemDeep(ctx.document, input.itemId);
+      if (item === undefined) {
+        return fail("item-not-found", `weave.item.duplicate: no item with id "${input.itemId}"`);
+      }
+      const parent = findParentAndIndex(ctx.document, input.itemId);
+      if (parent === undefined) {
+        return fail(
+          "no-parent",
+          `weave.item.duplicate: ${input.itemId} has no parent (the root is not duplicable)`,
+        );
+      }
+      if (pending === undefined) {
+        return fail(
+          "no-pending-channel",
+          "weave.item.duplicate: PendingCreations side-channel not configured",
+        );
+      }
+      const serialized: SerializedItem = serializeItemSubtree(item);
+      const nodes = countSubtreeNodes(serialized);
+      if (nodes > MAX_PASTE_NODES) {
+        return fail(
+          "subtree-too-large",
+          `weave.item.duplicate: subtree has ${nodes} nodes, max ${MAX_PASTE_NODES}`,
+          { nodes, max: MAX_PASTE_NODES },
+        );
+      }
+      const idGen = ctx.resolve(IdGeneratorToken);
+      const { subtree } = remapIds(serialized, idGen, []);
+      const srcFrame: ItemFrame = (item.attrs as { frame?: ItemFrame }).frame ?? {
         x: 0,
         y: 0,
         width: 0.5,
         height: 0.5,
         rotation: 0,
       };
-      const newFrame = resolvePasteFrame({
-        sourceFrame,
-        containerSizePx: input.containerSizePx,
-        pasteIndex: pasteStackIndex,
-        ...(input.pointerInContainer !== undefined
-          ? { pointerInContainer: input.pointerInContainer }
-          : {}),
-      });
-
-      // 3) Convert SerializedItem → AgocraftItem and overwrite the root
-      //    frame. Children's frames are left untouched (they are
-      //    parent-relative ratios — the visual layout survives the paste).
-      const pastedRoot = serializedItemToAgocraft(subtree);
-      const pastedWithFrame: AgocraftItem = {
-        ...pastedRoot,
-        attrs: { ...pastedRoot.attrs, frame: newFrame } as typeof pastedRoot.attrs,
+      const OFFSET = 0.02;
+      const dupFrame: ItemFrame = {
+        ...srcFrame,
+        x: Math.min(Math.max(srcFrame.x + OFFSET, 0), Math.max(0, 1 - srcFrame.width)),
+        y: Math.min(Math.max(srcFrame.y + OFFSET, 0), Math.max(0, 1 - srcFrame.height)),
       };
-
-      // 4) Stage the subtree shape via PendingCreations and emit ONE
-      //    `item.children { added }` patch. The reducer's existing case
-      //    resolves the staged Item; Cmd+Z reverts the whole subtree.
-      pending.stage(pastedWithFrame);
+      const dupRoot = serializedItemToAgocraft(subtree);
+      const dupWithFrame: AgocraftItem = {
+        ...dupRoot,
+        attrs: { ...dupRoot.attrs, frame: dupFrame } as typeof dupRoot.attrs,
+      };
+      pending.stage(dupWithFrame);
       const patches: Patch[] = [
         {
           type: "item.children",
-          itemId: container.id,
-          added: [pastedWithFrame.id],
+          itemId: parent.parent.id,
+          added: [dupWithFrame.id],
           removed: [],
         },
       ];
-      return ok(String(pastedWithFrame.id), patches);
+      return ok(String(dupWithFrame.id), patches);
+    },
+  };
+
+  // Batch duplicate — every selected item's offset copy staged in ONE
+  // transaction so a single Cmd+Z removes them all (multi-duplicate parity
+  // with paste). Same clone pipeline as the single duplicate; the node cap
+  // is summed across the whole selection and checked BEFORE any staging so
+  // an oversized batch leaves the doc untouched.
+  interface DuplicateItemsInput {
+    readonly itemIds: ReadonlyArray<string>;
+  }
+  const duplicateItems: Command<DuplicateItemsInput, ReadonlyArray<string>> = {
+    name: "weave.items.duplicate",
+    run: (ctx: CommandContext, input: DuplicateItemsInput) => {
+      if (input.itemIds.length === 0) return ok([], []);
+      if (pending === undefined) {
+        return fail(
+          "no-pending-channel",
+          "weave.items.duplicate: PendingCreations side-channel not configured",
+        );
+      }
+      const idGen = ctx.resolve(IdGeneratorToken);
+      const staged: { parentId: AgocraftItem["id"]; dup: AgocraftItem }[] = [];
+      let totalNodes = 0;
+      for (const id of input.itemIds) {
+        const item = findItemDeep(ctx.document, id);
+        if (item === undefined) continue;
+        const parent = findParentAndIndex(ctx.document, id);
+        if (parent === undefined) continue;
+        const serialized: SerializedItem = serializeItemSubtree(item);
+        totalNodes += countSubtreeNodes(serialized);
+        const { subtree } = remapIds(serialized, idGen, []);
+        const srcFrame: ItemFrame = (item.attrs as { frame?: ItemFrame }).frame ?? {
+          x: 0,
+          y: 0,
+          width: 0.5,
+          height: 0.5,
+          rotation: 0,
+        };
+        const OFFSET = 0.02;
+        const dupFrame: ItemFrame = {
+          ...srcFrame,
+          x: Math.min(Math.max(srcFrame.x + OFFSET, 0), Math.max(0, 1 - srcFrame.width)),
+          y: Math.min(Math.max(srcFrame.y + OFFSET, 0), Math.max(0, 1 - srcFrame.height)),
+        };
+        const dupRoot = serializedItemToAgocraft(subtree);
+        const dupWithFrame: AgocraftItem = {
+          ...dupRoot,
+          attrs: { ...dupRoot.attrs, frame: dupFrame } as typeof dupRoot.attrs,
+        };
+        staged.push({ parentId: parent.parent.id, dup: dupWithFrame });
+      }
+      if (totalNodes > MAX_PASTE_NODES) {
+        return fail(
+          "subtree-too-large",
+          `weave.items.duplicate: selection has ${totalNodes} nodes, max ${MAX_PASTE_NODES}`,
+          { nodes: totalNodes, max: MAX_PASTE_NODES },
+        );
+      }
+      const patches: Patch[] = [];
+      const newIds: string[] = [];
+      for (const s of staged) {
+        pending.stage(s.dup);
+        patches.push({
+          type: "item.children",
+          itemId: s.parentId,
+          added: [s.dup.id],
+          removed: [],
+        });
+        newIds.push(String(s.dup.id));
+      }
+      return ok(newIds, patches);
     },
   };
 
@@ -1503,6 +1719,7 @@ export function buildWeaveCommands(
   return [
     addItem as Command,
     removeItem as Command,
+    removeItems as Command,
     updateItem as Command,
     resizeMulti as Command,
     updateBehavior as Command,
@@ -1521,6 +1738,8 @@ export function buildWeaveCommands(
     clipboardCopy as Command,
     clipboardCut as Command,
     clipboardPaste as Command,
+    duplicateItem as Command,
+    duplicateItems as Command,
     // WI-020 / WI-043
     setFrameLayout as Command,
     setItemLayoutChild as Command,

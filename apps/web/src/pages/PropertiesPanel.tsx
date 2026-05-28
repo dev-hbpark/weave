@@ -10,7 +10,16 @@
 // 영향 작게 유지 + dismissible.
 
 import type { Item as AgocraftItem, Unit as AgocraftUnit } from "@agocraft/core";
-import { Card, CardEyebrow, FieldGroup, IconButton, TextField } from "@weave/design-system";
+import {
+  Card,
+  CardEyebrow,
+  FieldGroup,
+  IconButton,
+  IconCheck,
+  IconClose,
+  IconSparkle,
+  TextField,
+} from "@weave/design-system";
 import { useMemo } from "react";
 import {
   type CameraTargetBehavior,
@@ -134,7 +143,7 @@ export function PropertiesPanel({
             onClick={onClose}
             data-testid="properties-close"
           >
-            ✕
+            <IconClose size={14} />
           </IconButton>
         </div>
 
@@ -346,7 +355,10 @@ function InteractionRow({
               })
             }
           >
-            {behavior.manual === true ? "manual ✓" : "auto ✦"}
+            <span className="inline-flex items-center gap-1">
+              {behavior.manual === true ? <IconCheck size={11} /> : <IconSparkle size={11} />}
+              {behavior.manual === true ? "manual" : "auto"}
+            </span>
           </button>
         </div>
         <div className="grid grid-cols-3 gap-1.5">

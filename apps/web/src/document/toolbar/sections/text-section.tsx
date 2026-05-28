@@ -17,11 +17,9 @@ import type {
   TextWeight,
 } from "@agocraft/core";
 import {
-  deriveTextAutoResize,
-  layoutChildFromTextAutoResize,
-  type LegacyTextAutoResize,
-} from "../../domains/derive-text-auto-resize.js";
-import {
+  Accordion,
+  AccordionItem,
+  AlignmentPad,
   ContextualToolbar as Bar,
   Button,
   ColorPicker,
@@ -37,11 +35,17 @@ import {
   IconUnderline,
   NumberSlider,
   SegmentedControl,
+  Switch,
   Tooltip,
 } from "@weave/design-system";
 import { useState } from "react";
 import { TextOnboardingHint } from "../../../launch/TextOnboardingHint.js";
 import { fontSizeTooltipCopy } from "../../../launch/text-v1-copy.js";
+import {
+  deriveTextAutoResize,
+  type LegacyTextAutoResize,
+  layoutChildFromTextAutoResize,
+} from "../../domains/derive-text-auto-resize.js";
 import {
   isMixed,
   MixedBadge,
@@ -116,9 +120,8 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
   // UX) but reads / writes through `attrs.layoutChild` via the canonical
   // mapping in derive-text-auto-resize.ts. A full 4×4 anchor picker
   // (WI019_LAYOUT_ENABLED) lands as a follow-up PR.
-  const textAutoResize = sharedValue<LegacyTextAutoResize>(
-    items,
-    (it) => deriveTextAutoResize((it.attrs as unknown as TextAttrs).layoutChild),
+  const textAutoResize = sharedValue<LegacyTextAutoResize>(items, (it) =>
+    deriveTextAutoResize((it.attrs as unknown as TextAttrs).layoutChild),
   );
   const textAlignVertical = sharedValue<TextAlignVertical>(
     items,
@@ -237,346 +240,355 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         />
       </Bar.Quick>
       <Bar.More>
-        <Bar.Field label="Family">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="md"
-                data-testid="text-font-family-trigger"
-                style={{ fontFamily: isMixed(fontFamily) ? undefined : fontFamily }}
-                className="w-full justify-between"
-              >
-                {isMixed(fontFamily) ? "여러 폰트" : fontFamilyLabel(fontFamily)}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" sideOffset={6}>
-              {FONT_FAMILY_PRESETS.map((p) => (
-                <DropdownMenuItem
-                  key={p.value}
-                  onSelect={() =>
-                    updateAll(editor, ids, (prev) => ({
-                      attrs: { ...prev.attrs, fontFamily: p.value },
-                    }))
-                  }
-                  data-testid={`text-font-family-${p.label.replace(/\s+/g, "-")}`}
-                >
-                  <span style={{ fontFamily: p.value }}>{p.label}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <MixedBadge visible={isMixed(fontFamily)} />
-        </Bar.Field>
-        <Bar.Field label="Size">
-          {(() => {
-            const tip = fontSizeTooltipCopy();
-            return (
-              <Tooltip content={tip.content} disabled={tip.disabled} side="bottom">
-                <div data-testid="text-size-section" className="w-full">
-                  <NumberSlider
-                    value={isMixed(fontSize) ? 24 : fontSize}
-                    onValueChange={(v) =>
-                      updateAll(editor, ids, (prev) => ({
-                        attrs: { ...prev.attrs, fontSize: v },
-                      }))
-                    }
-                    min={8}
-                    max={200}
-                    step={1}
-                    format={(v) => `${Math.round(v)}px`}
-                    aria-label="Font size"
-                    className="w-full"
-                  />
-                </div>
-              </Tooltip>
-            );
-          })()}
-          <MixedBadge visible={isMixed(fontSize)} />
-        </Bar.Field>
-        <Bar.Field label="Align">
-          <SegmentedControl<TextAlign>
-            value={isMixed(textAlign) ? "left" : textAlign}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: {
-                  ...prev.attrs,
-                  textAlign: v,
-                  textAlignHorizontal:
-                    v === "left"
-                      ? "LEFT"
-                      : v === "center"
-                        ? "CENTER"
-                        : v === "right"
-                          ? "RIGHT"
-                          : "JUSTIFIED",
-                },
-              }))
-            }
-            options={[
-              { value: "left", label: "L" },
-              { value: "center", label: "C" },
-              { value: "right", label: "R" },
-              { value: "justify", label: "J" },
-            ]}
-            aria-label="Text align"
-          />
-          <MixedBadge visible={isMixed(textAlign)} />
-        </Bar.Field>
-        <Bar.Field label="V-Align">
-          <SegmentedControl<TextAlignVertical>
-            value={isMixed(textAlignVertical) ? "TOP" : textAlignVertical}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, textAlignVertical: v },
-              }))
-            }
-            options={[
-              { value: "TOP", label: "상" },
-              { value: "CENTER", label: "중" },
-              { value: "BOTTOM", label: "하" },
-            ]}
-            aria-label="Vertical align"
-          />
-          <MixedBadge visible={isMixed(textAlignVertical)} />
-        </Bar.Field>
-        <Bar.Field label="Mode">
-          <TextOnboardingHint
-            anchor={
-              <div data-testid="text-mode-toggle">
-                <SegmentedControl<LegacyTextAutoResize>
-                  value={isMixed(textAutoResize) ? "HEIGHT" : textAutoResize}
-                  onValueChange={(v) =>
+        <Accordion>
+          <AccordionItem label="타이포" defaultOpen data-testid="text-typo-group">
+            <Bar.Field label="Family">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    data-testid="text-font-family-trigger"
+                    style={{ fontFamily: isMixed(fontFamily) ? undefined : fontFamily }}
+                    className="w-full justify-between"
+                  >
+                    {isMixed(fontFamily) ? "여러 폰트" : fontFamilyLabel(fontFamily)}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" sideOffset={6}>
+                  {FONT_FAMILY_PRESETS.map((p) => (
+                    <DropdownMenuItem
+                      key={p.value}
+                      onSelect={() =>
+                        updateAll(editor, ids, (prev) => ({
+                          attrs: { ...prev.attrs, fontFamily: p.value },
+                        }))
+                      }
+                      data-testid={`text-font-family-${p.label.replace(/\s+/g, "-")}`}
+                    >
+                      <span style={{ fontFamily: p.value }}>{p.label}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <MixedBadge visible={isMixed(fontFamily)} />
+            </Bar.Field>
+            <Bar.Field label="Size">
+              {(() => {
+                const tip = fontSizeTooltipCopy();
+                return (
+                  <Tooltip content={tip.content} disabled={tip.disabled} side="bottom">
+                    <div data-testid="text-size-section" className="w-full">
+                      <NumberSlider
+                        value={isMixed(fontSize) ? 24 : fontSize}
+                        onValueChange={(v) =>
+                          updateAll(editor, ids, (prev) => ({
+                            attrs: { ...prev.attrs, fontSize: v },
+                          }))
+                        }
+                        min={8}
+                        max={200}
+                        step={1}
+                        format={(v) => `${Math.round(v)}px`}
+                        aria-label="Font size"
+                        className="w-full"
+                      />
+                    </div>
+                  </Tooltip>
+                );
+              })()}
+              <MixedBadge visible={isMixed(fontSize)} />
+            </Bar.Field>
+          </AccordionItem>
+          <AccordionItem label="정렬" data-testid="text-align-group">
+            <Bar.Field label="정렬">
+              {/* 2D align pad — horizontal (left/center/right) × vertical
+                  (top/center/bottom). "양쪽 맞춤"(justify) is a 4th horizontal
+                  mode handled by the toggle beside the pad. */}
+              <div className="flex items-start gap-3">
+                <AlignmentPad<"left" | "center" | "right", TextAlignVertical>
+                  horizontal={isMixed(textAlign) ? "" : textAlign}
+                  vertical={isMixed(textAlignVertical) ? "" : textAlignVertical}
+                  hValues={["left", "center", "right"]}
+                  vValues={["TOP", "CENTER", "BOTTOM"]}
+                  onChange={(h, v) =>
                     updateAll(editor, ids, (prev) => ({
                       attrs: {
                         ...prev.attrs,
-                        // WI-019 B4 — write through layoutChild instead of
-                        // the removed textAutoResize field. The legacy 3-
-                        // mode UX is preserved via canonical mapping.
-                        layoutChild: layoutChildFromTextAutoResize(v),
+                        textAlign: h,
+                        textAlignHorizontal:
+                          h === "left" ? "LEFT" : h === "center" ? "CENTER" : "RIGHT",
+                        textAlignVertical: v,
                       },
                     }))
                   }
-                  options={[
-                    { value: "WIDTH_AND_HEIGHT", label: "자동너비" },
-                    { value: "HEIGHT", label: "자동높이" },
-                    { value: "NONE", label: "고정" },
-                  ]}
-                  aria-label="Text resize mode"
+                  aria-label="텍스트 정렬"
+                  data-testid="text-align-pad"
                 />
+                <label className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                  <Switch
+                    checked={!isMixed(textAlign) && textAlign === "justify"}
+                    onCheckedChange={(on) =>
+                      updateAll(editor, ids, (prev) => ({
+                        attrs: {
+                          ...prev.attrs,
+                          textAlign: on ? "justify" : "left",
+                          textAlignHorizontal: on ? "JUSTIFIED" : "LEFT",
+                        },
+                      }))
+                    }
+                    aria-label="양쪽 맞춤"
+                  />
+                  양쪽 맞춤
+                </label>
+                <MixedBadge visible={isMixed(textAlign) || isMixed(textAlignVertical)} />
               </div>
-            }
-          />
-          <MixedBadge visible={isMixed(textAutoResize)} />
-        </Bar.Field>
-        <Bar.Field label="Decoration">
-          <SegmentedControl<TextDecoration>
-            value={isMixed(textDecoration) ? "NONE" : textDecoration}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, textDecoration: v },
-              }))
-            }
-            options={[
-              { value: "NONE", label: "없음" },
-              { value: "UNDERLINE", label: "밑줄" },
-              { value: "STRIKETHROUGH", label: "취소" },
-            ]}
-            aria-label="Text decoration"
-          />
-          <MixedBadge visible={isMixed(textDecoration)} />
-        </Bar.Field>
-        <Bar.Field label="Case">
-          <SegmentedControl<TextCase>
-            value={isMixed(textCase) ? "ORIGINAL" : textCase}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, textCase: v },
-              }))
-            }
-            options={[
-              { value: "ORIGINAL", label: "Aa" },
-              { value: "UPPER", label: "AA" },
-              { value: "LOWER", label: "aa" },
-              { value: "TITLE", label: "Aa+" },
-            ]}
-            aria-label="Text case"
-          />
-          <MixedBadge visible={isMixed(textCase)} />
-        </Bar.Field>
-        <Bar.Field label="Background">
-          <div className="flex items-center gap-1.5">
-            <ColorPicker
-              aria-label="텍스트 배경"
-              value={isMixed(background) ? "#cccccc" : (background ?? "#ffffff")}
-              onValueCommit={(v) =>
-                updateAll(editor, ids, (prev) => ({
-                  attrs: { ...prev.attrs, background: pickerValueToStored(v) },
-                }))
-              }
-              onValueChange={() => {
-                /* commit-only */
-              }}
-            />
-            <MixedBadge visible={isMixed(background)} />
-            {bgHasValue ? (
-              <Button
-                variant="subtle"
-                size="md"
-                onClick={() =>
-                  updateAll(editor, ids, (prev) => {
-                    const next = { ...prev.attrs } as Record<string, unknown>;
-                    delete next.background;
-                    return {
-                      attrs: next as Readonly<Record<string, unknown>>,
-                    };
-                  })
+            </Bar.Field>
+          </AccordionItem>
+          <AccordionItem label="스타일" data-testid="text-style-group">
+            <Bar.Field label="Mode">
+              <TextOnboardingHint
+                anchor={
+                  <div data-testid="text-mode-toggle">
+                    <SegmentedControl<LegacyTextAutoResize>
+                      value={isMixed(textAutoResize) ? "HEIGHT" : textAutoResize}
+                      onValueChange={(v) =>
+                        updateAll(editor, ids, (prev) => ({
+                          attrs: {
+                            ...prev.attrs,
+                            // WI-019 B4 — write through layoutChild instead of
+                            // the removed textAutoResize field. The legacy 3-
+                            // mode UX is preserved via canonical mapping.
+                            layoutChild: layoutChildFromTextAutoResize(v),
+                          },
+                        }))
+                      }
+                      options={[
+                        { value: "WIDTH_AND_HEIGHT", label: "자동너비" },
+                        { value: "HEIGHT", label: "자동높이" },
+                        { value: "NONE", label: "고정" },
+                      ]}
+                      aria-label="Text resize mode"
+                    />
+                  </div>
                 }
-                data-testid="text-bg-clear"
-                aria-label="배경 비우기"
-                data-tip="배경 비우기 (투명)"
-              >
-                <IconClose size={14} />
-              </Button>
-            ) : null}
-          </div>
-        </Bar.Field>
-        <Bar.Field label="Line height">
-          <NumberSlider
-            value={isMixed(lineHeight) ? 1.4 : lineHeight}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: {
-                  ...prev.attrs,
-                  lineHeight: v,
-                  lineHeightSpec: { value: v, unit: "multiplier" },
-                },
-              }))
-            }
-            min={0.8}
-            max={3}
-            step={0.1}
-            format={(v) => `${v.toFixed(1)}×`}
-            aria-label="Line height"
-            className="w-full"
-          />
-          <MixedBadge visible={isMixed(lineHeight)} />
-        </Bar.Field>
-        <Bar.Field label="Letter spacing">
-          <NumberSlider
-            value={isMixed(letterSpacing) ? 0 : letterSpacing}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, letterSpacing: v },
-              }))
-            }
-            min={-5}
-            max={20}
-            step={0.5}
-            format={(v) => `${v}px`}
-            aria-label="Letter spacing"
-            className="w-full"
-          />
-          <MixedBadge visible={isMixed(letterSpacing)} />
-        </Bar.Field>
-        {isFixedMode ? (
-          <>
-            <Bar.Field label="Truncate">
-              <SegmentedControl<TextTruncation>
-                value={isMixed(textTruncation) ? "DISABLED" : textTruncation}
+              />
+              <MixedBadge visible={isMixed(textAutoResize)} />
+            </Bar.Field>
+            <Bar.Field label="Decoration">
+              <SegmentedControl<TextDecoration>
+                value={isMixed(textDecoration) ? "NONE" : textDecoration}
                 onValueChange={(v) =>
                   updateAll(editor, ids, (prev) => ({
-                    attrs: { ...prev.attrs, textTruncation: v },
+                    attrs: { ...prev.attrs, textDecoration: v },
                   }))
                 }
                 options={[
-                  { value: "DISABLED", label: "Off" },
-                  { value: "ENDING", label: "끝줄임" },
+                  { value: "NONE", label: "없음" },
+                  { value: "UNDERLINE", label: "밑줄" },
+                  { value: "STRIKETHROUGH", label: "취소" },
                 ]}
-                aria-label="Truncate text"
+                aria-label="Text decoration"
               />
-              <MixedBadge visible={isMixed(textTruncation)} />
+              <MixedBadge visible={isMixed(textDecoration)} />
             </Bar.Field>
-            {isTruncateEnding ? (
-              <Bar.Field label="Max lines">
-                <NumberSlider
-                  value={isMixed(maxLines) || maxLines == null ? 3 : maxLines}
-                  onValueChange={(v) =>
+            <Bar.Field label="Case">
+              <SegmentedControl<TextCase>
+                value={isMixed(textCase) ? "ORIGINAL" : textCase}
+                onValueChange={(v) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: { ...prev.attrs, textCase: v },
+                  }))
+                }
+                options={[
+                  { value: "ORIGINAL", label: "Aa" },
+                  { value: "UPPER", label: "AA" },
+                  { value: "LOWER", label: "aa" },
+                  { value: "TITLE", label: "Aa+" },
+                ]}
+                aria-label="Text case"
+              />
+              <MixedBadge visible={isMixed(textCase)} />
+            </Bar.Field>
+          </AccordionItem>
+          <AccordionItem label="배경·간격" data-testid="text-spacing-group">
+            <Bar.Field label="Background">
+              <div className="flex items-center gap-1.5">
+                <ColorPicker
+                  aria-label="텍스트 배경"
+                  value={isMixed(background) ? "#cccccc" : (background ?? "#ffffff")}
+                  onValueCommit={(v) =>
                     updateAll(editor, ids, (prev) => ({
-                      attrs: { ...prev.attrs, maxLines: Math.max(1, Math.round(v)) },
+                      attrs: { ...prev.attrs, background: pickerValueToStored(v) },
                     }))
                   }
-                  min={1}
-                  max={20}
-                  step={1}
-                  format={(v) => `${Math.round(v)} lines`}
-                  aria-label="Max lines"
-                  className="w-full"
+                  onValueChange={() => {
+                    /* commit-only */
+                  }}
                 />
-                <MixedBadge visible={isMixed(maxLines)} />
-              </Bar.Field>
-            ) : null}
-          </>
-        ) : null}
-        <Bar.Field label="Hyperlink">
-          <div className="flex items-center gap-1.5 w-full">
-            <input
-              type="url"
-              value={linkValue}
-              placeholder={isMixed(hyperlink) ? "여러 링크" : "https://..."}
-              onChange={(e) => setLinkDraft(e.target.value)}
-              onBlur={() => {
-                if (linkDraft === null) return;
-                const trimmed = linkDraft.trim();
-                updateAll(editor, ids, (prev) => ({
-                  attrs: {
-                    ...prev.attrs,
-                    hyperlink: trimmed.length > 0 ? { url: trimmed } : null,
-                  },
-                }));
-                setLinkDraft(null);
-              }}
-              className="flex-1 rounded border border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay-2)] px-2 py-1 text-[12px] text-[color:var(--text-overlay)]"
-              data-testid="text-hyperlink-input"
-              aria-label="Hyperlink URL"
-            />
-            {linkValue.length > 0 && !isMixed(hyperlink) ? (
-              <Button
-                variant="subtle"
-                size="md"
-                onClick={() => {
+                <MixedBadge visible={isMixed(background)} />
+                {bgHasValue ? (
+                  <Button
+                    variant="subtle"
+                    size="md"
+                    onClick={() =>
+                      updateAll(editor, ids, (prev) => {
+                        const next = { ...prev.attrs } as Record<string, unknown>;
+                        delete next.background;
+                        return {
+                          attrs: next as Readonly<Record<string, unknown>>,
+                        };
+                      })
+                    }
+                    data-testid="text-bg-clear"
+                    aria-label="배경 비우기"
+                    data-tip="배경 비우기 (투명)"
+                  >
+                    <IconClose size={14} />
+                  </Button>
+                ) : null}
+              </div>
+            </Bar.Field>
+            <Bar.Field label="Line height">
+              <NumberSlider
+                value={isMixed(lineHeight) ? 1.4 : lineHeight}
+                onValueChange={(v) =>
                   updateAll(editor, ids, (prev) => ({
-                    attrs: { ...prev.attrs, hyperlink: null },
-                  }));
-                  setLinkDraft(null);
-                }}
-                data-testid="text-hyperlink-clear"
-                aria-label="링크 비우기"
-                data-tip="링크 비우기"
-              >
-                <IconClose size={14} />
-              </Button>
-            ) : null}
-            <MixedBadge visible={isMixed(hyperlink)} />
-          </div>
-        </Bar.Field>
-        <Bar.Field label="Opacity">
-          <NumberSlider
-            value={isMixed(opacity) ? 1 : opacity}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, opacity: v },
-              }))
-            }
-            min={0}
-            max={1}
-            step={0.01}
-            format={(v) => `${Math.round(v * 100)}%`}
-            aria-label="Text opacity"
-            className="w-full"
-          />
-          <MixedBadge visible={isMixed(opacity)} />
-        </Bar.Field>
+                    attrs: {
+                      ...prev.attrs,
+                      lineHeight: v,
+                      lineHeightSpec: { value: v, unit: "multiplier" },
+                    },
+                  }))
+                }
+                min={0.8}
+                max={3}
+                step={0.1}
+                format={(v) => `${v.toFixed(1)}×`}
+                aria-label="Line height"
+                className="w-full"
+              />
+              <MixedBadge visible={isMixed(lineHeight)} />
+            </Bar.Field>
+            <Bar.Field label="Letter spacing">
+              <NumberSlider
+                value={isMixed(letterSpacing) ? 0 : letterSpacing}
+                onValueChange={(v) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: { ...prev.attrs, letterSpacing: v },
+                  }))
+                }
+                min={-5}
+                max={20}
+                step={0.5}
+                format={(v) => `${v}px`}
+                aria-label="Letter spacing"
+                className="w-full"
+              />
+              <MixedBadge visible={isMixed(letterSpacing)} />
+            </Bar.Field>
+          </AccordionItem>
+          {isFixedMode ? (
+            <AccordionItem label="줄바꿈" data-testid="text-wrap-group">
+              <Bar.Field label="Truncate">
+                <SegmentedControl<TextTruncation>
+                  value={isMixed(textTruncation) ? "DISABLED" : textTruncation}
+                  onValueChange={(v) =>
+                    updateAll(editor, ids, (prev) => ({
+                      attrs: { ...prev.attrs, textTruncation: v },
+                    }))
+                  }
+                  options={[
+                    { value: "DISABLED", label: "Off" },
+                    { value: "ENDING", label: "끝줄임" },
+                  ]}
+                  aria-label="Truncate text"
+                />
+                <MixedBadge visible={isMixed(textTruncation)} />
+              </Bar.Field>
+              {isTruncateEnding ? (
+                <Bar.Field label="Max lines">
+                  <NumberSlider
+                    value={isMixed(maxLines) || maxLines == null ? 3 : maxLines}
+                    onValueChange={(v) =>
+                      updateAll(editor, ids, (prev) => ({
+                        attrs: { ...prev.attrs, maxLines: Math.max(1, Math.round(v)) },
+                      }))
+                    }
+                    min={1}
+                    max={20}
+                    step={1}
+                    format={(v) => `${Math.round(v)} lines`}
+                    aria-label="Max lines"
+                    className="w-full"
+                  />
+                  <MixedBadge visible={isMixed(maxLines)} />
+                </Bar.Field>
+              ) : null}
+            </AccordionItem>
+          ) : null}
+          <AccordionItem label="링크·기타" data-testid="text-link-group">
+            <Bar.Field label="Hyperlink">
+              <div className="flex items-center gap-1.5 w-full">
+                <input
+                  type="url"
+                  value={linkValue}
+                  placeholder={isMixed(hyperlink) ? "여러 링크" : "https://..."}
+                  onChange={(e) => setLinkDraft(e.target.value)}
+                  onBlur={() => {
+                    if (linkDraft === null) return;
+                    const trimmed = linkDraft.trim();
+                    updateAll(editor, ids, (prev) => ({
+                      attrs: {
+                        ...prev.attrs,
+                        hyperlink: trimmed.length > 0 ? { url: trimmed } : null,
+                      },
+                    }));
+                    setLinkDraft(null);
+                  }}
+                  className="flex-1 rounded border border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay-2)] px-2 py-1 text-[12px] text-[color:var(--text-overlay)]"
+                  data-testid="text-hyperlink-input"
+                  aria-label="Hyperlink URL"
+                />
+                {linkValue.length > 0 && !isMixed(hyperlink) ? (
+                  <Button
+                    variant="subtle"
+                    size="md"
+                    onClick={() => {
+                      updateAll(editor, ids, (prev) => ({
+                        attrs: { ...prev.attrs, hyperlink: null },
+                      }));
+                      setLinkDraft(null);
+                    }}
+                    data-testid="text-hyperlink-clear"
+                    aria-label="링크 비우기"
+                    data-tip="링크 비우기"
+                  >
+                    <IconClose size={14} />
+                  </Button>
+                ) : null}
+                <MixedBadge visible={isMixed(hyperlink)} />
+              </div>
+            </Bar.Field>
+            <Bar.Field label="Opacity">
+              <NumberSlider
+                value={isMixed(opacity) ? 1 : opacity}
+                onValueChange={(v) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: { ...prev.attrs, opacity: v },
+                  }))
+                }
+                min={0}
+                max={1}
+                step={0.01}
+                format={(v) => `${Math.round(v * 100)}%`}
+                aria-label="Text opacity"
+                className="w-full"
+              />
+              <MixedBadge visible={isMixed(opacity)} />
+            </Bar.Field>
+          </AccordionItem>
+        </Accordion>
       </Bar.More>
     </>
   );

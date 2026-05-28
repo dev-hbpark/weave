@@ -1,3 +1,4 @@
+import { IconCamera, IconChevronRight, IconPlay, IconSparkle } from "@weave/design-system";
 import { useState } from "react";
 import { getBehaviors } from "./agocraft-mirror.js";
 import type {
@@ -40,10 +41,11 @@ export function BehaviorEditor({ item, onUpdate }: BehaviorEditorProps) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] transition-colors"
+        className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.16em] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] transition-colors"
         aria-expanded={open}
       >
-        {open ? "▾ Behaviors" : "▸ Behaviors"} ({behaviors.length})
+        <IconChevronRight size={12} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        Behaviors ({behaviors.length})
       </button>
       {open ? (
         <div className="mt-3 grid gap-3">
@@ -88,8 +90,9 @@ function CameraTargetRow({
     onChange((b) => ({ ...(b as CameraTargetBehavior), ...next }) as InteractionBehavior);
   return (
     <fieldset className="rounded-[var(--radius-md)] bg-[color:var(--surface-1)] p-3">
-      <legend className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--accent-strong)] px-1">
-        📷 camera · order {behavior.order + 1}
+      <legend className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-[color:var(--accent-strong)] px-1">
+        <IconCamera size={11} />
+        camera · order {behavior.order + 1}
       </legend>
       <div className="grid grid-cols-3 gap-2 mt-1">
         <label className="block">
@@ -148,8 +151,9 @@ function HotspotRow({
     onChange((b) => ({ ...(b as HotspotBehavior), ...next }) as InteractionBehavior);
   return (
     <fieldset className="rounded-[var(--radius-md)] bg-[color:var(--surface-1)] p-3">
-      <legend className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--accent-strong)] px-1">
-        ✦ hotspot · {behavior.label ?? "Hotspot"}
+      <legend className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-[color:var(--accent-strong)] px-1">
+        <IconSparkle size={11} />
+        hotspot · {behavior.label ?? "Hotspot"}
       </legend>
       <div className="grid grid-cols-4 gap-2 mt-1">
         <NumberCell
@@ -192,8 +196,9 @@ function RevealOnStepRow({
     onChange((b) => ({ ...(b as RevealOnStepBehavior), ...next }) as InteractionBehavior);
   return (
     <fieldset className="rounded-[var(--radius-md)] bg-[color:var(--surface-1)] p-3">
-      <legend className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--accent-strong)] px-1">
-        ⏵ reveal-on-step
+      <legend className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-[color:var(--accent-strong)] px-1">
+        <IconPlay size={11} />
+        reveal-on-step
       </legend>
       <label className="block mt-1 max-w-[160px]">
         <span className={labelClass}>step (0-indexed)</span>

@@ -1,4 +1,10 @@
 export {
+  Accordion,
+  AccordionItem,
+  type AccordionItemProps,
+  type AccordionProps,
+} from "./Accordion.js";
+export {
   AITooltip,
   type AITooltipAction,
   type AITooltipBinding,
@@ -10,6 +16,7 @@ export {
   type UseAITooltipTargetOptions,
   useAITooltipTarget,
 } from "./AITooltip.js";
+export { AlignmentPad, type AlignmentPadProps } from "./AlignmentPad.js";
 export { AuroraBg } from "./AuroraBg.js";
 export { Badge, type BadgeProps, type BadgeSize, type BadgeVariant } from "./Badge.js";
 export {
@@ -80,9 +87,14 @@ export {
   type DropdownMenuItemProps,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  type DropdownMenuSubTriggerProps,
   DropdownMenuTrigger,
 } from "./DropdownMenu.js";
 export { EditableText, type EditableTextHandle } from "./EditableText.js";
+export { GridSizePicker, type GridSizePickerProps } from "./GridSizePicker.js";
 export { Hotspot } from "./Hotspot.js";
 export {
   HoverAffordanceLayer,
@@ -97,6 +109,9 @@ export {
   IconAlignTop,
   IconAlignVerticalCenter,
   IconBold,
+  IconCamera,
+  IconCheck,
+  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconClose,
@@ -104,8 +119,10 @@ export {
   IconCloudOff,
   IconCloudUpload,
   IconCursor,
+  IconDiamond,
   IconDistributeHorizontal,
   IconDistributeVertical,
+  IconDocLines,
   IconFrame,
   IconHand,
   IconImage,
@@ -120,6 +137,16 @@ export {
   IconRedo,
   IconRefresh,
   IconShape,
+  IconShapeArrow,
+  IconShapeEllipse,
+  IconShapeHeart,
+  IconShapeLine,
+  IconShapePolygon,
+  IconShapeRectangle,
+  IconShapeSpeechBubble,
+  IconShapeStar,
+  IconShapeTriangle,
+  IconSparkle,
   IconText,
   IconUnderline,
   IconUndo,
@@ -176,6 +203,7 @@ export {
   type SegmentedControlOption,
   type SegmentedControlProps,
 } from "./SegmentedControl.js";
+export { Select, type SelectOption, type SelectProps } from "./Select.js";
 export {
   type HandleDir as SelectionHandleDir,
   type HandleKind as SelectionHandleKind,
@@ -195,13 +223,13 @@ export { Switch, type SwitchProps } from "./Switch.js";
 export { FieldGroup, TextField } from "./TextField.js";
 export { ThemeSwitcher } from "./ThemeSwitcher.js";
 export { Toolbar, ToolbarDivider } from "./Toolbar.js";
-export {
-  TrackSizeEditor,
-  type TrackSize,
-  type TrackSizeEditorProps,
-} from "./TrackSizeEditor.js";
 export { Tooltip, type TooltipProps } from "./Tooltip.js";
 export { TooltipCard, type TooltipCardProps } from "./TooltipCard.js";
+export {
+  type TrackSize,
+  TrackSizeEditor,
+  type TrackSizeEditorProps,
+} from "./TrackSizeEditor.js";
 export {
   UnifiedTooltip,
   type UnifiedTooltipData,

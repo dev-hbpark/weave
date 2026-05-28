@@ -48,9 +48,15 @@ test("Text bar quick area exposes Bold/Italic/Underline + color, More opens the 
   await more.click();
   const popover = page.getByTestId("toolbar-more-content");
   await expect(popover).toBeVisible();
+  // DR-design-021 — the More popover groups fields into accordions. The
+  // "타이포" group is open by default, so Family / Size show immediately.
   await expect(popover.locator('[role="group"][aria-label="Family"]')).toBeVisible();
   await expect(popover.locator('[role="group"][aria-label="Size"]')).toBeVisible();
-  await expect(popover.locator('[role="group"][aria-label="Align"]')).toBeVisible();
+  // Alignment lives in the collapsed "정렬" group — expand it, then the 2D
+  // alignment pad (align × valign) shows. (DR-design-021 — the two separate
+  // Align / V-Align rows were merged into one AlignmentPad.)
+  await popover.getByTestId("text-align-group-trigger").click();
+  await expect(popover.getByTestId("text-align-pad")).toBeVisible();
 });
 
 test("Quick Bold toggle toggles fontWeight (single click action)", async ({ page }) => {

@@ -22,7 +22,7 @@
 // anchored, hide-buffer, hotkey table). Those are global UI affordances
 // outside the canvas — different surface, different positioning rules.
 
-import { Popover, PopoverAnchor, PopoverContent } from "@weave/design-system";
+import { IconChevronRight, Popover, PopoverAnchor, PopoverContent } from "@weave/design-system";
 import { useEffect, useMemo, useState } from "react";
 import { useTooltipsAllowed } from "../interactions/interaction-mode.js";
 
@@ -134,9 +134,7 @@ export function CursorTooltip() {
           <span className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--text-overlay-soft)]">
             Context
           </span>
-          <span className="text-[13px] text-[color:var(--text-overlay)]">
-            {hover.context}
-          </span>
+          <span className="text-[13px] text-[color:var(--text-overlay)]">{hover.context}</span>
           {hover.actions.length > 0 ? (
             <ul className="mt-1.5 flex flex-col gap-1 text-[12px] text-[color:var(--text-overlay)]">
               {hover.actions.map((a, i) => (
@@ -147,9 +145,7 @@ export function CursorTooltip() {
                   key={`${i}-${a.action}`}
                   className="flex items-center gap-2"
                 >
-                  <span aria-hidden className="text-[color:var(--accent-strong)]">
-                    ▸
-                  </span>
+                  <IconChevronRight size={12} className="text-[color:var(--accent-strong)]" />
                   <span className="flex-1">{a.action}</span>
                   {a.shortcut !== undefined ? (
                     <kbd className="inline-flex items-center px-1.5 py-0.5 rounded-[var(--radius-sm)] border bg-[color:var(--surface-overlay-2)] border-[color:var(--surface-overlay-border-strong)] text-[11px] font-mono tracking-[0.04em] text-[color:var(--text-overlay)]">

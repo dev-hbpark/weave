@@ -61,6 +61,7 @@ import {
   useSelectionChromeVisible,
 } from "../document";
 import { findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
+import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../document/domains/derive-text-auto-resize.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
@@ -1237,6 +1238,35 @@ export function FrameStage(props: FrameStageProps) {
     [vm],
   );
 
+  // Move + zoom the camera so a design-px box fills the viewport. Used by
+  // the "add into a selected frame → bring that frame full-screen" rule
+  // (triggered from DesignPage via the camera bridge). The math mirrors the
+  // wheel-zoom transform: a design point (dx) maps to screen as
+  // `(baseTx + dx*baseScale - W/2)*scale + W/2 + tx`, so to centre the box
+  // we solve tx/ty for its centre and pick the scale that fits W×H with a
+  // small margin. Only meaningful while the infinite canvas (user camera)
+  // is active; setPan is a no-op when vm is null.
+  const zoomToBox = useCallback(
+    (box: DesignBox) => {
+      const W = outerSize.width;
+      const H = outerSize.height;
+      if (W <= 0 || H <= 0 || box.w <= 0 || box.h <= 0 || baseScale <= 0) return;
+      const MARGIN = 0.9;
+      const rawScale = Math.min((W * MARGIN) / (box.w * baseScale), (H * MARGIN) / (box.h * baseScale));
+      const scale = Math.max(0.1, Math.min(8, rawScale));
+      const cx = box.x + box.w / 2;
+      const cy = box.y + box.h / 2;
+      const olx = baseTx + cx * baseScale;
+      const oly = baseTy + cy * baseScale;
+      setPan({ tx: -(olx - W / 2) * scale, ty: -(oly - H / 2) * scale, scale });
+    },
+    [outerSize, baseScale, baseTx, baseTy, setPan],
+  );
+  useEffect(() => {
+    if (!infiniteCanvas) return undefined;
+    return setCameraFitBox(zoomToBox);
+  }, [infiniteCanvas, zoomToBox]);
+
   // WI-033 P2 — pan-reset-on-entered-frame-change effect removed
   // alongside drill-in mode (DR-017). The user's pan/zoom now persists
   // across all selection changes; explicit Zoom controls (Ctrl+Wheel /
@@ -1373,6 +1403,34 @@ export function FrameStage(props: FrameStageProps) {
     };
   }, [infiniteCanvas, bumpWheel]);
 
+  // Zoom hotkeys (Figma parity): Cmd/Ctrl + "=" zoom in, "-" zoom out
+  // (anchored at the viewport centre via `nextPanForZoom`), "0" resets to
+  // the base fit (scale 1, no pan). preventDefault stops the browser's
+  // own page-zoom. Lives here — not the agocraft hotkey registry — so it
+  // shares the camera channel + outer rect the wheel zoom already uses.
+  useEffect(() => {
+    if (!infiniteCanvas) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const el = outerRef.current;
+      if (el === null) return;
+      const rect = el.getBoundingClientRect();
+      const center = { x: rect.width / 2, y: rect.height / 2, outerW: rect.width, outerH: rect.height };
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        setPan((p) => nextPanForZoom(p, 1.2, center));
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        setPan((p) => nextPanForZoom(p, 1 / 1.2, center));
+      } else if (e.key === "0") {
+        e.preventDefault();
+        setPan({ tx: 0, ty: 0, scale: 1 });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [infiniteCanvas, setPan]);
+
   // DR-017 Phase 2~4 — Pan / FrameMove gestures live on the GestureRouter.
   // PanBinding writes vm.camera.tx/ty directly (60Hz MotionValue).
   // FrameMoveBinding reads/writes frames via a host-supplied FrameAccess
@@ -1392,6 +1450,16 @@ export function FrameStage(props: FrameStageProps) {
   onUpdateItemRef.current = props.onUpdateItem;
   const docRef = useRef(doc);
   docRef.current = doc;
+  // Selection-follows-move: the FrameMoveBinding runs with
+  // `disableSelectionSet: true` so plain clicks keep selectFromHit's
+  // parent-first model, and after a drag its onPointerUp swallows the
+  // click — so neither path switches selection when a drag starts on an
+  // UNSELECTED frame. commitFrame reconciles it once per gesture. These
+  // refs let the stable (deps-`[]`) frameAccess closure reach the live
+  // onSelect and remember which session it already reconciled.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const moveSelectionSessionRef = useRef<string | null>(null);
 
   const frameAccess = useMemo<FrameAccess>(() => {
     function findFrameElement(itemId: ItemId): HTMLElement | null {
@@ -1524,7 +1592,30 @@ export function FrameStage(props: FrameStageProps) {
         }
         return frame as unknown as FrameGeom;
       },
-      commitFrame(itemId, next) {
+      commitFrame(itemId, next, sessionId) {
+        // Selection follows a body-drag move. On the first commit of a
+        // new gesture, if the moved item isn't already in the selection,
+        // make it the single selection (Figma parity: dragging an
+        // unselected object selects it). Items already in a single /
+        // multi selection are left untouched so a multi-drag keeps its
+        // set, and a drag-from-inside the selected container (which
+        // resolves the move to the selected ancestor) is a no-op. The
+        // session-id guard fires this once per gesture, not on every
+        // 60 Hz move frame. Resize / rotate also commit here but only on
+        // an already-selected item, so they no-op.
+        if (sessionId !== moveSelectionSessionRef.current) {
+          moveSelectionSessionRef.current = sessionId;
+          const vmNow = vmRef.current;
+          if (vmNow !== null) {
+            const sel = vmNow.itemSelection.state.get();
+            const sid = String(itemId);
+            const already =
+              (sel.kind === "single" && String(sel.itemId) === sid) ||
+              (sel.kind === "multi" &&
+                Array.from(sel.items as Iterable<unknown>, (x) => String(x)).includes(sid));
+            if (!already) onSelectRef.current?.(sid);
+          }
+        }
         const n = next as unknown as ItemFrame & {
           __newFontSize?: number;
           __origFontSize?: number;

@@ -180,6 +180,158 @@ test("WI-036 — `+` button hover opens submenu; clicking 'text' inserts a text 
   expect(kinds).toContain("text");
 });
 
+// WI-044 — read the last child's kind + relevant attrs (layout spec for
+// frames, shape sub-kind for shapes) so the nested-add tests can assert
+// the second-depth type variant actually landed on the new item.
+async function lastChildOf(
+  page: Page,
+  parentId: string,
+): Promise<{ kind: string; layoutKind?: string; shape?: string } | null> {
+  return page.evaluate((pid) => {
+    const w = window as unknown as {
+      __weaveDoc?: {
+        root: {
+          children: ReadonlyArray<{
+            id: unknown;
+            children: ReadonlyArray<{
+              kind: string;
+              attrs?: { layout?: { kind?: string }; shape?: string };
+            }>;
+          }>;
+        };
+      };
+    };
+    const parent = w.__weaveDoc?.root.children?.find((c) => String(c.id) === pid);
+    const last = parent?.children?.at(-1);
+    if (last === undefined) return null;
+    return {
+      kind: last.kind,
+      layoutKind: last.attrs?.layout?.kind,
+      shape: last.attrs?.shape,
+    };
+  }, parentId);
+}
+
+async function openAddMenuFor(page: Page, parentId: string): Promise<void> {
+  await selectFrame(page, parentId);
+  const addBtn = page.getByTestId("cmd-frame-addChild");
+  await expect(addBtn).toBeVisible({ timeout: 3_000 });
+  await addBtn.hover();
+  await expect(page.getByTestId("frame-add-submenu")).toBeVisible({ timeout: 2_000 });
+}
+
+test("WI-044 — frame flyout: hovering 프레임 reveals layout variants; picking Flex creates a frame with an auto-flex layout", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-044-frame-flex" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.2, y: 0.3, width: 0.5, height: 0.4, rotation: 0 },
+  });
+  const parentId = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    const last = w.__weaveDoc?.root.children?.at(-1);
+    return last === undefined ? "" : String(last.id);
+  });
+
+  await openAddMenuFor(page, parentId);
+
+  // Second depth — hovering the frame row opens its layout-paradigm flyout.
+  await page.getByTestId("frame-add-frame").hover();
+  await expect(page.getByTestId("frame-add-frame-flex")).toBeVisible({ timeout: 2_000 });
+
+  const before = await childCountOf(page, parentId);
+  await page.getByTestId("frame-add-frame-flex").click();
+  await expect.poll(() => childCountOf(page, parentId)).toBe(before + 1);
+
+  // The new child is a frame carrying an auto-flex layout spec — proving
+  // the follow-up `weave.frame.setLayout` was wired, not just the add.
+  await expect
+    .poll(async () => (await lastChildOf(page, parentId))?.layoutKind)
+    .toBe("auto-flex");
+  expect((await lastChildOf(page, parentId))?.kind).toBe("frame");
+});
+
+test("WI-044 — frame flyout: picking Grid creates a frame with an auto-grid layout", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-044-frame-grid" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.2, y: 0.3, width: 0.5, height: 0.4, rotation: 0 },
+  });
+  const parentId = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    const last = w.__weaveDoc?.root.children?.at(-1);
+    return last === undefined ? "" : String(last.id);
+  });
+
+  await openAddMenuFor(page, parentId);
+  await page.getByTestId("frame-add-frame").hover();
+  await expect(page.getByTestId("frame-add-frame-grid")).toBeVisible({ timeout: 2_000 });
+
+  const before = await childCountOf(page, parentId);
+  await page.getByTestId("frame-add-frame-grid").click();
+  await expect.poll(() => childCountOf(page, parentId)).toBe(before + 1);
+  await expect
+    .poll(async () => (await lastChildOf(page, parentId))?.layoutKind)
+    .toBe("auto-grid");
+});
+
+test("WI-044 — shape flyout: hovering 도형 reveals shape variants; picking 원 creates an ellipse shape", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-044-shape-ellipse" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.2, y: 0.3, width: 0.5, height: 0.4, rotation: 0 },
+  });
+  const parentId = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    const last = w.__weaveDoc?.root.children?.at(-1);
+    return last === undefined ? "" : String(last.id);
+  });
+
+  await openAddMenuFor(page, parentId);
+  await page.getByTestId("frame-add-shape").hover();
+  await expect(page.getByTestId("frame-add-shape-ellipse")).toBeVisible({ timeout: 2_000 });
+
+  const before = await childCountOf(page, parentId);
+  await page.getByTestId("frame-add-shape-ellipse").click();
+  await expect.poll(() => childCountOf(page, parentId)).toBe(before + 1);
+
+  const last = await lastChildOf(page, parentId);
+  expect(last?.kind).toBe("shape");
+  expect(last?.shape).toBe("ellipse");
+});
+
+test("WI-044 — image first-depth opens the media picker dialog (no direct insert)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-044-image-dialog" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.2, y: 0.3, width: 0.5, height: 0.4, rotation: 0 },
+  });
+  const parentId = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    const last = w.__weaveDoc?.root.children?.at(-1);
+    return last === undefined ? "" : String(last.id);
+  });
+
+  await openAddMenuFor(page, parentId);
+
+  const before = await childCountOf(page, parentId);
+  await page.getByTestId("frame-add-image").click();
+  // The media picker opens; nothing is inserted until the user supplies a src.
+  await expect(page.getByTestId("media-src-dialog")).toBeVisible({ timeout: 2_000 });
+  expect(await childCountOf(page, parentId)).toBe(before);
+});
+
 test("WI-036 — multi-selection surfaces the `multi.delete` command and clearing the selection removes the bar", async ({
   page,
 }) => {

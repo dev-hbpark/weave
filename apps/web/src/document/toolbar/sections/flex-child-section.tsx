@@ -15,22 +15,22 @@
 // it is rendered by the ContextualToolbar alongside the kind section because
 // per-child layout applies to every kind equally.
 
-import type { Editor } from "@agocraft/editor";
 import {
+  type Document as AgocraftDocument,
   type AutoFlexChildPolicy,
   type AutoFlexSpec,
   type AutoGridChildPolicy,
   type AutoGridSpec,
   createAutoFlexChildPolicy,
   createAutoGridChildPolicy,
-  type Document as AgocraftDocument,
   type FlexAlign,
   type GridAlign,
   type GridJustify,
   type LayoutChildPolicy,
   type LayoutSpec,
 } from "@agocraft/core";
-import { ContextualToolbar as Bar, SegmentedControl } from "@weave/design-system";
+import type { Editor } from "@agocraft/editor";
+import { ContextualToolbar as Bar, SegmentedControl, Select } from "@weave/design-system";
 import type { JSX } from "react";
 import { findParentAndIndex } from "../../agocraft-mirror.js";
 import type { ItemSnapshot } from "../multi-edit.js";
@@ -65,7 +65,11 @@ function parentFlexSpec(doc: AgocraftDocument, itemId: string): AutoFlexSpec | u
   return layout !== undefined && layout.kind === "auto-flex" ? layout : undefined;
 }
 
-export function FlexChildSection({ editor, items, document }: FlexChildSectionProps): JSX.Element | null {
+export function FlexChildSection({
+  editor,
+  items,
+  document,
+}: FlexChildSectionProps): JSX.Element | null {
   // Per-child layout is a single-item concern (each child has its own policy).
   if (items.length !== 1) return null;
   const item = items[0]!;
@@ -125,11 +129,12 @@ export function FlexChildSection({ editor, items, document }: FlexChildSectionPr
         />
       </Bar.Field>
       <Bar.Field label="Align self">
-        <SegmentedControl<FlexAlign>
+        <Select<FlexAlign>
           value={alignSelf}
           onValueChange={(v) => apply({ alignSelf: v })}
           options={ALIGN_SELF_OPTIONS}
           aria-label="Flex child align-self"
+          triggerClassName="min-w-[88px]"
         />
       </Bar.Field>
     </div>
@@ -156,7 +161,11 @@ function parentGridSpec(doc: AgocraftDocument, itemId: string): AutoGridSpec | u
 /** Per-child controls for an item inside an auto-grid frame: Justify self
  *  (column axis) + Align self (row axis). Stretch fills the cell; otherwise
  *  the child keeps its intrinsic size positioned in the cell. */
-export function GridChildSection({ editor, items, document }: FlexChildSectionProps): JSX.Element | null {
+export function GridChildSection({
+  editor,
+  items,
+  document,
+}: FlexChildSectionProps): JSX.Element | null {
   if (items.length !== 1) return null;
   const item = items[0]!;
   const parentSpec = parentGridSpec(document, item.id);
@@ -177,7 +186,9 @@ export function GridChildSection({ editor, items, document }: FlexChildSectionPr
             columnSpan: gridPolicy.columnSpan,
             row: gridPolicy.row,
             rowSpan: gridPolicy.rowSpan,
-            ...(gridPolicy.justifySelf !== undefined ? { justifySelf: gridPolicy.justifySelf } : {}),
+            ...(gridPolicy.justifySelf !== undefined
+              ? { justifySelf: gridPolicy.justifySelf }
+              : {}),
             ...(gridPolicy.alignSelf !== undefined ? { alignSelf: gridPolicy.alignSelf } : {}),
             ...(gridPolicy.sizeW !== undefined ? { sizeW: gridPolicy.sizeW } : {}),
             ...(gridPolicy.sizeH !== undefined ? { sizeH: gridPolicy.sizeH } : {}),
@@ -195,19 +206,21 @@ export function GridChildSection({ editor, items, document }: FlexChildSectionPr
       className="inline-flex items-end gap-2 ml-1 pl-2 border-l border-l-[color:var(--surface-overlay-border)]"
     >
       <Bar.Field label="Justify self">
-        <SegmentedControl<GridJustify>
+        <Select<GridJustify>
           value={justifySelf}
           onValueChange={(v) => apply({ justifySelf: v })}
           options={GRID_ALIGN_OPTIONS}
           aria-label="Grid child justify-self"
+          triggerClassName="min-w-[88px]"
         />
       </Bar.Field>
       <Bar.Field label="Align self">
-        <SegmentedControl<GridAlign>
+        <Select<GridAlign>
           value={alignSelf}
           onValueChange={(v) => apply({ alignSelf: v })}
           options={GRID_ALIGN_OPTIONS}
           aria-label="Grid child align-self"
+          triggerClassName="min-w-[88px]"
         />
       </Bar.Field>
     </div>

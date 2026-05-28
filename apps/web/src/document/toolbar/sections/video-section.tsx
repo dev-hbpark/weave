@@ -13,7 +13,7 @@ import {
   IconVideo,
   IconVolume,
   NumberSlider,
-  SegmentedControl,
+  Select,
   Switch,
 } from "@weave/design-system";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
@@ -81,8 +81,8 @@ export const VideoSection: ToolbarSectionComponent = ({
           <MixedBadge visible={isMixed(src)} />
         </Bar.Field>
         <Bar.Field label="Fit">
-          <SegmentedControl<VideoFit>
-            value={isMixed(fit) ? ("cover" as VideoFit) : fit}
+          <Select<VideoFit>
+            value={isMixed(fit) ? "" : fit}
             onValueChange={(v) =>
               updateAll(editor, ids, (prev) => ({
                 attrs: { ...prev.attrs, fit: v },
@@ -95,6 +95,8 @@ export const VideoSection: ToolbarSectionComponent = ({
               }>
             }
             aria-label="Video fit"
+            placeholder="여러 맞춤"
+            triggerClassName="w-full"
           />
           <MixedBadge visible={isMixed(fit)} />
         </Bar.Field>
