@@ -473,6 +473,62 @@ test("CSS flex: an added item keeps its main size, fills the cross axis (align s
   expect(handles).toEqual(["resize-e", "resize-w"]);
 });
 
+/** Set a frame's layout spec via the command (the frame control's path). */
+async function setFrameLayout(
+  page: import("@playwright/test").Page,
+  itemId: string,
+  layout: Record<string, unknown>,
+): Promise<void> {
+  await page.evaluate(
+    ({ id, lay }) => {
+      type Editor = { exec: (n: string, i: unknown) => unknown };
+      (window as unknown as { __weaveEditor?: Editor }).__weaveEditor?.exec("weave.frame.setLayout", {
+        itemId: id,
+        layout: lay,
+      });
+    },
+    { id: itemId, lay: layout },
+  );
+}
+
+test("reversibility: stretch → start restores the child's intrinsic height (size not baked)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Flex-Reversible" });
+
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.15, width: 0.6, height: 0.4, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_START },
+  });
+  await page.waitForTimeout(120);
+  const sId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.2, height: 0.3, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(150);
+
+  const before = await readItemFrame(page, sId);
+  expect(before!.height).toBeCloseTo(0.3, 2); // align start → keeps intrinsic height
+
+  // Change align → stretch: display height fills.
+  await setFrameLayout(page, fId, { ...FLEX_ROW_START, align: "stretch" });
+  await page.waitForTimeout(150);
+  const stretched = await readItemFrame(page, sId);
+  expect(stretched!.height).toBeCloseTo(1, 2); // stretched to full
+
+  // Change align back → start: height must RESTORE to the intrinsic 0.3, NOT
+  // stay at the baked stretched value.
+  await setFrameLayout(page, fId, { ...FLEX_ROW_START, align: "start" });
+  await page.waitForTimeout(150);
+  const restored = await readItemFrame(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] reversible:", JSON.stringify({ before, stretched, restored }));
+  expect(restored!.height).toBeCloseTo(0.3, 2); // ← the whole point
+});
+
 test("CSS flex row align=start: item keeps its HEIGHT (not stretched) and is resizable on both axes", async ({
   page,
 }) => {

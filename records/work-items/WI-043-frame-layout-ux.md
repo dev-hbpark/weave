@@ -216,6 +216,14 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`): flex 자식 선택 → `flex-child-controls` + grow/align-self 그룹 표시, "Fill" 클릭 → c1 width 0.2→0.78 (남는 공간 채움). 12 verify e2e + 212 unit + 4 gate green.
 
+### FIX — flex 속성 변경 reversible (intrinsic 분리) (2026-05-28)
+
+"flex 형태는 순수 표시; 자식 boundingBox 는 핸들 리사이즈로만 변경. stretch 후 다른 속성으로 바꿔도 의미 있어야" (사용자). Approach A 채택 — 자식 intrinsic 크기를 policy(`crossSize`+`basis`)에 분리 저장, 어댑터가 intrinsic 읽음. agocraft `1.0.0-rc.20260528084949` 채택, weave 코드 변경 0.
+
+검증 (`layout-constraints-verify.spec.ts`, 실제 `weave.frame.setLayout`): align=start flex 에 height 0.3 shape 추가 → align stretch (display 1) → align start → **height 0.3 복원** (intrinsic 보존). 15 verify e2e + 212 unit + 4 gate green.
+
+**빌드 사고 박제**: 이번 repack 중 iCloud 가 또 `packages/*/package.json` 6개 삭제 + dist `index 2.js` 충돌 생성 → 빌드 cascade 실패 (editor 가 interaction/manipulation resolve 못 함). 복구: `git checkout HEAD -- packages/*/package.json` + dist 충돌/`.repack-bak` find-delete → 19/19 빌드 성공. iCloud-on-dist/package.json 재발.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)
