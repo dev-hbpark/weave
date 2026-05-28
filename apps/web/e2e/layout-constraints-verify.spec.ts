@@ -220,6 +220,84 @@ async function readParentAndPolicy(
   }, itemId);
 }
 
+/** Probe the design plane for a point that hits the plane but no frame. */
+async function findEmptyPlanePoint(
+  page: import("@playwright/test").Page,
+): Promise<{ x: number; y: number } | null> {
+  return page.evaluate(() => {
+    const plane = document.querySelector('[data-design-plane="true"]');
+    if (plane === null) return null;
+    const r = plane.getBoundingClientRect();
+    for (let fy = 0.15; fy <= 0.85; fy += 0.1) {
+      for (let fx = 0.15; fx <= 0.85; fx += 0.1) {
+        const x = r.left + r.width * fx;
+        const y = r.top + r.height * fy;
+        if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) continue;
+        const el = document.elementFromPoint(x, y);
+        if (el === null) continue;
+        if (el.closest("[data-frame-id]") === null && el.closest('[data-design-plane="true"]') !== null) {
+          return { x, y };
+        }
+      }
+    }
+    return null;
+  });
+}
+
+async function rootId(page: import("@playwright/test").Page): Promise<string> {
+  return page.evaluate(() => {
+    const doc = (window as unknown as { __weaveDoc?: { root: { id: string | number } } }).__weaveDoc;
+    return doc === undefined ? "" : String(doc.root.id);
+  });
+}
+
+test("reparent GESTURE (Cmd+Shift+drag) pulls a frame's child OUT to the design root", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Reparent-To-Root" });
+
+  // A small frame F in the top-left with a shape child S.
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.08, y: 0.12, width: 0.25, height: 0.25, rotation: 0 },
+  });
+  await page.waitForTimeout(120);
+  const sId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0.2, y: 0.2, width: 0.6, height: 0.6, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(150);
+
+  const root = await rootId(page);
+  expect((await readParentAndPolicy(page, sId)).parentId).toBe(fId); // starts in F
+
+  await setSelection(page, [sId]);
+  await page.waitForTimeout(100);
+
+  const sPos = await centerOf(page, sId);
+  const empty = await findEmptyPlanePoint(page);
+  expect(empty).not.toBeNull();
+
+  // Cmd/Ctrl+Shift+drag S onto empty design-plane area → drop to ROOT.
+  await page.keyboard.down("Meta");
+  await page.keyboard.down("Shift");
+  await page.mouse.move(sPos.x, sPos.y);
+  await page.mouse.down();
+  await page.mouse.move((sPos.x + empty!.x) / 2, (sPos.y + empty!.y) / 2, { steps: 4 });
+  await page.mouse.move(empty!.x, empty!.y, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await page.keyboard.up("Meta");
+  await page.waitForTimeout(250);
+
+  const after = await readParentAndPolicy(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] reparent-to-root:", JSON.stringify({ sPos, empty, root, after }));
+  expect(after.parentId).toBe(root);
+});
+
 test("reparent GESTURE (Cmd+Shift+drag) moves a shape into the inner frame", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Reparent-Gesture" });
 

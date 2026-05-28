@@ -171,6 +171,15 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`): flex F=[S, 내부 grid F2] 에서 S→F2 reparent → S.parent=F2, S.layoutChild `auto-flex→auto-grid` 재할당, S grid cell 배치(x≈0), 이전 부모 F 가 남은 F2 를 x 0.51→0 reflow. 11 e2e green (constraint/move/reparent + relayout + parent-first 회귀 0). weave 212 unit + 4 gate green. vendor `1.0.0-rc.20260528054808`.
 
+### FIX — 디자인 루트로 reparent drag 가능하게 (2026-05-28)
+
+프레임 내부 아이템을 디자인 루트로 Cmd/Ctrl+Shift+드래그하면 아무 일도 안 일어남 (사용자 지적). 원인: 드롭 타겟 판정 `frameIdFromTarget` 이 `closest("[data-frame-id]")` 만 보는데, 디자인 루트는 `[data-design-plane="true"]` 컨테이너라 `data-frame-id` 가 없음 → 빈 플레인 영역 드롭 시 candidate=null → reparent 미발동. (ContextMenu 는 `@root` sentinel + `resolvePickerTargetId` 로 이미 루트 지원.)
+
+- `use-reparent-drag-controller.ts` 에 `resolveDropTarget(x,y)` 추가: 프레임 위면 그 frame id, 아니면 design-plane 위일 때 `getDocument().root.id` 로 fallback. onMove/onUp 모두 사용. 루트 타겟 시 design-plane element 에 drop highlight.
+- command 측은 이미 루트 지원 확인 (`findItemInTree` 가 root node 매칭, `absoluteFrameBox` 가 root 특수처리). 변경 불필요.
+
+검증 (`layout-constraints-verify.spec.ts`): 프레임 자식 S 를 빈 플레인으로 Cmd+Shift+드래그 → S.parent=root. **fix 없이는 S 가 소스 프레임에 잔류(baseline 재현 확인)**. weave-only (vendor 변경 0), 7 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

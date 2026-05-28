@@ -198,15 +198,40 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
     const session = sessionRef.current;
     if (session === null) return undefined;
 
+    // Resolve the drop target under the cursor: a frame when the pointer is
+    // over one, otherwise the design ROOT when the pointer is over empty
+    // design-plane area. The root has no `data-frame-id` (it's the
+    // `[data-design-plane]` container), so `frameIdFromTarget` misses it —
+    // map it explicitly so items can be pulled OUT of a frame back to the
+    // top level (the ContextMenu does this via its `@root` row; the drag
+    // gesture needs the same affordance). Returns the highlight element too.
+    const resolveDropTarget = (
+      clientX: number,
+      clientY: number,
+    ): { id: string; el: Element | null } | null => {
+      const elUnder = document.elementFromPoint(clientX, clientY);
+      const frameId = frameIdFromTarget(elUnder);
+      if (frameId !== null) {
+        return {
+          id: frameId,
+          el: document.querySelector(`[data-frame-id="${cssEscape(frameId)}"]`),
+        };
+      }
+      const plane = designPlaneFromTarget(elUnder);
+      if (plane !== null) {
+        const doc = getDocumentRef.current();
+        if (doc !== null) return { id: String(doc.root.id), el: plane };
+      }
+      return null;
+    };
+
     const onMove = (e: PointerEvent) => {
-      const elUnder = document.elementFromPoint(e.clientX, e.clientY);
-      const candidateFrameId = frameIdFromTarget(elUnder);
-      const valid = candidateFrameId !== null && !session.blocked.has(candidateFrameId);
-      // Move the visual highlight to the candidate frame's host element.
-      const candidateEl =
-        candidateFrameId !== null
-          ? document.querySelector(`[data-frame-id="${cssEscape(candidateFrameId)}"]`)
-          : null;
+      const target = resolveDropTarget(e.clientX, e.clientY);
+      const candidateId = target?.id ?? null;
+      const valid = candidateId !== null && !session.blocked.has(candidateId);
+      // Move the visual highlight to the candidate's host element (a frame,
+      // or the whole design plane when targeting the root).
+      const candidateEl = target?.el ?? null;
       if (session.lastHighlightedEl !== candidateEl) {
         if (session.lastHighlightedEl !== null) {
           session.lastHighlightedEl.removeAttribute(REPARENT_ACTIVE_ATTR);
@@ -220,20 +245,20 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
       setState({
         active: true,
         cursor: { x: e.clientX, y: e.clientY },
-        hoveredTarget: candidateFrameId !== null ? { frameId: candidateFrameId, valid } : null,
+        hoveredTarget: candidateId !== null ? { frameId: candidateId, valid } : null,
         entries: session.entries,
       });
     };
 
     const onUp = (e: PointerEvent) => {
-      const elUnder = document.elementFromPoint(e.clientX, e.clientY);
-      const candidateFrameId = frameIdFromTarget(elUnder);
-      const valid = candidateFrameId !== null && !session.blocked.has(candidateFrameId);
-      if (valid && candidateFrameId !== null && editor !== null) {
+      const target = resolveDropTarget(e.clientX, e.clientY);
+      const candidateId = target?.id ?? null;
+      const valid = candidateId !== null && !session.blocked.has(candidateId);
+      if (valid && candidateId !== null && editor !== null) {
         editor.exec("weave.item.reparent", {
           entries: session.entries.map((x) => ({
             itemId: x.itemId,
-            newParentId: candidateFrameId,
+            newParentId: candidateId,
           })),
         });
       }
