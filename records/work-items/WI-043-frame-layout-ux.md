@@ -137,6 +137,21 @@
 - **frontend-architecture-agent** (의무) — PropertiesPanel a11y + Field/Label/Description primitive (C4.2)
 - **content-seo-strategy-agent** (선택) — Flex vs Figma vs CSS 차이표 docs page (C2.2)
 
+## Build Log — Manipulation Constraints UI (2026-05-28)
+
+레이아웃이 부여하는 **이동/크기변경/회전 제한**을 selection chrome 에 반영하는 작업 완료. 핵심 원칙: 제약의 *계산*은 전적으로 agocraft `LayoutEngine.getChildConstraints` 소유(WI-020/WI-021), weave 는 그 값을 **읽어서 UI 만 필터** — 레이아웃 분기 0.
+
+- `FrameStage.tsx` `resolveHandles`: `getChildConstraints({ root, itemId })` 의 `canResizeWidth/Height` 로 resize 핸들 dir 필터(코너는 양축 모두 허용 시에만 생존), `canRotate=false` 면 rotate 핸들 제거. text auto-resize 제한과 **교집합**으로 합성.
+- `FrameStage.tsx` frame-move binding: `acceptTarget` 가 `canMove=false` 인 자식의 free body-drag 를 decline → 선택만 되고 이동 안 됨(reflow snap-back 잰크 방지). absolute/top-level frame 은 기존대로 자유 이동.
+- `LAYOUT_FEATURE_ENABLED` 게이트 하에서만 동작 (host policy).
+
+검증 (Continuous Self-Verification, `e2e/layout-constraints-verify.spec.ts`):
+- absolute child → `resize-{8} + rotate` 전부.
+- flex-row(stretch) child → `["resize-e","resize-w"]` (주축만, rotate 없음).
+- grid child → `[]` (핸들 없음).
+
+agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typecheck/declarative/build). vendor `1.0.0-rc.20260528043207`.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

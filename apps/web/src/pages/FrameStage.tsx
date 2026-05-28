@@ -77,6 +77,11 @@ import {
   TotalScaleContext,
 } from "../document/interactions/total-scale-context.js";
 import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index.js";
+// WI-019/WI-021 — layout-driven manipulation constraints. The agocraft
+// LayoutEngine is the single owner: weave only READS
+// `getChildConstraints` and reflects it in the selection chrome (resize
+// handles) + move gate. No layout branching lives here.
+import { LAYOUT_FEATURE_ENABLED, getLayoutEngine } from "../document/layout/registry.js";
 import { MarqueeSelectionLayer } from "../document/marquee/MarqueeSelectionLayer.js";
 import { FrameContent } from "../document/render/FrameContent.js";
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
@@ -838,9 +843,47 @@ function NestedFrame({
                   return ["e", "w"] as const;
               }
             })();
+            // WI-019/WI-021 — the parent frame's layout OWNS this child's
+            // position (delegation model), so it also dictates which
+            // resize handles + the rotate affordance are valid. The
+            // agocraft LayoutEngine.getChildConstraints is the single
+            // source — weave only reads it and removes the disallowed
+            // handle dirs (grid → none; flex → cross-axis removed). No
+            // layout math happens here.
+            //   • canResizeWidth=false  → drop e/w + all 4 corners
+            //   • canResizeHeight=false → drop n/s + all 4 corners
+            // (a corner touches both axes, so it survives only when BOTH
+            //  axes are resizable.) canRotate=false drops the rotate handle
+            //  (Figma auto-layout parity).
+            const layoutConstraints =
+              LAYOUT_FEATURE_ENABLED && doc !== undefined
+                ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
+                : undefined;
+            const layoutHandleDirs =
+              layoutConstraints === undefined ||
+              (layoutConstraints.canResizeWidth && layoutConstraints.canResizeHeight)
+                ? undefined
+                : (["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const).filter((d) => {
+                    const touchesW = d === "e" || d === "w" || d.length === 2;
+                    const touchesH = d === "n" || d === "s" || d.length === 2;
+                    return (
+                      (!touchesW || layoutConstraints.canResizeWidth) &&
+                      (!touchesH || layoutConstraints.canResizeHeight)
+                    );
+                  });
+            // Compose the text auto-resize restriction with the layout
+            // restriction — a dir survives only if BOTH allow it.
+            const resizeDirs = (() => {
+              if (textHandleDirs === undefined) return layoutHandleDirs;
+              if (layoutHandleDirs === undefined) return textHandleDirs;
+              const allowed = new Set<string>(layoutHandleDirs);
+              return textHandleDirs.filter((d) => allowed.has(d));
+            })();
+            const disableRotate = layoutConstraints !== undefined && !layoutConstraints.canRotate;
             const defaultVm = createFrameDefaultViewModel({
               itemKind: kind,
-              ...(textHandleDirs !== undefined ? { resizeDirs: textHandleDirs } : {}),
+              ...(resizeDirs !== undefined ? { resizeDirs } : {}),
+              ...(disableRotate ? { disableRotate: true } : {}),
             });
             // Default specs + extension specs (registry) — extension
             // wins on id collision (later writes override).
@@ -1590,6 +1633,21 @@ export function FrameStage(props: FrameStageProps) {
           // NestedFrame's onClick can apply Figma's parent-first /
           // Cmd-deep / Shift-toggle semantics via `selectFromHit`.
           disableSelectionSet: true,
+          // WI-019/WI-021 — a child whose parent frame has an auto layout
+          // does NOT own its position (the layout does), so free body-drag
+          // is disallowed: the move binding declines and the press falls
+          // through to selection only. The agocraft LayoutEngine is the
+          // single source for `canMove`; weave just reads it (no layout
+          // branching). The default acceptTarget ("any frame resolveTarget
+          // resolves") is preserved for absolute / top-level frames.
+          acceptTarget: (target) => {
+            const id = frameAccess.resolveTarget(target);
+            if (id === null) return false;
+            if (!LAYOUT_FEATURE_ENABLED) return true;
+            const d = docRef.current;
+            if (d === undefined) return true;
+            return getLayoutEngine().getChildConstraints({ root: d.root, itemId: id }).canMove;
+          },
           // WI-034 — Alt+drag on a frame is reserved for
           // RubberBandLayer's "add child" gesture; frame-move declines
           // so the lower-priority alt-rubber-band binding can claim.
