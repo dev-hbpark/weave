@@ -41,7 +41,11 @@ import {
   ref as styleRef,
 } from "@agocraft/core";
 import { computeLayoutPatchesOnParentResize } from "@agocraft/editor";
-import { getLayoutRegistry, WI019_LAYOUT_ENABLED } from "./layout/registry.js";
+import {
+  getLayoutRegistry,
+  WI019_LAYOUT_ENABLED,
+  WI020_LAYOUT_VARIANTS_ENABLED,
+} from "./layout/registry.js";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import {
   absoluteFrameBox,
@@ -198,7 +202,7 @@ function maybeComputeLayoutRipplePatches(
   parent: AgocraftItem,
   after: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<Patch> {
-  if (!WI019_LAYOUT_ENABLED) return [];
+  if (!WI019_LAYOUT_ENABLED && !WI020_LAYOUT_VARIANTS_ENABLED) return [];
   // Parent must declare a layout policy to opt in (a missing `layout`
   // attribute means "no ripple, behave like the legacy fixed-children
   // model"). The flag check above is the outer guard; this one keeps
@@ -233,6 +237,75 @@ function maybeComputeLayoutRipplePatches(
     })),
     registry: getLayoutRegistry(),
   });
+}
+
+const FULL_RELAYOUT_FRAME: AgocraftItemFrame = { x: 0, y: 0, width: 1, height: 1, rotation: 0 };
+
+/**
+ * WI-020 / WI-043 — relayout on child add. When a child is added to a parent
+ * that declares an Auto Layout policy (`auto-flex` / `auto-grid`), the new
+ * child must NOT land at its raw drop frame — the parent's layout owns
+ * placement. This recomputes the WHOLE child set (existing siblings + the
+ * new child) through the parent's adapter and returns:
+ *   - `newChildFrame` — the spec-computed frame for the just-added child
+ *     (the caller overwrites the staged item's `attrs.frame` with it before
+ *     staging), or `undefined` when the parent has no layout / the adapter
+ *     produced no placement for it.
+ *   - `siblingPatches` — `item.attrs` Patches for every EXISTING sibling
+ *     whose frame shifted (e.g. a flex row redistributing to make room).
+ *
+ * Mechanism: auto-flex / auto-grid adapters compute absolute spec-based
+ * placement and ignore the old↔new resize delta, so calling
+ * `computeLayoutPatchesOnParentResize` with `parentOldRatio === parentNewRatio`
+ * (a no-op resize) yields a full relayout. absolute-constraints, by
+ * contrast, is scale-factor based and returns `[]` on a no-op resize — so a
+ * frame with the v1 policy keeps free placement (the new child stays where
+ * it was dropped), which is the correct v1 behaviour.
+ *
+ * Single transaction: the returned sibling patches ride alongside the
+ * `item.children` add Patch, so one Cmd+Z reverts the add AND the reflow.
+ */
+function computeChildAddRelayout(
+  parentItem: AgocraftItem | undefined,
+  existingChildren: ReadonlyArray<AgocraftItem>,
+  newChild: AgocraftItem,
+): { newChildFrame: AgocraftItemFrame | undefined; siblingPatches: Patch[] } {
+  const NONE = { newChildFrame: undefined, siblingPatches: [] as Patch[] };
+  if (!WI019_LAYOUT_ENABLED && !WI020_LAYOUT_VARIANTS_ENABLED) return NONE;
+  if (parentItem === undefined) return NONE;
+  const parentLayout = (parentItem.attrs as { layout?: LayoutSpec }).layout;
+  if (parentLayout === undefined) return NONE;
+  const parentFrame =
+    (parentItem.attrs as { frame?: AgocraftItemFrame }).frame ?? FULL_RELAYOUT_FRAME;
+
+  const allChildren: ReadonlyArray<AgocraftItem> = [...existingChildren, newChild];
+  const patches = computeLayoutPatchesOnParentResize({
+    parentLayout,
+    // No-op resize → auto-flex / auto-grid recompute absolute placement from
+    // spec (they ignore the delta); absolute-constraints returns [].
+    parentOldRatio: parentFrame,
+    parentNewRatio: parentFrame,
+    children: allChildren.map((c) => ({
+      itemId: c.id,
+      currentFrame:
+        (c.attrs as { frame?: AgocraftItemFrame }).frame ?? FULL_RELAYOUT_FRAME,
+      policy: (c.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild,
+    })),
+    registry: getLayoutRegistry(),
+  });
+
+  let newChildFrame: AgocraftItemFrame | undefined;
+  const siblingPatches: Patch[] = [];
+  const newChildId = String(newChild.id);
+  for (const p of patches) {
+    if (p.type !== "item.attrs") continue;
+    if (String(p.itemId) === newChildId) {
+      newChildFrame = (p.after as { frame?: AgocraftItemFrame }).frame;
+    } else {
+      siblingPatches.push(p);
+    }
+  }
+  return { newChildFrame, siblingPatches };
 }
 
 export function buildWeaveCommands(
@@ -303,21 +376,42 @@ export function buildWeaveCommands(
       }
       const ts = new Date().toISOString();
       const agoItem = toAgocraftItem(weaveItem, ts);
+
+      // WI-020 / WI-043 — relayout on child add. If the container declares an
+      // Auto Layout policy, the parent owns placement: recompute the whole
+      // child set (siblings + the new item) and (a) overwrite the new item's
+      // frame with the spec-computed one before staging, (b) emit item.attrs
+      // Patches for every sibling that shifted — all in this transaction so a
+      // single Cmd+Z reverts the add + the reflow.
+      const containerItem =
+        input.containerId === undefined || input.containerId === String(ctx.document.root.id)
+          ? ctx.document.root
+          : findItemDeep(ctx.document, input.containerId);
+      const relayout = computeChildAddRelayout(containerItem, container.children, agoItem);
+      const stagedItem: AgocraftItem =
+        relayout.newChildFrame !== undefined
+          ? {
+              ...agoItem,
+              attrs: { ...agoItem.attrs, frame: relayout.newChildFrame } as typeof agoItem.attrs,
+            }
+          : agoItem;
+
       if (pending !== undefined) {
-        pending.stage(agoItem);
+        pending.stage(stagedItem);
       } else {
         targets.addItem(input.kind);
-        return ok(String(agoItem.id), []);
+        return ok(String(stagedItem.id), []);
       }
       const patches: Patch[] = [
         {
           type: "item.children",
           itemId: container.id,
-          added: [agoItem.id],
+          added: [stagedItem.id],
           removed: [],
         },
+        ...relayout.siblingPatches,
       ];
-      return ok(String(agoItem.id), patches);
+      return ok(String(stagedItem.id), patches);
     },
   };
   const removeItem: Command<RemoveItemInput, void> = {

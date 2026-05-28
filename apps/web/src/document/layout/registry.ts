@@ -25,13 +25,20 @@ import {
   type LayoutRegistry,
 } from "@agocraft/layout";
 
-/** Default-off feature flag for v1 absolute-constraints ripple — RISK-001 C3.1. */
-export const WI019_LAYOUT_ENABLED = false;
+/** v1 absolute-constraints ripple on parent resize (RISK-001 C3.1).
+ *  Enabled 2026-05-28 so frame resize propagates anchor-based child
+ *  placement. The broader Operational Readiness items (e2e suite, axe
+ *  smoke, LG, staging dogfood) remain deferred per the deferred-Ops
+ *  policy — the flag turns the *behaviour* on; the gate work is separate. */
+export const WI019_LAYOUT_ENABLED = true;
 
-/** Default-off feature flag for v1.1 auto-flex + auto-grid adapters.
- *  Independent from `WI019_LAYOUT_ENABLED` so rollback of v1.1 leaves v1
- *  intact (RISK-002 C3.5). Flip to `true` post-staging + axe smoke green. */
-export const WI020_LAYOUT_VARIANTS_ENABLED = false;
+/** v1.1 auto-flex + auto-grid adapters. Independent from
+ *  `WI019_LAYOUT_ENABLED` so rollback of v1.1 leaves v1 intact
+ *  (RISK-002 C3.5). Enabled 2026-05-28 so Flex / Grid frames actually
+ *  auto-arrange their children (registry mounts the adapters; the
+ *  relayout-on-child-add wire in `commands.ts` runs). e2e + LG remain
+ *  deferred per deferred-Ops. */
+export const WI020_LAYOUT_VARIANTS_ENABLED = true;
 
 let cached: LayoutRegistry | undefined;
 
