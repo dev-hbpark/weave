@@ -374,6 +374,90 @@ test("reparent GESTURE (Cmd+Shift+drag) moves a shape into the inner frame", asy
   expect(after.policyKind).toBe("auto-grid");
 });
 
+test("grid: after increasing columns, added items take distinct cells (no overlap)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Grid-AutoPlace" });
+
+  // Start as a 1-column grid, add 2 items (stack in column 1, rows 1 & 2).
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.08, y: 0.12, width: 0.7, height: 0.5, rotation: 0 },
+    attrsOverride: {
+      layout: {
+        kind: "auto-grid",
+        columns: [{ kind: "fr", value: 1 }],
+        rows: [
+          { kind: "fr", value: 1 },
+          { kind: "fr", value: 1 },
+        ],
+        columnGap: 0,
+        rowGap: 0,
+        justify: "stretch",
+        align: "stretch",
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      },
+    },
+  });
+  await page.waitForTimeout(120);
+  const ids: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    ids.push(
+      await addChild(page, {
+        kind: "shape",
+        containerId: fId,
+        frame: { x: 0, y: 0, width: 0.1, height: 0.1, rotation: 0 },
+        attrsOverride: { shape: "rectangle" },
+      }),
+    );
+    await page.waitForTimeout(100);
+  }
+
+  // Now INCREASE to 3 columns × 2 rows (the user's scenario).
+  await setFrameLayout(page, fId, {
+    kind: "auto-grid",
+    columns: [
+      { kind: "fr", value: 1 },
+      { kind: "fr", value: 1 },
+      { kind: "fr", value: 1 },
+    ],
+    rows: [
+      { kind: "fr", value: 1 },
+      { kind: "fr", value: 1 },
+    ],
+    columnGap: 0,
+    rowGap: 0,
+    justify: "stretch",
+    align: "stretch",
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  });
+  await page.waitForTimeout(120);
+
+  // Add 3 more items — each must take a distinct, free cell (no overlap).
+  for (let i = 0; i < 3; i++) {
+    ids.push(
+      await addChild(page, {
+        kind: "shape",
+        containerId: fId,
+        frame: { x: 0, y: 0, width: 0.1, height: 0.1, rotation: 0 },
+        attrsOverride: { shape: "rectangle" },
+      }),
+    );
+    await page.waitForTimeout(100);
+  }
+
+  // Read every item's top-left (x,y) and assert all distinct (no two share a cell).
+  const positions: Array<{ x: number; y: number }> = [];
+  for (const id of ids) {
+    const f = await readItemFrame(page, id);
+    positions.push({ x: Math.round(f!.x * 1000) / 1000, y: Math.round(f!.y * 1000) / 1000 });
+  }
+  // eslint-disable-next-line no-console
+  console.log("[verify] grid auto-place:", JSON.stringify(positions));
+  const keys = positions.map((p) => `${p.x},${p.y}`);
+  expect(new Set(keys).size).toBe(keys.length); // all unique → no overlap
+});
+
 test("grid reversibility: align stretch → start restores the child's intrinsic height", async ({
   page,
 }) => {

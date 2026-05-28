@@ -230,6 +230,12 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`): grid(stretch) 에 height 0.3 shape 추가 → cell 채워 height 1 → align start → **0.3 복원**. per-child 메뉴: grid 자식 선택 시 `grid-child-controls` + justify/align-self 표시, Align self=Start 클릭 → height 1→0.3. 18 verify e2e + 212 unit + 4 gate green.
 
+### FIX — grid 셀 자동 배치 충돌 (2026-05-28)
+
+"grid 행/열 늘린 후 아이템 추가 시 같은 셀 중복/순서 이상" (사용자). agocraft `1.0.0-rc.20260528092152` 채택 — joinPolicy 가 index 기반 → CSS auto-placement(점유 셀 스캔 후 첫 빈 셀)로 변경. weave 코드 변경 0.
+
+검증 (`layout-constraints-verify.spec.ts`): 1-col grid 에 2 아이템 → 3-col 로 증가 → 3 아이템 추가 → 5개 모두 distinct 셀 `(0,0)/(0,.5)/(.333,0)/(.667,0)/(.333,.5)` (충돌 0). 19 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)
