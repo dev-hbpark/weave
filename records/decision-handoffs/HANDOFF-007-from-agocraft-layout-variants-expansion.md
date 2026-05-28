@@ -10,7 +10,7 @@
 | Target | weave (this project) |
 | Date sent | 2026-05-28 |
 | Severity | P2 (LG-001 영향 0 — agocraft 1.1.0-rc publish 가 weave LG-001 의 이후) |
-| Status | **planned outbound** (agocraft B6 publish 후 status flip to "active"). Discovery only — agocraft 측 Discovery + Feasibility + Risk + Plan 박제 완료, Build 별도 세션 |
+| Status | **Active** (2026-05-28). agocraft B1-B6 trunk-merged: Discovery + Feasibility + Risk + Plan + core spec (B1) + auto-flex adapter (B2) + auto-grid adapter (B3) + editor onChildAdd hook (B4) + sync e2e + WI-029 migration audit (B5) + tsup multi-entry sub-path + CHANGELOG MINOR (B6). 226 신규 unit tests (core 73 + layout 87 + editor 14 + sync 19 + audit 14 + narrowing 19) — see agocraft commits 3e9c364 / b6542c7 / 1c59033 / B6 (pending). vendor pack ready (B6.3). |
 | Originating | agocraft [WI-020](../../../agocraft/records/work-items/WI-020-layout-variants-expansion.md), [FR-009](../../../agocraft/records/feasibility-reviews/FR-009-layout-variants-expansion.md), [RISK-002](../../../agocraft/records/risks/RISK-002-layout-variants-expansion.md), [ENGINEERING_PLAN](../../../agocraft/features/layout-variants-expansion/ENGINEERING_PLAN.md) |
 | weave WI | [WI-043](../work-items/WI-043-frame-layout-ux.md) |
 | Vendor pin | `1.1.0-rc.<TBD>` — agocraft B6 시점 publish (WI-019 1.0.0 close 후) |
