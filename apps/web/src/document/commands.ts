@@ -1417,6 +1417,22 @@ export function buildWeaveCommands(
       if (before === input.policy) {
         return ok(undefined, []);
       }
+      // WI-019/WI-021 — changing a child's per-child policy (grow / alignSelf)
+      // must RE-LAY-OUT the parent so the change is visible immediately (e.g.
+      // flipping to grow makes the child fill). The agocraft LayoutEngine owns
+      // the reflow; its returned full-attrs Patch for the changed child carries
+      // the new policy, so it's the single source when a reflow happens.
+      if (LAYOUT_FEATURE_ENABLED && input.policy !== undefined) {
+        const reflow = getLayoutEngine().onChildPolicyChange({
+          root: ctx.document.root,
+          itemId: child.id,
+          newPolicy: input.policy,
+        });
+        if (reflow.length > 0) {
+          return ok(undefined, reflow);
+        }
+      }
+      // No layout / no reflow (absolute parent, or clearing) → just the policy.
       const patch: Patch = {
         type: "item.layoutChild",
         itemId: child.id,

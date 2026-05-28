@@ -2401,6 +2401,7 @@ function DesignPageBody() {
                               >
                                 <ContextualToolbar
                                   editor={editor}
+                                  document={docInAgocraft}
                                   selectedItems={(() => {
                                     // Pre-existing bug fix — earlier this loop
                                     // only iterated `root.children`, so nested

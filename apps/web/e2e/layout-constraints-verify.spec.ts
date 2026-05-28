@@ -562,6 +562,54 @@ test("CSS flex: two items keep their sizes, packed at justify-start (NOT auto-fi
   expect(handles).toEqual(["resize-e", "resize-w"]);
 });
 
+test("per-child menu: selecting a flex child shows Grow/Align-self; clicking Fill makes it grow", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Flex-ChildMenu" });
+
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.15, width: 0.6, height: 0.3, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_START },
+  });
+  await page.waitForTimeout(120);
+  // Two policy-less shapes (grow 0 → fixed width 0.2 each).
+  const c1 = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.2, height: 0.3, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(100);
+  await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0.2, y: 0, width: 0.2, height: 0.3, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(150);
+
+  await setSelection(page, [c1]);
+  await page.waitForTimeout(150);
+
+  // The per-child controls render in the toolbar.
+  await expect(page.getByTestId("flex-child-controls")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Flex child grow" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Flex child align-self" })).toBeVisible();
+
+  const before = await readItemFrame(page, c1);
+  expect(before!.width).toBeCloseTo(0.2, 2); // fixed
+
+  // Click "Fill" in the grow control → c1 should grow to take the remainder.
+  await page.getByRole("radio", { name: "Fill" }).click();
+  await page.waitForTimeout(200);
+
+  const after = await readItemFrame(page, c1);
+  // eslint-disable-next-line no-console
+  console.log("[verify] child-menu fill:", JSON.stringify({ before, after }));
+  expect(after!.width).toBeGreaterThan(before!.width + 0.2); // grew well past 0.2
+});
+
 test("CSS flex: resizing the FRAME grows a grow-1 child but keeps a grow-0 child's size", async ({
   page,
 }) => {

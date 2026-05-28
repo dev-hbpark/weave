@@ -18,10 +18,12 @@
 //     with Mixed-aware controls when multi.
 //   • Mixed-kind selection (2+ items, different kinds) → no bar.
 
+import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { ContextualToolbar as Bar } from "@weave/design-system";
 import type { JSX } from "react";
 import type { ItemSnapshot } from "./multi-edit.js";
+import { FlexChildSection } from "./sections/flex-child-section.js";
 import { toolbarSectionRegistry } from "./sections/index.js";
 
 interface ContextualToolbarProps {
@@ -31,6 +33,9 @@ interface ContextualToolbarProps {
    *  kind → multi-select section with mixed indicators on diverging props.
    *  Length ≥ 2 with mixed kinds → no bar. */
   readonly selectedItems: ReadonlyArray<ItemSnapshot>;
+  /** Live document — used by the per-child flex controls to resolve a
+   *  selected item's PARENT layout. */
+  readonly document: AgocraftDocument;
   /** Open the host's MediaSrcDialog pre-filled with the current src for the
    *  selected image / video. Host owns the dialog (DesignPage). */
   readonly onEditMediaSrc?: (kind: "image" | "video", current: string) => void;
@@ -42,6 +47,7 @@ interface ContextualToolbarProps {
 export function ContextualToolbar({
   editor,
   selectedItems,
+  document,
   onEditMediaSrc,
   onEditShapeFill,
 }: ContextualToolbarProps): JSX.Element | null {
@@ -77,6 +83,10 @@ export function ContextualToolbar({
         onEditMediaSrc={onEditMediaSrc}
         onEditShapeFill={onEditShapeFill}
       />
+      {/* Cross-kind per-child layout controls — shown only when the single
+          selected item is a child of an auto-flex frame. Renders nothing
+          otherwise (any kind, any non-flex parent). */}
+      <FlexChildSection editor={editor} items={selectedItems} document={document} />
     </Bar>
   );
 }

@@ -206,6 +206,16 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`, 실제 `weave.item.update` 프레임 리사이즈): flex-row(start) 프레임에 c1(grow0/basis0.3) + c2(grow1). 프레임 width 0.4→0.8 (2배) → **c1 ratio 0.3→0.15 (절대 크기 유지)**, **c2 0.83 (커짐)**. 14 verify e2e + 212 unit + 4 gate green.
 
+### ADD — per-child flex 컨트롤 (속성 메뉴) (2026-05-28)
+
+"per-child 속성(grow/stretch)을 속성 메뉴에서 설정 가능하게" (사용자). agocraft `1.0.0-rc.20260528080602` 채택(onChildPolicyChange) + 신규 `FlexChildSection` (cross-kind, ContextualToolbar 가 kind 섹션 옆에 렌더).
+
+- 단일 선택 아이템의 **부모가 auto-flex** 일 때만 표시 (`editor` 로는 doc 접근 불가 → DesignPage 가 `document` prop 으로 전달, `findParentAndIndex` 로 부모 layout 판별).
+- 컨트롤 2개 (inline, 둘째 More 팝오버 회피): **Width/Height(grow)** Fixed|Fill (Fixed=grow0+현재크기 basis, Fill=grow1+basis0), **Align self** Start|Center|End|Stretch. 둘 다 `weave.item.setLayoutChild` → `onChildPolicyChange` reflow.
+- `setItemLayoutChild` command: policy 변경 시 reflow patch 발행(즉시 반영).
+
+검증 (`layout-constraints-verify.spec.ts`): flex 자식 선택 → `flex-child-controls` + grow/align-self 그룹 표시, "Fill" 클릭 → c1 width 0.2→0.78 (남는 공간 채움). 12 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)
