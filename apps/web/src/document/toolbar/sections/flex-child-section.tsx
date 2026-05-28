@@ -89,6 +89,9 @@ export function FlexChildSection({ editor, items, document }: FlexChildSectionPr
             shrink: flexPolicy.shrink,
             basis: flexPolicy.basis,
             ...(flexPolicy.alignSelf !== undefined ? { alignSelf: flexPolicy.alignSelf } : {}),
+            // Preserve the intrinsic cross size across grow / align-self edits
+            // so the child's own size survives (reversible).
+            ...(flexPolicy.crossSize !== undefined ? { crossSize: flexPolicy.crossSize } : {}),
           }
         : {};
     const next = createAutoFlexChildPolicy({ ...base, ...overrides });

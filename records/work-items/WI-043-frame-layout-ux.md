@@ -218,7 +218,7 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 ### FIX — flex 속성 변경 reversible (intrinsic 분리) (2026-05-28)
 
-"flex 형태는 순수 표시; 자식 boundingBox 는 핸들 리사이즈로만 변경. stretch 후 다른 속성으로 바꿔도 의미 있어야" (사용자). Approach A 채택 — 자식 intrinsic 크기를 policy(`crossSize`+`basis`)에 분리 저장, 어댑터가 intrinsic 읽음. agocraft `1.0.0-rc.20260528084949` 채택, weave 코드 변경 0.
+"flex 형태는 순수 표시; 자식 boundingBox 는 핸들 리사이즈로만 변경. stretch 후 다른 속성으로 바꿔도 의미 있어야" (사용자). Approach A 채택 — 자식 intrinsic 크기를 policy(`crossSize`+`basis`)에 분리 저장, 어댑터가 intrinsic 읽음. agocraft `1.0.0-rc.20260528084949` 채택. weave 측은 `FlexChildSection.apply()` 가 grow/align-self 변경 시 `crossSize` 도 보존하도록 1줄 추가 (per-child 컨트롤도 intrinsic 유지).
 
 검증 (`layout-constraints-verify.spec.ts`, 실제 `weave.frame.setLayout`): align=start flex 에 height 0.3 shape 추가 → align stretch (display 1) → align start → **height 0.3 복원** (intrinsic 보존). 15 verify e2e + 212 unit + 4 gate green.
 
