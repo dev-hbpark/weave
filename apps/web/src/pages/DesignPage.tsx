@@ -1224,11 +1224,11 @@ function DesignPageBody() {
     getSelectedIds: () => reparentSelectedIdsRef.current,
     enabled: !handMode && !peek.isActive,
   });
-  // WI-043 — grid cell-swap: plain-dragging the SELECTED grid child swaps its
-  // position with the item it's dropped on (grid → cell swap, flex → sequence
-  // order swap). Selection-state based, so a frame-selected drag still moves
-  // the frame (even when the layout is full).
-  useLayoutChildDragController({
+  // WI-043 — layout-child move: plain-dragging the SELECTED layout child
+  // repositions it (grid → drop on cell, incl. empty cells; flex → swap
+  // sequence order). Selection-state based, so a frame-selected drag still
+  // moves the frame (even when the layout is full).
+  const layoutChildDrag = useLayoutChildDragController({
     editor,
     getDocument: () => docInAgocraftRef.current ?? null,
     getSelectedIds: () => reparentSelectedIdsRef.current,
@@ -2504,6 +2504,20 @@ function DesignPageBody() {
                           <EditAffordanceGate>
                             <ReparentGhostOverlay state={reparentDragState} />
                           </EditAffordanceGate>
+                          {typeof document !== "undefined" &&
+                            layoutChildDrag.dropPreview !== null &&
+                            createPortal(
+                              <div
+                                className="layout-drop-cell-preview"
+                                style={{
+                                  left: layoutChildDrag.dropPreview.left,
+                                  top: layoutChildDrag.dropPreview.top,
+                                  width: layoutChildDrag.dropPreview.width,
+                                  height: layoutChildDrag.dropPreview.height,
+                                }}
+                              />,
+                              document.body,
+                            )}
                           <MediaSrcDialog
                             open={pendingMedia !== null}
                             kind={pendingMedia?.kind ?? "image"}

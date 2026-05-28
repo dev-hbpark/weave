@@ -520,6 +520,45 @@ test("grid cell-swap: dragging the SELECTED grid child onto another swaps their 
   expect(bAfter!.x).toBeCloseTo(0, 2); // B now in A's cell
 });
 
+test("grid: dragging the SELECTED grid child onto an EMPTY cell moves it there", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Grid-EmptyMove" });
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.18, width: 0.6, height: 0.3, rotation: 0 },
+    attrsOverride: { layout: gridSpec(2, 1) },
+  });
+  await page.waitForTimeout(120);
+  const ids = await addShapes(page, fId, 1); // single item → cell (1,1), x0
+  const aBefore = await readItemFrame(page, ids[0]!);
+  expect(aBefore!.x).toBeCloseTo(0, 2);
+
+  await setSelection(page, [ids[0]!]);
+  await page.waitForTimeout(120);
+  // Target the RIGHT half (empty cell 2) by cursor ratio within the frame —
+  // there is NO item element there, so this exercises the empty-cell path.
+  const rect = await page.evaluate((id) => {
+    const el = document.querySelector(`[data-frame-id="${CSS.escape(id)}"]`);
+    const r = el!.getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  }, fId);
+  const aPos = await centerOf(page, ids[0]!);
+  const targetX = rect.left + rect.width * 0.75;
+  const targetY = rect.top + rect.height * 0.5;
+  await page.mouse.move(aPos.x, aPos.y);
+  await page.mouse.down();
+  await page.mouse.move((aPos.x + targetX) / 2, targetY, { steps: 4 });
+  await page.mouse.move(targetX, targetY, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+
+  const aAfter = await readItemFrame(page, ids[0]!);
+  // eslint-disable-next-line no-console
+  console.log("[verify] grid empty-cell move:", JSON.stringify({ aBefore, aAfter }));
+  expect(aAfter!.x).toBeCloseTo(0.5, 2); // moved to the empty cell 2
+});
+
 test("flex reorder: dragging the SELECTED flex child onto another swaps their sequence order", async ({
   page,
 }) => {

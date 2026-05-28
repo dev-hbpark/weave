@@ -262,6 +262,14 @@ cell-swap 컨트롤러를 **일반화**: `use-grid-cell-drag-controller.ts` → 
 
 검증 (`layout-constraints-verify.spec.ts` "flex reorder"): flex-row A(basis0.3, x0)·B(basis0.5, x0.32), A 선택 후 B 로 plain-drag → B→x0·A→x0.52 순서 교환 확인 (grid cell-swap 도 회귀 0). 21 constraints e2e (단일 워커, 0 fail) + 212 unit + declarative/purity/build green.
 
+### FIX — grid 빈 셀로 이동 (point-based drop) (2026-05-28)
+
+"그리드는 다른 아이템 있는 셀로만 이동 가능 — 빈 셀로도 이동해야 / 빈 셀 영역 이벤트를 프레임이 가져가서 그런 것 같다" (사용자, 정확한 진단). swap-on-sibling 은 점유 셀만 대상 → 빈 셀은 frame 이 pointer 가짐. agocraft `1.0.0-rc.20260528101821` 채택 (`onGridCellDrop`/`resolveGridDropCell` hit-test).
+
+grid drop 을 **point 기반**으로 전환: 컨트롤러가 커서를 부모 프레임 rect 기준 ratio 로 변환 → `weave.item.dropGridCell({itemId, x, y})` exec. agocraft 가 셀 hit-test 후 점유면 swap·빈 셀이면 move (host 는 layout 계산 0, ratio 변환만). flex 는 sibling-swap 유지. `RESOLVE_BY_KIND` lookup (Rule 6) 로 grid=point / flex=sibling resolver dispatch. 드래그 중 `resolveGridDropCell` 로 대상 셀 frame 을 받아 viewport px 로 투영한 **drop-cell preview 오버레이**(`.layout-drop-cell-preview`, 빈 셀도 표시) 를 DesignPage 가 portal 렌더.
+
+검증 (`layout-constraints-verify.spec.ts` "grid ... EMPTY cell"): 2-col grid 단일 아이템(x0) 선택 후 프레임 우측 75% (item 없는 영역) 로 plain-drag → x0.5 (빈 cell 2) 이동 확인. cell-swap·flex reorder 회귀 0. 22 constraints e2e (단일 워커, 0 fail) + 212 unit + declarative/purity/build green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

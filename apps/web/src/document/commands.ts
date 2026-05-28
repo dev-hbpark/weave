@@ -164,6 +164,14 @@ export interface LayoutSiblingSwapInput {
   readonly aId: string;
   readonly bId: string;
 }
+
+/** WI-043 — drop a grid child at the cell under a point (ratio 0..1 within the
+ *  parent frame): occupied cell → swap, empty cell → move there. */
+export interface DropGridCellInput {
+  readonly itemId: string;
+  readonly x: number;
+  readonly y: number;
+}
 export interface UpdateBehaviorInput {
   readonly itemId: string;
   readonly behaviorId: string;
@@ -1479,6 +1487,19 @@ export function buildWeaveCommands(
     },
   };
 
+  const dropGridCell: Command<DropGridCellInput, void> = {
+    name: "weave.item.dropGridCell",
+    run: (ctx, input) => {
+      if (!LAYOUT_FEATURE_ENABLED) return ok(undefined, []);
+      const patches = getLayoutEngine().onGridCellDrop({
+        root: ctx.document.root,
+        itemId: input.itemId as import("@agocraft/core").ItemId,
+        point: { x: input.x, y: input.y },
+      });
+      return ok(undefined, patches);
+    },
+  };
+
   return [
     addItem as Command,
     removeItem as Command,
@@ -1505,6 +1526,7 @@ export function buildWeaveCommands(
     setItemLayoutChild as Command,
     swapGridCells as Command,
     swapFlexOrder as Command,
+    dropGridCell as Command,
   ];
 }
 

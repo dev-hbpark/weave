@@ -91,3 +91,16 @@ body {
   outline-offset: -3px;
   transition: outline 80ms ease;
 }
+
+/* WI-043 — grid drop-cell preview. The controller positions this fixed
+ * overlay (viewport px) over the cell the dragged grid child would land in —
+ * works for EMPTY cells (which have no element of their own to outline). */
+.layout-drop-cell-preview {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  border: 3px dashed rgba(56, 132, 255, 0.95);
+  border-radius: 4px;
+  background: rgba(56, 132, 255, 0.1);
+  box-sizing: border-box;
+}
