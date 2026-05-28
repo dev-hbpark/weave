@@ -109,6 +109,9 @@ export interface ThumbnailPanelProps {
   readonly onCycleFocus?: ((id: string, opts?: { skipToIsolate?: boolean }) => void) | undefined;
   /** WI-039 — drop focus completely (Esc inside the toggle). */
   readonly onClearFocus?: (() => void) | undefined;
+  /** Double-click a tile → bring its frame full-screen, the same camera
+   *  fit applied when an item is added into a frame. */
+  readonly onZoomToFrame?: ((id: string) => void) | undefined;
   /** WI-039 — frames whose edit interaction is currently blocked on the
    *  canvas (union of stage-1 dim + stage-2 isolate sets). Tiles for
    *  these frames render in a disabled state: no hover pop, no click-
@@ -201,6 +204,7 @@ export function ThumbnailPanel({
   disabledFrameIds,
   onCycleFocus,
   onClearFocus,
+  onZoomToFrame,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
   useParams<{ id: string }>();
@@ -218,6 +222,10 @@ export function ThumbnailPanel({
 
   const handleToggleClick = (entry: Entry, e: ReactMouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    // Clicking the eye button also selects the frame — the user expects any
+    // part of the tile (image area or eye) to make that frame the selection,
+    // on top of the eye's own focus-cycle job.
+    onSelect?.(entry.id);
     if (onCycleFocus === undefined) return;
     onCycleFocus(entry.id, { skipToIsolate: e.shiftKey });
   };
@@ -506,6 +514,10 @@ export function ThumbnailPanel({
                   if (isDisabled) return;
                   handleTileActivate(entry);
                 }}
+                onDoubleClick={() => {
+                  if (isDisabled) return;
+                  onZoomToFrame?.(entry.id);
+                }}
                 onKeyDown={(e) => {
                   if (isDisabled) return;
                   if (e.key === "Enter" || e.key === " ") {
@@ -525,7 +537,13 @@ export function ThumbnailPanel({
                     different decks read at a glance even without a render.
                     The center glyph reads as a kind cue. */}
               <div
-                className="relative flex-1 overflow-hidden rounded-[var(--radius-sm)] border border-[color:var(--surface-2-border)] flex items-center justify-center"
+                // `pointer-events-none` lets clicks on the preview image area
+                // fall through to the full-coverage activation button beneath
+                // it (this `relative` slot otherwise paints above the z-0
+                // button and would swallow the click → only the footer
+                // selected). The focus-toggle button below re-enables itself
+                // with `pointer-events-auto`.
+                className="relative flex-1 overflow-hidden rounded-[var(--radius-sm)] border border-[color:var(--surface-2-border)] flex items-center justify-center pointer-events-none"
                 style={{
                   background: design.background ?? "var(--surface-2)",
                   boxShadow:
@@ -576,6 +594,10 @@ export function ThumbnailPanel({
                     data-tip={nextStageLabel(tileStage)}
                     className={
                       "absolute top-1.5 right-1.5 inline-flex items-center justify-center w-6 h-6 rounded-[var(--radius-sm)] " +
+                      // Re-enable hit-testing on the button: its parent preview
+                      // slot is `pointer-events-none` so plain clicks reach the
+                      // activation button, but the eye must stay clickable.
+                      "pointer-events-auto " +
                       "border transition-[opacity,background,color,border-color] duration-[var(--motion-quick)] " +
                       "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)] " +
                       "disabled:cursor-not-allowed disabled:pointer-events-none " +

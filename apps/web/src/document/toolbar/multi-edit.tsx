@@ -97,10 +97,39 @@ export function useResolveSharedColor(
   });
 }
 
+/** Run `perItem` for every selected id so a multi-selection edit lands as ONE
+ *  undoable step.
+ *
+ *  Why this is needed: the editor's `mergeKey` coalescing keys off the patch's
+ *  per-item target identity (`item.attrs#<id>`), so the 500ms history window
+ *  only folds repeated edits to the SAME item (e.g. a 60Hz drag). It NEVER
+ *  merges patches across different items — so a plain `for (id of ids) exec()`
+ *  loop produces N separate undo entries, forcing N Cmd+Z presses to revert a
+ *  single multi-selection change.
+ *
+ *  `editor.runBatch` makes every nested `exec()` share one transaction id, and
+ *  the history groups a transaction into one entry regardless of mergeKey. We
+ *  only batch when there are 2+ ids: a single-item edit runs directly so its
+ *  per-item mergeKey still merges rapid same-item commits (e.g. dragging a
+ *  slider) into one step. */
+export function batchPerItem(
+  editor: Editor,
+  ids: ReadonlyArray<string>,
+  perItem: (id: string) => void,
+): void {
+  if (ids.length === 0) return;
+  if (ids.length === 1) {
+    perItem(ids[0]!);
+    return;
+  }
+  editor.runBatch(() => {
+    for (const id of ids) perItem(id);
+  });
+}
+
 /** Apply the same attrs patcher to every selected item id. Goes through the
- *  command pipeline so each item gets a real Patch and the history sees one
- *  transaction per item (the editor's TransactionRunner coalesces adjacent
- *  patches with the same `mergeKey` if the command provides one). */
+ *  command pipeline so each item gets a real Patch; `batchPerItem` groups a
+ *  multi-selection change into a single undo step. */
 export function updateAll(
   editor: Editor,
   ids: ReadonlyArray<string>,
@@ -108,9 +137,9 @@ export function updateAll(
     attrs: Readonly<Record<string, unknown>>;
   },
 ): void {
-  for (const id of ids) {
-    editor.exec("weave.item.update", { itemId: id, patch: patcher });
-  }
+  batchPerItem(editor, ids, (id) =>
+    editor.exec("weave.item.update", { itemId: id, patch: patcher }),
+  );
 }
 
 export function MixedBadge({ visible }: { readonly visible: boolean }): JSX.Element | null {

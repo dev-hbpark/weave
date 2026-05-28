@@ -202,6 +202,82 @@ test("Alt+drag still opens the rubber-band frame-add popover (not marquee)", asy
   expect(await selectedIds(page)).toEqual([]);
 });
 
+/** Top-level frame ids in z-order (document children order — the same order
+ *  the focus gate and the marquee both reason over). */
+async function zOrderFrameIds(page: Page): Promise<string[]> {
+  return await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown; kind: string }> } };
+    };
+    return (w.__weaveDoc?.root.children ?? [])
+      .filter((c) => c.kind === "frame")
+      .map((c) => String(c.id));
+  });
+}
+
+/** Frame ids whose canvas wrapper is currently non-interactive
+ *  (pointer-events:none) — the focus-gate "locked" set, read straight off
+ *  the live DOM so the test mirrors what a real pointer would hit. Scoped to
+ *  the frame stage so portal'd thumbnails (which also carry data-frame-id)
+ *  are excluded. */
+async function gatedFrameIds(page: Page): Promise<string[]> {
+  return await page.evaluate(() => {
+    const stage = document.querySelector('[data-testid="frame-stage"]');
+    const out: string[] = [];
+    for (const el of stage?.querySelectorAll("[data-frame-id]") ?? []) {
+      if (getComputedStyle(el).pointerEvents === "none") {
+        const id = el.getAttribute("data-frame-id");
+        if (id !== null) out.push(id);
+      }
+    }
+    return out.sort();
+  });
+}
+
+test("marquee excludes frames locked by z-order focus (regression)", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Marquee-lock" });
+  await seedThreeSlides(page);
+  const z = await zOrderFrameIds(page);
+  expect(z.length).toBe(3);
+  const bottom = z[0] as string; // first painted; the other two sit "above" it
+
+  // Lock via the bottom frame's tile eye toggle → stage 1 dims + blocks
+  // pointer events on everything painted above it (the other two frames).
+  await page.locator(`[data-thumbnail-focus-id="${bottom}"]`).click();
+
+  // Wait until the gate has actually applied on the canvas.
+  await page.waitForFunction(() => {
+    const stage = document.querySelector('[data-testid="frame-stage"]');
+    let n = 0;
+    for (const el of stage?.querySelectorAll("[data-frame-id]") ?? []) {
+      if (getComputedStyle(el).pointerEvents === "none") n += 1;
+    }
+    return n >= 1;
+  });
+  const gated = await gatedFrameIds(page);
+  expect(gated.length).toBeGreaterThanOrEqual(1);
+  // The focused (bottom) frame stays interactive — never in the locked set.
+  expect(gated).not.toContain(bottom);
+
+  // Marquee the whole viewport (replace). Before the fix the locked frames
+  // were scooped in because the marquee hit-tests document geometry directly,
+  // bypassing the pointer-events block that single-click respects.
+  const vp = await viewport(page);
+  await marqueeDrag(
+    page,
+    { x: Math.floor(vp.w * 0.06), y: Math.floor(vp.h * 0.18) },
+    { x: Math.floor(vp.w * 0.94), y: Math.floor(vp.h * 0.84) },
+  );
+
+  const selected = await selectedIds(page);
+  // No locked frame leaked into the drag selection.
+  for (const g of gated) expect(selected).not.toContain(g);
+  // The interactive (non-locked) frames are exactly what got selected.
+  const expected = z.filter((id) => !gated.includes(id)).sort();
+  expect(selected).toEqual(expected);
+});
+
 test("drag covering nothing replaces with empty selection", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Marquee-D" });

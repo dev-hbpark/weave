@@ -231,10 +231,11 @@ export interface FrameStageProps {
     | undefined;
   /** Phase 12b — commit a frame's full ItemFrame after a manipulation drag. */
   readonly onCommitFrame?: ((itemId: string, next: ItemFrame) => void) | undefined;
-  // WI-033 P2 — `enteredId` / `onEnter` / `onFitAll` (Phase 12 drill-in
-  // wiring) removed. Selection-only navigation (DR-017) means there's
-  // no entered-frame state or outer fit-to-all gesture; the design
-  // plane zoom is user-driven (Ctrl+Wheel / Zoom controls).
+  // WI-033 P2 — `enteredId` / `onEnter` removed with drill-in mode.
+  /** Double-clicking truly empty design-plane space fits the camera to the
+   *  union bounds of every top-level item, so the whole design comes into
+   *  view at once. No-op when omitted. */
+  readonly onFitAll?: (() => void) | undefined;
   /** Optional reference to the full document so the stage can compute an
    *  absolute-frame transform for the entered frame (trail walk). */
   readonly document?: AgocraftDocument | undefined;
@@ -1048,6 +1049,7 @@ export function FrameStage(props: FrameStageProps) {
     onSelect,
     onToggleSelect,
     onMarqueeSelect,
+    onFitAll,
     onDropAdd,
     onDragOver,
     document: doc,
@@ -1975,6 +1977,19 @@ export function FrameStage(props: FrameStageProps) {
     onSelect?.(undefined);
   }, [onSelect, selectionAllowedOuter]);
 
+  // Double-click on truly empty design-plane space → fit the camera to all
+  // items. Frames stop dblclick propagation (their own click-counter does
+  // fit-to-frame), so this fires only off-frame; the closest() guard is a
+  // belt-and-suspenders check against any future bubbling child.
+  const handleBackgroundDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!selectionAllowedOuter) return;
+      if (e.target instanceof Element && e.target.closest("[data-frame-id]") !== null) return;
+      onFitAll?.();
+    },
+    [onFitAll, selectionAllowedOuter],
+  );
+
   // viewport → design pixel converter for the rubber-band layer. The
   // design plane carries the full transform chain (pan × drill), so its
   // `getBoundingClientRect` is the cleanest source of truth: scale via
@@ -2034,11 +2049,10 @@ export function FrameStage(props: FrameStageProps) {
         data-canvas="document"
         data-bg-tone={bgTone}
         onClick={handleBackgroundClick}
-        // WI-033 P2 — outer onDoubleClick "fit to all" gesture removed
-        // alongside drill-in mode. Outer background double-click is now
-        // a no-op (no entered frame to exit, no overview view to fit).
+        // Double-click empty canvas → fit camera to all items (restored).
         // DR-017 Phase 2 — pan gesture now lives on the GestureRouter
         // (capture phase); legacy React onPointer handlers removed.
+        onDoubleClick={handleBackgroundDoubleClick}
         onDragOver={onDragOver}
         onDrop={onDropAdd ? (e) => onDropAdd(e, rootId) : undefined}
         data-testid="frame-stage"
@@ -2181,21 +2195,37 @@ export function FrameStage(props: FrameStageProps) {
               containerSize={{ width: designWidth, height: designHeight }}
               clientToLocal={clientToDesignLocal}
               getFrames={() =>
-                root.children.filter(isDomainItem).map((c) => {
-                  const f = (c.attrs as { frame?: ItemFrame }).frame ?? {
-                    x: 0,
-                    y: 0,
-                    width: 1,
-                    height: 1,
-                  };
-                  return {
-                    id: String(c.id),
-                    x: f.x * designWidth,
-                    y: f.y * designHeight,
-                    width: f.width * designWidth,
-                    height: f.height * designHeight,
-                  };
-                })
+                root.children
+                  .filter(isDomainItem)
+                  // WI-039 — focus-gate parity with single-click. A dimmed
+                  // (stage 1) or isolated (stage 2) frame carries
+                  // pointer-events:none, so a click never lands on it; the
+                  // marquee hit-tests document geometry directly and would
+                  // otherwise still scoop it into a drag selection. Exclude
+                  // the same id sets the per-frame hit gate consults so both
+                  // selection paths agree on what is interactive.
+                  .filter((c) => {
+                    const id = String(c.id);
+                    return (
+                      !(props.dimmedFrameIds?.has(id) ?? false) &&
+                      !(props.isolatedFrameIds?.has(id) ?? false)
+                    );
+                  })
+                  .map((c) => {
+                    const f = (c.attrs as { frame?: ItemFrame }).frame ?? {
+                      x: 0,
+                      y: 0,
+                      width: 1,
+                      height: 1,
+                    };
+                    return {
+                      id: String(c.id),
+                      x: f.x * designWidth,
+                      y: f.y * designHeight,
+                      width: f.width * designWidth,
+                      height: f.height * designHeight,
+                    };
+                  })
               }
               acceptTarget={emptyRegionAccept}
               onSelectIntent={(intent, ids) => {

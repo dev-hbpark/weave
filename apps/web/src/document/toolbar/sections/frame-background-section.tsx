@@ -52,6 +52,7 @@ import {
 } from "@weave/design-system";
 import type { ReactElement } from "react";
 import {
+  batchPerItem,
   isMixed,
   MixedBadge,
   pickerValueToStored,
@@ -184,12 +185,12 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
 
   const onLayoutChange = (next: LayoutKindChoice) => {
     const nextSpec = specForChoice(next);
-    // Apply to every selected item via dedicated layout command so
-    // (a) the agocraft `item.layout` Patch fires (mergeKey folds rapid
-    // flips into one undo entry), (b) the reducer mirrors into doc state.
-    for (const id of ids) {
-      editor.exec("weave.frame.setLayout", { itemId: id, layout: nextSpec });
-    }
+    // Apply to every selected item via the dedicated layout command. The
+    // per-item mergeKey only folds rapid flips on the SAME frame; `batchPerItem`
+    // groups a multi-frame change into one undo entry (single id runs directly).
+    batchPerItem(editor, ids, (id) =>
+      editor.exec("weave.frame.setLayout", { itemId: id, layout: nextSpec }),
+    );
   };
 
   // PropertiesPanel-style advanced fields (RISK-002 C4.2 — wrapped in
@@ -207,9 +208,9 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
       : undefined;
 
   const patchLayoutSpec = (next: LayoutSpec) => {
-    for (const id of ids) {
-      editor.exec("weave.frame.setLayout", { itemId: id, layout: next });
-    }
+    batchPerItem(editor, ids, (id) =>
+      editor.exec("weave.frame.setLayout", { itemId: id, layout: next }),
+    );
   };
 
   const onFlexFieldChange = <K extends keyof AutoFlexSpec>(key: K, value: AutoFlexSpec[K]) => {

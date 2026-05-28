@@ -1303,6 +1303,37 @@ function DesignPageBody() {
     [],
   );
   const handleClearFocus = useCallback(() => setFocused(undefined), []);
+  // Double-clicking a thumbnail brings its frame full-screen — the same
+  // camera fit applied when an item is added into a frame.
+  const handleZoomToFrame = useCallback(
+    (id: string) => {
+      const box = absoluteFrameBox(docInAgocraft, id, design.width, design.height);
+      if (box !== null) cameraFitBox(box);
+    },
+    [docInAgocraft, design.width, design.height],
+  );
+  // Double-clicking empty design space fits the camera to the union bounds of
+  // every top-level item, so the whole design comes into view at once. The
+  // fit impl (FrameStage.zoomToBox) already leaves a 0.9 margin.
+  const handleFitAll = useCallback(() => {
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let found = false;
+    for (const c of docInAgocraft.root.children) {
+      if (!isDomainItem(c)) continue;
+      const box = absoluteFrameBox(docInAgocraft, String(c.id), design.width, design.height);
+      if (box === null) continue;
+      minX = Math.min(minX, box.x);
+      minY = Math.min(minY, box.y);
+      maxX = Math.max(maxX, box.x + box.w);
+      maxY = Math.max(maxY, box.y + box.h);
+      found = true;
+    }
+    if (!found) return;
+    cameraFitBox({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+  }, [docInAgocraft, design.width, design.height]);
   // Walk the focused frame's trail and collect every frame id that should
   // be gated out for the given mode. `above` only takes later siblings at
   // each ancestor level; `outside` takes every non-trail sibling at every
@@ -2480,11 +2511,9 @@ function DesignPageBody() {
                                 editing={true}
                                 infiniteCanvas={infiniteCanvas}
                                 handMode={handMode}
-                                // WI-033 P2 — enteredId / onEnter / onFitAll were
-                                // the drill-in mode wiring (Phase 12); removed
-                                // alongside the breadcrumb + Enter frame menu
-                                // item. FrameStage falls back to "no entered
-                                // frame" (undefined).
+                                // WI-033 P2 — enteredId / onEnter (drill-in mode,
+                                // Phase 12) removed. onFitAll restored: empty-canvas
+                                // double-click fits the camera to all items.
                                 selectedId={selectedFrameId ?? undefined}
                                 selectedIds={selectedIds}
                                 dimmedFrameIds={dimmedFrameIds}
@@ -2492,6 +2521,7 @@ function DesignPageBody() {
                                 onSelect={setSelectedFrameId}
                                 onToggleSelect={(id) => toggleFrames([id])}
                                 onMarqueeSelect={onMarqueeSelect}
+                                onFitAll={handleFitAll}
                                 // WI-035 P3 — Toolbar drag-to-add. The
                                 // DropdownMenu add-items set the mime
                                 // `application/x-weave-add-kind` on
@@ -2845,6 +2875,7 @@ function DesignPageBody() {
                                   disabledFrameIds={disabledFrameIds}
                                   onCycleFocus={handleCycleFocus}
                                   onClearFocus={handleClearFocus}
+                                  onZoomToFrame={handleZoomToFrame}
                                 />
                               </div>,
                               document.body,
