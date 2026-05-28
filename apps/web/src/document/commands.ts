@@ -30,8 +30,6 @@ import type {
 import {
   type Command,
   type CommandContext,
-  createAutoFlexChildPolicy,
-  createAutoGridChildPolicy,
   fail,
   IdGeneratorToken,
   itemId as makeItemId,
@@ -42,12 +40,7 @@ import {
   serializeItemSubtree,
   ref as styleRef,
 } from "@agocraft/core";
-import { computeLayoutPatchesOnParentResize } from "@agocraft/editor";
-import {
-  getLayoutRegistry,
-  WI019_LAYOUT_ENABLED,
-  WI020_LAYOUT_VARIANTS_ENABLED,
-} from "./layout/registry.js";
+import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import {
   absoluteFrameBox,
@@ -189,269 +182,6 @@ function findChild(doc: CommandContext["document"], itemId: string) {
   return findItemDeep(doc, itemId);
 }
 
-/**
- * WI-019 B6 — when a parent Item with a `layout` policy resizes, compute
- * the child `item.attrs` Patches that ripple from the new frame and return
- * them alongside the parent's own Patch. Gated by `WI019_LAYOUT_ENABLED` —
- * default off during LG-001 stabilisation per RISK-001 C3.1.
- *
- * Pure helper: reads the *before* state directly off `parent.children`
- * (which is still the pre-patch snapshot from `ctx.document`), and the
- * *after* state from the just-computed `after` attrs map. The agocraft
- * helper `computeLayoutPatchesOnParentResize` does the math.
- */
-/**
- * WI-043 FIX — reconcile agocraft's frame-only layout patches with weave's
- * whole-attrs `item.attrs` reducer.
- *
- * `computeLayoutPatchesOnParentResize` emits `item.attrs` Patches whose
- * `after` is `{ frame }` ONLY (it owns just the frame invariant). But
- * weave's reducer (`agocraft-mirror.ts` → `case "item.attrs"`) REPLACES the
- * whole attrs map with `change.after`. Applying a frame-only `after` would
- * therefore wipe every other attr (shape geometry, image src, text runs, …)
- * → e.g. `shapeToSvgGeometry` crashes on a shape child that lost its
- * `attrs.shape`. This helper rewrites each frame-only layout patch into a
- * full-attrs patch (`{ ...child.attrs, frame }`), matching weave's reducer
- * contract. Non-attrs patches and unknown ids pass through untouched.
- */
-function toFullAttrsLayoutPatches(
-  framePatches: ReadonlyArray<Patch>,
-  children: ReadonlyArray<AgocraftItem>,
-): Patch[] {
-  const byId = new Map<string, AgocraftItem>();
-  for (const c of children) byId.set(String(c.id), c);
-  const out: Patch[] = [];
-  for (const p of framePatches) {
-    if (p.type !== "item.attrs") {
-      out.push(p);
-      continue;
-    }
-    const child = byId.get(String(p.itemId));
-    const frameOnly = (p.after as { frame?: AgocraftItemFrame }).frame;
-    if (child === undefined || frameOnly === undefined) {
-      out.push(p);
-      continue;
-    }
-    out.push({
-      type: "item.attrs",
-      itemId: p.itemId,
-      before: child.attrs,
-      after: { ...child.attrs, frame: frameOnly } as Readonly<Record<string, unknown>>,
-    });
-  }
-  return out;
-}
-
-function maybeComputeLayoutRipplePatches(
-  parent: AgocraftItem,
-  after: Readonly<Record<string, unknown>>,
-): ReadonlyArray<Patch> {
-  if (!WI019_LAYOUT_ENABLED && !WI020_LAYOUT_VARIANTS_ENABLED) return [];
-  // Parent must declare a layout policy to opt in (a missing `layout`
-  // attribute means "no ripple, behave like the legacy fixed-children
-  // model"). The flag check above is the outer guard; this one keeps
-  // the path opt-in per-item even after global flip.
-  const parentLayout = (parent.attrs as { layout?: LayoutSpec }).layout;
-  if (parentLayout === undefined) return [];
-  const beforeFrame = (parent.attrs as { frame?: AgocraftItemFrame }).frame;
-  const afterFrame = (after as { frame?: AgocraftItemFrame }).frame;
-  if (beforeFrame === undefined || afterFrame === undefined) return [];
-  // No-op resize → skip the whole pass (the adapter would also return []
-  // but the early-out avoids the children projection cost).
-  if (
-    Object.is(beforeFrame.width, afterFrame.width) &&
-    Object.is(beforeFrame.height, afterFrame.height)
-  ) {
-    return [];
-  }
-  const framePatches = computeLayoutPatchesOnParentResize({
-    parentLayout,
-    parentOldRatio: beforeFrame,
-    parentNewRatio: afterFrame,
-    children: parent.children.map((c) => ({
-      itemId: c.id,
-      currentFrame: (c.attrs as { frame?: AgocraftItemFrame }).frame ?? {
-        x: 0,
-        y: 0,
-        width: 1,
-        height: 1,
-        rotation: 0,
-      },
-      policy: (c.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild,
-    })),
-    registry: getLayoutRegistry(),
-  });
-  // Frame-only → full-attrs (weave reducer replaces the whole attrs map).
-  return toFullAttrsLayoutPatches(framePatches, parent.children);
-}
-
-const FULL_RELAYOUT_FRAME: AgocraftItemFrame = { x: 0, y: 0, width: 1, height: 1, rotation: 0 };
-
-/**
- * WI-020 / WI-043 — relayout on child add. When a child is added to a parent
- * that declares an Auto Layout policy (`auto-flex` / `auto-grid`), the new
- * child must NOT land at its raw drop frame — the parent's layout owns
- * placement. This recomputes the WHOLE child set (existing siblings + the
- * new child) through the parent's adapter and returns:
- *   - `newChildFrame` — the spec-computed frame for the just-added child
- *     (the caller overwrites the staged item's `attrs.frame` with it before
- *     staging), or `undefined` when the parent has no layout / the adapter
- *     produced no placement for it.
- *   - `siblingPatches` — `item.attrs` Patches for every EXISTING sibling
- *     whose frame shifted (e.g. a flex row redistributing to make room).
- *
- * Mechanism: auto-flex / auto-grid adapters compute absolute spec-based
- * placement and ignore the old↔new resize delta, so calling
- * `computeLayoutPatchesOnParentResize` with `parentOldRatio === parentNewRatio`
- * (a no-op resize) yields a full relayout. absolute-constraints, by
- * contrast, is scale-factor based and returns `[]` on a no-op resize — so a
- * frame with the v1 policy keeps free placement (the new child stays where
- * it was dropped), which is the correct v1 behaviour.
- *
- * Single transaction: the returned sibling patches ride alongside the
- * `item.children` add Patch, so one Cmd+Z reverts the add AND the reflow.
- */
-function computeChildAddRelayout(
-  parentItem: AgocraftItem | undefined,
-  existingChildren: ReadonlyArray<AgocraftItem>,
-  newChild: AgocraftItem,
-): { newChildFrame: AgocraftItemFrame | undefined; siblingPatches: Patch[] } {
-  const NONE = { newChildFrame: undefined, siblingPatches: [] as Patch[] };
-  if (!WI019_LAYOUT_ENABLED && !WI020_LAYOUT_VARIANTS_ENABLED) return NONE;
-  if (parentItem === undefined) return NONE;
-  const parentLayout = (parentItem.attrs as { layout?: LayoutSpec }).layout;
-  if (parentLayout === undefined) return NONE;
-  const parentFrame =
-    (parentItem.attrs as { frame?: AgocraftItemFrame }).frame ?? FULL_RELAYOUT_FRAME;
-
-  const allChildren: ReadonlyArray<AgocraftItem> = [...existingChildren, newChild];
-  const patches = computeLayoutPatchesOnParentResize({
-    parentLayout,
-    // No-op resize → auto-flex / auto-grid recompute absolute placement from
-    // spec (they ignore the delta); absolute-constraints returns [].
-    parentOldRatio: parentFrame,
-    parentNewRatio: parentFrame,
-    children: allChildren.map((c) => ({
-      itemId: c.id,
-      currentFrame:
-        (c.attrs as { frame?: AgocraftItemFrame }).frame ?? FULL_RELAYOUT_FRAME,
-      policy: (c.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild,
-    })),
-    registry: getLayoutRegistry(),
-  });
-
-  let newChildFrame: AgocraftItemFrame | undefined;
-  const rawSiblingPatches: Patch[] = [];
-  const newChildId = String(newChild.id);
-  for (const p of patches) {
-    if (p.type !== "item.attrs") continue;
-    if (String(p.itemId) === newChildId) {
-      // The new child's frame is applied to the staged item directly by the
-      // caller; only the frame is needed here.
-      newChildFrame = (p.after as { frame?: AgocraftItemFrame }).frame;
-    } else {
-      rawSiblingPatches.push(p);
-    }
-  }
-  // Frame-only → full-attrs so the sibling shapes/images/text keep their
-  // other attrs through weave's whole-attrs reducer (WI-043 FIX).
-  const siblingPatches = toFullAttrsLayoutPatches(rawSiblingPatches, existingChildren);
-  return { newChildFrame, siblingPatches };
-}
-
-/**
- * WI-043 FIX — relayout when a frame's layout PARADIGM changes
- * (ContextualToolbar SegmentedControl: Absolute → Flex / Grid, etc.).
- *
- * The `item.layout` Patch alone only swaps the parent's spec; the existing
- * children keep their old frames (and old `layoutChild` policies), so the
- * user sees no rearrangement. This computes the extra Patches that make the
- * children actually obey the new paradigm:
- *
- *   1. For auto-flex / auto-grid, every child's `layoutChild` is reassigned
- *      to the new paradigm's policy — otherwise a child carrying an
- *      auto-flex policy under a new auto-grid parent (or none) falls back to
- *      DEFAULT (grid cell 1,1) and they all stack. Grid uses row-major
- *      auto-placement (i → column (i % cols)+1, row floor(i/cols)+1) since
- *      v1.1 grid has no implicit auto-flow.
- *   2. Each child's frame is recomputed via the adapter with the reassigned
- *      policies, and emitted as a single full-attrs `item.attrs` Patch
- *      (frame + new layoutChild + every other attr preserved).
- *
- * For Absolute (newLayout === undefined or kind "absolute-constraints") the
- * children keep free placement — no child patches (returns []).
- *
- * All patches ride in the `weave.frame.setLayout` transaction → one Cmd+Z.
- */
-function computeSetLayoutChildPatches(
-  parentItem: AgocraftItem,
-  newLayout: LayoutSpec | undefined,
-): Patch[] {
-  if (!WI019_LAYOUT_ENABLED && !WI020_LAYOUT_VARIANTS_ENABLED) return [];
-  if (newLayout === undefined || newLayout.kind === "absolute-constraints") return [];
-  if (parentItem.children.length === 0) return [];
-
-  const parentFrame =
-    (parentItem.attrs as { frame?: AgocraftItemFrame }).frame ?? FULL_RELAYOUT_FRAME;
-
-  // Reassign each child's policy for the new paradigm.
-  const cols =
-    newLayout.kind === "auto-grid" ? Math.max(1, newLayout.columns.length) : 1;
-  const reassigned = parentItem.children.map((c, i) => {
-    const policy: LayoutChildPolicy =
-      newLayout.kind === "auto-flex"
-        ? createAutoFlexChildPolicy()
-        : createAutoGridChildPolicy({
-            column: (i % cols) + 1,
-            columnSpan: 1,
-            row: Math.floor(i / cols) + 1,
-            rowSpan: 1,
-          });
-    return { item: c, policy };
-  });
-
-  // Compute spec-based frames with the reassigned policies.
-  const framePatches = computeLayoutPatchesOnParentResize({
-    parentLayout: newLayout,
-    parentOldRatio: parentFrame,
-    parentNewRatio: parentFrame,
-    children: reassigned.map((r) => ({
-      itemId: r.item.id,
-      currentFrame:
-        (r.item.attrs as { frame?: AgocraftItemFrame }).frame ?? FULL_RELAYOUT_FRAME,
-      policy: r.policy,
-    })),
-    registry: getLayoutRegistry(),
-  });
-  const frameById = new Map<string, AgocraftItemFrame>();
-  for (const p of framePatches) {
-    if (p.type !== "item.attrs") continue;
-    const f = (p.after as { frame?: AgocraftItemFrame }).frame;
-    if (f !== undefined) frameById.set(String(p.itemId), f);
-  }
-
-  // One full-attrs item.attrs Patch per child: new frame (or kept) + new
-  // policy + every existing attr. Always emit so the policy reassignment
-  // lands even when a child's frame happens to be unchanged.
-  const out: Patch[] = [];
-  for (const r of reassigned) {
-    const id = String(r.item.id);
-    const currentFrame = (r.item.attrs as { frame?: AgocraftItemFrame }).frame;
-    const nextFrame = frameById.get(id) ?? currentFrame;
-    out.push({
-      type: "item.attrs",
-      itemId: r.item.id,
-      before: r.item.attrs,
-      after: {
-        ...r.item.attrs,
-        layoutChild: r.policy,
-        ...(nextFrame !== undefined ? { frame: nextFrame } : {}),
-      } as Readonly<Record<string, unknown>>,
-    });
-  }
-  return out;
-}
-
 export function buildWeaveCommands(
   targets: WeaveCommandTargets,
   pending?: PendingCreations,
@@ -521,24 +251,23 @@ export function buildWeaveCommands(
       const ts = new Date().toISOString();
       const agoItem = toAgocraftItem(weaveItem, ts);
 
-      // WI-020 / WI-043 — relayout on child add. If the container declares an
-      // Auto Layout policy, the parent owns placement: recompute the whole
-      // child set (siblings + the new item) and (a) overwrite the new item's
-      // frame with the spec-computed one before staging, (b) emit item.attrs
-      // Patches for every sibling that shifted — all in this transaction so a
-      // single Cmd+Z reverts the add + the reflow.
+      // WI-021 — layout-driven placement is owned by agocraft's LayoutEngine.
+      // weave just hands it the parent + new child and emits whatever Patches
+      // come back: the engine stages the new child at the layout's slot and
+      // returns sibling-shift Patches (all in this transaction → single Cmd+Z).
+      // For Absolute / no-layout parents the engine returns the child unchanged
+      // and no sibling patches.
       const containerItem =
         input.containerId === undefined || input.containerId === String(ctx.document.root.id)
           ? ctx.document.root
           : findItemDeep(ctx.document, input.containerId);
-      const relayout = computeChildAddRelayout(containerItem, container.children, agoItem);
-      const stagedItem: AgocraftItem =
-        relayout.newChildFrame !== undefined
-          ? {
-              ...agoItem,
-              attrs: { ...agoItem.attrs, frame: relayout.newChildFrame } as typeof agoItem.attrs,
-            }
-          : agoItem;
+      let stagedItem: AgocraftItem = agoItem;
+      let layoutSiblingPatches: ReadonlyArray<Patch> = [];
+      if (LAYOUT_FEATURE_ENABLED && containerItem !== undefined) {
+        const result = getLayoutEngine().onChildAdd({ parent: containerItem, newChild: agoItem });
+        stagedItem = result.stagedChild as AgocraftItem;
+        layoutSiblingPatches = result.siblingPatches;
+      }
 
       if (pending !== undefined) {
         pending.stage(stagedItem);
@@ -553,7 +282,7 @@ export function buildWeaveCommands(
           added: [stagedItem.id],
           removed: [],
         },
-        ...relayout.siblingPatches,
+        ...layoutSiblingPatches,
       ];
       return ok(String(stagedItem.id), patches);
     },
@@ -650,15 +379,22 @@ export function buildWeaveCommands(
         after,
       };
 
-      // ── WI-019 B6 / WI-042 — layout ripple on parent frame resize ──
-      //
-      // If (a) the feature flag is on, (b) this Item carries a `layout`
-      // policy (so it acts as a layout parent), and (c) the patch changes
-      // `attrs.frame`, compute child layout patches via the agocraft
-      // helper and append them to the same CommandResult.patches array
-      // so the transaction runner emits them under one transactionId
-      // (single Cmd+Z restores the whole gesture).
-      const extraPatches = maybeComputeLayoutRipplePatches(child, after);
+      // ── WI-021 — ANY frame change is reported to the LayoutEngine through a
+      // SINGLE entry point. weave does NOT decide whether this is a parent
+      // resize or a child resize — position management is delegated to the
+      // relevant parent frame's layout. The engine inspects the document and
+      // returns full-attrs reflow Patches (empty for absolute / no-layout).
+      const oldFrame = (child.attrs as { frame?: AgocraftItemFrame }).frame;
+      const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
+      const extraPatches: ReadonlyArray<Patch> =
+        LAYOUT_FEATURE_ENABLED && oldFrame !== undefined && newFrame !== undefined
+          ? getLayoutEngine().onFrameChanged({
+              root: ctx.document.root,
+              itemId: child.id,
+              oldFrame,
+              newFrame,
+            })
+          : [];
       if (extraPatches.length > 0) {
         return ok(undefined, [patch, ...extraPatches]);
       }
@@ -698,10 +434,11 @@ export function buildWeaveCommands(
         const child = findChild(ctx.document, u.itemId);
         if (child === undefined) continue;
         const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
-        const prevFrame = (prevAttrs.frame ?? {}) as Readonly<Record<string, unknown>>;
+        const prevFrameRaw = prevAttrs.frame as AgocraftItemFrame | undefined;
+        const nextFrame = { ...(prevFrameRaw ?? {}), ...u.frame } as AgocraftItemFrame;
         const nextAttrs: Readonly<Record<string, unknown>> = {
           ...prevAttrs,
-          frame: { ...prevFrame, ...u.frame },
+          frame: nextFrame,
         };
         patches.push({
           type: "item.attrs",
@@ -709,6 +446,20 @@ export function buildWeaveCommands(
           before: child.attrs,
           after: nextAttrs,
         });
+        // WI-021 — same single LayoutEngine entry point as item.update: the
+        // resize of ANY item (including a child inside a flex/grid frame) is
+        // reported by frame change; the engine delegates position management
+        // to the parent frame's layout. No host-side parent/child branching.
+        if (LAYOUT_FEATURE_ENABLED && prevFrameRaw !== undefined) {
+          patches.push(
+            ...getLayoutEngine().onFrameChanged({
+              root: ctx.document.root,
+              itemId: child.id,
+              oldFrame: prevFrameRaw,
+              newFrame: nextFrame,
+            }),
+          );
+        }
       }
       return ok(undefined, patches);
     },
@@ -1612,17 +1363,15 @@ export function buildWeaveCommands(
       if (before === input.layout) {
         return ok(undefined, []);
       }
-      const patch: Patch = {
-        type: "item.layout",
-        itemId: child.id,
-        before,
-        after: input.layout,
-      };
-      // WI-043 FIX — switching the layout paradigm must rearrange the
-      // existing children (and reassign their per-child policy for the new
-      // paradigm). Absolute / clear → no child patches (free placement).
-      const childPatches = computeSetLayoutChildPatches(child, input.layout);
-      return ok(undefined, [patch, ...childPatches]);
+      // WI-021 — the LayoutEngine owns the paradigm switch: it returns the
+      // item.layout Patch plus the child Patches that rearrange + reassign
+      // per-child policy for the new paradigm (Absolute → no child Patches).
+      // weave only emits them.
+      const { layoutPatch, childPatches } = getLayoutEngine().onLayoutChange({
+        parent: child,
+        newLayout: input.layout,
+      });
+      return ok(undefined, [layoutPatch, ...childPatches]);
     },
   };
 

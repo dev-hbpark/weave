@@ -21,7 +21,9 @@ import {
   createAbsoluteConstraintsAdapter,
   createAutoFlexAdapter,
   createAutoGridAdapter,
+  createLayoutEngine,
   createLayoutRegistry,
+  type LayoutEngine,
   type LayoutRegistry,
 } from "@agocraft/layout";
 
@@ -60,4 +62,23 @@ export function getLayoutRegistry(): LayoutRegistry {
     }
   }
   return cached;
+}
+
+/** Single host-side feature toggle for the agocraft LayoutEngine. The engine
+ *  itself owns ALL layout behaviour; this flag only decides whether weave
+ *  routes gestures through it at all (host policy, not layout logic). */
+export const LAYOUT_FEATURE_ENABLED = WI019_LAYOUT_ENABLED || WI020_LAYOUT_VARIANTS_ENABLED;
+
+let cachedEngine: LayoutEngine | undefined;
+
+/** Returns the lazily-initialised agocraft LayoutEngine (WI-021). This is the
+ *  ONLY layout entry point weave uses — every layout-driven mutation (child
+ *  add, parent resize, paradigm change, child transform) and every
+ *  manipulation constraint is computed by the engine. weave never branches
+ *  on layout kind or shapes layout patches itself (library-ownership rule). */
+export function getLayoutEngine(): LayoutEngine {
+  if (cachedEngine === undefined) {
+    cachedEngine = createLayoutEngine({ registry: getLayoutRegistry() });
+  }
+  return cachedEngine;
 }
