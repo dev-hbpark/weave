@@ -224,6 +224,12 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 **빌드 사고 박제**: 이번 repack 중 iCloud 가 또 `packages/*/package.json` 6개 삭제 + dist `index 2.js` 충돌 생성 → 빌드 cascade 실패 (editor 가 interaction/manipulation resolve 못 함). 복구: `git checkout HEAD -- packages/*/package.json` + dist 충돌/`.repack-bak` find-delete → 19/19 빌드 성공. iCloud-on-dist/package.json 재발.
 
+### ADD — grid 디테일 parity (2026-05-28)
+
+"grid 도 flex 처럼 디테일 모두 확인·개선" (사용자). agocraft `1.0.0-rc.20260528090550` 채택 (grid intrinsic 분리 sizeW/sizeH·reversible·alignment-aware 제약) + `GridChildSection` 신규 (Justify self / Align self 컨트롤, ContextualToolbar 가 flex/grid 중 해당하는 것만 렌더).
+
+검증 (`layout-constraints-verify.spec.ts`): grid(stretch) 에 height 0.3 shape 추가 → cell 채워 height 1 → align start → **0.3 복원**. per-child 메뉴: grid 자식 선택 시 `grid-child-controls` + justify/align-self 표시, Align self=Start 클릭 → height 1→0.3. 18 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

@@ -374,6 +374,74 @@ test("reparent GESTURE (Cmd+Shift+drag) moves a shape into the inner frame", asy
   expect(after.policyKind).toBe("auto-grid");
 });
 
+test("grid reversibility: align stretch → start restores the child's intrinsic height", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Grid-Reversible" });
+
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.15, width: 0.6, height: 0.4, rotation: 0 },
+    attrsOverride: { layout: GRID_2COL }, // justify/align stretch
+  });
+  await page.waitForTimeout(120);
+  const sId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.2, height: 0.3, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(150);
+
+  const filled = await readItemFrame(page, sId);
+  expect(filled!.height).toBeCloseTo(1, 2); // stretch fills the cell height
+
+  // Change the row alignment stretch → start.
+  await setFrameLayout(page, fId, { ...GRID_2COL, align: "start" });
+  await page.waitForTimeout(150);
+  const restored = await readItemFrame(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] grid reversible:", JSON.stringify({ filled, restored }));
+  expect(restored!.height).toBeCloseTo(0.3, 2); // intrinsic restored, not baked 1
+});
+
+test("per-child menu (grid): selecting a grid child shows Justify/Align self; Start restores its size", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Grid-ChildMenu" });
+
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.15, width: 0.6, height: 0.4, rotation: 0 },
+    attrsOverride: { layout: GRID_2COL },
+  });
+  await page.waitForTimeout(120);
+  const sId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.2, height: 0.3, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(150);
+
+  await setSelection(page, [sId]);
+  await page.waitForTimeout(150);
+  await expect(page.getByTestId("grid-child-controls")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Grid child justify-self" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Grid child align-self" })).toBeVisible();
+
+  const before = await readItemFrame(page, sId);
+  expect(before!.height).toBeCloseTo(1, 2); // stretch fills
+
+  // Set Align self → Start via the per-child control.
+  await page.getByRole("group", { name: "Grid child align-self" }).getByRole("radio", { name: "Start" }).click();
+  await page.waitForTimeout(200);
+  const after = await readItemFrame(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] grid child-menu:", JSON.stringify({ before, after }));
+  expect(after!.height).toBeCloseTo(0.3, 2); // back to intrinsic
+});
+
 test("reparenting a shape into an inner grid frame makes it follow the NEW parent's layout", async ({
   page,
 }) => {

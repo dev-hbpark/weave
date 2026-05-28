@@ -19,9 +19,14 @@ import type { Editor } from "@agocraft/editor";
 import {
   type AutoFlexChildPolicy,
   type AutoFlexSpec,
+  type AutoGridChildPolicy,
+  type AutoGridSpec,
   createAutoFlexChildPolicy,
+  createAutoGridChildPolicy,
   type Document as AgocraftDocument,
   type FlexAlign,
+  type GridAlign,
+  type GridJustify,
   type LayoutChildPolicy,
   type LayoutSpec,
 } from "@agocraft/core";
@@ -125,6 +130,84 @@ export function FlexChildSection({ editor, items, document }: FlexChildSectionPr
           onValueChange={(v) => apply({ alignSelf: v })}
           options={ALIGN_SELF_OPTIONS}
           aria-label="Flex child align-self"
+        />
+      </Bar.Field>
+    </div>
+  );
+}
+
+// ─── Grid child controls ────────────────────────────────────────────────────
+
+const GRID_ALIGN_OPTIONS: ReadonlyArray<{ value: GridJustify; label: string }> = [
+  { value: "start", label: "Start" },
+  { value: "center", label: "Center" },
+  { value: "end", label: "End" },
+  { value: "stretch", label: "Stretch" },
+];
+
+/** The parent `auto-grid` spec for `itemId`, or undefined. */
+function parentGridSpec(doc: AgocraftDocument, itemId: string): AutoGridSpec | undefined {
+  const found = findParentAndIndex(doc, itemId);
+  if (found === undefined) return undefined;
+  const layout = (found.parent.attrs as { layout?: LayoutSpec }).layout;
+  return layout !== undefined && layout.kind === "auto-grid" ? layout : undefined;
+}
+
+/** Per-child controls for an item inside an auto-grid frame: Justify self
+ *  (column axis) + Align self (row axis). Stretch fills the cell; otherwise
+ *  the child keeps its intrinsic size positioned in the cell. */
+export function GridChildSection({ editor, items, document }: FlexChildSectionProps): JSX.Element | null {
+  if (items.length !== 1) return null;
+  const item = items[0]!;
+  const parentSpec = parentGridSpec(document, item.id);
+  if (parentSpec === undefined) return null;
+
+  const policy = (item.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild;
+  const gridPolicy = policy !== undefined && policy.kind === "auto-grid" ? policy : undefined;
+  const justifySelf: GridJustify = gridPolicy?.justifySelf ?? parentSpec.justify;
+  const alignSelf: GridAlign = gridPolicy?.alignSelf ?? parentSpec.align;
+
+  const apply = (overrides: Partial<Omit<AutoGridChildPolicy, "kind">>) => {
+    // Preserve placement (column/row/span) + intrinsic (sizeW/sizeH) so a
+    // justify/align change is reversible; apply only the changed field.
+    const base: Partial<Omit<AutoGridChildPolicy, "kind">> =
+      gridPolicy !== undefined
+        ? {
+            column: gridPolicy.column,
+            columnSpan: gridPolicy.columnSpan,
+            row: gridPolicy.row,
+            rowSpan: gridPolicy.rowSpan,
+            ...(gridPolicy.justifySelf !== undefined ? { justifySelf: gridPolicy.justifySelf } : {}),
+            ...(gridPolicy.alignSelf !== undefined ? { alignSelf: gridPolicy.alignSelf } : {}),
+            ...(gridPolicy.sizeW !== undefined ? { sizeW: gridPolicy.sizeW } : {}),
+            ...(gridPolicy.sizeH !== undefined ? { sizeH: gridPolicy.sizeH } : {}),
+          }
+        : {};
+    const next = createAutoGridChildPolicy({ ...base, ...overrides });
+    editor.exec("weave.item.setLayoutChild", { itemId: item.id, policy: next });
+  };
+
+  return (
+    <div
+      role="group"
+      aria-label="Grid child layout"
+      data-testid="grid-child-controls"
+      className="inline-flex items-end gap-2 ml-1 pl-2 border-l border-l-[color:var(--surface-overlay-border)]"
+    >
+      <Bar.Field label="Justify self">
+        <SegmentedControl<GridJustify>
+          value={justifySelf}
+          onValueChange={(v) => apply({ justifySelf: v })}
+          options={GRID_ALIGN_OPTIONS}
+          aria-label="Grid child justify-self"
+        />
+      </Bar.Field>
+      <Bar.Field label="Align self">
+        <SegmentedControl<GridAlign>
+          value={alignSelf}
+          onValueChange={(v) => apply({ alignSelf: v })}
+          options={GRID_ALIGN_OPTIONS}
+          aria-label="Grid child align-self"
         />
       </Bar.Field>
     </div>

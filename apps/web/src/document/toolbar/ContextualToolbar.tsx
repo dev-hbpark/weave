@@ -23,7 +23,7 @@ import type { Editor } from "@agocraft/editor";
 import { ContextualToolbar as Bar } from "@weave/design-system";
 import type { JSX } from "react";
 import type { ItemSnapshot } from "./multi-edit.js";
-import { FlexChildSection } from "./sections/flex-child-section.js";
+import { FlexChildSection, GridChildSection } from "./sections/flex-child-section.js";
 import { toolbarSectionRegistry } from "./sections/index.js";
 
 interface ContextualToolbarProps {
@@ -84,9 +84,10 @@ export function ContextualToolbar({
         onEditShapeFill={onEditShapeFill}
       />
       {/* Cross-kind per-child layout controls — shown only when the single
-          selected item is a child of an auto-flex frame. Renders nothing
-          otherwise (any kind, any non-flex parent). */}
+          selected item is a child of an auto-flex / auto-grid frame. Each
+          renders nothing for the other paradigm (or any non-layout parent). */}
       <FlexChildSection editor={editor} items={selectedItems} document={document} />
+      <GridChildSection editor={editor} items={selectedItems} document={document} />
     </Bar>
   );
 }
