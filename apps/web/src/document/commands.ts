@@ -141,6 +141,23 @@ export interface UpdateItemInput {
   readonly itemId: string;
   readonly patch: (it: WeaveItem) => WeaveItem;
 }
+
+/** WI-020 / WI-043 — explicit layout-spec mutation. Targets `attrs.layout`
+ *  via the agocraft `item.layout` Patch variant (self-inverting before/after
+ *  swap, mergeKeyOf folds rapid SegmentedControl flips into one undo). */
+export interface SetFrameLayoutInput {
+  readonly itemId: string;
+  /** New `LayoutSpec`, or `undefined` to clear the policy. */
+  readonly layout: import("@agocraft/core").LayoutSpec | undefined;
+}
+
+/** WI-020 / WI-043 — explicit child-policy mutation. Targets
+ *  `attrs.layoutChild` via the agocraft `item.layoutChild` Patch variant. */
+export interface SetItemLayoutChildInput {
+  readonly itemId: string;
+  /** New `LayoutChildPolicy`, or `undefined` to clear. */
+  readonly policy: import("@agocraft/core").LayoutChildPolicy | undefined;
+}
 export interface UpdateBehaviorInput {
   readonly itemId: string;
   readonly behaviorId: string;
@@ -1326,6 +1343,73 @@ export function buildWeaveCommands(
     },
   };
 
+  // ─── WI-020 / WI-043 — explicit layout mutations ──────────────────────
+  //
+  // `weave.frame.setLayout` and `weave.item.setLayoutChild` directly emit
+  // the agocraft `item.layout` / `item.layoutChild` Patch variants. These
+  // are self-inverting via before/after swap, and `mergeKeyOf` folds rapid
+  // SegmentedControl flips on the same item into a single undo entry.
+  //
+  // Why dedicated commands (vs threading through `weave.item.update`):
+  //   1. The agocraft Patch variant is semantic — invertPatch + sync
+  //      bridge treat it as a typed layout policy change rather than a
+  //      generic attrs diff.
+  //   2. The ContextualToolbar's SegmentedControl can invoke these by
+  //      name without constructing a full WeaveItem projection.
+  //   3. Hosts using the SDK get a typed surface for layout changes.
+
+  const setFrameLayout: Command<SetFrameLayoutInput, void> = {
+    name: "weave.frame.setLayout",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail(
+          "item-not-found",
+          `weave.frame.setLayout: no item with id "${input.itemId}"`,
+        );
+      }
+      const before = (child.attrs as { layout?: import("@agocraft/core").LayoutSpec }).layout;
+      // No-op early-out — skip emitting a patch when the spec is identical
+      // (e.g. user clicks the already-selected SegmentedControl option).
+      if (before === input.layout) {
+        return ok(undefined, []);
+      }
+      const patch: Patch = {
+        type: "item.layout",
+        itemId: child.id,
+        before,
+        after: input.layout,
+      };
+      return ok(undefined, [patch]);
+    },
+  };
+
+  const setItemLayoutChild: Command<SetItemLayoutChildInput, void> = {
+    name: "weave.item.setLayoutChild",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail(
+          "item-not-found",
+          `weave.item.setLayoutChild: no item with id "${input.itemId}"`,
+        );
+      }
+      const before = (
+        child.attrs as { layoutChild?: import("@agocraft/core").LayoutChildPolicy }
+      ).layoutChild;
+      if (before === input.policy) {
+        return ok(undefined, []);
+      }
+      const patch: Patch = {
+        type: "item.layoutChild",
+        itemId: child.id,
+        before,
+        after: input.policy,
+      };
+      return ok(undefined, [patch]);
+    },
+  };
+
   return [
     addItem as Command,
     removeItem as Command,
@@ -1347,6 +1431,9 @@ export function buildWeaveCommands(
     clipboardCopy as Command,
     clipboardCut as Command,
     clipboardPaste as Command,
+    // WI-020 / WI-043
+    setFrameLayout as Command,
+    setItemLayoutChild as Command,
   ];
 }
 

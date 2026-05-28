@@ -108,10 +108,21 @@ function toWeaveRect(ago: AgoRect): WeaveRect {
   };
 }
 
+/** WI-020 / WI-043 — adapter takes an optional `getLayoutType` callback
+ *  closed over the popover's React state. When the user picks "Flex" or
+ *  "Grid" in the A3 toggle, commit reads the value here and forwards it
+ *  to the weave capability's commit ctx so frame creations attach the
+ *  corresponding `attrs.layout`. Default `undefined` ≡ "Absolute" (no
+ *  layout policy attached). */
+export interface AdapterExtras {
+  readonly getLayoutType?: () => "auto-flex" | "auto-grid" | undefined;
+}
+
 export function adaptWeaveCapabilityToAgocraft(
   weaveCap: WeaveCapability,
   editor: Editor,
   hitTest?: RubberBandHitTestContext,
+  extras?: AdapterExtras,
 ): AgoCapability {
   /** WI-034 — resolve the *deepest* frame whose absolute bbox contains
    *  the drag rect's center, so an Alt+drag that lands inside a nested
@@ -162,6 +173,9 @@ export function adaptWeaveCapabilityToAgocraft(
       // weaveCap.recommend so it actually carries the WeaveRec fields
       // (priority, …) at runtime; agocraft just opaque-typed it.
       const c = resolveContainer(agoRect, containerId);
+      // WI-020 / WI-043 A3 — read the layout-type at commit time (closure
+      // over the popover's React state). undefined ≡ Absolute (no layout).
+      const layoutType = extras?.getLayoutType?.();
       weaveCap.commit(
         rec as unknown as WeaveRec,
         rebaseWeaveRect(
@@ -174,6 +188,7 @@ export function adaptWeaveCapabilityToAgocraft(
         {
           containerId: c.id,
           editor: e,
+          ...(layoutType !== undefined ? { layoutType } : {}),
         },
       );
     },

@@ -56,6 +56,14 @@ export interface InsertableDescribeContext {
 export interface InsertableCommitContext {
   readonly containerId: string;
   readonly editor: Editor;
+  /** WI-020 / WI-043 — A3 toggle. When the popover renders the
+   *  layout-type toggle (frame container, requireAltKey=true) the user can
+   *  select an Auto Layout paradigm for the frame they're about to create.
+   *  Capabilities that support layout-typed creation (currently only the
+   *  design-root frame recommendations) read this and inject the
+   *  corresponding default `attrs.layout` into the new item.
+   *  `undefined` → "Absolute" = no layout policy attached. */
+  readonly layoutType?: "auto-flex" | "auto-grid";
 }
 
 /** Content surfaced on empty-space hover (Phase G). Tells the user what
@@ -70,6 +78,13 @@ export interface InsertableHoverHint {
     readonly icon?: ReactNode;
   }>;
 }
+
+/** WI-020 / WI-043 — closed list of A3 toggle values. `"absolute"` is the
+ *  sentinel for "no layout policy" (passed to `commit()` as `layoutType:
+ *  undefined`). */
+export type LayoutTypeChoice = "absolute" | "auto-flex" | "auto-grid";
+
+export const LAYOUT_TYPE_CHOICES = ["absolute", "auto-flex", "auto-grid"] as const;
 
 export interface InsertableCapability<K extends ContainerKind = ContainerKind> {
   readonly containerKind: K;
@@ -100,6 +115,13 @@ export interface InsertableCapability<K extends ContainerKind = ContainerKind> {
    *  automatically (1) gates the gesture and (2) updates the tooltip
    *  text — no parallel knob to remember to flip. */
   readonly requireAltKey?: boolean;
+  /** WI-020 / WI-043 — when true, the popover renders the layout-type
+   *  toggle (Absolute / Flex / Grid) above the recommendation list. The
+   *  user's selection flows into `commit()` via
+   *  `InsertableCommitContext.layoutType`. Only meaningful for container
+   *  kinds whose recommendations include frame-like items (the root
+   *  design canvas). */
+  readonly supportsLayoutTypeToggle?: boolean;
 }
 
 export interface InsertableRegistry {

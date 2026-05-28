@@ -197,6 +197,50 @@ export const IconFrame = forwardRef<SVGSVGElement, IconProps>(function IconFrame
   );
 });
 
+// WI-020 / WI-043 RISK-002 C2.4 — 3 layout-type icons for the
+// ContextualToolbar SegmentedControl + Option+drag popup toggle. Each
+// glyph evokes the paradigm visually:
+//   IconLayoutAbsolute — frame with two free-floating child rects (no
+//                         systematic alignment)
+//   IconLayoutFlex     — frame with 3 equal-width children in a row
+//   IconLayoutGrid     — frame with 2×2 cell tessellation
+
+export const IconLayoutAbsolute = forwardRef<SVGSVGElement, IconProps>(
+  function IconLayoutAbsolute(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <rect x="6" y="6" width="6" height="4" rx="0.5" />
+        <rect x="14" y="13" width="5" height="5" rx="0.5" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconLayoutFlex = forwardRef<SVGSVGElement, IconProps>(
+  function IconLayoutFlex(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <rect x="5" y="7" width="4" height="10" rx="0.5" />
+        <rect x="10" y="7" width="4" height="10" rx="0.5" />
+        <rect x="15" y="7" width="4" height="10" rx="0.5" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconLayoutGrid = forwardRef<SVGSVGElement, IconProps>(
+  function IconLayoutGrid(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="M3 12h18M12 3v18" />
+      </SvgRoot>
+    );
+  },
+);
+
 export const IconRefresh = forwardRef<SVGSVGElement, IconProps>(function IconRefresh(props, ref) {
   return (
     <SvgRoot ref={ref} {...props}>

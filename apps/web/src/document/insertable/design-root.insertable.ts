@@ -13,6 +13,7 @@
 // rectangle. Drop a preset inside the frame after-the-fact via the
 // preset picker.
 
+import { createAutoFlexSpec, createAutoGridSpec, type LayoutSpec, trackFr } from "@agocraft/core";
 import { createElement } from "react";
 import type { DomainKind } from "../types.js";
 import type { InsertableCapability, InsertableRecommendation } from "./types.js";
@@ -36,6 +37,25 @@ const KIND_GLYPHS: Record<DomainKind, string> = {
   text: "T",
 };
 
+/** WI-020 / WI-043 — pick the default `LayoutSpec` for the chosen A3 toggle
+ *  value. `undefined` (Absolute) leaves `attrs.layout` unset — the parent
+ *  acts as a free-placement container, identical to v1 behaviour. */
+function pickDefaultLayoutSpec(
+  layoutType: "auto-flex" | "auto-grid" | undefined,
+): LayoutSpec | undefined {
+  if (layoutType === "auto-flex") {
+    // Sensible default for "a Flex container, please" — row direction, no
+    // gap/padding, start/start. Users tune via PropertiesPanel afterwards.
+    return createAutoFlexSpec();
+  }
+  if (layoutType === "auto-grid") {
+    // Sensible default for "a Grid container, please" — single full-axis
+    // column and row (one fr each). Users add tracks via PropertiesPanel.
+    return createAutoGridSpec({ columns: [trackFr(1)], rows: [trackFr(1)] });
+  }
+  return undefined;
+}
+
 export const designRootInsertable: InsertableCapability<"design"> = {
   containerKind: "design",
 
@@ -44,6 +64,10 @@ export const designRootInsertable: InsertableCapability<"design"> = {
   // describer reads this flag too, so the hover hint always announces the
   // correct modifier.
   requireAltKey: true,
+  // WI-020 / WI-043 — show the A3 layout-type toggle in the popover when
+  // the user is creating against this container. Only frame recommendations
+  // actually consume the chosen layout type; non-frame recs ignore it.
+  supportsLayoutTypeToggle: true,
 
   recommend: (rect): ReadonlyArray<InsertableRecommendation> => {
     switch (rect.bucket) {
@@ -129,6 +153,12 @@ export const designRootInsertable: InsertableCapability<"design"> = {
   commit: (rec, rect, ctx) => {
     const kind = KIND_MAP[rec.id];
     if (kind === undefined) return;
+    // WI-020 / WI-043 — when the user picked a Flex / Grid layout type via
+    // the A3 toggle AND the recommendation is frame-kind, attach the
+    // corresponding default LayoutSpec on creation. Non-frame recs (image
+    // / text) ignore the toggle entirely (their attrs have no `layout`
+    // field). Frame creates with Absolute (default) get no layout attached.
+    const layoutSpec = kind === "frame" ? pickDefaultLayoutSpec(ctx.layoutType) : undefined;
     ctx.editor.exec("weave.item.add", {
       kind,
       containerId: ctx.containerId,
@@ -139,6 +169,7 @@ export const designRootInsertable: InsertableCapability<"design"> = {
         height: rect.height,
         rotation: 0,
       },
+      ...(layoutSpec !== undefined ? { attrsOverride: { layout: layoutSpec } } : {}),
     });
   },
 

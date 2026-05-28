@@ -48,6 +48,7 @@ import { defaultInsertableRegistry } from "../insertable/default-registry.js";
 import {
   type ContainerKind,
   type InsertableRecommendation,
+  type LayoutTypeChoice,
   type NormalizedDragRect,
   normalizeDragRect,
 } from "../insertable/types.js";
@@ -144,11 +145,22 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
     const router = useRouterOrNull();
     const hostElementRef = useRef<HTMLDivElement | null>(null);
 
+    // WI-020 / WI-043 A3 — layout-type toggle state. Lives at the layer so
+    // the popover (Recommendation) and the adapter closure share a single
+    // source. The ref mirrors the state so the adapter's commit closure
+    // reads the current value (avoiding stale captures across re-renders).
+    const [layoutType, setLayoutType] = useState<LayoutTypeChoice>("absolute");
+    const layoutTypeRef = useRef<LayoutTypeChoice>(layoutType);
+    layoutTypeRef.current = layoutType;
+    const showLayoutTypeToggle = capability?.supportsLayoutTypeToggle === true;
+
     // Adapt weave's product-specific capability to agocraft's minimal contract
     // before handing it to the binding (DR-017 bridge). WI-034 — the adapter
     // also runs a deepest-frame hit-test on the drag rect's center so an
     // Alt+drag inside a nested frame creates the new item as that frame's
-    // child instead of the binding's static `containerId` (root).
+    // child instead of the binding's static `containerId` (root). WI-020 —
+    // the adapter takes a `getLayoutType` closure so commit reads the
+    // popover's current A3 toggle selection.
     const adaptedCapability = useMemo(
       () =>
         capability === undefined
@@ -163,6 +175,12 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
                     designHeight: containerSize.height,
                     getDocument,
                   },
+              {
+                getLayoutType: () => {
+                  const v = layoutTypeRef.current;
+                  return v === "absolute" ? undefined : v;
+                },
+              },
             ),
       [capability, editor, getDocument, containerSize.width, containerSize.height],
     );
@@ -834,6 +852,13 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
                 recommendations={recommendations}
                 onHover={(id) => preview(id)}
                 onSelect={(_id) => commitFn()}
+                {...(showLayoutTypeToggle
+                  ? {
+                      showLayoutTypeToggle: true as const,
+                      layoutType,
+                      onLayoutTypeChange: setLayoutType,
+                    }
+                  : {})}
               />
             </PopoverContent>
           </Popover>

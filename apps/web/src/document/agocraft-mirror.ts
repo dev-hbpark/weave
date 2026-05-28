@@ -330,6 +330,47 @@ export function applyChangeToDocument(
       });
       return next === doc.root ? doc : withRoot(doc, next);
     }
+    // ─── WI-019 B2 + WI-020 / WI-043 — layout policy mutations ─────────
+    //
+    // Sets `attrs.layout` / `attrs.layoutChild` on the target item. The
+    // agocraft Change carries the full new value (or undefined when
+    // clearing); the reducer writes it onto the item's attrs map and
+    // bumps updatedAt so dependent views (ContextualToolbar,
+    // PropertiesPanel) re-render with the latest layout policy.
+    case "item.layout": {
+      const targetId = String(change.itemId);
+      const next = mapItemDeep(doc.root, targetId, (it) => {
+        const nextAttrs = { ...it.attrs } as Record<string, unknown>;
+        if (change.after === undefined) {
+          delete nextAttrs["layout"];
+        } else {
+          nextAttrs["layout"] = change.after;
+        }
+        return {
+          ...it,
+          attrs: nextAttrs as typeof it.attrs,
+          meta: { ...it.meta, updatedAt: nowIso() },
+        };
+      });
+      return next === doc.root ? doc : withRoot(doc, next);
+    }
+    case "item.layoutChild": {
+      const targetId = String(change.itemId);
+      const next = mapItemDeep(doc.root, targetId, (it) => {
+        const nextAttrs = { ...it.attrs } as Record<string, unknown>;
+        if (change.after === undefined) {
+          delete nextAttrs["layoutChild"];
+        } else {
+          nextAttrs["layoutChild"] = change.after;
+        }
+        return {
+          ...it,
+          attrs: nextAttrs as typeof it.attrs,
+          meta: { ...it.meta, updatedAt: nowIso() },
+        };
+      });
+      return next === doc.root ? doc : withRoot(doc, next);
+    }
     // ─── WI-039 — Item / Frame reparent ────────────────────────────────
     case "item.reparent": {
       // Each entry: detach the item from its current parent, splice into

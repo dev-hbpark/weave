@@ -33,6 +33,10 @@ export function deriveTextAutoResize(
   layoutChild: LayoutChildPolicy | undefined,
 ): LegacyTextAutoResize {
   if (layoutChild === undefined) return "HEIGHT";
+  // WI-020 v1.1: LayoutChildPolicy union expanded — auto-flex / auto-grid
+  // children don't carry anchor. Treat them as "WIDTH_AND_HEIGHT" (default
+  // free-flow) since their layout is parent-driven, not anchor-driven.
+  if (layoutChild.kind !== "absolute-constraints") return "WIDTH_AND_HEIGHT";
   const h = layoutChild.anchor.horizontal;
   const v = layoutChild.anchor.vertical;
   if (h === "scale" && v === "scale") return "WIDTH_AND_HEIGHT";

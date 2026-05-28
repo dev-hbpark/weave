@@ -7,7 +7,7 @@
 | ID | WI-043 |
 | Title | Frame 생성 시점에 layout 패러다임 선택 (Absolute / Flex / Grid) + 이미 만든 frame 의 layout 변경 — weave 측 user-visible UX |
 | Owner | hbpark |
-| Status | **Discovery 박제** (2026-05-28). agocraft WI-019 (v1 absolute-constraints) + WI-020 (v1.1 auto-flex + auto-grid) 의 weave 측 consumer surface. Build 는 agocraft 1.1.0-rc publish 후. |
+| Status | **B1-B5 implementation green, e2e + LG deferred** (2026-05-28). agocraft `1.0.0-rc.20260528021043` vendor adopted. Frame layout type UX 박제: Option+drag A3 toggle (Absolute/Flex/Grid) + ContextualToolbar SegmentedControl + Bar.More 의 paradigm-specific 4+4 control + 3 design-system layout icons. weave 4-gate (typecheck 19/19, vitest 202, declarativecheck OK, puritycheck OK, build) all green. e2e + axe smoke (B5.2) + LG (B6) 는 operational readiness 단계 신호 대기 (memory `feedback_operational_readiness_deferred.md`). TrackSizeEditor + padding 4-side editor 는 별 PR (Triage Step 3 Grew 의무). |
 | Severity | P2 (LG-001 영향 0, post-launch v1.x feature) |
 | Created | 2026-05-28 |
 | Target date | Discovery = 2026-05-28 (이 세션). Build = agocraft 1.1.0-rc 채택 + weave staging window |
@@ -100,12 +100,13 @@
 | **P1 Feasibility** | weave | 별도 FR (간단 — UX surface, 알고리즘 의존성 없음) | optional, agocraft FR-009 이 base 라 skip 가능 (Discovery 에서 확인) |
 | **P2 Risk** | weave | 별도 RISK 또는 agocraft RISK-002 의 weave 측 conditions (C2.x + C4.x) 상속 | **agocraft RISK-002 conditions 14 항목 그대로 적용** |
 | **P3 Engineering Plan** | weave | features/frame-layout-ux/ENGINEERING_PLAN.md | agocraft B6 완료 후 박제 |
-| **B1** vendor adoption | weave | 1.1.0-rc repack + textAutoResize 정리 confirm | agocraft B6 후 |
-| **B2** Option+drag popup layout-type toggle | weave | design-root.insertable.ts 수정 + 신규 toggle component | B1 후 |
-| **B3** ContextualToolbar layout SegmentedControl | weave | frame-background-section.tsx 확장 + 3 layout icon + weave.frame.setLayout command | B2 후 |
-| **B4** PropertiesPanel flex/grid fields | weave | 신규 또는 기존 패널 확장 + TrackSizeEditor | B3 후 |
-| **B5** feature flag + ramp + e2e | weave | WI020_LAYOUT_VARIANTS_ENABLED flag + 5 e2e + axe smoke + size-diff | B4 후 |
-| **B6** LG (post-staging) | weave | LG-003 또는 WI-019 LG follow-up | B5 후 |
+| **B1** vendor adoption | weave | repack-vendor.sh 실행 (agocraft `1.0.0-rc.20260528021043` 채택) + `derive-text-auto-resize.ts` 의 LayoutChildPolicy union 확장 narrowing (auto-flex/auto-grid 자식 → WIDTH_AND_HEIGHT default) + `apps/web/src/document/layout/registry.ts` 에 `WI020_LAYOUT_VARIANTS_ENABLED` flag 신설 (default false, v1 flag 와 독립) + 활성화 시 createAutoFlexAdapter + createAutoGridAdapter mount + weave typecheck 통과. | **DONE 2026-05-28** |
+| **B2** design-system layout icons + commands + Option+drag A3 toggle | weave | (a) `packages/design-system/src/components/Icon.tsx` 에 `IconLayoutAbsolute` / `IconLayoutFlex` / `IconLayoutGrid` 3 신규 SVG (Triage Step 3 Grew, RISK-002 C2.4) + barrel 확장; (b) `apps/web/src/document/commands.ts` 에 `weave.frame.setLayout` + `weave.item.setLayoutChild` 신규 (item.layout / item.layoutChild Patch 발행, no-op early-out, mergeKeyOf 통합) + `agocraft-mirror.ts` 의 reducer 에 두 case 추가; (c) `InsertableCapability` 에 `supportsLayoutTypeToggle` flag + `InsertableCommitContext.layoutType` optional 추가; `design-root.insertable.ts` 의 commit 이 frame-kind + layoutType 있을 때 `pickDefaultLayoutSpec` 호출하여 `attrsOverride.layout` 합성; `RecommendationPopover` 에 `LayoutTypeToggle` 신규 (3 radio with 3 icon, role=radiogroup, aria-checked); `agocraft-adapter.ts` 에 `AdapterExtras.getLayoutType` callback (closure over RubberBandLayer state); `RubberBandLayer` 에 `layoutType` useState + ref + popover wiring (showLayoutTypeToggle conditional spread for exactOptional). | **DONE 2026-05-28** |
+| **B3** ContextualToolbar layout SegmentedControl | weave | `frame-background-section.tsx` 확장 — `Bar.Quick` 에 `SegmentedControl<LayoutKindChoice>` (3 option + 3 icon + aria-label) + Mixed-aware (homogeneous 검사 + MixedBadge) + onChange 가 `weave.frame.setLayout` 호출 (selected 의 모든 frame). `deriveLayoutChoice` / `specForChoice` 헬퍼. | **DONE 2026-05-28** |
+| **B4** PropertiesPanel paradigm-specific fields | weave | `frame-background-section.tsx` 의 `Bar.More` 슬롯에 paradigm-conditional fields: (Flex) Direction SegmentedControl + Gap NumberSlider + Justify (5 option) + Align (4 option) — 4 control; (Grid) Column gap NumberSlider + Row gap NumberSlider + Justify (4) + Align (4) — 4 control. `Bar.Field` primitive (a11y wrap) + design-system NumberSlider/SegmentedControl. Mixed 또는 absolute 시 More 미출현 (Bar.More 가 빈 children 시 자동 미마운트). **TrackSizeEditor (Grid 의 column/row list editor) + padding 4-side editor + alignSelf/justifySelf 는 별 PR 권장** (TrackSizeEditor 는 Triage Step 3 Grew 의 design-system 신규 primitive — RISK-002 C2.4 와 동일 DR-design 박제 의무, v1.1 minimum-viable 외 scope). | **DONE 2026-05-28 (partial — TrackSizeEditor + padding deferred)** |
+| **B5** feature flag + 4-gate green | weave | `WI020_LAYOUT_VARIANTS_ENABLED` flag (B1 에 박제) + weave typecheck 19/19 + declarativecheck OK + puritycheck OK (.domain-purity not enforced — host) + vitest 202/202 (apps/web 18 files) + build PASS. | **DONE 2026-05-28** (4-gate) |
+| **B5.2** e2e + axe smoke | weave | 5 e2e 시나리오 (option+drag layout / ContextualToolbar 변경 / PropertiesPanel flex / PropertiesPanel grid / undo) + axe-core smoke (RISK-002 C4.5) + size-diff CI gate 검증 | **deferred — Operational Readiness 단계 신호 대기** (memory `feedback_operational_readiness_deferred.md` policy — 사용자가 명시적 "운영 준비단계 시작" 선언 시 진행) |
+| **B6** LG (post-staging) | weave | LG-003 또는 WI-019 LG follow-up | **deferred — Operational Readiness 단계 신호 대기** |
 
 ## Escalation triggers
 
