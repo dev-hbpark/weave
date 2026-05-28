@@ -186,6 +186,8 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`): align=start 플렉스 프레임에 layoutChild 없는 shape 추가 → 프레임 전체 채움 `{x:0,y:0,w:1,h:1}` (authored 0.2×0.2 무시), selection chrome 리사이즈/회전 핸들 `[]` (리사이즈 불가). 명시 정책(grow0/basis0.3) 자식은 보존(relayout regression green). vendor 채택 외 weave 변경 없음, 11 verify e2e + 212 unit + 4 gate green.
 
+**후속 — 다중 아이템 (2026-05-28)**: 2개 이상이면 리사이즈 핸들이 보여야 함 (사용자). agocraft count-based 제약 채택 (vendor `1.0.0-rc.20260528065618`) — weave 변경 0. 검증: 플렉스 프레임에 정책 없는 shape 2개 추가 → 각 ≈0.49 균등 분할(gap 0.02), c1 선택 시 핸들 `["resize-e","resize-w"]` 표시(주축 width 만, cross stretch 라 n/s 없음). 단일 아이템은 여전히 `[]`. 9 verify e2e green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

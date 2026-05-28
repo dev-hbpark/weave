@@ -139,6 +139,15 @@ test("flex-row stretch child → main-axis (e/w) resize only, no rotate", async 
     frame: { x: 0.0, y: 0.0, width: 0.4, height: 1, rotation: 0 },
     attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.4 } },
   });
+  await page.waitForTimeout(100);
+  // A second child — the main axis is resizable only when there are siblings
+  // to absorb the change (a lone child fills and isn't resizable).
+  await addChild(page, {
+    kind: "shape",
+    containerId: frameId,
+    frame: { x: 0.4, y: 0.0, width: 0.4, height: 1, rotation: 0 },
+    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 } },
+  });
   await page.waitForTimeout(150);
 
   await setSelection(page, [childId]);
@@ -462,6 +471,54 @@ test("a policy-less item added to a flex frame FILLS it; single item not resizab
   // eslint-disable-next-line no-console
   console.log("[verify] flex-fill handles:", JSON.stringify(handles));
   expect(handles).toEqual([]);
+});
+
+test("flex frame with 2 items: each splits equally AND shows main-axis resize handles", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Flex-Multi" });
+
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.15, width: 0.6, height: 0.3, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_STRETCH },
+  });
+  await page.waitForTimeout(120);
+  // Two policy-less shapes → both FILL → split the frame 50/50.
+  const c1 = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(100);
+  const c2 = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(150);
+
+  const f1 = await readItemFrame(page, c1);
+  const f2 = await readItemFrame(page, c2);
+  // eslint-disable-next-line no-console
+  console.log("[verify] flex-2 split:", JSON.stringify({ f1, f2 }));
+  // Both fill EQUALLY (each ≈ (1 − gap)/2), ignoring their authored 0.2 — and
+  // far larger than the authored size, proving they filled rather than kept it.
+  expect(f1!.width).toBeCloseTo(f2!.width, 4); // equal split
+  expect(f1!.width).toBeGreaterThan(0.4);
+  expect(f1!.x).toBeCloseTo(0, 2); // first child hugs the start
+  expect(f2!.x).toBeGreaterThan(f1!.width); // second sits after the first (+gap)
+
+  // With 2+ children the main axis (width) IS resizable → e/w handles show;
+  // cross axis is stretched → no n/s; flex child → no rotate.
+  await setSelection(page, [c1]);
+  await page.waitForTimeout(150);
+  const handles = await readHandleIds(page, c1);
+  // eslint-disable-next-line no-console
+  console.log("[verify] flex-2 handles:", JSON.stringify(handles));
+  expect(handles).toEqual(["resize-e", "resize-w"]);
 });
 
 test("selected flex frame moves on body-drag over a child (frame stays grabbable)", async ({
