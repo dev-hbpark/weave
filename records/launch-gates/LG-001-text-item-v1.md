@@ -118,6 +118,8 @@ WI-029 의 v1 텍스트 경험을 사용자에게 가시화. **점진적 노출*
 
 ---
 
+> **Deferred-Ops policy** (per `END_TO_END_WORKFLOW.md` § "Operational Readiness", workspace-wide rule 2026-05-28): rows marked **(OR)** below do NOT count against the launch verdict until the project owner explicitly opens Operational Readiness for weave. Until then they remain `deferred — pending Operational Readiness open`.
+
 ## Open blockers (T-0 까지 close 의무)
 
 | Item | Pillar | Owner | ETA |
@@ -130,10 +132,10 @@ WI-029 의 v1 텍스트 경험을 사용자에게 가시화. **점진적 노출*
 | ~~Accessibility audit (WCAG 2.2 AA on text editing flow)~~ ✅ **Path A complete 2026-05-28** ([AUDIT-003](../audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md)) — V1 (landing color-contrast: literal body bg + 84% text) + V2 (design nested-interactive: ThumbnailPanel restructured to sibling buttons + role="group") both fixed. axe-core smoke 3/3 PASS. Regression gate active in `apps/web/e2e/a11y-smoke.spec.ts`. | ~~QA~~ | ~~hbpark~~ | ~~launch -2주~~ |
 | ~~Performance smoke test (mid-tier + Slow-4G + INP measurement)~~ ✅ **Executed 2026-05-28** ([AUDIT-004](../audits/AUDIT-004-2026-05-28-perf-smoke-core-web-vitals.md)) — landing LCP ≈ 14 s warm / 30 s cold (bundle-bound; LG-001 audience = desktop latest-2, not mobile-3G), design page LCP ≈ 13 s, **frame interaction INP ≈ 20 ms** (well under 200 ms "Good"), CLS = 0 on every scenario. 3/3 PASS under the 40 s regression ceiling. Bundle-optimisation post-launch backlog enumerated. Regression gate active in `apps/web/e2e/perf-smoke.spec.ts`. | ~~QA + Engineering~~ | ~~hbpark / frontend-perf~~ | ~~launch -1주~~ |
 | **M1 INP measurement (frontend-perf conditional)** | Engineering | hbpark / frontend-perf | **launch + 1개월** (post-launch 의무) |
-| Migration telemetry (sentry/datadog tag locale=ko-KR text-input-anomaly) | Operations | hbpark / sre | launch + 1주 |
-| Monitoring + alerts (broader weave telemetry) | Operations | hbpark / sre | broader weave WI 와 묶음 |
-| Rollback test in staging | Operations | hbpark | staging 존재 시 의무 |
-| External announcement 채널 (blog / social / status page) | Communications | hbpark / marketing | broader weave maturity 와 묶음 |
+| **(OR)** Migration telemetry (sentry/datadog tag locale=ko-KR text-input-anomaly) | Operations | hbpark / sre | **deferred — pending Operational Readiness open** |
+| **(OR)** Monitoring + alerts (broader weave telemetry) | Operations | hbpark / sre | **deferred — pending Operational Readiness open** |
+| **(OR)** Rollback test in real staging environment (code-level rollback is in-scope; staging-run is OR) | Operations | hbpark | **deferred — pending Operational Readiness open** |
+| **(OR)** External announcement 채널 (blog / social / status page) | Communications | hbpark / marketing | **deferred — pending Operational Readiness open** |
 
 ---
 

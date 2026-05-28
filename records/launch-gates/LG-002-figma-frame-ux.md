@@ -129,6 +129,8 @@ WI-033 의 Figma-aligned frame UX 를 사용자에게 가시화. **점진적 노
 
 ---
 
+> **Deferred-Ops policy** (per `END_TO_END_WORKFLOW.md` § "Operational Readiness", workspace-wide rule 2026-05-28): rows marked **(OR)** below do NOT count against the launch verdict until the project owner explicitly opens Operational Readiness for weave. Until then they remain `deferred — pending Operational Readiness open`.
+
 ## Open blockers (T-0 까지 close 의무)
 
 | Item | Pillar | Owner | ETA |
@@ -136,9 +138,9 @@ WI-033 의 Figma-aligned frame UX 를 사용자에게 가시화. **점진적 노
 | ~~RISK-005 #9 마케팅 surface grep~~ ✅ Closed 2026-05-26 | ~~Communications~~ | ~~hbpark~~ | ~~launch -3 일~~ |
 | ~~Accessibility audit (keyboard nav focus / aria)~~ ✅ **Path A complete 2026-05-28** ([AUDIT-003](../audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md)) — V2 nested-interactive fixed in `ThumbnailPanel.tsx` (role="listbox"+role="option" demoted to role="group"; tile-activation moved to a sibling inner `<button>` so the focus-toggle button no longer nests). axe-core smoke 3/3 PASS. Regression gate active. | ~~QA~~ | ~~hbpark~~ | ~~launch -2주~~ |
 | ~~Performance smoke test~~ ✅ **Executed 2026-05-28** ([AUDIT-004](../audits/AUDIT-004-2026-05-28-perf-smoke-core-web-vitals.md)) — frame interaction INP ≈ 20 ms, CLS = 0 on design+frame surface, LCP bundle-bound under Slow 4G (informational, audience = desktop latest-2). 3/3 PASS. Regression gate active. | ~~QA + Engineering~~ | ~~hbpark / frontend-perf~~ | ~~launch -1주~~ |
-| Monitoring + alerts (broader weave telemetry) | Operations | hbpark / sre | broader weave WI 와 묶음 |
-| Rollback test in staging | Operations | hbpark | staging 존재 시 의무 |
-| External announcement 채널 (blog / social / status page) | Communications | hbpark / marketing | broader weave maturity 와 묶음 |
+| **(OR)** Monitoring + alerts (broader weave telemetry) | Operations | hbpark / sre | **deferred — pending Operational Readiness open** |
+| **(OR)** Rollback test in real staging environment (code-level rollback is in-scope; staging-run is OR) | Operations | hbpark | **deferred — pending Operational Readiness open** |
+| **(OR)** External announcement 채널 (blog / social / status page) | Communications | hbpark / marketing | **deferred — pending Operational Readiness open** |
 
 ---
 
