@@ -1418,29 +1418,89 @@ export function FrameStage(props: FrameStageProps) {
       };
       return walk(d.root as unknown as Parameters<typeof walk>[0]);
     }
+    /** Direct parent id of `targetId` within the live doc, or undefined if
+     *  it is the root / absent. Used by `resolveTarget`'s movable-ancestor
+     *  climb. */
+    function findParentId(targetId: ItemId): ItemId | undefined {
+      const d = docRef.current;
+      if (d === undefined) return undefined;
+      type Node = { id: string | number; children: ReadonlyArray<Node> };
+      const stack: Node[] = [d.root as unknown as Node];
+      while (stack.length > 0) {
+        const node = stack.pop()!;
+        for (const c of node.children) {
+          if (String(c.id) === String(targetId)) return node.id as ItemId;
+          stack.push(c);
+        }
+      }
+      return undefined;
+    }
+    /** Climb `id` to the nearest ancestor whose layout permits MOVING its
+     *  own position. A layout-managed child (flex/grid) returns its
+     *  container; an absolute / top-level frame returns itself. The
+     *  agocraft LayoutEngine owns `canMove` — weave only reads it to climb. */
+    function climbToMovable(id: ItemId): ItemId {
+      const d = docRef.current;
+      if (!LAYOUT_FEATURE_ENABLED || d === undefined) return id;
+      const engine = getLayoutEngine();
+      let cur = id;
+      let guard = 0;
+      while (guard++ < 64 && !engine.getChildConstraints({ root: d.root, itemId: cur }).canMove) {
+        const parent = findParentId(cur);
+        if (parent === undefined || String(parent) === String(d.root.id)) break;
+        cur = parent;
+      }
+      return cur;
+    }
     return {
       resolveTarget(target) {
         // Accept any Element (HTML or SVG). SVG elements appear when the
         // pointer-down lands on a shape kind (ShapeBlock renders an `<svg>`
-        // with `<rect>` / `<polygon>` / `<path>` inside) — without this we
-        // would reject the press and the frame wouldn't move. `closest()`
-        // is defined on Element so the rest of the walk works for both.
+        // with `<rect>` / `<polygon>` / `<path>` inside). `closest()` is
+        // defined on Element so the walk works for both.
         if (!(target instanceof Element)) return null;
-        // Bail for inner gesture owners (matches the legacy NestedFrame
-        // guard exactly so the binding never claims a press meant for a
-        // contenteditable / canvas shape / selection-handle / hotspot).
+        // Inner gesture owners always win — never start a frame-move while
+        // editing text, on an input, on a selection handle, or on a hotspot.
         if (
-          target.closest("[data-shape-id]") !== null ||
           target.closest('[contenteditable="true"]') !== null ||
           target.closest("input, textarea") !== null ||
           target.closest("[data-selection-layer]") !== null ||
           target.closest("[data-hotspot-id]") !== null
         )
           return null;
+        // WI-019/WI-021 — Figma move model: a SELECTED frame is draggable
+        // from ANYWHERE inside it (its body, a shape/text child, a nested
+        // frame). This keeps an auto-layout container movable even when its
+        // children fill it (the children, being layout-managed, don't own
+        // their position — the container does). If the press lands inside
+        // the current selection, that frame (climbed to its nearest movable
+        // ancestor) is the move target.
+        const vmNow = vmRef.current;
+        if (vmNow !== null) {
+          const sel = vmNow.itemSelection.state.get();
+          const selIds: string[] =
+            sel.kind === "single"
+              ? [String(sel.itemId)]
+              : sel.kind === "multi"
+                ? Array.from(sel.items as Iterable<unknown>, (x) => String(x))
+                : [];
+          for (const sid of selIds) {
+            if (target.closest(`[data-frame-id="${CSS.escape(sid)}"]`) !== null) {
+              return climbToMovable(sid as ItemId);
+            }
+          }
+        }
+        // No selection redirect → the press must land on a frame body, not
+        // a shape's geometry: pressing a shape with nothing selected keeps
+        // the legacy "select, don't move" behavior. Resolve the deepest
+        // frame, then climb to its nearest movable ancestor (a layout child
+        // moves its container — Figma auto-layout parity).
+        if (target.closest("[data-shape-id]") !== null) return null;
         const frameEl = target.closest("[data-frame-id]");
         if (frameEl === null) return null;
         const raw = frameEl.getAttribute("data-frame-id");
-        return raw === null ? null : (raw as ItemId);
+        if (raw === null) return null;
+        return climbToMovable(raw as ItemId);
       },
       readFrame(itemId) {
         const item = findItem(itemId);
@@ -1633,21 +1693,13 @@ export function FrameStage(props: FrameStageProps) {
           // NestedFrame's onClick can apply Figma's parent-first /
           // Cmd-deep / Shift-toggle semantics via `selectFromHit`.
           disableSelectionSet: true,
-          // WI-019/WI-021 — a child whose parent frame has an auto layout
-          // does NOT own its position (the layout does), so free body-drag
-          // is disallowed: the move binding declines and the press falls
-          // through to selection only. The agocraft LayoutEngine is the
-          // single source for `canMove`; weave just reads it (no layout
-          // branching). The default acceptTarget ("any frame resolveTarget
-          // resolves") is preserved for absolute / top-level frames.
-          acceptTarget: (target) => {
-            const id = frameAccess.resolveTarget(target);
-            if (id === null) return false;
-            if (!LAYOUT_FEATURE_ENABLED) return true;
-            const d = docRef.current;
-            if (d === undefined) return true;
-            return getLayoutEngine().getChildConstraints({ root: d.root, itemId: id }).canMove;
-          },
+          // WI-019/WI-021 — body-drag move is resolved through
+          // `frameAccess.resolveTarget`, which climbs a layout-managed
+          // child up to the nearest MOVABLE ancestor (the layout
+          // container) so the frame itself stays draggable even when its
+          // children fill it. No acceptTarget gate is needed: the climb
+          // already guarantees the moved item is movable (the agocraft
+          // LayoutEngine owns `canMove`; weave only reads it).
           // WI-034 — Alt+drag on a frame is reserved for
           // RubberBandLayer's "add child" gesture; frame-move declines
           // so the lower-priority alt-rubber-band binding can claim.

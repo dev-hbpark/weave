@@ -14,7 +14,20 @@
 // deferred B5.2 suite.
 
 import { expect, test } from "@playwright/test";
-import { prepareDesign, setSelection } from "./helpers.js";
+import { prepareDesign, readItemFrame, setSelection } from "./helpers.js";
+
+/** Viewport-screen center of a frame/child element (by data-frame-id). */
+async function centerOf(
+  page: import("@playwright/test").Page,
+  id: string,
+): Promise<{ x: number; y: number }> {
+  return page.evaluate((fid) => {
+    const el = document.querySelector(`[data-frame-id="${CSS.escape(fid)}"]`);
+    if (el === null) return { x: -1, y: -1 };
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, id);
+}
 
 async function addChild(
   page: import("@playwright/test").Page,
@@ -163,4 +176,70 @@ test("grid child → no resize handles, no rotate", async ({ page }) => {
   // eslint-disable-next-line no-console
   console.log("[verify] grid child handles:", JSON.stringify(ids));
   expect(ids).toEqual([]);
+});
+
+test("selected flex frame moves on body-drag over a child (frame stays grabbable)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Constraints-FrameMove" });
+
+  // Flex-row frame fully inside the viewport (design 1920×1080 vs 1280×720
+  // viewport → keep the right edge well under ~0.66 of the design width).
+  const frameId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.08, y: 0.15, width: 0.45, height: 0.3, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_STRETCH },
+  });
+  await page.waitForTimeout(120);
+  // Two shape children that FILL the frame (stretch) — so every press lands
+  // on a child, not on frame body/gap. This is the case where, without the
+  // movable-ancestor redirect, the container would be ungrabbable.
+  const childIds: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    const id = await addChild(page, {
+      kind: "shape",
+      containerId: frameId,
+      frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
+      attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0.5 } },
+    });
+    childIds.push(id);
+    await page.waitForTimeout(100);
+  }
+
+  // Select the CONTAINER frame (parent-first selection would do this on a
+  // click; we set it directly to keep the test deterministic).
+  await setSelection(page, [frameId]);
+  await page.waitForTimeout(120);
+
+  const before = await readItemFrame(page, frameId);
+  const childBefore = await readItemFrame(page, childIds[0]!);
+  expect(before).not.toBeNull();
+
+  // Press on the FIRST child's center (it fills the left half of the frame)
+  // and drag right + down. The move must translate the CONTAINER frame, not
+  // the child, because the selected frame is draggable from anywhere inside.
+  const c = await centerOf(page, childIds[0]!);
+  expect(c.x).toBeGreaterThan(0);
+  await page.mouse.move(c.x, c.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(c.x + 18 * i, c.y + 10 * i);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+
+  const after = await readItemFrame(page, frameId);
+  const childAfter = await readItemFrame(page, childIds[0]!);
+  // eslint-disable-next-line no-console
+  console.log(
+    "[verify] frame move:",
+    JSON.stringify({ before, after, childBefore, childAfter }),
+  );
+  expect(after).not.toBeNull();
+  // Container moved right + down (ratio coords in the design root).
+  expect(after!.x).toBeGreaterThan(before!.x + 0.01);
+  expect(after!.y).toBeGreaterThan(before!.y + 0.01);
+  // The child's ratio WITHIN the frame is unchanged (flex still owns it —
+  // it moved with the container, not independently).
+  expect(childAfter!.x).toBeCloseTo(childBefore!.x, 2);
 });

@@ -152,6 +152,16 @@
 
 agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typecheck/declarative/build). vendor `1.0.0-rc.20260528043207`.
 
+### FIX — 레이아웃 컨테이너 프레임 이동 경로 (2026-05-28)
+
+첫 구현은 `canMove=false` 자식의 free body-drag 를 `acceptTarget` 으로 decline 했는데, **stretch flex/grid 는 자식이 프레임을 가득 채워서** 컨테이너 프레임을 잡을 본문 영역이 사라져 **프레임 자체가 이동 불가**가 됨 (사용자 지적). Figma auto-layout 모델로 교체:
+
+- `acceptTarget` 게이트 제거. 대신 `frameAccess.resolveTarget` 가 move 대상을 **가장 가까운 movable 조상**으로 climb (`climbToMovable` — agocraft `getChildConstraints().canMove` 만 읽음, 레이아웃 계산 0). layout 자식을 누르면 그 컨테이너가 이동 대상.
+- **선택 기반 redirect**: 단일/다중 선택된 프레임 *내부 아무 곳*(본문·shape·텍스트·중첩 프레임)을 drag 하면 그 프레임(→movable 조상)이 이동 대상. shape 가 프레임을 채워도 컨테이너가 잡힘. (무선택 시 기존 shape-bail 보존 → shape 단독 drag 비활성 유지.)
+- 자식의 *개별* 이동은 여전히 제한(=컨테이너가 움직임) — 사용자 합의된 "flex/grid 자식 이동 제한"과 일치.
+
+검증 (`layout-constraints-verify.spec.ts`, 실드래그): stretch flex 프레임의 자식 위를 drag → 컨테이너 frame `(0.08,0.15)→(0.17,0.24)` 이동, 자식의 프레임-내 ratio 불변. `figma-parent-first-select` + `layout-relayout-verify` 회귀 0. (별개 사전-존재 실패 `figma-cmd-click-deep-select` 2건 = ThumbnailPanel 중복 data-frame-id strict-locator 이슈, 본 변경과 무관 — stash 후 baseline 재현 확인.)
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)
