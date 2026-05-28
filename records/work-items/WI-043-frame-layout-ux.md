@@ -162,6 +162,15 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`, 실드래그): stretch flex 프레임의 자식 위를 drag → 컨테이너 frame `(0.08,0.15)→(0.17,0.24)` 이동, 자식의 프레임-내 ratio 불변. `figma-parent-first-select` + `layout-relayout-verify` 회귀 0. (별개 사전-존재 실패 `figma-cmd-click-deep-select` 2건 = ThumbnailPanel 중복 data-frame-id strict-locator 이슈, 본 변경과 무관 — stash 후 baseline 재현 확인.)
 
+### FIX — reparent 시 새 부모 layout 편입 (2026-05-28)
+
+플렉스 프레임 F 안의 도형 S 를 내부 프레임 F2 의 자식으로 변경하면 S 가 F 의 layout 을 벗어나 F2 의 layout 을 따라야 하는데, `weave.item.reparent` 가 tree-move(+visual-preserving newFrameRatio) 만 하고 layout 을 무시 (사용자 지적).
+
+- `reparentItem.run` 이 patchEntries 계산 후 각 entry 에 대해 agocraft `getLayoutEngine().onReparent({ root: ctx.document.root, itemId, oldParentId, newParentId })` 호출, 반환 full-attrs Patch 를 `item.reparent` patch **뒤에** append (1 transaction, Cmd+Z atomic). `LAYOUT_FEATURE_ENABLED` 게이트.
+- 모든 layout 결정(새 부모 배치 / policy 재할당 / 이전 부모 reflow)은 agocraft 소유 — weave 는 append 만.
+
+검증 (`layout-constraints-verify.spec.ts`): flex F=[S, 내부 grid F2] 에서 S→F2 reparent → S.parent=F2, S.layoutChild `auto-flex→auto-grid` 재할당, S grid cell 배치(x≈0), 이전 부모 F 가 남은 F2 를 x 0.51→0 reflow. 11 e2e green (constraint/move/reparent + relayout + parent-first 회귀 0). weave 212 unit + 4 gate green. vendor `1.0.0-rc.20260528054808`.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

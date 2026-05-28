@@ -838,7 +838,33 @@ export function buildWeaveCommands(
       }
 
       if (patchEntries.length === 0) return ok(undefined, []);
-      return ok(undefined, [{ type: "item.reparent", entries: patchEntries }]);
+
+      // WI-019/WI-021 — the moved item LEFT its old parent's layout and
+      // JOINED the new parent's, so the new parent's layout now owns its
+      // position (and its per-child policy is reassigned to the new
+      // paradigm); the old parent reflows to close the gap. The agocraft
+      // LayoutEngine owns all of this — weave only appends the returned
+      // full-attrs Patches AFTER the tree-move patch (so the reducer finds
+      // the item under its new parent). Computed against the pre-move doc;
+      // the engine simulates the move.
+      const layoutPatches: Patch[] = [];
+      if (LAYOUT_FEATURE_ENABLED) {
+        const engine = getLayoutEngine();
+        for (const pe of patchEntries) {
+          layoutPatches.push(
+            ...engine.onReparent({
+              root: ctx.document.root,
+              itemId: pe.itemId,
+              oldParentId: pe.oldParentId,
+              newParentId: pe.newParentId,
+            }),
+          );
+        }
+      }
+      return ok(undefined, [
+        { type: "item.reparent", entries: patchEntries },
+        ...layoutPatches,
+      ]);
     },
   };
 

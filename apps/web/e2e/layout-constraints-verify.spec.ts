@@ -178,6 +178,107 @@ test("grid child → no resize handles, no rotate", async ({ page }) => {
   expect(ids).toEqual([]);
 });
 
+/** Reparent `itemId` under `newParentId` via the command, return ok. */
+async function reparent(
+  page: import("@playwright/test").Page,
+  itemId: string,
+  newParentId: string,
+): Promise<void> {
+  await page.evaluate(
+    ({ itemId: id, newParentId: pid }) => {
+      type Editor = { exec: (name: string, input: unknown) => { ok: boolean } };
+      const w = window as unknown as { __weaveEditor?: Editor };
+      const editor = w.__weaveEditor;
+      if (editor === undefined) throw new Error("__weaveEditor not ready");
+      editor.exec("weave.item.reparent", { entries: [{ itemId: id, newParentId: pid }] });
+    },
+    { itemId, newParentId },
+  );
+}
+
+/** Read an item's parent id + layoutChild.kind from the live doc. */
+async function readParentAndPolicy(
+  page: import("@playwright/test").Page,
+  itemId: string,
+): Promise<{ parentId: string | null; policyKind: string | null }> {
+  return page.evaluate((id) => {
+    type Node = { id: string | number; attrs?: { layoutChild?: { kind?: string } }; children: Node[] };
+    const doc = (window as unknown as { __weaveDoc?: { root: Node } }).__weaveDoc;
+    if (doc === undefined) return { parentId: null, policyKind: null };
+    let parentId: string | null = null;
+    let node: Node | null = null;
+    const walk = (n: Node, parent: Node | null): void => {
+      if (String(n.id) === id) {
+        node = n;
+        parentId = parent === null ? null : String(parent.id);
+      }
+      for (const c of n.children) walk(c, n);
+    };
+    walk(doc.root, null);
+    const policyKind = node === null ? null : ((node as Node).attrs?.layoutChild?.kind ?? null);
+    return { parentId, policyKind };
+  }, itemId);
+}
+
+test("reparenting a shape into an inner grid frame makes it follow the NEW parent's layout", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Constraints-Reparent" });
+
+  // Flex-row frame F containing a shape S (FIRST) and an inner GRID frame F2
+  // (SECOND). Order matters for the assertion below: with S first, removing
+  // it shifts F2 left, making the old-parent reflow observable by position.
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.08, y: 0.15, width: 0.5, height: 0.3, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_STRETCH },
+  });
+  await page.waitForTimeout(120);
+  const sId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
+    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 } },
+  });
+  await page.waitForTimeout(120);
+  const f2Id = await addChild(page, {
+    kind: "frame",
+    containerId: fId,
+    frame: { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 },
+    attrsOverride: { layout: GRID_2COL, layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 } },
+  });
+  await page.waitForTimeout(150);
+
+  // Sanity — S starts inside F with a flex policy; F2 sits to S's right.
+  const beforeS = await readParentAndPolicy(page, sId);
+  expect(beforeS.parentId).toBe(fId);
+  expect(beforeS.policyKind).toBe("auto-flex");
+  const f2Before = await readItemFrame(page, f2Id);
+  expect(f2Before!.x).toBeGreaterThan(0.4); // F2 is the second (right) child
+
+  // Reparent S into the inner grid frame F2 (the user's scenario).
+  await reparent(page, sId, f2Id);
+  await page.waitForTimeout(200);
+
+  const afterS = await readParentAndPolicy(page, sId);
+  const sFrame = await readItemFrame(page, sId);
+  const f2After = await readItemFrame(page, f2Id);
+  // eslint-disable-next-line no-console
+  console.log(
+    "[verify] reparent:",
+    JSON.stringify({ beforeS, afterS, sFrame, f2Before, f2After }),
+  );
+
+  // S is now F2's child and follows F2's GRID layout (policy reassigned).
+  expect(afterS.parentId).toBe(f2Id);
+  expect(afterS.policyKind).toBe("auto-grid");
+  // S placed by F2's grid (column 1 → x≈0 within F2).
+  expect(sFrame!.x).toBeCloseTo(0, 2);
+  // Old parent F (flex) reflowed its now-only child F2 back to the start
+  // (x ~0.5 → ~0) once S left.
+  expect(f2After!.x).toBeLessThan(f2Before!.x - 0.1);
+});
+
 test("selected flex frame moves on body-drag over a child (frame stays grabbable)", async ({
   page,
 }) => {
