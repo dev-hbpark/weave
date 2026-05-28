@@ -175,6 +175,125 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
         expect(after.frame?.x).toBeCloseTo(0, 6);
       }
     });
+
+    it("sibling patches carry FULL attrs (regression: frame-only wiped shape geometry)", () => {
+      // The bug: relayout's sibling item.attrs patch had after = { frame }
+      // only, but weave's reducer REPLACES the whole attrs map — so a shape
+      // sibling lost attrs.shape and shapeToSvgGeometry crashed. The fix
+      // merges frame into the child's existing attrs.
+      const flex: LayoutSpec = createAutoFlexSpec({
+        direction: "row",
+        gap: 0,
+        justify: "start",
+        align: "stretch",
+      });
+      // Existing SHAPE sibling at a wrong position, carrying real shape
+      // attrs that MUST survive the relayout patch.
+      const existing = {
+        id: makeItemId("c1"),
+        kind: "shape",
+        attrs: {
+          frame: F(0.9, 0.9, 0.01, 0.01),
+          shape: "ellipse",
+          fill: "var(--accent)",
+          layoutChild: createAutoFlexChildPolicy({ basis: 0.5 }),
+        } as AgocraftItem["attrs"],
+        units: [],
+        children: [],
+        meta: { ...META },
+      } as AgocraftItem;
+      const ctx = makeCtx(flex, existing);
+
+      const pending = createPendingCreations();
+      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("weave.item.add not found");
+
+      const result = cmd.run(ctx, {
+        kind: "shape",
+        containerId: "parent",
+        frame: F(0.9, 0.9, 0.01, 0.01),
+        attrsOverride: { shape: "rectangle", layoutChild: createAutoFlexChildPolicy({ basis: 0.5 }) },
+      });
+      if (!result.ok) throw new Error("expected ok");
+
+      const siblingPatch = result.patches.find(
+        (p) => p.type === "item.attrs" && String(p.itemId) === "c1",
+      );
+      expect(siblingPatch).toBeDefined();
+      if (siblingPatch !== undefined && siblingPatch.type === "item.attrs") {
+        const after = siblingPatch.after as {
+          frame?: { x: number };
+          shape?: string;
+          fill?: string;
+        };
+        // Frame moved to slot 0 …
+        expect(after.frame?.x).toBeCloseTo(0, 6);
+        // … AND the shape geometry attrs survived (the regression).
+        expect(after.shape).toBe("ellipse");
+        expect(after.fill).toBe("var(--accent)");
+      }
+    });
+
+    it("overflow → existing siblings SHRINK to fit (user's requested behaviour)", () => {
+      // User ask: when children exceed the row width, either wrap OR shrink.
+      // v1.1 has no wrap (FR-009 T1), so shrink (flex-shrink) is the path.
+      // Two existing children at basis 0.5 already fill the row; adding a
+      // 3rd (basis 0.5) → total basis 1.5 > 1.0 → all shrink to 1/3 each.
+      const flex: LayoutSpec = createAutoFlexSpec({
+        direction: "row",
+        gap: 0,
+        justify: "start",
+        align: "stretch",
+      });
+      const policy = createAutoFlexChildPolicy({ basis: 0.5, shrink: 1 });
+      // Build a parent with TWO existing children (the makeCtx helper only
+      // seeds one, so assemble the doc inline here).
+      const c1 = frameItem("c1", { frame: F(0, 0, 0.5, 1), layoutChild: policy });
+      const c2 = frameItem("c2", { frame: F(0.5, 0, 0.5, 1), layoutChild: policy });
+      const parent = frameItem(
+        "parent",
+        { frame: F(0, 0, 1, 1), layout: flex },
+        [c1, c2],
+      );
+      const root = frameItem("root", { frame: F(0, 0, 1, 1) }, [parent]);
+      const doc = {
+        id: "doc",
+        schema: undefined as unknown as AgocraftDocument["schema"],
+        root,
+        meta: { id: "doc", ...META, schemaRefs: [] },
+      } as unknown as AgocraftDocument;
+      const ctx = { document: doc, resolve: () => null as never, skipRelations: false } as CommandContext;
+
+      const pending = createPendingCreations();
+      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("weave.item.add not found");
+
+      const result = cmd.run(ctx, {
+        kind: "frame",
+        containerId: "parent",
+        frame: F(0.9, 0.9, 0.5, 1),
+        attrsOverride: { layoutChild: policy },
+      });
+      if (!result.ok) throw new Error("expected ok");
+
+      // New child ends at the 3rd slot, shrunk to 1/3 width.
+      const staged = pending.lookup(String(result.value));
+      const sFrame = (staged?.attrs as { frame?: { x: number; width: number } }).frame;
+      expect(sFrame?.width).toBeCloseTo(1 / 3, 5);
+      expect(sFrame?.x).toBeCloseTo(2 / 3, 5);
+
+      // BOTH existing siblings shrank from 0.5 → 1/3 (the "이전 시블링들의
+      // 크기가 줄어들면서" behaviour).
+      const attrsPatches = result.patches.filter((p) => p.type === "item.attrs");
+      for (const id of ["c1", "c2"]) {
+        const p = attrsPatches.find((q) => String(q.itemId) === id);
+        expect(p).toBeDefined();
+        if (p !== undefined && p.type === "item.attrs") {
+          const after = p.after as { frame?: { width: number } };
+          expect(after.frame?.width).toBeCloseTo(1 / 3, 5);
+        }
+      }
+    });
   },
 );
 

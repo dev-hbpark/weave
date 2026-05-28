@@ -198,6 +198,48 @@ function findChild(doc: CommandContext["document"], itemId: string) {
  * *after* state from the just-computed `after` attrs map. The agocraft
  * helper `computeLayoutPatchesOnParentResize` does the math.
  */
+/**
+ * WI-043 FIX — reconcile agocraft's frame-only layout patches with weave's
+ * whole-attrs `item.attrs` reducer.
+ *
+ * `computeLayoutPatchesOnParentResize` emits `item.attrs` Patches whose
+ * `after` is `{ frame }` ONLY (it owns just the frame invariant). But
+ * weave's reducer (`agocraft-mirror.ts` → `case "item.attrs"`) REPLACES the
+ * whole attrs map with `change.after`. Applying a frame-only `after` would
+ * therefore wipe every other attr (shape geometry, image src, text runs, …)
+ * → e.g. `shapeToSvgGeometry` crashes on a shape child that lost its
+ * `attrs.shape`. This helper rewrites each frame-only layout patch into a
+ * full-attrs patch (`{ ...child.attrs, frame }`), matching weave's reducer
+ * contract. Non-attrs patches and unknown ids pass through untouched.
+ */
+function toFullAttrsLayoutPatches(
+  framePatches: ReadonlyArray<Patch>,
+  children: ReadonlyArray<AgocraftItem>,
+): Patch[] {
+  const byId = new Map<string, AgocraftItem>();
+  for (const c of children) byId.set(String(c.id), c);
+  const out: Patch[] = [];
+  for (const p of framePatches) {
+    if (p.type !== "item.attrs") {
+      out.push(p);
+      continue;
+    }
+    const child = byId.get(String(p.itemId));
+    const frameOnly = (p.after as { frame?: AgocraftItemFrame }).frame;
+    if (child === undefined || frameOnly === undefined) {
+      out.push(p);
+      continue;
+    }
+    out.push({
+      type: "item.attrs",
+      itemId: p.itemId,
+      before: child.attrs,
+      after: { ...child.attrs, frame: frameOnly } as Readonly<Record<string, unknown>>,
+    });
+  }
+  return out;
+}
+
 function maybeComputeLayoutRipplePatches(
   parent: AgocraftItem,
   after: Readonly<Record<string, unknown>>,
@@ -220,7 +262,7 @@ function maybeComputeLayoutRipplePatches(
   ) {
     return [];
   }
-  return computeLayoutPatchesOnParentResize({
+  const framePatches = computeLayoutPatchesOnParentResize({
     parentLayout,
     parentOldRatio: beforeFrame,
     parentNewRatio: afterFrame,
@@ -237,6 +279,8 @@ function maybeComputeLayoutRipplePatches(
     })),
     registry: getLayoutRegistry(),
   });
+  // Frame-only → full-attrs (weave reducer replaces the whole attrs map).
+  return toFullAttrsLayoutPatches(framePatches, parent.children);
 }
 
 const FULL_RELAYOUT_FRAME: AgocraftItemFrame = { x: 0, y: 0, width: 1, height: 1, rotation: 0 };
@@ -295,16 +339,21 @@ function computeChildAddRelayout(
   });
 
   let newChildFrame: AgocraftItemFrame | undefined;
-  const siblingPatches: Patch[] = [];
+  const rawSiblingPatches: Patch[] = [];
   const newChildId = String(newChild.id);
   for (const p of patches) {
     if (p.type !== "item.attrs") continue;
     if (String(p.itemId) === newChildId) {
+      // The new child's frame is applied to the staged item directly by the
+      // caller; only the frame is needed here.
       newChildFrame = (p.after as { frame?: AgocraftItemFrame }).frame;
     } else {
-      siblingPatches.push(p);
+      rawSiblingPatches.push(p);
     }
   }
+  // Frame-only → full-attrs so the sibling shapes/images/text keep their
+  // other attrs through weave's whole-attrs reducer (WI-043 FIX).
+  const siblingPatches = toFullAttrsLayoutPatches(rawSiblingPatches, existingChildren);
   return { newChildFrame, siblingPatches };
 }
 
