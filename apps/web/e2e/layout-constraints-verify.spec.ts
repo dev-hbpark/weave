@@ -520,6 +520,56 @@ test("grid cell-swap: dragging the SELECTED grid child onto another swaps their 
   expect(bAfter!.x).toBeCloseTo(0, 2); // B now in A's cell
 });
 
+test("flex reorder: dragging the SELECTED flex child onto another swaps their sequence order", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Flex-Reorder" });
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.18, width: 0.6, height: 0.3, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_START },
+  });
+  await page.waitForTimeout(120);
+  // Two flex children with DISTINCT main-axis sizes so the order swap is
+  // observable: A leads at x≈0, B trails.
+  const aId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.3, height: 1, rotation: 0 },
+    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.3 } },
+  });
+  const bId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
+    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.5 } },
+  });
+  await page.waitForTimeout(150);
+  const aBefore = await readItemFrame(page, aId);
+  const bBefore = await readItemFrame(page, bId);
+  expect(aBefore!.x).toBeLessThan(bBefore!.x); // A leads, B trails
+
+  // Select A, then plain-drag it onto B → swap sequence order.
+  await setSelection(page, [aId]);
+  await page.waitForTimeout(120);
+  const aPos = await centerOf(page, aId);
+  const bPos = await centerOf(page, bId);
+  await page.mouse.move(aPos.x, aPos.y);
+  await page.mouse.down();
+  await page.mouse.move((aPos.x + bPos.x) / 2, aPos.y, { steps: 4 });
+  await page.mouse.move(bPos.x, bPos.y, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+
+  const aAfter = await readItemFrame(page, aId);
+  const bAfter = await readItemFrame(page, bId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] flex reorder:", JSON.stringify({ aBefore, bBefore, aAfter, bAfter }));
+  // Order swapped: B now leads (x≈0), A now trails (x > B).
+  expect(bAfter!.x).toBeCloseTo(0, 2);
+  expect(aAfter!.x).toBeGreaterThan(bAfter!.x);
+});
+
 test("grid: after increasing columns, added items take distinct cells (no overlap)", async ({
   page,
 }) => {

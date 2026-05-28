@@ -158,8 +158,9 @@ export interface SetItemLayoutChildInput {
   readonly policy: import("@agocraft/core").LayoutChildPolicy | undefined;
 }
 
-/** WI-043 — two grid siblings exchange cells (drag-to-swap UX). */
-export interface SwapGridCellsInput {
+/** WI-043 — two layout siblings exchange positions (drag-to-swap UX):
+ *  grid → cell swap, flex → sequence-order swap. */
+export interface LayoutSiblingSwapInput {
   readonly aId: string;
   readonly bId: string;
 }
@@ -1452,11 +1453,24 @@ export function buildWeaveCommands(
   // WI-043 — grid cell-swap (drag a selected grid child onto another). The
   // engine swaps their cell placement + reflows; both moves ride one
   // transaction so Cmd+Z is atomic.
-  const swapGridCells: Command<SwapGridCellsInput, void> = {
+  const swapGridCells: Command<LayoutSiblingSwapInput, void> = {
     name: "weave.item.swapGridCells",
     run: (ctx, input) => {
       if (!LAYOUT_FEATURE_ENABLED || input.aId === input.bId) return ok(undefined, []);
       const patches = getLayoutEngine().onGridCellSwap({
+        root: ctx.document.root,
+        aId: input.aId as import("@agocraft/core").ItemId,
+        bId: input.bId as import("@agocraft/core").ItemId,
+      });
+      return ok(undefined, patches);
+    },
+  };
+
+  const swapFlexOrder: Command<LayoutSiblingSwapInput, void> = {
+    name: "weave.item.swapFlexOrder",
+    run: (ctx, input) => {
+      if (!LAYOUT_FEATURE_ENABLED || input.aId === input.bId) return ok(undefined, []);
+      const patches = getLayoutEngine().onFlexReorder({
         root: ctx.document.root,
         aId: input.aId as import("@agocraft/core").ItemId,
         bId: input.bId as import("@agocraft/core").ItemId,
@@ -1490,6 +1504,7 @@ export function buildWeaveCommands(
     setFrameLayout as Command,
     setItemLayoutChild as Command,
     swapGridCells as Command,
+    swapFlexOrder as Command,
   ];
 }
 

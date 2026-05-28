@@ -1,20 +1,20 @@
-// WI-043 — grid cell-swap drag (selection-state based).
+// WI-043 — layout-child move drag (selection-state based).
 //
-// When a SINGLE grid CHILD is selected and the user plain-drags it (no
-// modifier), this controller intercepts the press at the window capture phase
-// — BEFORE the GestureRouter's frame-move binding — and runs a cell swap: the
-// dragged item exchanges grid cells with the item it is dropped on.
+// When a SINGLE layout CHILD (auto-flex or auto-grid) is selected and the user
+// plain-drags it (no modifier), this controller intercepts the press at the
+// window capture phase — BEFORE the GestureRouter's frame-move binding — and
+// repositions the dragged item by exchanging it with the sibling it is dropped
+// on. The operation is the layout paradigm's natural one:
+//   • auto-grid → swap CELLS (weave.item.swapGridCells)
+//   • auto-flex → swap SEQUENCE order (weave.item.swapFlexOrder)
 //
 // Why selection-state based: if a layout child's plain drag always reordered,
-// you could no longer move the PARENT frame when its cells are full. So:
+// you could no longer move the PARENT frame when its slots are full. So:
 //   • FRAME selected → drag moves the frame (router frame-move; works even
-//     when the grid is full, via the selected-frame redirect in FrameAccess).
-//   • grid CHILD selected → drag swaps cells (this controller).
+//     when the layout is full, via the selected-frame redirect in FrameAccess).
+//   • layout CHILD selected → drag swaps positions (this controller).
 // The controller therefore arms ONLY when the press lands on the currently
-// selected grid child.
-//
-// v1 = swap on drop (drag A onto B → A and B trade cells). Empty-cell drops
-// and flex reorder are follow-ups.
+// selected layout child.
 
 import type { Editor } from "@agocraft/editor";
 import type { Document as AgocraftDocument, LayoutSpec } from "@agocraft/core";
@@ -25,18 +25,26 @@ import {
   frameIdFromTarget,
 } from "./use-reparent-drag-controller.js";
 
-const SWAP_TARGET_ATTR = "data-grid-swap-target";
+const SWAP_TARGET_ATTR = "data-layout-swap-target";
 
-export interface GridCellDragState {
+/** Which weave command performs the swap for each layout paradigm. A lookup
+ *  table (not a switch) keeps the kind→behavior dispatch declarative — only
+ *  the paradigms that support drag-to-swap appear here. */
+const SWAP_COMMAND_BY_KIND: Readonly<Record<string, string>> = {
+  "auto-grid": "weave.item.swapGridCells",
+  "auto-flex": "weave.item.swapFlexOrder",
+};
+
+export interface LayoutChildDragState {
   readonly active: boolean;
   readonly cursor: { readonly x: number; readonly y: number } | null;
   /** Item id under the cursor that the dragged item would swap with. */
   readonly swapTargetId: string | null;
 }
 
-const IDLE: GridCellDragState = { active: false, cursor: null, swapTargetId: null };
+const IDLE: LayoutChildDragState = { active: false, cursor: null, swapTargetId: null };
 
-export interface UseGridCellDragControllerDeps {
+export interface UseLayoutChildDragControllerDeps {
   readonly editor: Editor | null;
   readonly getDocument: () => AgocraftDocument | null;
   readonly getSelectedIds: () => ReadonlySet<string>;
@@ -48,19 +56,24 @@ function cssEscape(v: string): string {
   return v.replace(/["\\]/g, "\\$&");
 }
 
-/** The parent item id of `itemId` when its parent is an auto-grid frame. */
-function gridParentId(doc: AgocraftDocument, itemId: string): string | undefined {
+/** The parent of `itemId` together with its layout kind, when that parent is a
+ *  drag-to-swap layout (auto-flex / auto-grid). Undefined otherwise. */
+function swappableParent(
+  doc: AgocraftDocument,
+  itemId: string,
+): { readonly parentId: string; readonly kind: string } | undefined {
   const found = findParentAndIndex(doc, itemId);
   if (found === undefined) return undefined;
   const layout = (found.parent.attrs as { layout?: LayoutSpec }).layout;
-  return layout !== undefined && layout.kind === "auto-grid" ? String(found.parent.id) : undefined;
+  if (layout === undefined || SWAP_COMMAND_BY_KIND[layout.kind] === undefined) return undefined;
+  return { parentId: String(found.parent.id), kind: layout.kind };
 }
 
-export function useGridCellDragController(
-  deps: UseGridCellDragControllerDeps,
-): GridCellDragState {
+export function useLayoutChildDragController(
+  deps: UseLayoutChildDragControllerDeps,
+): LayoutChildDragState {
   const { editor, getDocument, getSelectedIds, enabled } = deps;
-  const [state, setState] = useState<GridCellDragState>(IDLE);
+  const [state, setState] = useState<LayoutChildDragState>(IDLE);
 
   const getDocumentRef = useRef(getDocument);
   getDocumentRef.current = getDocument;
@@ -70,6 +83,7 @@ export function useGridCellDragController(
   const sessionRef = useRef<{
     draggedId: string;
     parentId: string;
+    parentKind: string;
     lastHighlightedEl: Element | null;
   } | null>(null);
 
@@ -97,13 +111,18 @@ export function useGridCellDragController(
       if (sel.size !== 1 || !sel.has(hit)) return;
       const doc = getDocumentRef.current();
       if (doc === null) return;
-      const parentId = gridParentId(doc, hit);
-      if (parentId === undefined) return; // not a grid child
+      const parent = swappableParent(doc, hit);
+      if (parent === undefined) return; // not a flex/grid child
 
       // Block the GestureRouter (frame-move) from claiming this press.
       e.preventDefault();
       e.stopImmediatePropagation();
-      sessionRef.current = { draggedId: hit, parentId, lastHighlightedEl: null };
+      sessionRef.current = {
+        draggedId: hit,
+        parentId: parent.parentId,
+        parentKind: parent.kind,
+        lastHighlightedEl: null,
+      };
       setState({ active: true, cursor: { x: e.clientX, y: e.clientY }, swapTargetId: null });
     };
     window.addEventListener("pointerdown", onPointerDown, { capture: true });
@@ -115,7 +134,7 @@ export function useGridCellDragController(
     const session = sessionRef.current;
     if (session === null) return undefined;
 
-    /** A valid swap target = a DIFFERENT child of the SAME grid parent. */
+    /** A valid swap target = a DIFFERENT child of the SAME layout parent. */
     const resolveTarget = (clientX: number, clientY: number): string | null => {
       const elUnder = document.elementFromPoint(clientX, clientY);
       const cand = frameIdFromTarget(elUnder);
@@ -141,8 +160,9 @@ export function useGridCellDragController(
     };
     const onUp = (e: PointerEvent) => {
       const targetId = resolveTarget(e.clientX, e.clientY);
-      if (targetId !== null && editor !== null) {
-        editor.exec("weave.item.swapGridCells", { aId: session.draggedId, bId: targetId });
+      const command = SWAP_COMMAND_BY_KIND[session.parentKind];
+      if (targetId !== null && command !== undefined && editor !== null) {
+        editor.exec(command, { aId: session.draggedId, bId: targetId });
       }
       endGesture();
     };

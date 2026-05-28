@@ -254,6 +254,14 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts` "grid cell-swap"): 2-col grid A(x0)·B(x0.5), A 선택 후 B 로 plain-drag → A→x0.5·B→x0 셀 교환 확인. 23 verify e2e + 212 unit + 4 gate green.
 
+### FEATURE — flex 순서 이동 (reorder, 선택-상태 기반) (2026-05-28)
+
+"이 이동규칙은 플랙스도 마찬가지로 적용" (사용자). flex 위치 = children 배열 순서 → cell-swap 대응물은 **순서 교환**. agocraft `1.0.0-rc.20260528095633` 채택 (`onFlexReorder`).
+
+cell-swap 컨트롤러를 **일반화**: `use-grid-cell-drag-controller.ts` → `use-layout-child-drag-controller.ts` (hook `useLayoutChildDragController`). `SWAP_COMMAND_BY_KIND` lookup 테이블(Rule 6, switch 금지)로 부모 layout kind → command 매핑: `auto-grid → weave.item.swapGridCells`, `auto-flex → weave.item.swapFlexOrder` (`onFlexReorder` 호출). 선택된 flex/grid 자식 plain-drag arm → 같은-부모 형제 위 `data-layout-swap-target` 하이라이트 → drop 시 paradigm 별 command exec. `SwapGridCellsInput` → 범용 `LayoutSiblingSwapInput`. CSS attr 도 `data-grid-swap-target` → `data-layout-swap-target`.
+
+검증 (`layout-constraints-verify.spec.ts` "flex reorder"): flex-row A(basis0.3, x0)·B(basis0.5, x0.32), A 선택 후 B 로 plain-drag → B→x0·A→x0.52 순서 교환 확인 (grid cell-swap 도 회귀 0). 21 constraints e2e (단일 워커, 0 fail) + 212 unit + declarative/purity/build green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)
