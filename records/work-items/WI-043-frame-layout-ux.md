@@ -180,6 +180,12 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`): 프레임 자식 S 를 빈 플레인으로 Cmd+Shift+드래그 → S.parent=root. **fix 없이는 S 가 소스 프레임에 잔류(baseline 재현 확인)**. weave-only (vendor 변경 0), 7 verify e2e + 212 unit + 4 gate green.
 
+### FIX — 플렉스 자식 FILL (2026-05-28)
+
+"플렉스 프레임에 요소 추가 시 항상 프레임 영역에 꽉 차야 하는데 아이템 크기를 유지한 채 추가됨; 하나면 리사이즈 불가 + 꽉 참" (사용자). agocraft 엔진 측 수정으로 해결 (라이브러리 소유) — weave 코드 변경 0, vendor `1.0.0-rc.20260528064431` 채택만.
+
+검증 (`layout-constraints-verify.spec.ts`): align=start 플렉스 프레임에 layoutChild 없는 shape 추가 → 프레임 전체 채움 `{x:0,y:0,w:1,h:1}` (authored 0.2×0.2 무시), selection chrome 리사이즈/회전 핸들 `[]` (리사이즈 불가). 명시 정책(grow0/basis0.3) 자식은 보존(relayout regression green). vendor 채택 외 weave 변경 없음, 11 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

@@ -413,6 +413,57 @@ test("reparenting a shape into an inner grid frame makes it follow the NEW paren
   expect(f2After!.x).toBeLessThan(f2Before!.x - 0.1);
 });
 
+test("a policy-less item added to a flex frame FILLS it; single item not resizable", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Flex-Fill" });
+
+  // Flex frame with align=START — fill must come from the child's own
+  // alignSelf (assigned by the engine), proving it's not just the frame.
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.15, width: 0.5, height: 0.3, rotation: 0 },
+    attrsOverride: {
+      layout: {
+        kind: "auto-flex",
+        direction: "row",
+        gap: 0,
+        justify: "start",
+        align: "start",
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      },
+    },
+  });
+  await page.waitForTimeout(120);
+  // Shape with NO layoutChild — must get the FILL default (grow 1 + stretch),
+  // NOT keep its authored 0.2×0.2 size.
+  const sId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(150);
+
+  const sFrame = await readItemFrame(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] flex-fill single:", JSON.stringify(sFrame));
+  // Single fill child occupies the whole frame (parent-relative ratios),
+  // NOT its authored 0.2×0.2.
+  expect(sFrame!.x).toBeCloseTo(0, 2);
+  expect(sFrame!.y).toBeCloseTo(0, 2);
+  expect(sFrame!.width).toBeCloseTo(1, 2);
+  expect(sFrame!.height).toBeCloseTo(1, 2);
+
+  // Not resizable: no resize handles (and no rotate) in the selection chrome.
+  await setSelection(page, [sId]);
+  await page.waitForTimeout(150);
+  const handles = await readHandleIds(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] flex-fill handles:", JSON.stringify(handles));
+  expect(handles).toEqual([]);
+});
+
 test("selected flex frame moves on body-drag over a child (frame stays grabbable)", async ({
   page,
 }) => {
