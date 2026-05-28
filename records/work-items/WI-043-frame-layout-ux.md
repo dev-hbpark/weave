@@ -194,6 +194,12 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`): align=stretch flex 에 정책 없는 shape 추가 → `{width:0.2(authored 유지), height:1(stretch)}`, 핸들 `["resize-e","resize-w"]`(grow0 → main 리사이즈 가능, cross stretch). 2개 추가 → 각자 authored width(0.2/0.25) 유지, justify-start 배치(균등 분할 아님). relayout regression(명시 정책 보존) green. 9 verify e2e + 212 unit + 4 gate green.
 
+### FIX — row flex 높이 강제 채움 해제 (2026-05-28)
+
+"가로로 쌓이는 flex 에서 높이가 무조건 꽉 차는데 그러지 않아도 됨; add/resize 에 반영 + 핸들도 상황 맞게" (사용자). 직전에 기본 align=stretch 로 둔 게 cross 축(높이)을 강제 채웠음. 수정: **새 flex 프레임 기본 align = start** (자식이 자기 높이 유지). agocraft 측은 cross-axis 리사이즈 보존 fix (vendor `1.0.0-rc.20260528073157`).
+
+결과: row flex 기본 → 자식이 authored 높이 유지(채움 X), grow 0 라 main 리사이즈 가능 + align!=stretch 라 cross 리사이즈 가능 → **8 핸들 전부**(상황 맞게 가능한 축 노출). align=stretch 로 바꾸면 높이 채움 + n/s 핸들 숨김. 검증: align=start flex 에 shape 추가 → `{w:0.2,h:0.3}`(높이 유지), 핸들 8개 전부 rotate 제외. 13 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

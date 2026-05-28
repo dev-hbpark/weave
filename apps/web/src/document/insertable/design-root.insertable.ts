@@ -44,11 +44,11 @@ function pickDefaultLayoutSpec(
   layoutType: "auto-flex" | "auto-grid" | undefined,
 ): LayoutSpec | undefined {
   if (layoutType === "auto-flex") {
-    // CSS-flexbox defaults: row direction, no gap/padding, justify-content
-    // flex-start, align-items STRETCH (the CSS default — children fill the
-    // cross axis until the user changes `align`). Users tune the rest via
-    // the PropertiesPanel.
-    return createAutoFlexSpec({ align: "stretch" });
+    // Row direction, no gap/padding, justify-content flex-start, align-items
+    // START — items keep their own cross-axis size (e.g. their height in a
+    // row) rather than being force-stretched to fill the frame. Users switch
+    // `align` to "stretch" (fill cross) / center / end via the PropertiesPanel.
+    return createAutoFlexSpec({ align: "start" });
   }
   if (layoutType === "auto-grid") {
     // Sensible default for "a Grid container, please" — single full-axis

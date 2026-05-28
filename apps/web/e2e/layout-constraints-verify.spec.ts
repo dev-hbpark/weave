@@ -82,6 +82,17 @@ const FLEX_ROW_STRETCH = {
   padding: { top: 0, right: 0, bottom: 0, left: 0 },
 };
 
+// The default new-flex-frame spec: align=start so children keep their own
+// cross-axis size (height in a row) instead of being force-stretched.
+const FLEX_ROW_START = {
+  kind: "auto-flex",
+  direction: "row",
+  gap: 0.02,
+  justify: "start",
+  align: "start",
+  padding: { top: 0, right: 0, bottom: 0, left: 0 },
+};
+
 const GRID_2COL = {
   kind: "auto-grid",
   columns: [
@@ -460,6 +471,47 @@ test("CSS flex: an added item keeps its main size, fills the cross axis (align s
   // eslint-disable-next-line no-console
   console.log("[verify] flex-css handles:", JSON.stringify(handles));
   expect(handles).toEqual(["resize-e", "resize-w"]);
+});
+
+test("CSS flex row align=start: item keeps its HEIGHT (not stretched) and is resizable on both axes", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Flex-Start" });
+
+  // align=start (the default for new flex frames) → the cross axis (height in
+  // a row) is the item's OWN size, not force-filled.
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.15, width: 0.6, height: 0.4, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_START },
+  });
+  await page.waitForTimeout(120);
+  const sId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.3, rotation: 0 },
+    attrsOverride: { shape: "rectangle" },
+  });
+  await page.waitForTimeout(150);
+
+  const f = await readItemFrame(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] flex-start single:", JSON.stringify(f));
+  // Height kept at authored 0.3 (NOT stretched to 1); width = authored 0.2.
+  expect(f!.height).toBeCloseTo(0.3, 2);
+  expect(f!.width).toBeCloseTo(0.2, 2);
+  expect(f!.y).toBeCloseTo(0, 2); // align start → top
+
+  // Both axes resizable (grow 0 + not stretched) → all 8 handles + no rotate.
+  await setSelection(page, [sId]);
+  await page.waitForTimeout(150);
+  const handles = await readHandleIds(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] flex-start handles:", JSON.stringify(handles));
+  for (const d of ["n", "ne", "e", "se", "s", "sw", "w", "nw"]) {
+    expect(handles).toContain(`resize-${d}`);
+  }
+  expect(handles).not.toContain("rotate"); // flex child → no rotate
 });
 
 test("CSS flex: two items keep their sizes, packed at justify-start (NOT auto-filled)", async ({
