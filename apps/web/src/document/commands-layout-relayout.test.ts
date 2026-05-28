@@ -126,7 +126,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
 
       // The staged new child must be at the SECOND flex slot (x = 0.5),
       // NOT at its raw drop frame (0.9) — proving auto-arrangement ran.
-      const stagedId = result.value;
+      const stagedId = String(result.value);
       const staged = pending.lookup(stagedId);
       if (staged === undefined) throw new Error("new child not staged");
       const stagedFrame = (staged.attrs as { frame?: { x: number; width: number } }).frame;
@@ -206,7 +206,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       });
       if (!result.ok) throw new Error("expected ok");
 
-      const staged = pending.lookup(result.value);
+      const staged = pending.lookup(String(result.value));
       if (staged === undefined) throw new Error("new child not staged");
       const stagedFrame = (staged.attrs as { frame?: { x: number; width: number } }).frame;
       // Column 2 of a 2-fr grid (stretch) → x = 0.5, width = 0.5.
@@ -237,7 +237,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
 
       // absolute-constraints onParentResize is scale-factor based and
       // returns [] on a no-op resize → the new child keeps its drop frame.
-      const staged = pending.lookup(result.value);
+      const staged = pending.lookup(String(result.value));
       const stagedFrame = (staged?.attrs as { frame?: { x: number; y: number } }).frame;
       expect(stagedFrame?.x).toBeCloseTo(0.4, 6);
       expect(stagedFrame?.y).toBeCloseTo(0.4, 6);
@@ -268,7 +268,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
         frame: F(0.4, 0.4, 0.2, 0.2),
       });
       if (!result.ok) throw new Error("expected ok");
-      const staged = pending.lookup(result.value);
+      const staged = pending.lookup(String(result.value));
       const stagedFrame = (staged?.attrs as { frame?: { x: number } }).frame;
       expect(stagedFrame?.x).toBeCloseTo(0.4, 6);
       expect(result.patches.filter((p) => p.type === "item.attrs")).toHaveLength(0);
