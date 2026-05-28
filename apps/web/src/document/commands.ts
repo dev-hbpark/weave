@@ -157,6 +157,12 @@ export interface SetItemLayoutChildInput {
   /** New `LayoutChildPolicy`, or `undefined` to clear. */
   readonly policy: import("@agocraft/core").LayoutChildPolicy | undefined;
 }
+
+/** WI-043 — two grid siblings exchange cells (drag-to-swap UX). */
+export interface SwapGridCellsInput {
+  readonly aId: string;
+  readonly bId: string;
+}
 export interface UpdateBehaviorInput {
   readonly itemId: string;
   readonly behaviorId: string;
@@ -1443,6 +1449,22 @@ export function buildWeaveCommands(
     },
   };
 
+  // WI-043 — grid cell-swap (drag a selected grid child onto another). The
+  // engine swaps their cell placement + reflows; both moves ride one
+  // transaction so Cmd+Z is atomic.
+  const swapGridCells: Command<SwapGridCellsInput, void> = {
+    name: "weave.item.swapGridCells",
+    run: (ctx, input) => {
+      if (!LAYOUT_FEATURE_ENABLED || input.aId === input.bId) return ok(undefined, []);
+      const patches = getLayoutEngine().onGridCellSwap({
+        root: ctx.document.root,
+        aId: input.aId as import("@agocraft/core").ItemId,
+        bId: input.bId as import("@agocraft/core").ItemId,
+      });
+      return ok(undefined, patches);
+    },
+  };
+
   return [
     addItem as Command,
     removeItem as Command,
@@ -1467,6 +1489,7 @@ export function buildWeaveCommands(
     // WI-020 / WI-043
     setFrameLayout as Command,
     setItemLayoutChild as Command,
+    swapGridCells as Command,
   ];
 }
 

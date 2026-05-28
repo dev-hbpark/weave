@@ -95,6 +95,7 @@ import { ReparentGhostOverlay } from "../document/interactions/ReparentGhostOver
 import { RouterProvider } from "../document/interactions/router-context.js";
 import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
+import { useGridCellDragController } from "../document/interactions/use-grid-cell-drag-controller.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
 import {
   findFramesAtPoint,
@@ -1218,6 +1219,15 @@ function DesignPageBody() {
   const reparentSelectedIdsRef = useRef(selectedIds);
   reparentSelectedIdsRef.current = selectedIds;
   const reparentDragState = useReparentDragController({
+    editor,
+    getDocument: () => docInAgocraftRef.current ?? null,
+    getSelectedIds: () => reparentSelectedIdsRef.current,
+    enabled: !handMode && !peek.isActive,
+  });
+  // WI-043 — grid cell-swap: plain-dragging the SELECTED grid child swaps its
+  // cell with the item it's dropped on. Selection-state based, so a
+  // frame-selected drag still moves the frame (even when the grid is full).
+  useGridCellDragController({
     editor,
     getDocument: () => docInAgocraftRef.current ?? null,
     getSelectedIds: () => reparentSelectedIdsRef.current,

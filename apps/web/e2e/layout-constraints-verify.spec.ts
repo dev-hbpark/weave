@@ -484,6 +484,42 @@ test("grid auto-place: fill all → move one OUT → add fills the front-most ga
   expect(newKey).toBe(movedKey); // new item reuses the vacated front-most cell
 });
 
+test("grid cell-swap: dragging the SELECTED grid child onto another swaps their cells", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Grid-Swap" });
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.18, width: 0.6, height: 0.3, rotation: 0 },
+    attrsOverride: { layout: gridSpec(2, 1) },
+  });
+  await page.waitForTimeout(120);
+  const ids = await addShapes(page, fId, 2); // A→(1,1)=x0, B→(2,1)=x0.5
+  const aBefore = await readItemFrame(page, ids[0]!);
+  const bBefore = await readItemFrame(page, ids[1]!);
+  expect(aBefore!.x).toBeCloseTo(0, 2);
+  expect(bBefore!.x).toBeCloseTo(0.5, 2);
+
+  // Select A, then plain-drag it onto B → swap cells.
+  await setSelection(page, [ids[0]!]);
+  await page.waitForTimeout(120);
+  const aPos = await centerOf(page, ids[0]!);
+  const bPos = await centerOf(page, ids[1]!);
+  await page.mouse.move(aPos.x, aPos.y);
+  await page.mouse.down();
+  await page.mouse.move((aPos.x + bPos.x) / 2, aPos.y, { steps: 4 });
+  await page.mouse.move(bPos.x, bPos.y, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+
+  const aAfter = await readItemFrame(page, ids[0]!);
+  const bAfter = await readItemFrame(page, ids[1]!);
+  // eslint-disable-next-line no-console
+  console.log("[verify] grid swap:", JSON.stringify({ aBefore, bBefore, aAfter, bAfter }));
+  expect(aAfter!.x).toBeCloseTo(0.5, 2); // A now in B's cell
+  expect(bAfter!.x).toBeCloseTo(0, 2); // B now in A's cell
+});
+
 test("grid: after increasing columns, added items take distinct cells (no overlap)", async ({
   page,
 }) => {

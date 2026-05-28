@@ -242,6 +242,18 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`): ①증가→add: 2 아이템 → 3×3 → +3 = 5 distinct. ②축소→add: 3-col 3 아이템 → 2-col → +2, col3 자식 재배치되어 겹침 0. ③가득→이동→add: 2×2 채움 → (1,1) 아이템 root 로 이동 → add 가 빈 (1,1) **앞쪽 gap 부터** 채움. 22 verify e2e + 212 unit + 4 gate green.
 
+### FEATURE — grid 셀 위치 이동 (cell-swap, 선택-상태 기반) (2026-05-28)
+
+"각 셀 아이템 위치 이동 UX" (사용자) → "선택-상태 기반으로 grid cell-swap 부터". agocraft `1.0.0-rc.20260528094358` 채택 (`onGridCellSwap`).
+
+**규칙 — 선택-상태로 제스처 분기** (부모프레임이 가득 찼을 때도 움직일 수 있어야 한다는 사용자 요구 해결):
+- FRAME 선택 → plain-drag = 프레임 이동 (GestureRouter, selected-frame redirect 로 가득 찬 grid 도 OK).
+- grid CHILD 선택 → plain-drag = 셀 교환 (`useGridCellDragController`, window capture 단계에서 `stopImmediatePropagation` 으로 router 선점).
+
+`use-grid-cell-drag-controller.ts` 신규 — 선택된 grid 자식을 누른 채 드래그하면 arm, 커서 밑 같은-부모 형제를 `data-grid-swap-target` 로 하이라이트, drop 시 `weave.item.swapGridCells({aId, bId})`. `main.css` 점선 accent outline. DesignPage 에서 `useReparentDragController` 옆 배선 (`enabled: !handMode && !peek.isActive`).
+
+검증 (`layout-constraints-verify.spec.ts` "grid cell-swap"): 2-col grid A(x0)·B(x0.5), A 선택 후 B 로 plain-drag → A→x0.5·B→x0 셀 교환 확인. 23 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

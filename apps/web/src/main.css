@@ -81,3 +81,12 @@ body {
   cursor: not-allowed;
   transition: outline 80ms ease;
 }
+
+/* WI-043 — grid cell-swap: the item under the cursor that the dragged grid
+ * child would swap cells with. Dashed accent outline distinguishes "swap
+ * target" from the solid reparent "drop into" affordance. */
+[data-grid-swap-target] {
+  outline: 3px dashed rgba(56, 132, 255, 0.95);
+  outline-offset: -3px;
+  transition: outline 80ms ease;
+}
