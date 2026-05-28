@@ -394,3 +394,137 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
     });
   },
 );
+
+describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
+  "weave.frame.setLayout — paradigm change rearranges existing children",
+  () => {
+    /** Build a ctx whose parent already holds N children at given frames. */
+    function ctxWithChildren(
+      parentLayout: LayoutSpec | undefined,
+      children: ReadonlyArray<AgocraftItem>,
+    ): CommandContext {
+      const parentOpts: FrameOpts =
+        parentLayout !== undefined
+          ? { frame: F(0, 0, 1, 1), layout: parentLayout }
+          : { frame: F(0, 0, 1, 1) };
+      const parent = frameItem("parent", parentOpts, children);
+      const root = frameItem("root", { frame: F(0, 0, 1, 1) }, [parent]);
+      const doc = {
+        id: "doc",
+        schema: undefined as unknown as AgocraftDocument["schema"],
+        root,
+        meta: { id: "doc", ...META, schemaRefs: [] },
+      } as unknown as AgocraftDocument;
+      return { document: doc, resolve: () => null as never, skipRelations: false } as CommandContext;
+    }
+
+    it("Absolute → Flex rearranges children into a row (with full-attrs + reassigned policy)", () => {
+      // Two children scattered at arbitrary positions under an Absolute (no
+      // layout) parent. Switching to Flex must spread them into a row.
+      const c1 = {
+        id: makeItemId("c1"),
+        kind: "shape",
+        attrs: { frame: F(0.1, 0.7, 0.2, 0.2), shape: "ellipse", fill: "var(--a)" } as AgocraftItem["attrs"],
+        units: [],
+        children: [],
+        meta: { ...META },
+      } as AgocraftItem;
+      const c2 = {
+        id: makeItemId("c2"),
+        kind: "shape",
+        attrs: { frame: F(0.6, 0.1, 0.2, 0.2), shape: "rectangle", fill: "var(--b)" } as AgocraftItem["attrs"],
+        units: [],
+        children: [],
+        meta: { ...META },
+      } as AgocraftItem;
+      const ctx = ctxWithChildren(undefined, [c1, c2]);
+
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.frame.setLayout");
+      if (cmd === undefined) throw new Error("weave.frame.setLayout not found");
+
+      const flex: LayoutSpec = createAutoFlexSpec({
+        direction: "row",
+        gap: 0,
+        justify: "start",
+        align: "stretch",
+      });
+      const result = cmd.run(ctx, { itemId: "parent", layout: flex });
+      if (!result.ok) throw new Error("expected ok");
+
+      // 1 item.layout (parent spec) + 2 item.attrs (children rearranged).
+      const layoutPatch = result.patches.find((p) => p.type === "item.layout");
+      expect(layoutPatch).toBeDefined();
+      const attrsPatches = result.patches.filter(
+        (p): p is Extract<typeof p, { type: "item.attrs" }> => p.type === "item.attrs",
+      );
+      expect(attrsPatches).toHaveLength(2);
+
+      // Children land at distinct, increasing x (row spread) — NOT their old
+      // scattered positions.
+      const byId = new Map(attrsPatches.map((p) => [String(p.itemId), p]));
+      const a1 = (byId.get("c1")!.after as { frame?: { x: number }; shape?: string; layoutChild?: { kind: string } });
+      const a2 = (byId.get("c2")!.after as { frame?: { x: number } });
+      expect(a1.frame?.x).toBeLessThan(a2.frame!.x);
+      // Each child's other attrs survived AND its policy was reassigned to flex.
+      expect(a1.shape).toBe("ellipse");
+      expect(a1.layoutChild?.kind).toBe("auto-flex");
+    });
+
+    it("Absolute → Grid places children into distinct cells (row-major auto-assign)", () => {
+      const c1 = frameItem("c1", { frame: F(0.1, 0.1, 0.2, 0.2) });
+      const c2 = frameItem("c2", { frame: F(0.1, 0.1, 0.2, 0.2) });
+      const c3 = frameItem("c3", { frame: F(0.1, 0.1, 0.2, 0.2) });
+      const ctx = ctxWithChildren(undefined, [c1, c2, c3]);
+
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.frame.setLayout");
+      if (cmd === undefined) throw new Error("not found");
+
+      const grid: LayoutSpec = createAutoGridSpec({
+        columns: [trackFr(1), trackFr(1), trackFr(1)],
+        rows: [trackFr(1)],
+        justify: "stretch",
+        align: "stretch",
+      });
+      const result = cmd.run(ctx, { itemId: "parent", layout: grid });
+      if (!result.ok) throw new Error("expected ok");
+
+      const attrsPatches = result.patches.filter(
+        (p): p is Extract<typeof p, { type: "item.attrs" }> => p.type === "item.attrs",
+      );
+      expect(attrsPatches).toHaveLength(3);
+      const xs = ["c1", "c2", "c3"].map((id) => {
+        const p = attrsPatches.find((q) => String(q.itemId) === id)!;
+        return (p.after as { frame?: { x: number } }).frame!.x;
+      });
+      // 3 children → row-major into columns 1/2/3 → x = 0, 1/3, 2/3.
+      expect(xs[0]).toBeCloseTo(0, 5);
+      expect(xs[1]).toBeCloseTo(1 / 3, 5);
+      expect(xs[2]).toBeCloseTo(2 / 3, 5);
+      // Each child's policy reassigned to a distinct grid cell.
+      for (const id of ["c1", "c2", "c3"]) {
+        const p = attrsPatches.find((q) => String(q.itemId) === id)!;
+        const policy = (p.after as { layoutChild?: { kind: string; column: number } }).layoutChild;
+        expect(policy?.kind).toBe("auto-grid");
+      }
+    });
+
+    it("Flex → Absolute emits ONLY the layout patch (children keep frames, free placement)", () => {
+      const flex: LayoutSpec = createAutoFlexSpec();
+      const c1 = frameItem("c1", { frame: F(0, 0, 0.5, 1), layoutChild: createAutoFlexChildPolicy() });
+      const ctx = ctxWithChildren(flex, [c1]);
+
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.frame.setLayout");
+      if (cmd === undefined) throw new Error("not found");
+
+      // Absolute is represented as `undefined` layout (specForChoice("absolute")).
+      const result = cmd.run(ctx, { itemId: "parent", layout: undefined });
+      if (!result.ok) throw new Error("expected ok");
+
+      const layoutPatches = result.patches.filter((p) => p.type === "item.layout");
+      const attrsPatches = result.patches.filter((p) => p.type === "item.attrs");
+      expect(layoutPatches).toHaveLength(1);
+      // No child rearrangement when switching to free placement.
+      expect(attrsPatches).toHaveLength(0);
+    });
+  },
+);

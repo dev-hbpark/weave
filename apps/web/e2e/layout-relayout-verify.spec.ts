@@ -169,3 +169,84 @@ test("Grid frame places children into distinct columns (real browser)", async ({
     contentType: "image/png",
   });
 });
+
+/** Set a frame's layout spec via weave.frame.setLayout (the ContextualToolbar
+ *  SegmentedControl path). */
+async function setFrameLayout(
+  page: import("@playwright/test").Page,
+  itemId: string,
+  layout: Record<string, unknown> | undefined,
+): Promise<void> {
+  await page.evaluate(
+    ({ itemId: id, layout: lay }) => {
+      type Editor = { exec: (name: string, input: unknown) => { ok: boolean } };
+      const w = window as unknown as { __weaveEditor?: Editor };
+      const editor = w.__weaveEditor;
+      if (editor === undefined) throw new Error("__weaveEditor not ready");
+      editor.exec("weave.frame.setLayout", { itemId: id, layout: lay });
+    },
+    { itemId, layout },
+  );
+}
+
+test("Changing a frame's layout to Flex rearranges existing children (ContextualToolbar path)", async ({
+  page,
+}, testInfo) => {
+  await prepareDesign(page, { flavor: "mixed", title: "SetLayout-Verify" });
+
+  // 1. Create an ABSOLUTE (no layout) frame and drop 2 children at
+  //    overlapping/scattered positions — no auto-arrange yet.
+  const frameId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.4, rotation: 0 },
+  });
+  await page.waitForTimeout(150);
+
+  const childIds: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    const id = await addChild(page, {
+      kind: "shape",
+      containerId: frameId,
+      frame: { x: 0.6, y: 0.6, width: 0.3, height: 0.3, rotation: 0 },
+      attrsOverride: { shape: "rectangle" },
+    });
+    childIds.push(id);
+    await page.waitForTimeout(100);
+  }
+
+  // Before: both children sit at their drop frames (x ≈ 0.6, overlapping).
+  const before = [];
+  for (const id of childIds) before.push(await readItemFrame(page, id));
+  // eslint-disable-next-line no-console
+  console.log("[verify] before setLayout:", JSON.stringify(before));
+
+  // 2. Switch the frame's layout to Flex (the SegmentedControl action).
+  await setFrameLayout(page, frameId, {
+    kind: "auto-flex",
+    direction: "row",
+    gap: 0,
+    justify: "start",
+    align: "stretch",
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  });
+  await page.waitForTimeout(200);
+
+  // 3. After: children must be rearranged into a row (distinct, increasing
+  //    x), NOT still overlapping at 0.6.
+  const after = [];
+  for (const id of childIds) after.push(await readItemFrame(page, id));
+  // eslint-disable-next-line no-console
+  console.log("[verify] after setLayout→flex:", JSON.stringify(after));
+
+  for (const f of after) expect(f).not.toBeNull();
+  expect(after[0]!.x).toBeLessThan(after[1]!.x); // spread left→right
+  expect(after[0]!.x).toBeCloseTo(0, 2); // first hugs left
+  // No longer parked at the 0.6 drop position.
+  for (const f of after) expect(f!.x).toBeLessThan(0.6);
+
+  await page.screenshot({ path: testInfo.outputPath("setlayout-flex.png"), fullPage: false });
+  await testInfo.attach("setlayout-flex", {
+    path: testInfo.outputPath("setlayout-flex.png"),
+    contentType: "image/png",
+  });
+});
