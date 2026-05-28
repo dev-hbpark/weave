@@ -200,6 +200,12 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 결과: row flex 기본 → 자식이 authored 높이 유지(채움 X), grow 0 라 main 리사이즈 가능 + align!=stretch 라 cross 리사이즈 가능 → **8 핸들 전부**(상황 맞게 가능한 축 노출). align=stretch 로 바꾸면 높이 채움 + n/s 핸들 숨김. 검증: align=start flex 에 shape 추가 → `{w:0.2,h:0.3}`(높이 유지), 핸들 8개 전부 rotate 제외. 13 verify e2e + 212 unit + 4 gate green.
 
+### FIX — 프레임 리사이즈 시 속성별 자식 사이징 (2026-05-28)
+
+"플렉스 프레임 자체 리사이즈 시 적용 속성에 따라 자식이 같이 커질지 말지 차이 처리" (사용자). agocraft adapter 가 프레임 리사이즈를 무시하고 자식을 비율 스케일하던 것을 CSS sizing 으로 정정 (vendor `1.0.0-rc.20260528075348`) — weave 코드 변경 0.
+
+검증 (`layout-constraints-verify.spec.ts`, 실제 `weave.item.update` 프레임 리사이즈): flex-row(start) 프레임에 c1(grow0/basis0.3) + c2(grow1). 프레임 width 0.4→0.8 (2배) → **c1 ratio 0.3→0.15 (절대 크기 유지)**, **c2 0.83 (커짐)**. 14 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

@@ -562,6 +562,59 @@ test("CSS flex: two items keep their sizes, packed at justify-start (NOT auto-fi
   expect(handles).toEqual(["resize-e", "resize-w"]);
 });
 
+test("CSS flex: resizing the FRAME grows a grow-1 child but keeps a grow-0 child's size", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Flex-FrameResize" });
+
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.08, y: 0.15, width: 0.4, height: 0.3, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_START },
+  });
+  await page.waitForTimeout(120);
+  // c1 = fixed (grow 0, basis 0.3); c2 = fills (grow 1).
+  const c1 = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.3, height: 0.5, rotation: 0 },
+    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.3 } },
+  });
+  await page.waitForTimeout(100);
+  const c2 = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0.3, y: 0, width: 0.3, height: 0.5, rotation: 0 },
+    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 } },
+  });
+  await page.waitForTimeout(150);
+
+  const c1before = await readItemFrame(page, c1);
+  // Double the FRAME width (0.4 → 0.8) via the same command a resize gesture uses.
+  await page.evaluate(
+    ({ id, nf }) => {
+      type Editor = { exec: (n: string, i: unknown) => unknown };
+      const w = window as unknown as { __weaveEditor?: Editor };
+      w.__weaveEditor?.exec("weave.item.update", {
+        itemId: id,
+        patch: (it: { attrs: Record<string, unknown> }) => ({ ...it, attrs: { ...it.attrs, frame: nf } }),
+      });
+    },
+    { id: fId, nf: { x: 0.08, y: 0.15, width: 0.8, height: 0.3, rotation: 0 } },
+  );
+  await page.waitForTimeout(200);
+
+  const c1after = await readItemFrame(page, c1);
+  const c2after = await readItemFrame(page, c2);
+  // eslint-disable-next-line no-console
+  console.log("[verify] frame-resize:", JSON.stringify({ c1before, c1after, c2after }));
+  // c1 (grow 0) kept its ABSOLUTE width: ratio halved (0.3 → ~0.15) because
+  // the parent doubled, so 0.15 × 0.8 == 0.3 × 0.4.
+  expect(c1after!.width).toBeCloseTo(0.15, 2);
+  // c2 (grow 1) GREW to absorb the new space (ratio ~0.85).
+  expect(c2after!.width).toBeGreaterThan(0.8);
+});
+
 test("selected flex frame moves on body-drag over a child (frame stays grabbable)", async ({
   page,
 }) => {
