@@ -220,6 +220,62 @@ async function readParentAndPolicy(
   }, itemId);
 }
 
+test("reparent GESTURE (Cmd+Shift+drag) moves a shape into the inner frame", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Reparent-Gesture" });
+
+  // Flex-row frame F = [S (shape, left), F2 (inner absolute frame, right)].
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.1, y: 0.18, width: 0.45, height: 0.28, rotation: 0 },
+    attrsOverride: { layout: FLEX_ROW_STRETCH },
+  });
+  await page.waitForTimeout(120);
+  const sId = await addChild(page, {
+    kind: "shape",
+    containerId: fId,
+    frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
+    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 } },
+  });
+  await page.waitForTimeout(120);
+  const f2Id = await addChild(page, {
+    kind: "frame",
+    containerId: fId,
+    frame: { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 },
+    // Inner frame has its OWN grid layout (the user's scenario).
+    attrsOverride: { layout: GRID_2COL, layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 } },
+  });
+  await page.waitForTimeout(150);
+
+  // Select S so the gesture has a settled selection to read.
+  await setSelection(page, [sId]);
+  await page.waitForTimeout(100);
+
+  const sPos = await centerOf(page, sId);
+  const f2Pos = await centerOf(page, f2Id);
+  expect(sPos.x).toBeGreaterThan(0);
+  expect(f2Pos.x).toBeGreaterThan(sPos.x); // F2 is to the right of S
+
+  // Perform the actual Cmd/Ctrl+Shift+drag gesture. Hold the modifiers via
+  // the keyboard so the PointerEvents carry metaKey/shiftKey.
+  await page.keyboard.down("Meta");
+  await page.keyboard.down("Shift");
+  await page.mouse.move(sPos.x, sPos.y);
+  await page.mouse.down();
+  await page.mouse.move((sPos.x + f2Pos.x) / 2, (sPos.y + f2Pos.y) / 2, { steps: 4 });
+  await page.mouse.move(f2Pos.x, f2Pos.y, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await page.keyboard.up("Meta");
+  await page.waitForTimeout(250);
+
+  const after = await readParentAndPolicy(page, sId);
+  // eslint-disable-next-line no-console
+  console.log("[verify] reparent gesture:", JSON.stringify({ sPos, f2Pos, after }));
+  expect(after.parentId).toBe(f2Id);
+  // Joined F2's grid → policy reassigned.
+  expect(after.policyKind).toBe("auto-grid");
+});
+
 test("reparenting a shape into an inner grid frame makes it follow the NEW parent's layout", async ({
   page,
 }) => {
