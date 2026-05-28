@@ -188,6 +188,12 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 **후속 — 다중 아이템 (2026-05-28)**: 2개 이상이면 리사이즈 핸들이 보여야 함 (사용자). agocraft count-based 제약 채택 (vendor `1.0.0-rc.20260528065618`) — weave 변경 0. 검증: 플렉스 프레임에 정책 없는 shape 2개 추가 → 각 ≈0.49 균등 분할(gap 0.02), c1 선택 시 핸들 `["resize-e","resize-w"]` 표시(주축 width 만, cross stretch 라 n/s 없음). 단일 아이템은 여전히 `[]`. 9 verify e2e green.
 
+### PIVOT — 순수 CSS flexbox (2026-05-28)
+
+사용자 최종 결정: "무조건 가득 차야 하는 것 잊고 오직 CSS flex 처럼". FILL 모델 폐기 → 표준 CSS flexbox. agocraft 엔진 측 정정 (vendor `1.0.0-rc.20260528071600`) + weave 기본 flex spec align=stretch (CSS `align-items` 기본). 핵심: 자식은 기본 grow 0 (content 크기, justify 배치), align/justify/gap/padding 가 정확히 동작, 속성 tweak 시 자식 사이즈 보존.
+
+검증 (`layout-constraints-verify.spec.ts`): align=stretch flex 에 정책 없는 shape 추가 → `{width:0.2(authored 유지), height:1(stretch)}`, 핸들 `["resize-e","resize-w"]`(grow0 → main 리사이즈 가능, cross stretch). 2개 추가 → 각자 authored width(0.2/0.25) 유지, justify-start 배치(균등 분할 아님). relayout regression(명시 정책 보존) green. 9 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)
