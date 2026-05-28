@@ -195,6 +195,11 @@ export { Switch, type SwitchProps } from "./Switch.js";
 export { FieldGroup, TextField } from "./TextField.js";
 export { ThemeSwitcher } from "./ThemeSwitcher.js";
 export { Toolbar, ToolbarDivider } from "./Toolbar.js";
+export {
+  TrackSizeEditor,
+  type TrackSize,
+  type TrackSizeEditorProps,
+} from "./TrackSizeEditor.js";
 export { Tooltip, type TooltipProps } from "./Tooltip.js";
 export { TooltipCard, type TooltipCardProps } from "./TooltipCard.js";
 export {

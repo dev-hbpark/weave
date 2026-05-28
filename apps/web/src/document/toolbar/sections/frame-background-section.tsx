@@ -41,6 +41,8 @@ import {
   IconLayoutGrid,
   NumberSlider,
   SegmentedControl,
+  type TrackSize as DSTrackSize,
+  TrackSizeEditor,
 } from "@weave/design-system";
 import {
   isMixed,
@@ -49,6 +51,7 @@ import {
   updateAll,
   useResolveSharedColor,
 } from "../multi-edit.js";
+import type { ReactElement } from "react";
 import type { ToolbarSectionComponent } from "./types.js";
 
 type LayoutKindChoice = "absolute" | "auto-flex" | "auto-grid";
@@ -117,6 +120,48 @@ const GRID_ALIGN_OPTIONS: ReadonlyArray<{ value: GridAlign; label: string }> = [
   { value: "stretch", label: "Stretch" },
 ];
 
+const PADDING_SIDES = ["top", "right", "bottom", "left"] as const;
+const PADDING_LABEL: Record<(typeof PADDING_SIDES)[number], string> = {
+  top: "Top",
+  right: "Right",
+  bottom: "Bottom",
+  left: "Left",
+};
+
+/** Padding 4-side sub-form. Shared by Flex + Grid Bar.More — both specs
+ *  carry a `{ top, right, bottom, left }` ratio object. */
+function PaddingFields({
+  padding,
+  onSideChange,
+}: {
+  readonly padding: { top: number; right: number; bottom: number; left: number };
+  readonly onSideChange: (side: (typeof PADDING_SIDES)[number], value: number) => void;
+}): ReactElement {
+  return (
+    <Bar.Field label="Padding">
+      <div className="flex flex-col gap-1 w-full" data-testid="frame-layout-padding">
+        {PADDING_SIDES.map((side) => (
+          <div key={side} className="flex items-center gap-2">
+            <span className="text-[11px] text-[color:var(--text-overlay-soft)] w-12 shrink-0">
+              {PADDING_LABEL[side]}
+            </span>
+            <NumberSlider
+              value={padding[side]}
+              onValueChange={(v) => onSideChange(side, v)}
+              min={0}
+              max={0.25}
+              step={0.005}
+              format={(v) => `${Math.round(v * 1000) / 10}%`}
+              aria-label={`Padding ${side}`}
+              className="flex-1"
+            />
+          </div>
+        ))}
+      </div>
+    </Bar.Field>
+  );
+}
+
 export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
   // WI-040 — `attrs.background` may be a `StyleRef` (theme token) after
   // the user picked a theme swatch. `useResolveSharedColor` runs the
@@ -174,6 +219,26 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
   const onGridFieldChange = <K extends keyof AutoGridSpec>(key: K, value: AutoGridSpec[K]) => {
     if (homogeneousSpec?.kind !== "auto-grid") return;
     patchLayoutSpec({ ...homogeneousSpec, [key]: value } as AutoGridSpec);
+  };
+
+  /** Padding 4-side override helper — preserves the other 3 sides. Used by
+   *  both Flex and Grid Bar.More (same 4-side shape, RISK-002 C2.4). */
+  const onPaddingSideChange = (
+    side: "top" | "right" | "bottom" | "left",
+    value: number,
+  ) => {
+    if (homogeneousSpec === undefined) return;
+    if (homogeneousSpec.kind === "auto-flex") {
+      patchLayoutSpec({
+        ...homogeneousSpec,
+        padding: { ...homogeneousSpec.padding, [side]: value },
+      });
+    } else if (homogeneousSpec.kind === "auto-grid") {
+      patchLayoutSpec({
+        ...homogeneousSpec,
+        padding: { ...homogeneousSpec.padding, [side]: value },
+      });
+    }
   };
 
   return (
@@ -272,10 +337,27 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
               aria-label="Flex align"
             />
           </Bar.Field>
+          <PaddingFields padding={homogeneousSpec.padding} onSideChange={onPaddingSideChange} />
         </Bar.More>
       ) : null}
       {homogeneousSpec?.kind === "auto-grid" ? (
         <Bar.More>
+          <Bar.Field label="Columns">
+            <TrackSizeEditor
+              value={homogeneousSpec.columns as ReadonlyArray<DSTrackSize>}
+              onValueChange={(next) =>
+                onGridFieldChange("columns", next as AutoGridSpec["columns"])
+              }
+              aria-label="Grid columns"
+            />
+          </Bar.Field>
+          <Bar.Field label="Rows">
+            <TrackSizeEditor
+              value={homogeneousSpec.rows as ReadonlyArray<DSTrackSize>}
+              onValueChange={(next) => onGridFieldChange("rows", next as AutoGridSpec["rows"])}
+              aria-label="Grid rows"
+            />
+          </Bar.Field>
           <Bar.Field label="Column gap">
             <NumberSlider
               value={homogeneousSpec.columnGap}
@@ -314,6 +396,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
               aria-label="Grid align"
             />
           </Bar.Field>
+          <PaddingFields padding={homogeneousSpec.padding} onSideChange={onPaddingSideChange} />
         </Bar.More>
       ) : null}
     </>
