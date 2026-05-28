@@ -236,6 +236,12 @@ agocraft 4-gate green (layout 182 test) + weave 4-gate green (212 test, typechec
 
 검증 (`layout-constraints-verify.spec.ts`): 1-col grid 에 2 아이템 → 3-col 로 증가 → 3 아이템 추가 → 5개 모두 distinct 셀 `(0,0)/(0,.5)/(.333,0)/(.667,0)/(.333,.5)` (충돌 0). 19 verify e2e + 212 unit + 4 gate green.
 
+### VERIFY — grid auto-place 3 시나리오 (2026-05-28)
+
+사용자 요청 3 시나리오 모두 확인 + 축소 케이스 수정. agocraft `1.0.0-rc.20260528093026` 채택 (track 축소 시 out-of-bounds 자식 재배치). weave 코드 변경 0 (e2e 만).
+
+검증 (`layout-constraints-verify.spec.ts`): ①증가→add: 2 아이템 → 3×3 → +3 = 5 distinct. ②축소→add: 3-col 3 아이템 → 2-col → +2, col3 자식 재배치되어 겹침 0. ③가득→이동→add: 2×2 채움 → (1,1) 아이템 root 로 이동 → add 가 빈 (1,1) **앞쪽 gap 부터** 채움. 22 verify e2e + 212 unit + 4 gate green.
+
 ## Links
 
 - Feature: [features/frame-layout-ux/](../../features/frame-layout-ux/) (예정)

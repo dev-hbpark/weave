@@ -374,6 +374,116 @@ test("reparent GESTURE (Cmd+Shift+drag) moves a shape into the inner frame", asy
   expect(after.policyKind).toBe("auto-grid");
 });
 
+/** Build an auto-grid spec with `cols`×`rows` equal fr tracks (stretch). */
+function gridSpec(cols: number, rows: number): Record<string, unknown> {
+  return {
+    kind: "auto-grid",
+    columns: Array.from({ length: cols }, () => ({ kind: "fr", value: 1 })),
+    rows: Array.from({ length: rows }, () => ({ kind: "fr", value: 1 })),
+    columnGap: 0,
+    rowGap: 0,
+    justify: "stretch",
+    align: "stretch",
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  };
+}
+
+/** Add `n` shapes into `containerId`; return their ids. */
+async function addShapes(
+  page: import("@playwright/test").Page,
+  containerId: string,
+  n: number,
+): Promise<string[]> {
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    out.push(
+      await addChild(page, {
+        kind: "shape",
+        containerId,
+        frame: { x: 0, y: 0, width: 0.1, height: 0.1, rotation: 0 },
+        attrsOverride: { shape: "rectangle" },
+      }),
+    );
+    await page.waitForTimeout(90);
+  }
+  return out;
+}
+
+/** Distinct top-left positions (rounded) for the given item ids. */
+async function cellKeys(
+  page: import("@playwright/test").Page,
+  ids: ReadonlyArray<string>,
+): Promise<string[]> {
+  const keys: string[] = [];
+  for (const id of ids) {
+    const f = await readItemFrame(page, id);
+    keys.push(`${Math.round(f!.x * 1000) / 1000},${Math.round(f!.y * 1000) / 1000}`);
+  }
+  return keys;
+}
+
+test("grid auto-place: items present → increase tracks → add fills new cells (no overlap)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Grid-Increase" });
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.06, y: 0.1, width: 0.8, height: 0.6, rotation: 0 },
+    attrsOverride: { layout: gridSpec(2, 2) },
+  });
+  await page.waitForTimeout(120);
+  const ids = await addShapes(page, fId, 2); // (1,1),(2,1)
+  await setFrameLayout(page, fId, gridSpec(3, 3)); // grow
+  await page.waitForTimeout(120);
+  ids.push(...(await addShapes(page, fId, 3))); // next free cells
+  const keys = await cellKeys(page, ids);
+  // eslint-disable-next-line no-console
+  console.log("[verify] grid increase:", JSON.stringify(keys));
+  expect(new Set(keys).size).toBe(keys.length); // all distinct
+});
+
+test("grid auto-place: items present → decrease tracks → add stays in-bounds, no overlap", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Grid-Decrease" });
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.06, y: 0.1, width: 0.8, height: 0.6, rotation: 0 },
+    attrsOverride: { layout: gridSpec(3, 2) },
+  });
+  await page.waitForTimeout(120);
+  const ids = await addShapes(page, fId, 3); // (1,1),(2,1),(3,1)
+  await setFrameLayout(page, fId, gridSpec(2, 3)); // shrink columns, grow rows
+  await page.waitForTimeout(120);
+  ids.push(...(await addShapes(page, fId, 2)));
+  const keys = await cellKeys(page, ids);
+  // eslint-disable-next-line no-console
+  console.log("[verify] grid decrease:", JSON.stringify(keys));
+  expect(new Set(keys).size).toBe(keys.length); // no two items share a cell
+});
+
+test("grid auto-place: fill all → move one OUT → add fills the front-most gap", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Grid-GapFill" });
+  const fId = await addChild(page, {
+    kind: "frame",
+    frame: { x: 0.06, y: 0.1, width: 0.8, height: 0.6, rotation: 0 },
+    attrsOverride: { layout: gridSpec(2, 2) },
+  });
+  await page.waitForTimeout(120);
+  const ids = await addShapes(page, fId, 4); // fills (1,1),(2,1),(1,2),(2,2)
+  // The item at (1,1) is ids[0]; record its cell, then move it OUT to root.
+  const movedKey = (await cellKeys(page, [ids[0]!]))[0]!;
+  const root = await rootId(page);
+  await reparent(page, ids[0]!, root);
+  await page.waitForTimeout(180);
+  // Add a new item — it must fill the now-empty FRONT-most cell (the gap).
+  const newId = (await addShapes(page, fId, 1))[0]!;
+  const newKey = (await cellKeys(page, [newId]))[0]!;
+  // eslint-disable-next-line no-console
+  console.log("[verify] grid gap-fill:", JSON.stringify({ movedKey, newKey }));
+  expect(newKey).toBe(movedKey); // new item reuses the vacated front-most cell
+});
+
 test("grid: after increasing columns, added items take distinct cells (no overlap)", async ({
   page,
 }) => {
