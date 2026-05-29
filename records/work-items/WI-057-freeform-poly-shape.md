@@ -65,19 +65,24 @@ green.
   vertex at that midpoint and the same gesture drags it (Figma-style).
 - **Vertex remove**: double-click a vertex handle removes it (floored at the
   min — 3 closed / 2 open).
-- **Rotation-aware**: handles read the item's `transform: rotate(θ)` off
-  `[data-frame-id]`, recover the un-rotated frame size from (AABB, θ), and place
-  handles + invert the drag in the true rotated basis. (Exact 45° → the
-  AABB→size solve is singular; falls back to AABB. Measure-zero.)
+- **Rotation-aware (exact at every angle, incl. 45°)**: handles read the item's
+  `transform: rotate(θ)` off `[data-frame-id]` and recover the un-rotated frame
+  size from the element's **transform-invariant aspect ratio**
+  (`offsetWidth/offsetHeight`) + one AABB equation —
+  `AABBw = H·(r·|cos| + |sin|)`, whose denominator is > 0 at all angles. This
+  replaced the earlier AABB-only 2×2 solve that was singular at 45°
+  (`cos 2θ = 0`). Handle placement and the drag inverse use the true rotated
+  basis.
 
 Verify: `shape-poly-vertex-edit.spec.ts` — drag (Cmd+Z reverts), midpoint add
-(3→4), double-click remove (4→3, floored at 3). All 12 shape e2e green.
+(3→4), double-click remove (4→3, floored at 3), and **rotation precision at 45°
+and 30°** (handle centers overlay the rendered SVG vertices — `getScreenCTM`
+ground truth — within 3px). All shape e2e green.
 
 ### Remaining (optional)
 
 - A dedicated vertex-edit *mode* (handles are currently always-on when a poly is
   selected, alongside the default resize/rotate chrome).
-- Exact-45° rotation precision.
 
 ## Workflow trail
 

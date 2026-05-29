@@ -86,8 +86,10 @@ test("WI-057 — dragging a vertex handle moves the vertex; Cmd+Z reverts", asyn
   const cy = box.y + box.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
+  await page.waitForTimeout(30); // let the pointerdown drag loop attach
   for (let i = 1; i <= 6; i++) {
     await page.mouse.move(cx + (60 * i) / 6, cy + (40 * i) / 6);
+    await page.waitForTimeout(10);
   }
   await page.mouse.up();
   await page.waitForTimeout(80);
@@ -152,3 +154,71 @@ test("WI-057 — double-click a vertex removes it, but not below min 3", async (
   await page.waitForTimeout(100);
   expect(await countPoints(page, id)).toBe(3);
 });
+
+// WI-057 Phase 2.1 — rotation precision, incl. the exact-45° case where the
+// AABB→size solve is singular. The handle must overlay the SVG vertex's TRUE
+// screen position (computed via getScreenCTM, which includes the rotation).
+async function rotate(page: Page, itemId: string, rad: number): Promise<void> {
+  await page.evaluate(
+    ({ id, r }) => {
+      const w = window as unknown as {
+        __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+      };
+      w.__weaveEditor?.exec("weave.item.update", {
+        itemId: id,
+        attrs: { frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: r } },
+      });
+    },
+    { id: itemId, r: rad },
+  );
+  await page.waitForTimeout(120);
+}
+
+/** True screen position of poly vertex `i` from the rendered <polygon>. */
+async function svgVertexScreen(
+  page: Page,
+  itemId: string,
+  i: number,
+): Promise<{ x: number; y: number } | null> {
+  return page.evaluate(
+    ({ id, idx }) => {
+      const frame = document.querySelector(`[data-frame-id="${id}"]`);
+      const poly = frame?.querySelector("svg polygon") as SVGPolygonElement | null;
+      const svg = poly?.ownerSVGElement;
+      const ctm = poly?.getScreenCTM();
+      const raw = poly?.getAttribute("points");
+      if (!poly || !svg || !ctm || !raw) return null;
+      const tok = raw.trim().split(/\s+/)[idx];
+      if (tok === undefined) return null;
+      const [vx, vy] = tok.split(",").map(Number);
+      if (vx === undefined || vy === undefined) return null;
+      const p = svg.createSVGPoint();
+      p.x = vx;
+      p.y = vy;
+      const sp = p.matrixTransform(ctm);
+      return { x: sp.x, y: sp.y };
+    },
+    { id: itemId, idx: i },
+  );
+}
+
+for (const deg of [45, 30]) {
+  test(`WI-057 — vertex handles overlay the true vertex at ${deg}° rotation`, async ({ page }) => {
+    await prepareDesign(page, { flavor: "mixed", title: `WI-057-rot-${deg}` });
+    const id = await addPoly(page);
+    await rotate(page, id, (deg * Math.PI) / 180);
+    await setSelection(page, [id]);
+    await expect(page.getByTestId("poly-vertex-0")).toBeVisible();
+
+    for (let i = 0; i < 3; i++) {
+      const truth = await svgVertexScreen(page, id, i);
+      const box = await page.getByTestId(`poly-vertex-${i}`).boundingBox();
+      if (truth === null || box === null) throw new Error(`no geometry for vertex ${i}`);
+      const hx = box.x + box.width / 2;
+      const hy = box.y + box.height / 2;
+      // Handle center must sit on the rendered vertex (≤ 3px tolerance).
+      expect(Math.abs(hx - truth.x), `vertex ${i} x @${deg}°`).toBeLessThan(3);
+      expect(Math.abs(hy - truth.y), `vertex ${i} y @${deg}°`).toBeLessThan(3);
+    }
+  });
+}

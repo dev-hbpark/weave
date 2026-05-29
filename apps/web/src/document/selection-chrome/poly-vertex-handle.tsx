@@ -9,9 +9,10 @@
 // Rotation-aware (2.1): the poly's frame may carry `transform: rotate(θ)`. The
 // `freeform` selection anchor only gives the axis-aligned bounds (AABB), so we
 // read θ off the `[data-frame-id]` element and recover the un-rotated frame
-// size from (AABB, θ); handle placement and the drag inverse then use the true
-// rotated basis. (At an exact 45° rotation the AABB→size solve is singular and
-// we fall back to AABB — a measure-zero case.)
+// size from the element's transform-invariant aspect ratio (offsetWidth/Height)
+// + one AABB equation; handle placement and the drag inverse then use the true
+// rotated basis. This is exact at EVERY angle including 45° (the older AABB-only
+// W,H solve was singular there — cos 2θ = 0 — and fell back to wrong positions).
 
 import type { Editor, ItemSelectionViewModel, SelectionBounds } from "@agocraft/editor";
 
@@ -45,10 +46,7 @@ interface FrameGeom {
   readonly theta: number;
 }
 
-function readRotation(itemId: string): number {
-  if (typeof document === "undefined") return 0;
-  const el = document.querySelector(`[data-frame-id="${CSS.escape(itemId)}"]`);
-  if (el === null) return 0;
+function rotationOf(el: Element): number {
   const t = getComputedStyle(el).transform;
   if (!t || t === "none") return 0;
   const m = t.match(/matrix\(([^)]+)\)/);
@@ -63,18 +61,26 @@ function readRotation(itemId: string): number {
 function frameGeom(itemId: string, bounds: SelectionBounds): FrameGeom {
   const cx = bounds.left + bounds.width / 2;
   const cy = bounds.top + bounds.height / 2;
-  const theta = readRotation(itemId);
-  const c = Math.abs(Math.cos(theta));
-  const s = Math.abs(Math.sin(theta));
-  const det = c * c - s * s; // cos(2θ)
+  const el =
+    typeof document === "undefined"
+      ? null
+      : document.querySelector(`[data-frame-id="${CSS.escape(itemId)}"]`);
+  if (el === null) return { cx, cy, w: bounds.width, h: bounds.height, theta: 0 };
+
+  const theta = rotationOf(el);
+  // Recover the UN-rotated frame size (screen px) from the element's
+  // transform-invariant aspect ratio (offsetWidth/offsetHeight) + one AABB
+  // equation. AABBw = W·|cos| + H·|sin| = H·(r·|cos| + |sin|) where r = W/H.
+  // The denominator `r·|cos| + |sin|` is > 0 at EVERY angle, so this is exact
+  // even at 45° (where solving W,H from the AABB alone is singular: cos 2θ = 0).
   let w = bounds.width;
   let h = bounds.height;
-  if (Math.abs(det) > 1e-3) {
-    const solvedW = (bounds.width * c - bounds.height * s) / det;
-    const solvedH = (bounds.height * c - bounds.width * s) / det;
-    if (solvedW > 0 && solvedH > 0) {
-      w = solvedW;
-      h = solvedH;
+  if (el instanceof HTMLElement && el.offsetWidth > 0 && el.offsetHeight > 0) {
+    const r = el.offsetWidth / el.offsetHeight;
+    const denom = r * Math.abs(Math.cos(theta)) + Math.abs(Math.sin(theta));
+    if (denom > 1e-6) {
+      h = bounds.width / denom;
+      w = r * h;
     }
   }
   return { cx, cy, w, h, theta };
