@@ -37,6 +37,7 @@ import {
   updateAll,
   useResolveSharedColor,
 } from "../multi-edit.js";
+import { ShadowControls } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 // Shape sub-kind options — 8 kinds with design-system icons (icons-only
@@ -369,6 +370,10 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
             <MixedBadge visible={isMixed(cornerRadii)} />
           </Bar.Field>
         )}
+        {/* DR-028 — shadow is a decoration UNIT, edited via weave.item.setDecoration. */}
+        <Bar.Field label="Shadow">
+          <ShadowControls editor={editor} ids={ids} />
+        </Bar.Field>
       </Bar.More>
     </>
   );
