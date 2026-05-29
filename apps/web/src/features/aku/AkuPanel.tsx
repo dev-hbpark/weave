@@ -1,13 +1,14 @@
-// Aku panel shell (WI-052) — reuses the design-system `Panel` (floating), but
-// host-positioned + resizable: the wrapper is absolutely placed from the
-// persisted geometry, the header title cluster is the drag handle, and a
-// bottom-right grabber resizes. Header = 아쿠 title (drag) + close; Body =
-// transcript; Footer = composer.
+// Aku panel shell (WI-052 → WI-053) — reuses the design-system `Panel`
+// (floating), but host-positioned + resizable: the wrapper is absolutely placed
+// from the persisted geometry, the header title cluster is the drag handle, and
+// a bottom-right grabber resizes. Header = 아쿠 title (drag) + 새 대화 + close;
+// Body = transcript; Footer = composer.
 
-import { IconButton, IconClose, IconSparkle, Panel } from "@weave/design-system";
+import { IconButton, IconClose, IconPlus, IconSparkle, Panel } from "@weave/design-system";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { AkuComposer } from "./AkuComposer.js";
+import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { MessageList } from "./MessageList.js";
+import type { AkuHistoryController } from "./tools/types.js";
 import type { AkuImage, AkuMessage } from "./transport/types.js";
 import type { AkuStatus } from "./useAkuConversation.js";
 import type { AkuGeometry } from "./useAkuGeometry.js";
@@ -21,6 +22,12 @@ export function AkuPanel({
   onSend,
   onStop,
   onClose,
+  onRegenerate,
+  onRetry,
+  onEditMessage,
+  onClear,
+  undo,
+  seed,
 }: {
   readonly geometry: AkuGeometry;
   readonly onMoveStart: (e: ReactPointerEvent) => void;
@@ -30,6 +37,12 @@ export function AkuPanel({
   readonly onSend: (text: string, images: ReadonlyArray<AkuImage>) => void;
   readonly onStop: () => void;
   readonly onClose: () => void;
+  readonly onRegenerate: () => void;
+  readonly onRetry: () => void;
+  readonly onEditMessage: (index: number) => void;
+  readonly onClear: () => void;
+  readonly undo: AkuHistoryController | undefined;
+  readonly seed: AkuComposerSeed | null;
 }): JSX.Element {
   return (
     <div
@@ -39,7 +52,7 @@ export function AkuPanel({
     >
       <Panel position="floating" width="md" className="w-full h-full" aria-label="아쿠 대화">
         <Panel.Header className="flex items-center justify-between gap-2">
-          {/* drag handle — the title cluster (close button stays clickable) */}
+          {/* drag handle — the title cluster (action buttons stay clickable) */}
           <div
             className="flex flex-1 items-center gap-2 cursor-move touch-none select-none"
             onPointerDown={onMoveStart}
@@ -50,15 +63,37 @@ export function AkuPanel({
             </span>
             <Panel.Title>아쿠</Panel.Title>
           </div>
+          <IconButton
+            aria-label="새 대화"
+            variant="ghost"
+            size="sm"
+            onClick={onClear}
+            data-testid="aku-new-conversation"
+            disabled={messages.length === 0}
+          >
+            <IconPlus size={16} />
+          </IconButton>
           <IconButton aria-label="아쿠 닫기" variant="ghost" size="sm" onClick={onClose}>
             <IconClose size={16} />
           </IconButton>
         </Panel.Header>
         <Panel.Body>
-          <MessageList messages={messages} streaming={status === "streaming"} />
+          <MessageList
+            messages={messages}
+            streaming={status === "streaming"}
+            onRegenerate={onRegenerate}
+            onRetry={onRetry}
+            onEdit={onEditMessage}
+            undo={undo}
+          />
         </Panel.Body>
         <Panel.Footer>
-          <AkuComposer onSend={onSend} onStop={onStop} streaming={status === "streaming"} />
+          <AkuComposer
+            onSend={onSend}
+            onStop={onStop}
+            streaming={status === "streaming"}
+            seed={seed}
+          />
         </Panel.Footer>
       </Panel>
       {/* resize grabber — bottom-right corner */}

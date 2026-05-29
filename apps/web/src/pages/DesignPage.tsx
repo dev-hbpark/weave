@@ -2964,7 +2964,11 @@ function DesignPageBody() {
                           expandable chat panel. Mounted inside the providers so
                           its design-aware tools read live selection + edit via
                           editor.exec; self-portals to <body>. */}
-                          <AkuAssistant editor={editor} document={docInAgocraft} />
+                          <AkuAssistant
+                            editor={editor}
+                            document={docInAgocraft}
+                            designId={designId}
+                          />
                           <CursorTooltipBridge
                             hover={hoverContext}
                             selectedIds={selectedIds}

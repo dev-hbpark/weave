@@ -427,6 +427,24 @@ export const IconRefresh = forwardRef<SVGSVGElement, IconProps>(function IconRef
   );
 });
 
+export const IconCopy = forwardRef<SVGSVGElement, IconProps>(function IconCopy(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </SvgRoot>
+  );
+});
+
+export const IconPencil = forwardRef<SVGSVGElement, IconProps>(function IconPencil(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </SvgRoot>
+  );
+});
+
 export const IconVolume = forwardRef<SVGSVGElement, IconProps>(function IconVolume(props, ref) {
   return (
     <SvgRoot ref={ref} {...props}>

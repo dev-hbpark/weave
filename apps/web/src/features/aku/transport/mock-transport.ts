@@ -6,7 +6,13 @@
 // DEV/personal only: there is no LLM here. Intent matching is deliberately
 // shallow (keyword heuristics) — just enough to demonstrate read + edit.
 
-import type { AkuEvent, AkuRequest, AkuToolCall, AkuTransport } from "./types.js";
+import {
+  type AkuEvent,
+  type AkuRequest,
+  type AkuToolCall,
+  type AkuTransport,
+  latestUserText,
+} from "./types.js";
 
 const STREAM_DELAY_MS = 26;
 
@@ -86,7 +92,7 @@ function script(prompt: string): { readonly reply: string; readonly call?: AkuTo
 export function createMockAkuTransport(): AkuTransport {
   return {
     async *send(req: AkuRequest, signal: AbortSignal): AsyncIterable<AkuEvent> {
-      const { reply, call } = script(req.prompt);
+      const { reply, call } = script(latestUserText(req.turns));
       for (const tok of chunk(reply)) {
         if (signal.aborted) return;
         await delay(STREAM_DELAY_MS);
@@ -96,7 +102,10 @@ export function createMockAkuTransport(): AkuTransport {
       if (call !== undefined && !signal.aborted) {
         yield { type: "tool-call", call };
       }
-      yield { type: "done" };
+      // The mock applies its (single) edit within one turn — it never bounces,
+      // so `end_turn` even when a tool-call was emitted. The real Claude
+      // transport drives `tool_use` continuations.
+      yield { type: "done", reason: "end_turn" };
     },
   };
 }

@@ -16,6 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useSelection } from "../../document/interactions/selection-context.js";
+import type { AkuComposerSeed } from "./AkuComposer.js";
 import { AkuLauncher } from "./AkuLauncher.js";
 import { AkuPanel } from "./AkuPanel.js";
 import { createAkuTools } from "./tools/aku-tools.js";
@@ -26,9 +27,11 @@ import { useAkuGeometry } from "./useAkuGeometry.js";
 export function AkuAssistant({
   editor,
   document: agoDocument,
+  designId,
 }: {
   readonly editor: Editor;
   readonly document: AgocraftDocument;
+  readonly designId: string;
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   // Delay the first-run coachmark until the page has settled — mounting it
@@ -39,14 +42,16 @@ export function AkuAssistant({
     const t = setTimeout(() => setHintReady(true), 800);
     return () => clearTimeout(t);
   }, []);
-  const { selectedIds } = useSelection();
+  const { selectedIds, selectFrames } = useSelection();
 
-  // Refs so the memoized toolset always reads the LATEST doc + selection
-  // without rebuilding the executors map on every edit.
+  // Refs so the memoized toolset always reads the LATEST doc + selection and
+  // calls the latest selection setter without rebuilding the executors map.
   const docRef = useRef(agoDocument);
   docRef.current = agoDocument;
   const selRef = useRef(selectedIds);
   selRef.current = selectedIds;
+  const selectFramesRef = useRef(selectFrames);
+  selectFramesRef.current = selectFrames;
 
   const toolset = useMemo(
     () =>
@@ -54,12 +59,25 @@ export function AkuAssistant({
         editor,
         getDocument: () => docRef.current,
         getSelection: () => [...selRef.current],
+        selectItems: (ids) => selectFramesRef.current(ids),
       }),
     [editor],
   );
   const transport = useMemo(() => createMockAkuTransport(), []);
-  const { messages, status, send, stop } = useAkuConversation({ transport, toolset });
+  const { messages, status, send, stop, regenerate, editFrom, retry, clear, history } =
+    useAkuConversation({ transport, toolset, designId });
   const { geometry, beginMove, beginResize } = useAkuGeometry();
+
+  // editFrom loads a past user turn back into the composer (seed); the nonce
+  // forces a reload even when the same text is edited twice.
+  const [seed, setSeed] = useState<AkuComposerSeed | null>(null);
+  const seedNonce = useRef(0);
+  const onEditMessage = (index: number): void => {
+    const draft = editFrom(index);
+    if (draft === null) return;
+    seedNonce.current += 1;
+    setSeed({ text: draft.text, images: draft.images, nonce: seedNonce.current });
+  };
 
   // The collapsed launcher sits at the persisted position and is itself
   // draggable (tap-vs-drag): a tap opens the panel, a drag relocates it.
@@ -81,6 +99,12 @@ export function AkuAssistant({
         onSend={send}
         onStop={stop}
         onClose={() => setOpen(false)}
+        onRegenerate={regenerate}
+        onRetry={retry}
+        onEditMessage={onEditMessage}
+        onClear={clear}
+        undo={history}
+        seed={seed}
       />
     ) : hintReady ? (
       // First-run nudge to drive discovery — one-shot, anchored to the launcher

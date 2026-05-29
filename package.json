@@ -24,8 +24,8 @@
     "verify:no-e2e": "pnpm lint && pnpm declarativecheck && pnpm puritycheck && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0",
-    "typescript": "^5.6.0"
+    "@biomejs/biome": "^2.4.16",
+    "typescript": "^5.9.3"
   },
   "pnpm": {
     "overrides": {
@@ -46,7 +46,9 @@
       "@agocraft/renderer-mock": "file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260528101821.tgz",
       "@agocraft/spatial": "file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260529085540.tgz",
       "@agocraft/sync": "file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260529121812.tgz",
-      "@agocraft/testing": "file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260528101821.tgz"
+      "@agocraft/testing": "file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260528101821.tgz",
+      "@agocraft/agent-client": "file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz",
+      "@small-think/client": "file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz"
     }
   }
 }
