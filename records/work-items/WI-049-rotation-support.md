@@ -27,15 +27,27 @@ by the user and addressed incrementally this session.
 4. **Persistent flex/grid layout fits a rotated child's AABB into its cell**
    (agocraft `@agocraft/layout` `adapters/aabb-fit.ts`, vendored into weave as
    `@agocraft/layout@1.0.0-rc.20260529075300`).
-5. **Multi-select "arrange into grid/flex" places rotated + unrotated items as
-   equal squares (in PIXELS), idempotent.** `layout-arrange.ts` rewritten to
-   compute uniform square cells in pixel space (rotation is isotropic in pixels,
-   not the non-square 0..1 ratio space). Preview overlay matched.
+5. **Multi-select "arrange into grid/flex" PRESERVES the rubber-band — the
+   arranged union equals the selection band exactly (no grow, no collapse),
+   idempotent.** `layout-arrange.ts`: the band (the selection's current
+   outer-bounds union, in pixels) is divided into `cols × rows` equal
+   RECTANGULAR cells (`cellW = bandW/cols`, `cellH = bandH/rows`); each item's
+   outer bounds (AABB) fill its cell. Equal cells → equal footprints ("반반씩").
+   A rotated item solves the 2×2 AABB system for the raw box that fills the
+   cell; an exact-45° item in a non-square cell (unfillable — its AABB is
+   always square) falls back to the largest inscribed square. Preview overlay
+   shares the same function.
+   - Evolution this session (user images 2026-05-29): cell = *largest
+     footprint* GREW past the band → cell = `min(bandW/cols, bandH/rows)` SQUARE
+     fit inside but COLLAPSED a wide flex row to a center strip → final =
+     fill-the-band rectangular cells. The lesson: "유지(maintain) the band" means
+     fill it exactly, not shrink-to-fit-square.
 
-Verification: 224 weave unit tests, 7 rotation e2e specs
+Verification: 230 weave unit tests, rotation e2e specs
 (`rotation-pivot-reparent`, `rotation-hover-marquee-align`,
-`rotation-layout-aabb`, `rotation-arrange-grid`), 222 agocraft layout tests,
-tsc clean, declarative + purity gates green.
+`rotation-layout-aabb`, `rotation-arrange-grid` — now 2 tests: grid
+band-preserve/equal-halves/idempotent + flex no-collapse), 222 agocraft layout
+tests, tsc clean, declarative + purity gates green.
 
 ## Deferred — BACKLOG (further fixes the user flagged + known limitations)
 
@@ -44,13 +56,16 @@ tsc clean, declarative + purity gates green.
       when provided.
 - [ ] **Persistent layout vs arrange inconsistency.** The persistent flex/grid
       layout uses *fit-within* (aspect-preserve into the track-proportional
-      cell), whereas multi-select arrange uses *square-cell fill*. A rotated
-      child therefore looks different depending on which path placed it.
-      Decide whether to unify (likely: persistent layout should also reason in
-      pixel space / fill).
-- [ ] **Non-45° rotated items in arrange.** Square-cell fill forces a rotated
-      item's raw box to a square (distorts a non-square item). Only 45° + square
-      items fill exactly. Consider per-item aspect handling.
+      cell), whereas multi-select arrange now *fills* each band cell exactly. A
+      rotated child therefore looks different depending on which path placed it.
+      Decide whether to unify (likely: persistent layout should also fill in
+      pixel space).
+- [ ] **Exact-45° item in a non-square arrange cell.** A 45° item's AABB is
+      always square, so it cannot fill a non-square cell — it falls back to the
+      largest inscribed square (leaves slack on the long axis, and that single
+      item is then non-idempotent: its smaller AABB shrinks the band on a
+      re-press). Non-45° rotations fill exactly via the 2×2 solve. Only matters
+      when a cell is non-square AND an item sits at ~45°.
 - [ ] **Arrange preview ghost** draws the AABB box but not the rotated outline
       (cosmetic mismatch with the applied rotated item).
 - [ ] **Reparent design-dims coverage.** `computeReparentFrameRatio` needs the

@@ -1,16 +1,41 @@
-// WI-048 — computeArrangedFrames pure-function tests. Arrange places items
-// into uniform SQUARE cells (sized to the largest footprint) so every item
-// fills an equal cell, rotated and unrotated alike, and repeated arranges are
-// idempotent.
+// WI-048 — computeArrangedFrames pure-function tests. Arrange divides the
+// items' rubber-band (their current outer-bounds union) into cols × rows equal
+// RECTANGULAR cells and resizes each item so its outer bounds fill its cell.
+// The band is preserved exactly: the arranged union equals the band — it never
+// grows past it nor collapses to a strip inside it. Equal cells give equal
+// footprints; a rotated item solves for the raw box whose AABB fills the cell.
 
 import { describe, expect, it } from "vitest";
 import { type ArrangeInput, computeArrangedFrames } from "./layout-arrange.js";
 
-function aabb(f: { width: number; height: number; rotation?: number }) {
+type F = { x: number; y: number; width: number; height: number; rotation?: number };
+
+/** Pixel-space AABB of a frame on a W×H design. */
+function aabb(f: F, W = 1, H = 1) {
   const r = f.rotation ?? 0;
   const c = Math.abs(Math.cos(r));
   const s = Math.abs(Math.sin(r));
-  return { w: f.width * c + f.height * s, h: f.width * s + f.height * c };
+  const wp = f.width * W;
+  const hp = f.height * H;
+  return { w: wp * c + hp * s, h: wp * s + hp * c };
+}
+
+/** Pixel-space union of the items' outer bounds — the rubber-band. */
+function bandOf(frames: F[], W = 1, H = 1) {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const f of frames) {
+    const a = aabb(f, W, H);
+    const cx = (f.x + f.width / 2) * W;
+    const cy = (f.y + f.height / 2) * H;
+    minX = Math.min(minX, cx - a.w / 2);
+    minY = Math.min(minY, cy - a.h / 2);
+    maxX = Math.max(maxX, cx + a.w / 2);
+    maxY = Math.max(maxY, cy + a.h / 2);
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
 describe("computeArrangedFrames", () => {
@@ -19,49 +44,54 @@ describe("computeArrangedFrames", () => {
     expect(computeArrangedFrames(items, "flex")).toEqual(items);
   });
 
-  it("grid: every item fills an equal SQUARE cell sized to the largest footprint", () => {
+  it("grid: tiles the band with equal rectangular cells (union == band)", () => {
     const items: ArrangeInput[] = [
       { id: "a", frame: { x: 0.1, y: 0.1, width: 0.1, height: 0.1 } },
-      { id: "b", frame: { x: 0.5, y: 0.1, width: 0.2, height: 0.2 } }, // largest footprint 0.2
+      { id: "b", frame: { x: 0.5, y: 0.1, width: 0.2, height: 0.2 } },
       { id: "c", frame: { x: 0.1, y: 0.5, width: 0.1, height: 0.1 } },
       { id: "d", frame: { x: 0.5, y: 0.5, width: 0.1, height: 0.1 } },
     ];
+    const band0 = bandOf(items.map((it) => it.frame));
     const out = computeArrangedFrames(items, "grid");
-    expect(out).toHaveLength(4);
-    // cellSize = max footprint dim = 0.2 → every cell is a 0.2 square.
+    // Band: x 0.1..0.7 (w 0.6), y 0.1..0.6 (h 0.5). 2×2 → cell 0.3 × 0.25.
     for (const o of out) {
-      expect(o.frame.width).toBeCloseTo(0.2, 6);
-      expect(o.frame.height).toBeCloseTo(0.2, 6);
+      expect(o.frame.width).toBeCloseTo(0.3, 6);
+      expect(o.frame.height).toBeCloseTo(0.25, 6);
     }
-    const round = (v: number) => Math.round(v * 1e6) / 1e6;
-    expect(new Set(out.map((o) => round(o.frame.x))).size).toBe(2); // 2 columns
-    expect(new Set(out.map((o) => round(o.frame.y))).size).toBe(2); // 2 rows
+    // The arranged union exactly fills the original band — no grow, no collapse.
+    const band1 = bandOf(out.map((o) => o.frame));
+    expect(band1.x).toBeCloseTo(band0.x, 6);
+    expect(band1.y).toBeCloseTo(band0.y, 6);
+    expect(band1.w).toBeCloseTo(band0.w, 6);
+    expect(band1.h).toBeCloseTo(band0.h, 6);
   });
 
-  it("grid: a rotated item's OUTER bound equals the unrotated item's box (equal halves)", () => {
+  it("grid: a rotated item's outer bound equals the unrotated item's (equal halves, fills band)", () => {
     const items: ArrangeInput[] = [
       { id: "flat", frame: { x: 0.3, y: 0.4, width: 0.2, height: 0.2, rotation: 0 } },
-      { id: "tilt", frame: { x: 0.6, y: 0.4, width: 0.2, height: 0.2, rotation: Math.PI / 4 } },
+      { id: "tilt", frame: { x: 0.6, y: 0.4, width: 0.2, height: 0.2, rotation: Math.PI / 6 } },
     ];
+    const band0 = bandOf(items.map((it) => it.frame));
     const out = computeArrangedFrames(items, "grid");
     const flat = out.find((o) => o.id === "flat")!.frame;
     const tilt = out.find((o) => o.id === "tilt")!.frame;
-    // The rotated item keeps its rotation and its AABB equals the unrotated box.
-    expect(tilt.rotation).toBeCloseTo(Math.PI / 4, 6);
-    const flatAabb = aabb(flat);
-    const tiltAabb = aabb(tilt);
-    expect(tiltAabb.w).toBeCloseTo(flatAabb.w, 6);
-    expect(tiltAabb.h).toBeCloseTo(flatAabb.h, 6);
-    expect(flatAabb.w).toBeCloseTo(flatAabb.h, 6); // square cell
-    // The 45° item's raw box is its AABB / √2 (it does NOT grow; the flat one
-    // grew to the shared cell size instead).
-    expect(tilt.width).toBeCloseTo(tiltAabb.w / Math.SQRT2, 6);
+    // Rotation preserved; the rotated item's AABB equals the unrotated box —
+    // both fill an equal half of the band.
+    expect(tilt.rotation).toBeCloseTo(Math.PI / 6, 6);
+    const fa = aabb(flat);
+    const ta = aabb(tilt);
+    expect(ta.w).toBeCloseTo(fa.w, 6);
+    expect(ta.h).toBeCloseTo(fa.h, 6);
+    // Union still equals the band.
+    const band1 = bandOf(out.map((o) => o.frame));
+    expect(band1.w).toBeCloseTo(band0.w, 6);
+    expect(band1.h).toBeCloseTo(band0.h, 6);
   });
 
   it("grid: repeated arrange is idempotent (no progressive growth/shrink)", () => {
     const items: ArrangeInput[] = [
       { id: "a", frame: { x: 0.3, y: 0.4, width: 0.2, height: 0.2, rotation: 0 } },
-      { id: "b", frame: { x: 0.6, y: 0.4, width: 0.2, height: 0.2, rotation: Math.PI / 4 } },
+      { id: "b", frame: { x: 0.6, y: 0.4, width: 0.2, height: 0.2, rotation: Math.PI / 6 } },
     ];
     const p1 = computeArrangedFrames(items, "grid");
     const p2 = computeArrangedFrames(p1, "grid");
@@ -78,34 +108,46 @@ describe("computeArrangedFrames", () => {
     }
   });
 
-  it("grid: cells are square IN PIXELS on a non-square (16:9) design", () => {
-    // 0.2×0.2 ratio on a 1920×1080 design is a 384×216 px rectangle — NOT a
-    // square. The arranged outer bounds must be square in PIXELS (what the
-    // user sees), and the rotated item's pixel AABB must equal the unrotated
-    // item's pixel box.
+  it("flex: many items fill the band height — no collapse to a center strip", () => {
+    // The bug: a wide flex row of small items shrank to tiny squares in a thin
+    // center strip. Each item must now fill the full band height (cellH = bandH).
+    const items: ArrangeInput[] = [
+      { id: "a", frame: { x: 0.1, y: 0.2, width: 0.1, height: 0.1 } },
+      { id: "b", frame: { x: 0.3, y: 0.5, width: 0.1, height: 0.1 } },
+      { id: "c", frame: { x: 0.5, y: 0.1, width: 0.1, height: 0.1 } },
+      { id: "d", frame: { x: 0.7, y: 0.6, width: 0.1, height: 0.1 } },
+      { id: "e", frame: { x: 0.85, y: 0.3, width: 0.1, height: 0.1 } },
+    ];
+    const band0 = bandOf(items.map((it) => it.frame)); // w 0.85, h 0.6
+    const out = computeArrangedFrames(items, "flex");
+    for (const o of out) {
+      expect(o.frame.height).toBeCloseTo(band0.h, 6); // fills band height
+      expect(o.frame.width).toBeCloseTo(band0.w / 5, 6); // one of 5 columns
+    }
+    const band1 = bandOf(out.map((o) => o.frame));
+    expect(band1.w).toBeCloseTo(band0.w, 6);
+    expect(band1.h).toBeCloseTo(band0.h, 6); // NOT collapsed
+  });
+
+  it("fills the band in PIXELS on a non-square (16:9) design", () => {
     const W = 1920;
     const H = 1080;
     const items: ArrangeInput[] = [
       { id: "flat", frame: { x: 0.3, y: 0.4, width: 0.2, height: 0.2, rotation: 0 } },
-      { id: "tilt", frame: { x: 0.6, y: 0.4, width: 0.2, height: 0.2, rotation: Math.PI / 4 } },
+      { id: "tilt", frame: { x: 0.6, y: 0.4, width: 0.2, height: 0.2, rotation: Math.PI / 6 } },
     ];
+    const band0 = bandOf(items.map((it) => it.frame), W, H);
     const out = computeArrangedFrames(items, "grid", W, H);
-    const pxAabb = (f: { width: number; height: number; rotation?: number }) => {
-      const r = f.rotation ?? 0;
-      const c = Math.abs(Math.cos(r));
-      const s = Math.abs(Math.sin(r));
-      const wp = f.width * W;
-      const hp = f.height * H;
-      return { w: wp * c + hp * s, h: wp * s + hp * c };
-    };
-    const flat = pxAabb(out.find((o) => o.id === "flat")!.frame);
-    const tilt = pxAabb(out.find((o) => o.id === "tilt")!.frame);
-    expect(flat.w).toBeCloseTo(flat.h, 6); // square in pixels
-    expect(tilt.w).toBeCloseTo(tilt.h, 6); // square in pixels
-    expect(tilt.w).toBeCloseTo(flat.w, 6); // equal halves (same pixel square)
+    const flat = aabb(out.find((o) => o.id === "flat")!.frame, W, H);
+    const tilt = aabb(out.find((o) => o.id === "tilt")!.frame, W, H);
+    expect(tilt.w).toBeCloseTo(flat.w, 4); // equal halves in pixels
+    expect(tilt.h).toBeCloseTo(flat.h, 4);
+    const band1 = bandOf(out.map((o) => o.frame), W, H);
+    expect(band1.w).toBeCloseTo(band0.w, 3);
+    expect(band1.h).toBeCloseTo(band0.h, 3);
   });
 
-  it("flex: arranges into a single row of equal cells (same y, increasing x)", () => {
+  it("flex: arranges into a single row of cells (same y, increasing x)", () => {
     const items: ArrangeInput[] = [
       { id: "a", frame: { x: 0.1, y: 0.5, width: 0.15, height: 0.1 } },
       { id: "b", frame: { x: 0.6, y: 0.2, width: 0.15, height: 0.2 } },

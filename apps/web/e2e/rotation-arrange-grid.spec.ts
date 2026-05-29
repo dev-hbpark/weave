@@ -1,8 +1,9 @@
-// Arrange-into-grid with a rotated item (user spec 2026-05-29):
-//   • the rotated item's outer bounds (AABB) and the unrotated item's box
-//     must each occupy an EQUAL half (same square),
-//   • pressing the arrange button repeatedly must be IDEMPOTENT (no
-//     progressive shrink/grow).
+// Arrange (grid + flex) preserves the rubber-band (user spec 2026-05-29):
+//   • the arranged union EQUALS the selection band — items neither grow past it
+//     nor collapse into a strip inside it (the band is divided into equal cells
+//     and each item's outer bounds FILL its cell),
+//   • a rotated item's outer bounds (AABB) equal the unrotated item's (equal
+//     halves), and pressing arrange repeatedly is IDEMPOTENT (no drift).
 // Driven through the real toolbar → multiLayoutArranger → resizeMulti wire.
 
 import { expect, test } from "@playwright/test";
@@ -59,6 +60,24 @@ function aabb(f: Frame) {
   return { w: wp * c + hp * s, h: wp * s + hp * c };
 }
 
+/** Pixel-space union of the items' outer bounds (AABB) — the "rubber-band". */
+function bandOf(frames: Frame[]) {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const f of frames) {
+    const a = aabb(f);
+    const cx = (f.x + f.width / 2) * DW;
+    const cy = (f.y + f.height / 2) * DH;
+    minX = Math.min(minX, cx - a.w / 2);
+    minY = Math.min(minY, cy - a.h / 2);
+    maxX = Math.max(maxX, cx + a.w / 2);
+    maxY = Math.max(maxY, cy + a.h / 2);
+  }
+  return { w: maxX - minX, h: maxY - minY };
+}
+
 async function setRotation(page: import("@playwright/test").Page, id: string, rotation: number) {
   await page.evaluate(
     ({ id, rotation }) => {
@@ -86,7 +105,7 @@ async function selectBoth(page: import("@playwright/test").Page, ids: string[]) 
   }, ids);
 }
 
-test("repeated grid arrange of a rotated + unrotated pair is idempotent and equal-halved", async ({
+test("grid arrange of a rotated + unrotated pair preserves the band, equal-halved, idempotent", async ({
   page,
 }) => {
   await prepareDesign(page, { flavor: "mixed" });
@@ -96,10 +115,15 @@ test("repeated grid arrange of a rotated + unrotated pair is idempotent and equa
   const afterA = await rootChildIds(page);
   await addFrame(page, "slide", { frame: { x: 0.6, y: 0.4, width: 0.18, height: 0.18, rotation: 0 } });
   const tilt = (await rootChildIds(page)).find((x) => !afterA.includes(x))!;
-  await setRotation(page, tilt, Math.PI / 4);
+  // 30° (not 45°): a 45° item's AABB is always square and cannot fill a
+  // non-square cell, so it would fall back to an inscribed square. 30° fills.
+  await setRotation(page, tilt, Math.PI / 6);
 
   await selectBoth(page, [flat, tilt]);
   await page.waitForTimeout(60);
+
+  // The rubber-band BEFORE arrange — the result must fill exactly this.
+  const band0 = bandOf([(await readFrame(page, flat))!, (await readFrame(page, tilt))!]);
 
   // The toolbar exposes "Arrange as Grid" (그리드로 정렬) as a command button.
   const gridBtn = page.getByRole("button", { name: /Arrange as Grid|그리드로 정렬/ });
@@ -111,11 +135,17 @@ test("repeated grid arrange of a rotated + unrotated pair is idempotent and equa
   const tilt1 = (await readFrame(page, tilt))!;
 
   // Equal halves: the rotated item's AABB equals the unrotated item's box.
-  expect(tilt1.rotation ?? 0).toBeCloseTo(Math.PI / 4, 3);
+  expect(tilt1.rotation ?? 0).toBeCloseTo(Math.PI / 6, 3);
   const fa = aabb(flat1);
   const ta = aabb(tilt1);
-  expect(ta.w).toBeCloseTo(fa.w, 3);
-  expect(ta.h).toBeCloseTo(fa.h, 3);
+  expect(ta.w).toBeCloseTo(fa.w, 1);
+  expect(ta.h).toBeCloseTo(fa.h, 1);
+
+  // PRESERVE the rubber-band: the arranged union equals the band it started in
+  // — not bigger (the "grows on every press" bug), not smaller (collapse).
+  const band1 = bandOf([flat1, tilt1]);
+  expect(Math.abs(band1.w - band0.w)).toBeLessThan(2);
+  expect(Math.abs(band1.h - band0.h)).toBeLessThan(2);
 
   // Idempotent: press grid two more times — sizes must not drift.
   await gridBtn.click();
@@ -128,4 +158,46 @@ test("repeated grid arrange of a rotated + unrotated pair is idempotent and equa
   expect(flat3.height).toBeCloseTo(flat1.height, 4);
   expect(tilt3.width).toBeCloseTo(tilt1.width, 4);
   expect(tilt3.height).toBeCloseTo(tilt1.height, 4);
+});
+
+test("flex arrange of many items fills the band — no collapse to a center strip", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed" });
+  // Five small items scattered across a wide band. The bug (image #5): flex
+  // shrank them into a thin row in the vertical center. They must fill the
+  // band height and span its width.
+  const ids: string[] = [];
+  const spots = [
+    { x: 0.1, y: 0.2 },
+    { x: 0.3, y: 0.5 },
+    { x: 0.5, y: 0.15 },
+    { x: 0.68, y: 0.6 },
+    { x: 0.82, y: 0.3 },
+  ];
+  for (const s of spots) {
+    const before = await rootChildIds(page);
+    await addFrame(page, "slide", { frame: { x: s.x, y: s.y, width: 0.08, height: 0.08, rotation: 0 } });
+    await page.waitForTimeout(40);
+    ids.push((await rootChildIds(page)).find((x) => !before.includes(x))!);
+  }
+
+  await selectBoth(page, ids);
+  await page.waitForTimeout(60);
+  const band0 = bandOf(await Promise.all(ids.map(async (id) => (await readFrame(page, id))!)));
+
+  const flexBtn = page.getByRole("button", { name: /Arrange as Flex|플렉스로 정렬/ });
+  await expect(flexBtn).toBeVisible();
+  await flexBtn.click();
+  await page.waitForTimeout(120);
+
+  const out = await Promise.all(ids.map(async (id) => (await readFrame(page, id))!));
+  const band1 = bandOf(out);
+  // Band preserved in BOTH dimensions — height must not collapse.
+  expect(Math.abs(band1.w - band0.w)).toBeLessThan(3);
+  expect(Math.abs(band1.h - band0.h)).toBeLessThan(3);
+  // Each item fills the full band height (the anti-collapse guarantee).
+  for (const f of out) {
+    expect(Math.abs(f.height * DH - band0.h)).toBeLessThan(3);
+  }
 });

@@ -3604,8 +3604,8 @@ function ArrangePreviewOverlay({
     const ph = cr.height / firstAabb.height;
     const pLeft = cr.left - firstAabb.left * pw;
     const pTop = cr.top - firstAabb.top * ph;
-    // Each ghost shows the item's resulting OUTER bounds (the square cell it
-    // fills) — for a rotated item that's its AABB, not the smaller raw box.
+    // Each ghost shows the item's resulting OUTER bounds (the cell it fills) —
+    // for a rotated item that's its AABB, not the smaller raw box.
     return computeArrangedFrames(inputs, layout, W, H).map((o) => {
       const ab = aabbOf(o.frame);
       return {
