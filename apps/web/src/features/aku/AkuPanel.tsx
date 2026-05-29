@@ -8,6 +8,7 @@ import { IconButton, IconClose, IconPlus, Panel } from "@weave/design-system";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { AkuMascot } from "./AkuMascot.js";
+import { AkuTokenSetup } from "./AkuTokenSetup.js";
 import { MessageList } from "./MessageList.js";
 import type { AkuHistoryController, AkuImage, AkuMessage, AkuStatus } from "./types.js";
 import type { AkuGeometry } from "./useAkuGeometry.js";
@@ -27,6 +28,8 @@ export function AkuPanel({
   onClear,
   undo,
   seed,
+  hasToken,
+  onSetToken,
 }: {
   readonly geometry: AkuGeometry;
   readonly onMoveStart: (e: ReactPointerEvent) => void;
@@ -42,6 +45,9 @@ export function AkuPanel({
   readonly onClear: () => void;
   readonly undo: AkuHistoryController | undefined;
   readonly seed: AkuComposerSeed | null;
+  /** When false, the body shows the token-setup gate and the composer is hidden. */
+  readonly hasToken: boolean;
+  readonly onSetToken: (token: string) => void;
 }): JSX.Element {
   return (
     <div
@@ -75,23 +81,31 @@ export function AkuPanel({
           </IconButton>
         </Panel.Header>
         <Panel.Body>
-          <MessageList
-            messages={messages}
-            streaming={status === "streaming"}
-            onRegenerate={onRegenerate}
-            onRetry={onRetry}
-            onEdit={onEditMessage}
-            undo={undo}
-          />
+          {hasToken ? (
+            <MessageList
+              messages={messages}
+              streaming={status === "streaming"}
+              onRegenerate={onRegenerate}
+              onRetry={onRetry}
+              onEdit={onEditMessage}
+              undo={undo}
+            />
+          ) : (
+            // No agent-server token yet → prompt for one; saving it initializes
+            // the connection so the next message connects normally.
+            <AkuTokenSetup onSave={onSetToken} />
+          )}
         </Panel.Body>
-        <Panel.Footer>
-          <AkuComposer
-            onSend={onSend}
-            onStop={onStop}
-            streaming={status === "streaming"}
-            seed={seed}
-          />
-        </Panel.Footer>
+        {hasToken ? (
+          <Panel.Footer>
+            <AkuComposer
+              onSend={onSend}
+              onStop={onStop}
+              streaming={status === "streaming"}
+              seed={seed}
+            />
+          </Panel.Footer>
+        ) : null}
       </Panel>
       {/* resize grabber — bottom-right corner */}
       <button

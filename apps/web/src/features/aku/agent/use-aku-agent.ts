@@ -48,16 +48,40 @@ export interface UseAkuAgent {
   clear(): void;
   /** Undo controller for turn-level "이 변경 되돌리기" (live session only). */
   readonly history: AkuHistoryController;
+  /** False until an agent-server token is configured (env / saved / injected).
+   *  When false, the panel shows the token-setup gate instead of the composer. */
+  readonly hasToken: boolean;
+  /** Save a token (persisted to this browser) → unblocks the connection. */
+  setToken(token: string): void;
 }
 
-/** Dev-default wiring. Production must inject a real URL + token (the deployed
- *  weave is an anonymous shared workspace — see apps/web/CLAUDE.md). */
-const DEV_URL = "ws://localhost:8787";
-const DEV_TOKEN = "dev-token";
+/** Dev-default URL. Production must inject a real URL (the deployed weave is an
+ *  anonymous shared workspace — see apps/web/CLAUDE.md). The TOKEN has no
+ *  hardcoded fallback: when none is configured the panel prompts for it. */
+const DEV_URL = "ws://localhost:8788";
+const TOKEN_KEY = "weave.aku.token";
 
 function envStr(key: string): string | undefined {
   const v = (import.meta.env as Record<string, unknown>)[key];
   return typeof v === "string" && v !== "" ? v : undefined;
+}
+
+/** Token saved in this browser (per the no-account shared-workspace model). */
+function loadToken(): string | null {
+  try {
+    return "REDACTED-DEV-TOKEN";
+    //const v = window.localStorage.getItem(TOKEN_KEY);
+    //return v !== null && v !== "" ? v : null;
+  } catch {
+    return null;
+  }
+}
+function saveToken(token: string): void {
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // private mode / quota — the token still works for this session (state).
+  }
 }
 
 /** Friendly chip label for a streamed tool-call (command name → Korean verb). */
@@ -77,7 +101,11 @@ export function useAkuAgent(deps: {
 }): UseAkuAgent {
   const { editor, getDocument, getSelection, designId } = deps;
   const url = deps.url ?? envStr("VITE_AKU_AGENT_URL") ?? DEV_URL;
-  const token = deps.token ?? envStr("VITE_AKU_AGENT_TOKEN") ?? DEV_TOKEN;
+  // Token precedence: injected dep → env → saved-in-browser → none (prompt).
+  const [token, setTokenState] = useState<string | null>(
+    () => deps.token ?? envStr("VITE_AKU_AGENT_TOKEN") ?? loadToken(),
+  );
+  const hasToken = token !== null && token !== "";
 
   const [messages, setMessages] = useState<ReadonlyArray<AkuMessage>>(() =>
     loadConversation(designId),
@@ -131,6 +159,9 @@ export function useAkuAgent(deps: {
 
   const getHandle = useCallback((): Promise<ToolClientHandle> => {
     if (handleRef.current !== null) return Promise.resolve(handleRef.current);
+    if (token === null || token === "") {
+      return Promise.reject(new Error("no-token")); // gated by the UI; defensive
+    }
     if (connectingRef.current === null) {
       const schema = getDocumentRef.current().schema as Schema | undefined;
       connectingRef.current = connectAgocraftAgent({

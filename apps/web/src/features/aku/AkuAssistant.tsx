@@ -56,14 +56,24 @@ export function AkuAssistant({
   const selRef = useRef(selectedIds);
   selRef.current = selectedIds;
 
-  const { messages, status, send, stop, regenerate, editFrom, retry, clear, history } = useAkuAgent(
-    {
-      editor,
-      getDocument: () => docRef.current,
-      getSelection: () => [...selRef.current],
-      designId,
-    },
-  );
+  const {
+    messages,
+    status,
+    send,
+    stop,
+    regenerate,
+    editFrom,
+    retry,
+    clear,
+    history,
+    hasToken,
+    setToken,
+  } = useAkuAgent({
+    editor,
+    getDocument: () => docRef.current,
+    getSelection: () => [...selRef.current],
+    designId,
+  });
   const { geometry, beginMove, beginResize } = useAkuGeometry();
 
   // editFrom loads a past user turn back into the composer (seed); the nonce
@@ -111,6 +121,8 @@ export function AkuAssistant({
         onClear={clear}
         undo={history}
         seed={seed}
+        hasToken={hasToken}
+        onSetToken={setToken}
       />
     ) : showCoachmark ? (
       // First-run nudge to drive discovery — one-shot, anchored to the launcher
