@@ -1,7 +1,7 @@
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { createInputBus } from "@agocraft/input/bus";
 import { createHotkeyRegistry } from "@agocraft/input/hotkey";
-import { PresentChrome, Stage, type StageScene } from "@weave/design-system";
+import { PresentChrome, Spinner, Stage, type StageScene } from "@weave/design-system";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -172,7 +172,7 @@ export function PresentPage() {
   const navigate = useNavigate();
   // Presentation is read-only and server-first: always show the cloud copy,
   // falling back to a local offline copy only when the cloud is unreachable.
-  const { design, docInAgocraft } = useDesign(id ?? "", { preferCloud: true });
+  const { design, docInAgocraft, isLoading } = useDesign(id ?? "", { preferCloud: true });
   const [step, setStep] = useState(0);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
   // Phase 13d-4 — which scene's hover-effect is currently active. dim-others
@@ -618,9 +618,29 @@ export function PresentPage() {
     return l >= 0.5 ? "light" : "dark";
   }, [design.background]);
 
+  // Server-first load (preferCloud) paints a blank design first, then the
+  // cloud copy arrives. Show a loading screen during that fetch so the
+  // "no camera targets" empty state below only appears for a design that
+  // genuinely has none — not as a flash before the slides load.
+  if (isLoading) {
+    return (
+      <div
+        className="fixed inset-0 flex items-center justify-center bg-[color:var(--bg-page)]"
+        data-testid="present-loading"
+        role="status"
+        aria-live="polite"
+      >
+        <Spinner size={32} className="text-[color:var(--text-strong)]" />
+      </div>
+    );
+  }
+
   if (totalSteps === 0) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[color:var(--bg-page)] text-[color:var(--text-soft)]">
+      <div
+        className="fixed inset-0 flex items-center justify-center bg-[color:var(--bg-page)] text-[color:var(--text-soft)]"
+        data-testid="present-empty"
+      >
         <div className="text-center max-w-md">
           <p className="text-[16px] mb-3">This doc has no camera targets to present.</p>
           <button

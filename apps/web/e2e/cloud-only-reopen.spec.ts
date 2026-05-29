@@ -366,4 +366,46 @@ test("presentation mode renders a cloud design with NO local copy (no Rules-of-H
     .poll(() => page.getByTestId("present-scene").count(), { timeout: 8_000 })
     .toBeGreaterThan(0);
   expect(hookErrors).toEqual([]);
+  // The "no slides" empty state must not linger once the design has loaded.
+  await expect(page.getByTestId("present-empty")).toHaveCount(0);
+});
+
+test("presentation mode shows a loading screen, and the empty state only when truly empty", async ({
+  page,
+}) => {
+  // No local copy and the cloud has nothing for this id → present mode shows
+  // the loading screen while fetching, then the genuine "no slides" empty
+  // state (not a flash before content, and not a crash).
+  await page.route("**/api/designs", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ designs: [] }),
+    });
+  });
+  let release: (() => void) | null = null;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  await page.route("**/api/designs/*", async (route) => {
+    // Hold the response briefly so the loading screen is observable.
+    await gate;
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "NOT_FOUND" } }),
+    });
+  });
+
+  await clearAllDesigns(page);
+  await page.goto("/design/does-not-exist-xyz/present");
+
+  // Loading screen while the (gated) cloud fetch is in flight.
+  await expect(page.getByTestId("present-loading")).toBeVisible();
+  await expect(page.getByTestId("present-empty")).toHaveCount(0);
+
+  // Release the 404 → load resolves to nothing → genuine empty state.
+  release?.();
+  await expect(page.getByTestId("present-empty")).toBeVisible();
+  await expect(page.getByTestId("present-loading")).toHaveCount(0);
 });
