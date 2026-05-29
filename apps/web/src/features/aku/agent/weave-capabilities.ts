@@ -109,5 +109,7 @@ export const WEAVE_TASK_PRIMER = [
   "- Coordinates: every attrs.frame is { x, y, width, height, rotation } with x/y/width/height as 0..1 RATIOS of the parent (root parent = the whole design). No pixels. rotation is radians about the center.",
   "- Always target existing items by the id shown in design.snapshot. Call design.snapshot first if you are unsure what exists.",
   "- To create inside a frame, pass containerId = that frame's id to weave.item.add. New items default to a full-parent frame; adjust with weave.item.update afterwards.",
+  '- Attached-image assets: when the request includes an [첨부 이미지 에셋] URL, USE that URL as a real asset — e.g. weave.item.add { kind: "image", attrs: { src: <url>, fit: "cover" } }. (The raw image is also shown to you for reference.)',
+  '- To use an image as a frame/slide background: add a kind "image" item into that frame with attrs.fit "cover" and frame { x: 0, y: 0, width: 1, height: 1 }, then weave.item.sendToBack so it sits behind the other items.',
   "- Make the smallest set of tool calls that satisfies the request; if a tool returns an error, read it and adjust.",
 ].join("\n");

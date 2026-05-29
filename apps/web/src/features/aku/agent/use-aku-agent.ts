@@ -212,6 +212,27 @@ export function useAkuAgent(deps: {
     [commit],
   );
 
+  // Upload attached images to weave's resource store so the agent can reference
+  // the resulting URLs in attrs.src (asset use, not just vision). Returns the
+  // canonical URLs (skips any that fail — those stay vision-only). Lazy-imports
+  // cloud-sync to keep it off the canvas-critical path.
+  const uploadImages = useCallback(
+    async (imgs: ReadonlyArray<AkuImage>): Promise<ReadonlyArray<string>> => {
+      try {
+        const { uploadResourceCloud } = await import("../../../document/cloud-sync.js");
+        const results = await Promise.all(
+          imgs.map((im, i) =>
+            uploadResourceCloud("image", im.dataUrl, im.name ?? `aku-image-${i + 1}`),
+          ),
+        );
+        return results.map((r) => r?.src).filter((s): s is string => typeof s === "string");
+      } catch {
+        return []; // offline / no resource API → vision-only
+      }
+    },
+    [],
+  );
+
   const runTurn = useCallback(
     async (text: string, images: ReadonlyArray<AkuImage>): Promise<void> => {
       genRef.current += 1;
@@ -235,13 +256,28 @@ export function useAkuAgent(deps: {
 
       const depthBefore = editor.history.undoSize();
 
+      // Attached images serve two roles: (a) VISION — raw bytes go to the model
+      // via submit({ images }); (b) ASSET — upload them so the agent can drop the
+      // resulting URL into attrs.src ("use this image as the slide background").
+      let assetLines = "";
+      if (images.length > 0) {
+        patchLastAssistant((prev) => ({ ...prev, activity: "이미지 업로드 중…" }));
+        const urls = await uploadImages(images);
+        if (genRef.current !== gen) return;
+        if (urls.length > 0) {
+          assetLines =
+            "\n\n[첨부 이미지 에셋] 아래 URL을 weave.item.add 의 attrs.src 로 사용해 디자인에 넣을 수 있어요 (이미지 자체는 모델이 이미 봅니다):\n" +
+            urls.map((u, i) => `${i + 1}. ${u}`).join("\n");
+        }
+      }
+
       // Each submit is an independent server-side run (no conversation memory):
-      // give it the weave conventions primer + the current selection (view-state,
-      // absent from the document snapshot) so it can resolve "이걸 …" prompts.
+      // primer + image assets + current selection (view-state, absent from the
+      // document snapshot) so it can resolve "이걸 …" / "이 이미지를 …" prompts.
       const selected = getSelectionRef.current();
       const selectionLine =
         selected.length > 0 ? `\n\n[컨텍스트] 현재 선택된 아이템 id: ${selected.join(", ")}` : "";
-      const task = `${WEAVE_TASK_PRIMER}${selectionLine}\n\n${text}`;
+      const task = `${WEAVE_TASK_PRIMER}${assetLines}${selectionLine}\n\n${text}`;
 
       try {
         const handle = await getHandle();
@@ -299,7 +335,7 @@ export function useAkuAgent(deps: {
         if (genRef.current === gen) setStatus("idle");
       }
     },
-    [commit, editor, getHandle, patchLastAssistant],
+    [commit, editor, getHandle, patchLastAssistant, uploadImages],
   );
 
   const send = useCallback(
