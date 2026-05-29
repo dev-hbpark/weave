@@ -10,6 +10,7 @@ import {
   type ArrowHeadStyle,
   FILL_UNIT_KIND,
   findUnitInItem,
+  OPACITY_UNIT_KIND,
   paintToSvgFill,
   SHADOW_UNIT_KIND,
   STROKE_UNIT_KIND,
@@ -213,12 +214,16 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
     a.shadow ??
     undefined;
   const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
+  // DR-028 — prefer the decoration.opacity UNIT; fall back to legacy attrs.opacity.
+  const opacity =
+    (findUnitInItem(itemRef, OPACITY_UNIT_KIND)?.attrs as { value: number } | undefined)?.value ??
+    a.opacity;
 
   return (
     <div
       ref={containerRef}
       className="relative h-full w-full"
-      style={{ opacity: a.opacity, filter: shadow ? `drop-shadow(${shadow})` : undefined }}
+      style={{ opacity, filter: shadow ? `drop-shadow(${shadow})` : undefined }}
     >
       <svg
         viewBox={`0 0 ${bbox.width} ${bbox.height}`}

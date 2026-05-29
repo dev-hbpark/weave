@@ -6,7 +6,7 @@
 // (browsers reject autoplay+sound combinations).
 
 import type { Item as AgocraftItem, ShadowSpec } from "@agocraft/core";
-import { findUnitInItem, SHADOW_UNIT_KIND, shadowToCss } from "@agocraft/core";
+import { findUnitInItem, OPACITY_UNIT_KIND, SHADOW_UNIT_KIND, shadowToCss } from "@agocraft/core";
 import { type CSSProperties, useEffect, useRef } from "react";
 import type { AgoItem, VideoAttrs } from "../types.js";
 
@@ -65,13 +65,20 @@ export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
     a.shadow ??
     undefined;
   const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
+  // DR-028 — prefer the decoration.opacity UNIT; fall back to legacy attrs.opacity.
+  const opacity =
+    (
+      findUnitInItem(item as unknown as AgocraftItem, OPACITY_UNIT_KIND)?.attrs as
+        | { value: number }
+        | undefined
+    )?.value ?? a.opacity;
 
   return (
     <div
       className="relative h-full w-full overflow-hidden"
       style={{
         borderRadius: a.borderRadius ? `${a.borderRadius * 50}%` : 0,
-        opacity: a.opacity,
+        opacity,
         boxShadow: shadow,
       }}
     >
