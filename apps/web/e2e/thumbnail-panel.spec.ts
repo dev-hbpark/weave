@@ -26,9 +26,7 @@ async function firstFrameId(page: Page): Promise<string> {
  *  the portal'd thumbnail with the same data-frame-id is excluded). */
 async function frameScreenWidth(page: Page, id: string): Promise<number> {
   return await page.evaluate((frameId) => {
-    const el = document.querySelector(
-      `[data-testid="frame-stage"] [data-frame-id="${frameId}"]`,
-    );
+    const el = document.querySelector(`[data-testid="frame-stage"] [data-frame-id="${frameId}"]`);
     return el === null ? 0 : el.getBoundingClientRect().width;
   }, id);
 }

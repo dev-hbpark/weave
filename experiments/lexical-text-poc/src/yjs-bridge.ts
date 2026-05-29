@@ -19,21 +19,21 @@ export function createSharedYDocPair(): SharedYDocPair {
   const docA = new Y.Doc();
   const docB = new Y.Doc();
 
-  let suppressA = false;
-  let suppressB = false;
+  let _suppressA = false;
+  let _suppressB = false;
 
   const onUpdateA = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote") return;
-    suppressB = true;
+    _suppressB = true;
     Y.applyUpdate(docB, update, "remote");
-    suppressB = false;
+    _suppressB = false;
   };
 
   const onUpdateB = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote") return;
-    suppressA = true;
+    _suppressA = true;
     Y.applyUpdate(docA, update, "remote");
-    suppressA = false;
+    _suppressA = false;
   };
 
   docA.on("update", onUpdateA);

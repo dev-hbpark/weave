@@ -68,14 +68,7 @@ function removeAt(arr: ReadonlyArray<TrackSize>, index: number): ReadonlyArray<T
 
 export const TrackSizeEditor = forwardRef<HTMLDivElement, TrackSizeEditorProps>(
   function TrackSizeEditor(
-    {
-      value,
-      onValueChange,
-      "aria-label": ariaLabel,
-      minRows = 1,
-      maxRows = 20,
-      className,
-    },
+    { value, onValueChange, "aria-label": ariaLabel, minRows = 1, maxRows = 20, className },
     ref,
   ) {
     const canRemove = value.length > minRows;

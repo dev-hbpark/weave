@@ -23,7 +23,7 @@ export async function clearAllDesigns(page: Page) {
     // cheapest hygiene step.
     for (let i = window.localStorage.length - 1; i >= 0; i--) {
       const key = window.localStorage.key(i);
-      if (key !== null && key.startsWith("weave.")) {
+      if (key?.startsWith("weave.")) {
         window.localStorage.removeItem(key);
       }
     }
@@ -44,7 +44,12 @@ interface PrepareOptions {
 /** Walk the new-design wizard and land on /design/:id. Returns the id. */
 export async function prepareDesign(
   page: Page,
-  { flavor = "mixed", presetId = "16:9", title = "E2E design", online = false }: PrepareOptions = {},
+  {
+    flavor = "mixed",
+    presetId = "16:9",
+    title = "E2E design",
+    online = false,
+  }: PrepareOptions = {},
 ): Promise<string> {
   // The e2e dev server is plain `vite` (`pnpm dev`), which does NOT serve the
   // `apps/web/api/*` Vercel functions. So the online persistence path

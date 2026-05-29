@@ -291,7 +291,7 @@ test("drag covering nothing replaces with empty selection", async ({ page }) => 
 
   // Marquee a tiny region in the top-left corner where no frames live
   // — design plane center is in the middle, this corner is empty.
-  const vp = await viewport(page);
+  const _vp = await viewport(page);
   // Need a big-enough drag to clear the 4-design-pixel minDragSize. 60 vp
   // pixels is conservative.
   await marqueeDrag(page, { x: 4, y: 80 }, { x: 80, y: 140 });

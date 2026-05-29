@@ -137,10 +137,7 @@ export function CursorTooltipBridge({
     // tipKey = kind + id keeps the surface identity stable across mode /
     // selection flips, so refresh-in-place fires instead of a full show
     // timer restart.
-    target.setAttribute(
-      ATTR_TIP_ID,
-      `hover:${hover.hoveredKind}:${hover.hoveredId ?? ""}`,
-    );
+    target.setAttribute(ATTR_TIP_ID, `hover:${hover.hoveredKind}:${hover.hoveredId ?? ""}`);
     target.setAttribute(ATTR_OWN, "true");
     lastStampedRef.current = target;
   }, [hover, mode, selectedIds, canUndo, canRedo, doc, hotkeyTable, insertable]);

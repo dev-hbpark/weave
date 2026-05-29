@@ -207,7 +207,9 @@ export const CommandButton = forwardRef<HTMLButtonElement, CommandButtonOwnProps
         aria-label={resolved.label}
         aria-keyshortcuts={resolved.hotkeyDisplay}
         data-tip={tipText}
-        {...(resolved.hotkeyDisplay !== undefined ? { "data-tip-kbd": resolved.hotkeyDisplay } : {})}
+        {...(resolved.hotkeyDisplay !== undefined
+          ? { "data-tip-kbd": resolved.hotkeyDisplay }
+          : {})}
         data-tip-id={`cmd:${commandId}`}
         data-tip-disabled={!resolved.enabled ? "true" : undefined}
         leadingIcon={leadingIcon}
@@ -255,7 +257,9 @@ export const CommandIconButton = forwardRef<HTMLButtonElement, CommandIconButton
         aria-label={resolved.label}
         aria-keyshortcuts={resolved.hotkeyDisplay}
         data-tip={tipText}
-        {...(resolved.hotkeyDisplay !== undefined ? { "data-tip-kbd": resolved.hotkeyDisplay } : {})}
+        {...(resolved.hotkeyDisplay !== undefined
+          ? { "data-tip-kbd": resolved.hotkeyDisplay }
+          : {})}
         data-tip-id={`cmd:${commandId}`}
         data-tip-disabled={!resolved.enabled ? "true" : undefined}
         variant={variant}

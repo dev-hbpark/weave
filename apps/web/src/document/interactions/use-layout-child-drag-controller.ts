@@ -20,15 +20,12 @@
 // The controller therefore arms ONLY when the press lands on the currently
 // selected layout child.
 
-import type { Editor } from "@agocraft/editor";
 import type { Document as AgocraftDocument, ItemId, LayoutSpec } from "@agocraft/core";
+import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findParentAndIndex } from "../agocraft-mirror.js";
 import { getLayoutEngine } from "../layout/registry.js";
-import {
-  designPlaneFromTarget,
-  frameIdFromTarget,
-} from "./use-reparent-drag-controller.js";
+import { designPlaneFromTarget, frameIdFromTarget } from "./use-reparent-drag-controller.js";
 
 const SWAP_TARGET_ATTR = "data-layout-swap-target";
 
@@ -151,8 +148,7 @@ function resolveGridDrop(
   return {
     swapTargetId: null,
     preview,
-    commit: (editor) =>
-      editor.exec("weave.item.dropGridCell", { itemId: session.draggedId, x, y }),
+    commit: (editor) => editor.exec("weave.item.dropGridCell", { itemId: session.draggedId, x, y }),
   };
 }
 

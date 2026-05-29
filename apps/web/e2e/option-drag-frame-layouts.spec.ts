@@ -9,7 +9,9 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-async function stageBox(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
+async function stageBox(
+  page: Page,
+): Promise<{ x: number; y: number; width: number; height: number }> {
   const stage = page.locator('[data-testid="frame-stage"]');
   const box = await stage.boundingBox();
   if (box === null) throw new Error("no frame-stage");

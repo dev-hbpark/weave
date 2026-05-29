@@ -247,9 +247,7 @@ test("WI-044 — frame flyout: hovering 프레임 reveals layout variants; picki
 
   // The new child is a frame carrying an auto-flex layout spec — proving
   // the follow-up `weave.frame.setLayout` was wired, not just the add.
-  await expect
-    .poll(async () => (await lastChildOf(page, parentId))?.layoutKind)
-    .toBe("auto-flex");
+  await expect.poll(async () => (await lastChildOf(page, parentId))?.layoutKind).toBe("auto-flex");
   expect((await lastChildOf(page, parentId))?.kind).toBe("frame");
 });
 
@@ -275,9 +273,7 @@ test("WI-044 — frame flyout: picking Grid creates a frame with an auto-grid la
   const before = await childCountOf(page, parentId);
   await page.getByTestId("frame-add-frame-grid").click();
   await expect.poll(() => childCountOf(page, parentId)).toBe(before + 1);
-  await expect
-    .poll(async () => (await lastChildOf(page, parentId))?.layoutKind)
-    .toBe("auto-grid");
+  await expect.poll(async () => (await lastChildOf(page, parentId))?.layoutKind).toBe("auto-grid");
 });
 
 test("WI-044 — shape flyout: hovering 도형 reveals shape variants; picking 원 creates an ellipse shape", async ({

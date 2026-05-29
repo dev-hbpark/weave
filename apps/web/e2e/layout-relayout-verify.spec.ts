@@ -68,7 +68,9 @@ const GRID_3COL = {
   padding: { top: 0, right: 0, bottom: 0, left: 0 },
 };
 
-test("Flex frame auto-arranges children added into it (real browser)", async ({ page }, testInfo) => {
+test("Flex frame auto-arranges children added into it (real browser)", async ({
+  page,
+}, testInfo) => {
   await prepareDesign(page, { flavor: "mixed", title: "Flex-Verify" });
 
   // 1. Create a Flex-row frame in the design root.
@@ -129,7 +131,9 @@ test("Flex frame auto-arranges children added into it (real browser)", async ({ 
   });
 });
 
-test("Grid frame places children into distinct columns (real browser)", async ({ page }, testInfo) => {
+test("Grid frame places children into distinct columns (real browser)", async ({
+  page,
+}, testInfo) => {
   await prepareDesign(page, { flavor: "mixed", title: "Grid-Verify" });
 
   const gridFrameId = await addChild(page, {
@@ -145,7 +149,9 @@ test("Grid frame places children into distinct columns (real browser)", async ({
       kind: "shape",
       containerId: gridFrameId,
       frame: { x: 0.9, y: 0.9, width: 0.1, height: 0.1, rotation: 0 },
-      attrsOverride: { layoutChild: { kind: "auto-grid", column: col, columnSpan: 1, row: 1, rowSpan: 1 } },
+      attrsOverride: {
+        layoutChild: { kind: "auto-grid", column: col, columnSpan: 1, row: 1, rowSpan: 1 },
+      },
     });
     childIds.push(id);
     await page.waitForTimeout(120);

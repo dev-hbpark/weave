@@ -94,14 +94,10 @@ describe("projectHoverAffordance — frame paths", () => {
       "outer",
       { frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0 } },
       [
-        makeItem(
-          "inner-a",
-          { frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 } },
-          [
-            makeItem("leaf-a1", { frame: { x: 0, y: 0, width: 1, height: 0.5, rotation: 0 } }),
-            makeItem("leaf-a2", { frame: { x: 0, y: 0.5, width: 1, height: 0.5, rotation: 0 } }),
-          ],
-        ),
+        makeItem("inner-a", { frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 } }, [
+          makeItem("leaf-a1", { frame: { x: 0, y: 0, width: 1, height: 0.5, rotation: 0 } }),
+          makeItem("leaf-a2", { frame: { x: 0, y: 0.5, width: 1, height: 0.5, rotation: 0 } }),
+        ]),
         makeItem("inner-b", { frame: { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 } }),
       ],
     );

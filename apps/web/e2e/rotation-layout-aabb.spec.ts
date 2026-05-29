@@ -29,13 +29,18 @@ type Frame = { x: number; y: number; width: number; height: number; rotation?: n
 async function rootChildIds(page: import("@playwright/test").Page): Promise<string[]> {
   return page.evaluate(() => {
     const doc = (
-      window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<{ id: string | number }> } } }
+      window as unknown as {
+        __weaveDoc?: { root: { children: ReadonlyArray<{ id: string | number }> } };
+      }
     ).__weaveDoc;
     return doc === undefined ? [] : doc.root.children.map((c) => String(c.id));
   });
 }
 
-async function childIdsOf(page: import("@playwright/test").Page, parentId: string): Promise<string[]> {
+async function childIdsOf(
+  page: import("@playwright/test").Page,
+  parentId: string,
+): Promise<string[]> {
   return page.evaluate((pid) => {
     interface Node {
       readonly id: string | number;
@@ -97,7 +102,9 @@ async function setRotation(page: import("@playwright/test").Page, id: string, ro
 test("grid layout shrinks a rotated child so its outer bounds fit the cell", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed" });
   // Container frame F under root.
-  await addFrame(page, "slide", { frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6, rotation: 0 } });
+  await addFrame(page, "slide", {
+    frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6, rotation: 0 },
+  });
   const fId = (await rootChildIds(page)).at(-1)!;
   // Two children inside F.
   await addFrame(page, "slide", {
@@ -118,10 +125,13 @@ test("grid layout shrinks a rotated child so its outer bounds fit the cell", asy
   await page.evaluate(
     ({ fId, spec }) => {
       type Editor = { exec: (name: string, input: unknown) => unknown };
-      (window as unknown as { __weaveEditor?: Editor }).__weaveEditor?.exec("weave.frame.setLayout", {
-        itemId: fId,
-        layout: spec,
-      });
+      (window as unknown as { __weaveEditor?: Editor }).__weaveEditor?.exec(
+        "weave.frame.setLayout",
+        {
+          itemId: fId,
+          layout: spec,
+        },
+      );
     },
     { fId, spec: gridSpec(2, 1) },
   );

@@ -15,8 +15,8 @@ import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocra
 import type { AITooltipHotkeyTable } from "@weave/design-system";
 import { findItemDeep } from "../agocraft-mirror.js";
 import type { InsertableRegistry } from "../insertable/types.js";
-import type { HoverContext, HoverKind } from "../interactions/use-hover-context.js";
 import type { InteractionMode } from "../interactions/interaction-mode.js";
+import type { HoverContext, HoverKind } from "../interactions/use-hover-context.js";
 
 export interface HoverDescribeContext {
   readonly hover: HoverContext;

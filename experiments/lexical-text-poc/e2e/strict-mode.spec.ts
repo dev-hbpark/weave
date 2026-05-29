@@ -15,7 +15,7 @@ test.describe("StrictMode + remount", () => {
     await page.goto("/");
 
     const leftEditor = page.locator(".editor-shell").first().locator(".editor");
-    const rightEditor = page.locator(".editor-shell").nth(1).locator(".editor");
+    const _rightEditor = page.locator(".editor-shell").nth(1).locator(".editor");
 
     // 첫 mount — 입력 가능 확인
     await leftEditor.click();

@@ -75,8 +75,12 @@ async function setBackground(page: Page, id: string, color: string): Promise<voi
 
 test("multi-selection property change reverts in a single undo", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Multi-undo" });
-  await addFrame(page, "slide", { frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 } });
-  await addFrame(page, "slide", { frame: { x: 0.6, y: 0.6, width: 0.3, height: 0.3, rotation: 0 } });
+  await addFrame(page, "slide", {
+    frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
+  });
+  await addFrame(page, "slide", {
+    frame: { x: 0.6, y: 0.6, width: 0.3, height: 0.3, rotation: 0 },
+  });
   const ids = await frameIds(page);
   expect(ids.length).toBe(2);
 

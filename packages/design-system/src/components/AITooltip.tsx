@@ -513,7 +513,11 @@ function Floating({ active }: FloatingProps): ReactElement | null {
       <TooltipCard
         {...(showContext && data.context !== undefined ? { context: data.context } : {})}
         {...(showActions && data.actions !== undefined
-          ? { actions: showShortcuts ? data.actions : data.actions.map((a) => ({ action: a.action })) }
+          ? {
+              actions: showShortcuts
+                ? data.actions
+                : data.actions.map((a) => ({ action: a.action })),
+            }
           : {})}
         hotkeyTable={hotkeyTable}
       />

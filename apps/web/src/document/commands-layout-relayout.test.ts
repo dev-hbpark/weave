@@ -67,9 +67,9 @@ function frameItem(
   children: ReadonlyArray<AgocraftItem> = [],
 ): AgocraftItem {
   const attrs: Record<string, unknown> = {};
-  if (opts.frame !== undefined) attrs["frame"] = opts.frame;
-  if (opts.layout !== undefined) attrs["layout"] = opts.layout;
-  if (opts.layoutChild !== undefined) attrs["layoutChild"] = opts.layoutChild;
+  if (opts.frame !== undefined) attrs.frame = opts.frame;
+  if (opts.layout !== undefined) attrs.layout = opts.layout;
+  if (opts.layoutChild !== undefined) attrs.layoutChild = opts.layoutChild;
   return {
     id: makeItemId(id),
     kind: "frame",

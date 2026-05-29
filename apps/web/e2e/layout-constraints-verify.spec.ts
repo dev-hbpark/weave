@@ -148,7 +148,10 @@ test("flex-row stretch child → main-axis (e/w) resize only, no rotate", async 
     kind: "shape",
     containerId: frameId,
     frame: { x: 0.0, y: 0.0, width: 0.4, height: 1, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.4 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.4 },
+    },
   });
   await page.waitForTimeout(100);
   // A second child — the main axis is resizable only when there are siblings
@@ -157,7 +160,10 @@ test("flex-row stretch child → main-axis (e/w) resize only, no rotate", async 
     kind: "shape",
     containerId: frameId,
     frame: { x: 0.4, y: 0.0, width: 0.4, height: 1, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 },
+    },
   });
   await page.waitForTimeout(150);
 
@@ -185,7 +191,10 @@ test("grid child → no resize handles, no rotate", async ({ page }) => {
     kind: "shape",
     containerId: frameId,
     frame: { x: 0.0, y: 0.0, width: 0.5, height: 1, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-grid", column: 1, columnSpan: 1, row: 1, rowSpan: 1 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-grid", column: 1, columnSpan: 1, row: 1, rowSpan: 1 },
+    },
   });
   await page.waitForTimeout(150);
 
@@ -222,7 +231,11 @@ async function readParentAndPolicy(
   itemId: string,
 ): Promise<{ parentId: string | null; policyKind: string | null }> {
   return page.evaluate((id) => {
-    type Node = { id: string | number; attrs?: { layoutChild?: { kind?: string } }; children: Node[] };
+    type Node = {
+      id: string | number;
+      attrs?: { layoutChild?: { kind?: string } };
+      children: Node[];
+    };
     const doc = (window as unknown as { __weaveDoc?: { root: Node } }).__weaveDoc;
     if (doc === undefined) return { parentId: null, policyKind: null };
     let parentId: string | null = null;
@@ -255,7 +268,10 @@ async function findEmptyPlanePoint(
         if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) continue;
         const el = document.elementFromPoint(x, y);
         if (el === null) continue;
-        if (el.closest("[data-frame-id]") === null && el.closest('[data-design-plane="true"]') !== null) {
+        if (
+          el.closest("[data-frame-id]") === null &&
+          el.closest('[data-design-plane="true"]') !== null
+        ) {
           return { x, y };
         }
       }
@@ -266,7 +282,8 @@ async function findEmptyPlanePoint(
 
 async function rootId(page: import("@playwright/test").Page): Promise<string> {
   return page.evaluate(() => {
-    const doc = (window as unknown as { __weaveDoc?: { root: { id: string | number } } }).__weaveDoc;
+    const doc = (window as unknown as { __weaveDoc?: { root: { id: string | number } } })
+      .__weaveDoc;
     return doc === undefined ? "" : String(doc.root.id);
   });
 }
@@ -332,7 +349,10 @@ test("reparent GESTURE (Cmd+Shift+drag) moves a shape into the inner frame", asy
     kind: "shape",
     containerId: fId,
     frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 },
+    },
   });
   await page.waitForTimeout(120);
   const f2Id = await addChild(page, {
@@ -340,7 +360,10 @@ test("reparent GESTURE (Cmd+Shift+drag) moves a shape into the inner frame", asy
     containerId: fId,
     frame: { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 },
     // Inner frame has its OWN grid layout (the user's scenario).
-    attrsOverride: { layout: GRID_2COL, layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 } },
+    attrsOverride: {
+      layout: GRID_2COL,
+      layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 },
+    },
   });
   await page.waitForTimeout(150);
 
@@ -462,7 +485,9 @@ test("grid auto-place: items present → decrease tracks → add stays in-bounds
   expect(new Set(keys).size).toBe(keys.length); // no two items share a cell
 });
 
-test("grid auto-place: fill all → move one OUT → add fills the front-most gap", async ({ page }) => {
+test("grid auto-place: fill all → move one OUT → add fills the front-most gap", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "Grid-GapFill" });
   const fId = await addChild(page, {
     kind: "frame",
@@ -575,13 +600,19 @@ test("flex reorder: dragging the SELECTED flex child onto another swaps their se
     kind: "shape",
     containerId: fId,
     frame: { x: 0, y: 0, width: 0.3, height: 1, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.3 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.3 },
+    },
   });
   const bId = await addChild(page, {
     kind: "shape",
     containerId: fId,
     frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.5 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.5 },
+    },
   });
   await page.waitForTimeout(150);
   const aBefore = await readItemFrame(page, aId);
@@ -753,7 +784,10 @@ test("per-child menu (grid): selecting a grid child shows Justify/Align self; St
   expect(before!.height).toBeCloseTo(1, 2); // stretch fills
 
   // Set Align self → Start via the per-child control.
-  await page.getByRole("group", { name: "Grid child align-self" }).getByRole("radio", { name: "Start" }).click();
+  await page
+    .getByRole("group", { name: "Grid child align-self" })
+    .getByRole("radio", { name: "Start" })
+    .click();
   await page.waitForTimeout(200);
   const after = await readItemFrame(page, sId);
   // eslint-disable-next-line no-console
@@ -779,14 +813,20 @@ test("reparenting a shape into an inner grid frame makes it follow the NEW paren
     kind: "shape",
     containerId: fId,
     frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 },
+    },
   });
   await page.waitForTimeout(120);
   const f2Id = await addChild(page, {
     kind: "frame",
     containerId: fId,
     frame: { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 },
-    attrsOverride: { layout: GRID_2COL, layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 } },
+    attrsOverride: {
+      layout: GRID_2COL,
+      layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.49 },
+    },
   });
   await page.waitForTimeout(150);
 
@@ -805,10 +845,7 @@ test("reparenting a shape into an inner grid frame makes it follow the NEW paren
   const sFrame = await readItemFrame(page, sId);
   const f2After = await readItemFrame(page, f2Id);
   // eslint-disable-next-line no-console
-  console.log(
-    "[verify] reparent:",
-    JSON.stringify({ beforeS, afterS, sFrame, f2Before, f2After }),
-  );
+  console.log("[verify] reparent:", JSON.stringify({ beforeS, afterS, sFrame, f2Before, f2After }));
 
   // S is now F2's child and follows F2's GRID layout (policy reassigned).
   expect(afterS.parentId).toBe(f2Id);
@@ -869,10 +906,13 @@ async function setFrameLayout(
   await page.evaluate(
     ({ id, lay }) => {
       type Editor = { exec: (n: string, i: unknown) => unknown };
-      (window as unknown as { __weaveEditor?: Editor }).__weaveEditor?.exec("weave.frame.setLayout", {
-        itemId: id,
-        layout: lay,
-      });
+      (window as unknown as { __weaveEditor?: Editor }).__weaveEditor?.exec(
+        "weave.frame.setLayout",
+        {
+          itemId: id,
+          layout: lay,
+        },
+      );
     },
     { id: itemId, lay: layout },
   );
@@ -1069,14 +1109,20 @@ test("CSS flex: resizing the FRAME grows a grow-1 child but keeps a grow-0 child
     kind: "shape",
     containerId: fId,
     frame: { x: 0, y: 0, width: 0.3, height: 0.5, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.3 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: 0.3 },
+    },
   });
   await page.waitForTimeout(100);
   const c2 = await addChild(page, {
     kind: "shape",
     containerId: fId,
     frame: { x: 0.3, y: 0, width: 0.3, height: 0.5, rotation: 0 },
-    attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 } },
+    attrsOverride: {
+      shape: "rectangle",
+      layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 },
+    },
   });
   await page.waitForTimeout(150);
 
@@ -1088,7 +1134,10 @@ test("CSS flex: resizing the FRAME grows a grow-1 child but keeps a grow-0 child
       const w = window as unknown as { __weaveEditor?: Editor };
       w.__weaveEditor?.exec("weave.item.update", {
         itemId: id,
-        patch: (it: { attrs: Record<string, unknown> }) => ({ ...it, attrs: { ...it.attrs, frame: nf } }),
+        patch: (it: { attrs: Record<string, unknown> }) => ({
+          ...it,
+          attrs: { ...it.attrs, frame: nf },
+        }),
       });
     },
     { id: fId, nf: { x: 0.08, y: 0.15, width: 0.8, height: 0.3, rotation: 0 } },
@@ -1128,7 +1177,10 @@ test("selected flex frame moves on body-drag over a child (frame stays grabbable
       kind: "shape",
       containerId: frameId,
       frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 },
-      attrsOverride: { shape: "rectangle", layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0.5 } },
+      attrsOverride: {
+        shape: "rectangle",
+        layoutChild: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0.5 },
+      },
     });
     childIds.push(id);
     await page.waitForTimeout(100);
@@ -1159,10 +1211,7 @@ test("selected flex frame moves on body-drag over a child (frame stays grabbable
   const after = await readItemFrame(page, frameId);
   const childAfter = await readItemFrame(page, childIds[0]!);
   // eslint-disable-next-line no-console
-  console.log(
-    "[verify] frame move:",
-    JSON.stringify({ before, after, childBefore, childAfter }),
-  );
+  console.log("[verify] frame move:", JSON.stringify({ before, after, childBefore, childAfter }));
   expect(after).not.toBeNull();
   // Container moved right + down (ratio coords in the design root).
   expect(after!.x).toBeGreaterThan(before!.x + 0.01);

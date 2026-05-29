@@ -78,7 +78,7 @@ export function QuickActionBar({
     const all =
       typeof lister === "function"
         ? lister.call(host.registry, ctx)
-        : host.registry.list().filter((m) => m.visibleWhen !== undefined && m.visibleWhen(ctx));
+        : host.registry.list().filter((m) => m.visibleWhen?.(ctx));
     const filtered = category !== undefined ? all.filter((m) => m.category === category) : all;
     let ids = filtered.map((m) => m.id);
     if (excludeIds !== undefined) {

@@ -13,26 +13,24 @@ export interface SpinnerProps extends Omit<SVGAttributes<SVGSVGElement>, "childr
   readonly size?: number | string;
 }
 
-export const Spinner = forwardRef<SVGSVGElement, SpinnerProps>(
-  function Spinner({ size = 20, className, ...rest }, ref) {
-    return (
-      <svg
-        ref={ref}
-        width={size}
-        height={size}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        aria-hidden
-        className={cn(
-          "inline-block shrink-0 animate-spin motion-reduce:animate-none",
-          className,
-        )}
-        {...rest}
-      >
-        <circle cx="12" cy="12" r="9" strokeOpacity="0.2" strokeWidth="2.4" />
-        <path d="M21 12a9 9 0 0 0-9-9" strokeWidth="2.4" strokeLinecap="round" />
-      </svg>
-    );
-  },
-);
+export const Spinner = forwardRef<SVGSVGElement, SpinnerProps>(function Spinner(
+  { size = 20, className, ...rest },
+  ref,
+) {
+  return (
+    <svg
+      ref={ref}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+      className={cn("inline-block shrink-0 animate-spin motion-reduce:animate-none", className)}
+      {...rest}
+    >
+      <circle cx="12" cy="12" r="9" strokeOpacity="0.2" strokeWidth="2.4" />
+      <path d="M21 12a9 9 0 0 0-9-9" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+});

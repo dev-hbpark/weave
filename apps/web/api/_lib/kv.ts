@@ -49,7 +49,7 @@ const memoryClient: KvClient = {
     const matcher = opts?.match;
     const re =
       matcher !== undefined
-        ? new RegExp("^" + matcher.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$")
+        ? new RegExp(`^${matcher.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`)
         : null;
     const out: string[] = [];
     for (const k of memory.keys()) {

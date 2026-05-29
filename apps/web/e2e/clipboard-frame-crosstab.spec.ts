@@ -126,9 +126,7 @@ test("Frame with 5 children deep-copies: paste produces a new id for every desce
   }
 });
 
-test("Cross-tab: copy in tab A propagates to tab B's clipboard store", async ({
-  browser,
-}) => {
+test("Cross-tab: copy in tab A propagates to tab B's clipboard store", async ({ browser }) => {
   const context: BrowserContext = await browser.newContext();
   const pageA = await context.newPage();
   const pageB = await context.newPage();
@@ -183,16 +181,13 @@ test("Cross-tab: copy in tab A propagates to tab B's clipboard store", async ({
   await context.close();
 });
 
-test.skip(
-  "MAX_PASTE_NODES — copying a frame above the cap is refused; clipboard stays empty",
-  async () => {
-    // Inflating a tree to 501 nodes through the real `weave.item.add`
-    // pipeline (the only path that lets the e2e harness shape a doc)
-    // is too slow to fit inside Playwright's 30s test timeout. The cap
-    // logic is small and deterministic, so the same property is
-    // covered at the unit level by `clipboard-cap.test.ts` — see the
-    // `countSubtreeNodes` cases there. Skipping here keeps the e2e
-    // suite responsive while preserving the documentation trail of
-    // the user-visible behaviour.
-  },
-);
+test.skip("MAX_PASTE_NODES — copying a frame above the cap is refused; clipboard stays empty", async () => {
+  // Inflating a tree to 501 nodes through the real `weave.item.add`
+  // pipeline (the only path that lets the e2e harness shape a doc)
+  // is too slow to fit inside Playwright's 30s test timeout. The cap
+  // logic is small and deterministic, so the same property is
+  // covered at the unit level by `clipboard-cap.test.ts` — see the
+  // `countSubtreeNodes` cases there. Skipping here keeps the e2e
+  // suite responsive while preserving the documentation trail of
+  // the user-visible behaviour.
+});

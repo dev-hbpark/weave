@@ -23,7 +23,7 @@ async function clearResources(page: Page): Promise<void> {
   await page.evaluate(() => {
     for (let i = window.localStorage.length - 1; i >= 0; i--) {
       const key = window.localStorage.key(i);
-      if (key !== null && key.startsWith("weave.resource.v1.")) {
+      if (key?.startsWith("weave.resource.v1.")) {
         window.localStorage.removeItem(key);
       }
     }

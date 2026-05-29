@@ -28,13 +28,7 @@
 //              frame, design background — sets `data-tip` and the unified
 //              surface picks it up.  No per-component wiring.
 
-import {
-  type ReactElement,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../cn.js";
 

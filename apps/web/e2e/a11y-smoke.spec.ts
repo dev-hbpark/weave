@@ -86,21 +86,17 @@ test.describe("a11y smoke — WCAG 2.2 AA", () => {
       console.log(`\n[a11y landing] ${describeViolations(result.violations)}`);
     }
     // Launch blocker bar: zero critical, zero serious.
-    expect(
-      counts.critical,
-      `landing page has ${counts.critical} critical violations`,
-    ).toBe(0);
-    expect(
-      counts.serious,
-      `landing page has ${counts.serious} serious violations`,
-    ).toBe(0);
+    expect(counts.critical, `landing page has ${counts.critical} critical violations`).toBe(0);
+    expect(counts.serious, `landing page has ${counts.serious} serious violations`).toBe(0);
   });
 
   // AUDIT-003 (2026-05-28) — known serious violation V2 (nested-interactive
   // on a `.group` wrapper somewhere in the FrameStage / QuickActionBar
   // surface). Re-enable as `test(...)` once the nesting is restructured.
   // See records/audits/AUDIT-003-2026-05-28-a11y-smoke-wcag22aa.md.
-  test("design page (frame + text) passes axe-core with no critical/serious violations", async ({ page }) => {
+  test("design page (frame + text) passes axe-core with no critical/serious violations", async ({
+    page,
+  }) => {
     await prepareDesign(page, { flavor: "mixed", presetId: "16:9", title: "a11y smoke" });
 
     // Add a frame (LG-002 surface: frame UX). prepareDesign lands on an
@@ -118,17 +114,15 @@ test.describe("a11y smoke — WCAG 2.2 AA", () => {
     if (counts.critical + counts.serious > 0) {
       console.log(`\n[a11y design+frame] ${describeViolations(result.violations)}`);
     }
-    expect(
-      counts.critical,
-      `design page (frame) has ${counts.critical} critical violations`,
-    ).toBe(0);
-    expect(
-      counts.serious,
-      `design page (frame) has ${counts.serious} serious violations`,
-    ).toBe(0);
+    expect(counts.critical, `design page (frame) has ${counts.critical} critical violations`).toBe(
+      0,
+    );
+    expect(counts.serious, `design page (frame) has ${counts.serious} serious violations`).toBe(0);
   });
 
-  test("design page (empty design) passes axe-core with no critical/serious violations", async ({ page }) => {
+  test("design page (empty design) passes axe-core with no critical/serious violations", async ({
+    page,
+  }) => {
     await prepareDesign(page, { flavor: "mixed", presetId: "16:9", title: "a11y empty" });
     // Empty design — no frames added. Covers the empty-state surface.
     await page.waitForTimeout(500);
@@ -138,13 +132,9 @@ test.describe("a11y smoke — WCAG 2.2 AA", () => {
     if (counts.critical + counts.serious > 0) {
       console.log(`\n[a11y design+empty] ${describeViolations(result.violations)}`);
     }
-    expect(
-      counts.critical,
-      `design page (empty) has ${counts.critical} critical violations`,
-    ).toBe(0);
-    expect(
-      counts.serious,
-      `design page (empty) has ${counts.serious} serious violations`,
-    ).toBe(0);
+    expect(counts.critical, `design page (empty) has ${counts.critical} critical violations`).toBe(
+      0,
+    );
+    expect(counts.serious, `design page (empty) has ${counts.serious} serious violations`).toBe(0);
   });
 });

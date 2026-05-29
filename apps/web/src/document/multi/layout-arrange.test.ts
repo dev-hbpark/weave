@@ -136,13 +136,21 @@ describe("computeArrangedFrames", () => {
       { id: "flat", frame: { x: 0.3, y: 0.4, width: 0.2, height: 0.2, rotation: 0 } },
       { id: "tilt", frame: { x: 0.6, y: 0.4, width: 0.2, height: 0.2, rotation: Math.PI / 6 } },
     ];
-    const band0 = bandOf(items.map((it) => it.frame), W, H);
+    const band0 = bandOf(
+      items.map((it) => it.frame),
+      W,
+      H,
+    );
     const out = computeArrangedFrames(items, "grid", W, H);
     const flat = aabb(out.find((o) => o.id === "flat")!.frame, W, H);
     const tilt = aabb(out.find((o) => o.id === "tilt")!.frame, W, H);
     expect(tilt.w).toBeCloseTo(flat.w, 4); // equal halves in pixels
     expect(tilt.h).toBeCloseTo(flat.h, 4);
-    const band1 = bandOf(out.map((o) => o.frame), W, H);
+    const band1 = bandOf(
+      out.map((o) => o.frame),
+      W,
+      H,
+    );
     expect(band1.w).toBeCloseTo(band0.w, 3);
     expect(band1.h).toBeCloseTo(band0.h, 3);
   });

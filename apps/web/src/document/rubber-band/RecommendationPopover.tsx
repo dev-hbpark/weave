@@ -110,7 +110,9 @@ export function RecommendationPopover({
   }
   return (
     <div className="flex flex-col min-w-[220px]">
-      {showLayoutTypeToggle === true && layoutType !== undefined && onLayoutTypeChange !== undefined ? (
+      {showLayoutTypeToggle === true &&
+      layoutType !== undefined &&
+      onLayoutTypeChange !== undefined ? (
         <LayoutTypeToggle value={layoutType} onChange={onLayoutTypeChange} />
       ) : null}
       <ul

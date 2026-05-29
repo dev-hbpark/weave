@@ -21,9 +21,9 @@
 //
 // localStorage is not touched anywhere in this flow.
 
-import { useEffect, useRef, useState } from "react";
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import { createSerializer } from "@agocraft/core";
+import { useEffect, useRef, useState } from "react";
 import { postDesignBlobAsNew, uploadResourceCloud } from "./cloud-sync.js";
 import {
   findInlineImageItems,

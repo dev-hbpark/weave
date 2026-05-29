@@ -3,11 +3,7 @@
 // by the e2e; here we focus on the math.
 
 import { describe, expect, it } from "vitest";
-import {
-  ALIGN_OPS_ORDER,
-  type AlignInput,
-  computeAlignedFrames,
-} from "./align-ops.js";
+import { ALIGN_OPS_ORDER, type AlignInput, computeAlignedFrames } from "./align-ops.js";
 
 function frame(x: number, y: number, w: number, h: number) {
   return { x, y, width: w, height: h };
@@ -180,10 +176,7 @@ describe("computeAlignedFrames — degenerate inputs", () => {
     // ≤ ε drift. The visual result is unchanged; assert with tolerance.
     expect(computeAlignedFrames(one, "align-left")[0]!.frame.x).toBeCloseTo(0.3, 10);
     expect(computeAlignedFrames(one, "align-right")[0]!.frame.x).toBeCloseTo(0.3, 10);
-    expect(computeAlignedFrames(one, "align-horizontal-center")[0]!.frame.x).toBeCloseTo(
-      0.3,
-      10,
-    );
+    expect(computeAlignedFrames(one, "align-horizontal-center")[0]!.frame.x).toBeCloseTo(0.3, 10);
   });
 
   it("already-aligned items survive without drift", () => {

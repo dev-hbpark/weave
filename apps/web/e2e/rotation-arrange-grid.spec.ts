@@ -18,7 +18,9 @@ type Frame = { x: number; y: number; width: number; height: number; rotation?: n
 async function rootChildIds(page: import("@playwright/test").Page): Promise<string[]> {
   return page.evaluate(() => {
     const doc = (
-      window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<{ id: string | number }> } } }
+      window as unknown as {
+        __weaveDoc?: { root: { children: ReadonlyArray<{ id: string | number }> } };
+      }
     ).__weaveDoc;
     return doc === undefined ? [] : doc.root.children.map((c) => String(c.id));
   });
@@ -97,7 +99,8 @@ async function setRotation(page: import("@playwright/test").Page, id: string, ro
 async function selectBoth(page: import("@playwright/test").Page, ids: string[]) {
   await page.evaluate((targets) => {
     type Sel = { clear: () => void; add: (id: string) => void; setMany?: (ids: string[]) => void };
-    const sel = (window as unknown as { __weaveVm?: { itemSelection: Sel } }).__weaveVm?.itemSelection;
+    const sel = (window as unknown as { __weaveVm?: { itemSelection: Sel } }).__weaveVm
+      ?.itemSelection;
     if (sel === undefined) return;
     sel.clear();
     if (typeof sel.setMany === "function") sel.setMany(targets);
@@ -110,10 +113,14 @@ test("grid arrange of a rotated + unrotated pair preserves the band, equal-halve
 }) => {
   await prepareDesign(page, { flavor: "mixed" });
   const before = await rootChildIds(page);
-  await addFrame(page, "slide", { frame: { x: 0.25, y: 0.4, width: 0.18, height: 0.18, rotation: 0 } });
+  await addFrame(page, "slide", {
+    frame: { x: 0.25, y: 0.4, width: 0.18, height: 0.18, rotation: 0 },
+  });
   const flat = (await rootChildIds(page)).find((x) => !before.includes(x))!;
   const afterA = await rootChildIds(page);
-  await addFrame(page, "slide", { frame: { x: 0.6, y: 0.4, width: 0.18, height: 0.18, rotation: 0 } });
+  await addFrame(page, "slide", {
+    frame: { x: 0.6, y: 0.4, width: 0.18, height: 0.18, rotation: 0 },
+  });
   const tilt = (await rootChildIds(page)).find((x) => !afterA.includes(x))!;
   // 30° (not 45°): a 45° item's AABB is always square and cannot fill a
   // non-square cell, so it would fall back to an inscribed square. 30° fills.
@@ -177,7 +184,9 @@ test("flex arrange of many items fills the band — no collapse to a center stri
   ];
   for (const s of spots) {
     const before = await rootChildIds(page);
-    await addFrame(page, "slide", { frame: { x: s.x, y: s.y, width: 0.08, height: 0.08, rotation: 0 } });
+    await addFrame(page, "slide", {
+      frame: { x: s.x, y: s.y, width: 0.08, height: 0.08, rotation: 0 },
+    });
     await page.waitForTimeout(40);
     ids.push((await rootChildIds(page)).find((x) => !before.includes(x))!);
   }

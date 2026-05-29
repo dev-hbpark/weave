@@ -71,9 +71,8 @@ export function HoverAffordanceLayerDemo() {
         HoverAffordanceLayer — DR-design-016 visual evidence
       </h1>
       <p style={{ margin: "0 0 16px", opacity: 0.7, fontSize: 13 }}>
-        Three tiers (hovered / descendants / parent) share `--accent` hue. Flip the theme to
-        confirm the layer follows; flip "selected" to confirm the overlap-with-selection-chrome
-        rule.
+        Three tiers (hovered / descendants / parent) share `--accent` hue. Flip the theme to confirm
+        the layer follows; flip "selected" to confirm the overlap-with-selection-chrome rule.
       </p>
 
       {/* Theme switcher — proves `--accent` cascades through [data-theme]. */}

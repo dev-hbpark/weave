@@ -19,8 +19,8 @@
 //     silently per RISK-008 R4. A development telemetry hook logs the
 //     event so we can spot version-skew traffic during canary releases.
 
-import type { ClipboardPayload, KnownClipboardPayload } from "./clipboard-types.js";
 import { clipboardStore } from "./clipboard-store.js";
+import type { ClipboardPayload, KnownClipboardPayload } from "./clipboard-types.js";
 
 const CHANNEL_NAME = "weave.clipboard.v1";
 const SUPPORTED_SCHEMA_VERSIONS = new Set<number>([1]);
@@ -28,14 +28,8 @@ const SUPPORTED_SCHEMA_VERSIONS = new Set<number>([1]);
 interface BroadcastChannelLike {
   postMessage(message: unknown): void;
   close(): void;
-  addEventListener(
-    type: "message",
-    listener: (event: { data: unknown }) => void,
-  ): void;
-  removeEventListener(
-    type: "message",
-    listener: (event: { data: unknown }) => void,
-  ): void;
+  addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
+  removeEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
 }
 
 interface BroadcastChannelTransportControls {
@@ -49,8 +43,7 @@ interface BroadcastChannelTransportControls {
 
 function detectBroadcastChannel(): typeof BroadcastChannel | undefined {
   if (typeof globalThis === "undefined") return undefined;
-  const ctor = (globalThis as { BroadcastChannel?: typeof BroadcastChannel })
-    .BroadcastChannel;
+  const ctor = (globalThis as { BroadcastChannel?: typeof BroadcastChannel }).BroadcastChannel;
   return ctor;
 }
 

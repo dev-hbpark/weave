@@ -32,15 +32,7 @@ import {
 } from "@agocraft/editor";
 import type { SelectionHandleDir as HandleDir } from "@weave/design-system";
 import { SelectionLayer } from "@weave/design-system";
-import {
-  animate,
-  type MotionStyle,
-  type MotionValue,
-  motion,
-  useMotionValue,
-  useMotionValueEvent,
-  useTransform,
-} from "motion/react";
+import { type MotionStyle, motion, useMotionValue, useMotionValueEvent } from "motion/react";
 import type React from "react";
 import {
   type CSSProperties,
@@ -60,8 +52,7 @@ import {
   useInteractionMode,
   useSelectionChromeVisible,
 } from "../document";
-import { findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
-import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
+import { isDomainItem } from "../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../document/domains/derive-text-auto-resize.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
@@ -82,12 +73,13 @@ import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index
 // LayoutEngine is the single owner: weave only READS
 // `getChildConstraints` and reflects it in the selection chrome (resize
 // handles) + move gate. No layout branching lives here.
-import { LAYOUT_FEATURE_ENABLED, getLayoutEngine } from "../document/layout/registry.js";
+import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../document/layout/registry.js";
 import { MarqueeSelectionLayer } from "../document/marquee/MarqueeSelectionLayer.js";
 import { FrameContent } from "../document/render/FrameContent.js";
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
 import { RubberBandLayer } from "../document/rubber-band/RubberBandLayer.js";
 import { createFrameDefaultViewModel } from "../document/selection-chrome/frame-default-view-model.js";
+import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
 
 /** WI-033 A4 — context passed to `renderFrameMenu` so the callback
  *  (typically a per-frame ContextMenu) can render a Layer Picker
@@ -98,7 +90,7 @@ export interface FrameMenuContext {
   readonly onPickLayer: (id: string) => void;
 }
 
-const ALL_HANDLES: ReadonlyArray<HandleDir> = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+const _ALL_HANDLES: ReadonlyArray<HandleDir> = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 const MIN_FRAME = 0.02;
 
 /** WI-037 follow-up — compute the next pan/zoom state for a scale change
@@ -137,7 +129,7 @@ function nextPanForZoom(
   };
 }
 
-function resizeFrame(orig: ItemFrame, dx: number, dy: number, dir: HandleDir): ItemFrame {
+function _resizeFrame(orig: ItemFrame, dx: number, dy: number, dir: HandleDir): ItemFrame {
   let { x, y, width, height } = orig;
   if (dir.includes("e")) {
     width = Math.max(MIN_FRAME, orig.width + dx);
@@ -365,11 +357,11 @@ function NestedFrame({
   // batch when FrameMoveBinding's capture-phase `vm.itemSelection.set(...)`
   // already mutated the selection before our onClick fires; the vm
   // signal's `state.get()` always returns the latest.
-  const selectionVm = useContext(SelectionVmContext);
+  const _selectionVm = useContext(SelectionVmContext);
   // Manipulation handle drags publish "frame-manipulating" so tooltips don't
   // race with the gesture. The transition is guarded — if a context menu or
   // pan happens to win the press, we don't stomp their mode.
-  const im = useInteractionMode();
+  const _im = useInteractionMode();
   // Selection only runs in `idle`. Hand / panning / rubber-band /
   // frame-manipulating / text-editing / context-menu each own their own
   // event flow and must not have a parallel selection happen alongside.
@@ -480,7 +472,7 @@ function NestedFrame({
   // more frames are selected, the host-level dashed marquee owns the
   // "selected" indicator; per-frame solid outlines would draw a
   // redundant second line over the same boundary. Suppress them.
-  const isMultiSelection = selectedIds !== undefined && selectedIds.size > 1;
+  const _isMultiSelection = selectedIds !== undefined && selectedIds.size > 1;
   const childFrames = item.children.filter(isDomainItem);
 
   // WI-033 P2 — Phase 13e drill-in opacity / dim chain removed
@@ -834,7 +826,9 @@ function NestedFrame({
             // change only the box dimensions, never fontSize. DR-016 박제.
             const textHandleDirs = (() => {
               if (kind !== "text") return undefined;
-              const attrs = item.attrs as unknown as { layoutChild?: import("@agocraft/core").LayoutChildPolicy };
+              const attrs = item.attrs as unknown as {
+                layoutChild?: import("@agocraft/core").LayoutChildPolicy;
+              };
               const mode = deriveTextAutoResizeForFrameStage(attrs.layoutChild);
               switch (mode) {
                 case "WIDTH_AND_HEIGHT":
@@ -999,7 +993,7 @@ function NestedFrame({
   // any hover popup — the document-context tooltip was replaced by item-
   // level cursor tooltips on shapes, paragraphs, slide titles, etc. The
   // frame only renders ContextMenu chrome (when provided) around its body.
-  return renderFrameMenu ? <>{renderFrameMenu(itemId, inner)}</> : inner;
+  return renderFrameMenu ? renderFrameMenu(itemId, inner) : inner;
 }
 
 // WI-033 P2 — `AbsoluteFrame` / `ROOT_ABS_FRAME` / `absoluteFrameFor`
@@ -1254,7 +1248,10 @@ export function FrameStage(props: FrameStageProps) {
       const H = outerSize.height;
       if (W <= 0 || H <= 0 || box.w <= 0 || box.h <= 0 || baseScale <= 0) return;
       const MARGIN = 0.9;
-      const rawScale = Math.min((W * MARGIN) / (box.w * baseScale), (H * MARGIN) / (box.h * baseScale));
+      const rawScale = Math.min(
+        (W * MARGIN) / (box.w * baseScale),
+        (H * MARGIN) / (box.h * baseScale),
+      );
       const scale = Math.max(0.1, Math.min(8, rawScale));
       const cx = box.x + box.w / 2;
       const cy = box.y + box.h / 2;
@@ -1417,7 +1414,12 @@ export function FrameStage(props: FrameStageProps) {
       const el = outerRef.current;
       if (el === null) return;
       const rect = el.getBoundingClientRect();
-      const center = { x: rect.width / 2, y: rect.height / 2, outerW: rect.width, outerH: rect.height };
+      const center = {
+        x: rect.width / 2,
+        y: rect.height / 2,
+        outerW: rect.width,
+        outerH: rect.height,
+      };
       if (e.key === "=" || e.key === "+") {
         e.preventDefault();
         setPan((p) => nextPanForZoom(p, 1.2, center));
@@ -2087,7 +2089,7 @@ export function FrameStage(props: FrameStageProps) {
           // corner dots + count badge). The host-level
           // MultiSelectionOverlay (DesignPage, viewport-fixed) owns the
           // multi-selection visual now.
-          const planeChildren = frames.map((c, i) => (
+          const planeChildren = frames.map((c, _i) => (
             <NestedFrame
               key={String(c.id)}
               item={c}

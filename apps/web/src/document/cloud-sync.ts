@@ -110,7 +110,7 @@ export async function pushDesignCloudAwaitable(design: Design): Promise<boolean>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(design),
   });
-  return resp !== null && resp.ok;
+  return resp?.ok ?? false;
 }
 
 function beaconFlushLast(): void {

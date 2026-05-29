@@ -54,9 +54,7 @@ async function clipboardHasPayload(page: Page): Promise<boolean> {
   });
 }
 
-test("Cmd+C inside a Lexical text item does NOT populate our items clipboard", async ({
-  page,
-}) => {
+test("Cmd+C inside a Lexical text item does NOT populate our items clipboard", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-041-rt-1" });
   const textId = await addTextViaMenu(page);
   expect(textId).not.toBe("");
@@ -96,9 +94,7 @@ test("Cmd+C inside a Lexical text item does NOT populate our items clipboard", a
   expect(await rootChildCount(page)).toBe(beforePaste);
 });
 
-test("Composition (IME) events do not trip the items clipboard handler", async ({
-  page,
-}) => {
+test("Composition (IME) events do not trip the items clipboard handler", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-041-rt-2" });
   await addTextViaMenu(page);
   await page.getByTestId("text-block").dblclick();

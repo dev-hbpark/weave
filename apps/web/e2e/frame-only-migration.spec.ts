@@ -158,7 +158,7 @@ async function seedLegacyV5Blob(page: import("@playwright/test").Page): Promise<
   await page.evaluate(() => {
     for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
       const k = window.localStorage.key(i);
-      if (k !== null && k.startsWith("weave.design.v9-backup.")) {
+      if (k?.startsWith("weave.design.v9-backup.")) {
         window.localStorage.removeItem(k);
       }
     }

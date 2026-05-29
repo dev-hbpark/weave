@@ -14,7 +14,6 @@ import {
   type HotspotAction,
   type HoverEffectBehavior,
   type ItemFrame,
-  interactionRegistry,
   type PresentContext,
   useDesign,
 } from "../document";
@@ -570,8 +569,7 @@ export function PresentPage() {
       if (rb === undefined) return -1;
       return ra - rb;
     });
-    const activeRank =
-      activeFrameId !== undefined ? docOrderRank.get(activeFrameId) : undefined;
+    const activeRank = activeFrameId !== undefined ? docOrderRank.get(activeFrameId) : undefined;
     return combined.map(({ __docOrderId, ...rest }) => {
       if (activeFrameId === undefined || activeRank === undefined) return rest;
       if (activeSubtreeIds.has(__docOrderId)) return rest;
@@ -581,13 +579,7 @@ export function PresentPage() {
         ? { ...rest, visibility: "hidden" as const }
         : { ...rest, visibility: "blur" as const };
     });
-  }, [
-    rootPrimitiveScenes,
-    cameraTargetScenes,
-    docOrderRank,
-    activeFrameId,
-    activeSubtreeIds,
-  ]);
+  }, [rootPrimitiveScenes, cameraTargetScenes, docOrderRank, activeFrameId, activeSubtreeIds]);
 
   // Match FrameStage's tone heuristic so document-scope tokens stay aligned
   // between edit and present. Same helper as in FrameStage — inline here to

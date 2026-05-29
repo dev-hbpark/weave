@@ -42,25 +42,34 @@ async function addRootShapes(page: Page, n: number): Promise<string[]> {
 }
 
 async function selectMany(page: Page, ids: ReadonlyArray<string>): Promise<void> {
-  await page.evaluate((arr) => {
-    const w = window as unknown as {
-      __weaveVm?: { itemSelection: { setMany: (ids: Iterable<string>) => void } };
-    };
-    w.__weaveVm?.itemSelection.setMany(arr);
-  }, [...ids]);
+  await page.evaluate(
+    (arr) => {
+      const w = window as unknown as {
+        __weaveVm?: { itemSelection: { setMany: (ids: Iterable<string>) => void } };
+      };
+      w.__weaveVm?.itemSelection.setMany(arr);
+    },
+    [...ids],
+  );
   await page.waitForTimeout(80);
 }
 
-async function framesOf(page: Page, ids: ReadonlyArray<string>): Promise<Array<{ x: number; y: number }>> {
-  return page.evaluate((arr) => {
-    type Ch = { id: unknown; attrs?: { frame?: { x: number; y: number } } };
-    const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<Ch> } } };
-    const kids = w.__weaveDoc?.root.children ?? [];
-    return arr.map((id) => {
-      const it = kids.find((c) => String(c.id) === id);
-      return { x: it?.attrs?.frame?.x ?? -1, y: it?.attrs?.frame?.y ?? -1 };
-    });
-  }, [...ids]);
+async function framesOf(
+  page: Page,
+  ids: ReadonlyArray<string>,
+): Promise<Array<{ x: number; y: number }>> {
+  return page.evaluate(
+    (arr) => {
+      type Ch = { id: unknown; attrs?: { frame?: { x: number; y: number } } };
+      const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<Ch> } } };
+      const kids = w.__weaveDoc?.root.children ?? [];
+      return arr.map((id) => {
+        const it = kids.find((c) => String(c.id) === id);
+        return { x: it?.attrs?.frame?.x ?? -1, y: it?.attrs?.frame?.y ?? -1 };
+      });
+    },
+    [...ids],
+  );
 }
 
 test("WI-048 — multi-select shows Flex/Grid buttons; hover previews; Grid arranges into a matrix", async ({

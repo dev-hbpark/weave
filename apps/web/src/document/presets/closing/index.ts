@@ -4,8 +4,7 @@
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { paintSolid } from "@agocraft/core";
 import { type BuildContext, buildFrameRoot, buildShapeChild, buildTextChild } from "../builders.js";
-import type { Preset, PresetCategory, PresetFactoryContext } from "../types.js";
-import { resolveLocalizedText } from "../types.js";
+import type { Preset, PresetCategory } from "../types.js";
 
 export const closingCategory: PresetCategory = {
   id: "closing",

@@ -130,10 +130,7 @@ async function readVitals(page: Page): Promise<CoreVitals> {
  * INP integrates many interactions; for a smoke test, one representative
  * interaction is sufficient.
  */
-async function measureInteractionLatency(
-  page: Page,
-  selector: string,
-): Promise<number> {
+async function measureInteractionLatency(page: Page, selector: string): Promise<number> {
   return await page.evaluate((sel) => {
     return new Promise<number>((resolve) => {
       const el = document.querySelector(sel) as HTMLElement | null;
@@ -152,7 +149,11 @@ async function measureInteractionLatency(
   }, selector);
 }
 
-function logVitals(label: string, vitals: CoreVitals, extras?: Record<string, number | null>): void {
+function logVitals(
+  label: string,
+  vitals: CoreVitals,
+  extras?: Record<string, number | null>,
+): void {
   const fmt = (n: number | null) => (n === null ? "n/a" : n.toFixed(1));
   const base = `[perf ${label}] LCP=${fmt(vitals.lcp)}ms CLS=${vitals.cls === null ? "n/a" : vitals.cls.toFixed(4)} TTFB=${fmt(vitals.ttfb)}ms`;
   if (extras !== undefined) {

@@ -18,8 +18,8 @@
 // in `clipboardStore.write` (origin equality) keeps the second fire
 // from looping.
 
-import type { ClipboardPayload, KnownClipboardPayload } from "./clipboard-types.js";
 import { clipboardStore } from "./clipboard-store.js";
+import type { ClipboardPayload, KnownClipboardPayload } from "./clipboard-types.js";
 
 const STORAGE_KEY = "weave.clipboard.v1";
 const SUPPORTED_SCHEMA_VERSIONS = new Set<number>([1]);
@@ -45,9 +45,7 @@ function isValidIncoming(data: unknown): data is KnownClipboardPayload {
   return p.kind === "weave/items.v1";
 }
 
-export function mountLocalStorageTransport(
-  sessionOrigin: string,
-): LocalStorageTransportControls {
+export function mountLocalStorageTransport(sessionOrigin: string): LocalStorageTransportControls {
   const storage = detectStorage();
   // `storage` events fire on the WINDOW; if there's no window or no
   // localStorage at all (e.g. SSR), this transport is silently inert.

@@ -81,10 +81,7 @@ describe("selectFromHit — A1 parent-first auto-select (plain intent)", () => {
 //
 //   └── Z                       (sibling of P at root)
 const SIB_TREE = doc(
-  frame("root", [
-    frame("P", [frame("X"), frame("Y"), frame("N", [frame("Na")])]),
-    frame("Z"),
-  ]),
+  frame("root", [frame("P", [frame("X"), frame("Y"), frame("N", [frame("Na")])]), frame("Z")]),
 );
 
 describe("selectFromHit — sibling-of-current inside the same parent frame", () => {

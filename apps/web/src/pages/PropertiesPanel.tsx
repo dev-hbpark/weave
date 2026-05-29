@@ -351,7 +351,7 @@ function InteractionRow({
               onCommitBehavior(itemId, unitId, (b) => {
                 if (b.kind !== "camera-target") return b;
                 const cam = b as CameraTargetBehavior;
-                return { ...cam, manual: cam.manual === true ? false : true };
+                return { ...cam, manual: cam.manual !== true };
               })
             }
           >
@@ -720,7 +720,7 @@ function describeInteraction(
   if (behavior === undefined) return "—";
   switch (kind) {
     case "camera-target":
-      return `step ${(behavior.order ?? 0) + 1}` + (behavior.label ? ` · ${behavior.label}` : "");
+      return `step ${(behavior.order ?? 0) + 1}${behavior.label ? ` · ${behavior.label}` : ""}`;
     case "hotspot": {
       const a = (behavior as { action?: { type?: string } }).action;
       return `${behavior.label ?? "Hotspot"} → ${a?.type ?? "—"}`;

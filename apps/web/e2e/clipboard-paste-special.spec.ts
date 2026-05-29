@@ -13,7 +13,7 @@
 // so the remaining two are covered by the unit-level paste handler
 // tests as we add them.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -31,10 +31,7 @@ async function lastChildId(page: Page): Promise<string> {
   });
 }
 
-async function readAttrs(
-  page: Page,
-  id: string,
-): Promise<Record<string, unknown>> {
+async function readAttrs(page: Page, id: string): Promise<Record<string, unknown>> {
   return page.evaluate((targetId) => {
     interface Node {
       readonly id: unknown;
@@ -66,11 +63,7 @@ async function select(page: Page, id: string): Promise<void> {
   }, id);
 }
 
-async function patchAttrs(
-  page: Page,
-  id: string,
-  next: Record<string, unknown>,
-): Promise<void> {
+async function patchAttrs(page: Page, id: string, next: Record<string, unknown>): Promise<void> {
   await page.evaluate(
     ({ fid, attrs }) => {
       const w = window as unknown as {

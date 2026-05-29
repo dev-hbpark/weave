@@ -130,7 +130,7 @@ export function listResources(): ReadonlyArray<MediaResource> {
       }
       out.push({
         ...parsed,
-        sessionOnly: parsed.src.startsWith("blob:") ? true : false,
+        sessionOnly: !!parsed.src.startsWith("blob:"),
       });
     } catch {
       /* skip malformed */
@@ -146,7 +146,7 @@ export function clearAllResources(): void {
   const keys: string[] = [];
   for (let i = 0; i < window.localStorage.length; i++) {
     const k = window.localStorage.key(i);
-    if (k !== null && k.startsWith(KEY_PREFIX)) keys.push(k);
+    if (k?.startsWith(KEY_PREFIX)) keys.push(k);
   }
   for (const k of keys) window.localStorage.removeItem(k);
 }

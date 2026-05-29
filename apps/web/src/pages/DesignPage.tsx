@@ -10,7 +10,6 @@ import {
 } from "@agocraft/core";
 import { EditorProvider, useEditorVM } from "@agocraft/editor/react";
 import {
-  type AITooltipHotkeyTable,
   Button,
   ColorPicker,
   CommandHostProvider,
@@ -126,11 +125,7 @@ import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
 import { LocalDesignConflictDialog } from "../document/LocalDesignConflictDialog.js";
-import {
-  findFramesAtPoint,
-  type LayerHit,
-  LayerPickerMenu,
-} from "../document/layer-picker/index.js";
+import { type LayerHit, LayerPickerMenu } from "../document/layer-picker/index.js";
 import { MigrationResultBanner } from "../document/MigrationResultBanner.js";
 import { computeAlignedFrames } from "../document/multi/align-ops.js";
 import { type ArrangeLayout, computeArrangedFrames } from "../document/multi/layout-arrange.js";
@@ -141,7 +136,6 @@ import { projectHoverAffordance } from "../document/render/hover-affordance-proj
 import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 import { ContextualToolbar } from "../document/toolbar/ContextualToolbar.js";
-import { AkuAssistant } from "../features/aku/AkuAssistant.js";
 import { MediaSrcDialog } from "../document/toolbar/MediaSrcDialog.js";
 import { CursorTooltipBridge } from "../document/tooltip/CursorTooltipBridge.js";
 import {
@@ -169,6 +163,7 @@ import {
 import { useMigrateInlineMedia } from "../document/use-migrate-inline-media.js";
 import { useWeaveEditor } from "../document/use-weave-editor.js";
 import { registerZOrderAdapters } from "../document/zorder/register.js";
+import { AkuAssistant } from "../features/aku/AkuAssistant.js";
 import { FigmaSelectionLaunchBanner } from "../launch/FigmaSelectionLaunchBanner.js";
 import { TextV1LaunchBanner } from "../launch/TextV1LaunchBanner.js";
 import { FrameStage } from "./FrameStage.js";
@@ -625,7 +620,7 @@ function DesignPageBody() {
     },
     [editor],
   );
-  const reorderRootChildrenViaEditor = useCallback(
+  const _reorderRootChildrenViaEditor = useCallback(
     (order: ReadonlyArray<string>) => {
       editor.exec("weave.design.reorderChildren", { order });
     },
@@ -1258,7 +1253,7 @@ function DesignPageBody() {
   const { selection, selectedIds, selectFrame, selectFrames, addFrames, toggleFrames } =
     useSelection(vm);
   const selectedFrameId = selection?.kind === "frame" ? selection.id : undefined;
-  const isMultiSelect = selectedIds.size > 1;
+  const _isMultiSelect = selectedIds.size > 1;
   // WI-038 Phase 2 — derive peek container from selection. Selecting any
   // item makes peek index THAT item's parent's children (so the user can
   // L+drag to reorder the siblings of the selected item). No selection ⇒

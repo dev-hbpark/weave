@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
+import { describe, expect, it } from "vitest";
 import {
   findInlineImageItems,
   replaceInlineImageSrcs,
@@ -137,9 +137,7 @@ describe("findInlineImageItems", () => {
   });
 
   it("skips shape items whose image fill is already a cloud URL", () => {
-    const doc = docWith([
-      shapeWithImageFillItem("s1", "https://cloud.example.com/a.png"),
-    ]);
+    const doc = docWith([shapeWithImageFillItem("s1", "https://cloud.example.com/a.png")]);
     expect(findInlineImageItems(doc)).toEqual([]);
   });
 });
@@ -187,9 +185,7 @@ describe("replaceInlineImageSrcs", () => {
     ]);
     const out = replaceInlineImageSrcs(blob, map) as Record<string, unknown>;
     const children = out.children as ReadonlyArray<Record<string, unknown>>;
-    expect((children[0]!.attrs as { src: string }).src).toBe(
-      "https://cloud.example.com/a.png",
-    );
+    expect((children[0]!.attrs as { src: string }).src).toBe("https://cloud.example.com/a.png");
     expect((children[0]!.attrs as { alt: string }).alt).toBe("");
     // Frame item with a coincidentally-named src field is left alone.
     expect((children[1]!.attrs as { src: string }).src).toBe("data:not-an-image");
@@ -229,10 +225,10 @@ describe("replaceInlineImageSrcs", () => {
         fill: { type: "image", src: "data:image/png;base64,FFF", fit: "cover" },
       },
     };
-    const out = replaceInlineImageSrcs(
-      blob,
-      new Map([["s1", "https://cloud/x.png"]]),
-    ) as Record<string, unknown>;
+    const out = replaceInlineImageSrcs(blob, new Map([["s1", "https://cloud/x.png"]])) as Record<
+      string,
+      unknown
+    >;
     const fill = (out.attrs as { fill: { type: string; src: string; fit: string } }).fill;
     expect(fill.src).toBe("https://cloud/x.png");
     expect(fill.type).toBe("image");
@@ -245,10 +241,10 @@ describe("replaceInlineImageSrcs", () => {
       kind: "shape",
       attrs: { fill: { type: "solid", color: "#abcdef" } },
     };
-    const out = replaceInlineImageSrcs(
-      blob,
-      new Map([["s1", "https://cloud/x.png"]]),
-    ) as Record<string, unknown>;
+    const out = replaceInlineImageSrcs(blob, new Map([["s1", "https://cloud/x.png"]])) as Record<
+      string,
+      unknown
+    >;
     expect((out.attrs as { fill: { color: string } }).fill.color).toBe("#abcdef");
   });
 });

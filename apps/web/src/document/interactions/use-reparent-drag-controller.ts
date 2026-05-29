@@ -268,9 +268,7 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
             itemId: x.itemId,
             newParentId: candidateId,
           })),
-          ...(size !== undefined
-            ? { designWidth: size.width, designHeight: size.height }
-            : {}),
+          ...(size !== undefined ? { designWidth: size.width, designHeight: size.height } : {}),
         });
       }
       endGesture();

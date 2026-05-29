@@ -8,6 +8,7 @@
 // nested groups" — anything bigger is almost always an accidental
 // nesting (e.g. self-pasting inside a recursive structure).
 export const MAX_PASTE_NODES = 500;
+
 //
 // A clipboard entry travels through three layers:
 //

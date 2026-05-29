@@ -26,7 +26,7 @@ test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-async function frameRect(page: import("@playwright/test").Page) {
+async function _frameRect(page: import("@playwright/test").Page) {
   const el = page.locator("[data-frame-id]").first();
   const box = await el.boundingBox();
   if (!box) throw new Error("frame has no bounding box");

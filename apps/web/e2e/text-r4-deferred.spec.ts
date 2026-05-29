@@ -101,7 +101,10 @@ test("Korean character (Hangul) commits into textRuns via Lexical input pipeline
   await blurEditor(page);
 
   const attrs = await readTextAttrs(page, textId);
-  expect(attrs.text ?? "", `text=${JSON.stringify(attrs.text)} textRuns=${JSON.stringify(attrs.textRuns)}`).toContain("안녕하세요");
+  expect(
+    attrs.text ?? "",
+    `text=${JSON.stringify(attrs.text)} textRuns=${JSON.stringify(attrs.textRuns)}`,
+  ).toContain("안녕하세요");
 });
 
 // ── 2. Cmd+B / Cmd+I / Cmd+U range style ───────────────────────────────
@@ -122,9 +125,9 @@ test("Korean character (Hangul) commits into textRuns via Lexical input pipeline
 // behaviour itself is verified manually + via the "rich text per-range"
 // PropertiesPanel control set, which exercises the same internal
 // FORMAT_TEXT_COMMAND through a different (mouse-click) trigger.
-test.fixme(
-  "Cmd+B inside Lexical formats the selected range and persists into textRuns",
-  async ({ page }) => {
+test.fixme("Cmd+B inside Lexical formats the selected range and persists into textRuns", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "R4-bold" });
   const textId = await addTextViaMenu(page);
   expect(textId).not.toBe("");
@@ -275,12 +278,9 @@ test("mount → unmount → remount preserves textRuns and accepts new input", a
 // skipped with the resume-condition pinned so re-enabling is a one-line
 // change here when the flag flips.
 
-test.skip(
-  "[WI-028 sync paused] two playwright contexts converge under concurrent text edits",
-  () => {
-    // Re-enable when SYNC_ENABLED is flipped to true. The expected
-    // shape: open two browserContexts, both load /design/:id, both
-    // enter edit mode, type interleaving characters, then assert each
-    // context's __weaveDoc.root.children[0].attrs.text equals.
-  },
-);
+test.skip("[WI-028 sync paused] two playwright contexts converge under concurrent text edits", () => {
+  // Re-enable when SYNC_ENABLED is flipped to true. The expected
+  // shape: open two browserContexts, both load /design/:id, both
+  // enter edit mode, type interleaving characters, then assert each
+  // context's __weaveDoc.root.children[0].attrs.text equals.
+});

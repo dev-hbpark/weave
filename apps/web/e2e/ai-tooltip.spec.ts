@@ -164,7 +164,7 @@ test("shared-element morph — adjacent target switch interpolates via transform
       const cs = window.getComputedStyle(el).transform;
       let tx = 0;
       const m = cs.match(/matrix\(([^)]+)\)/);
-      if (m && m[1]) {
+      if (m?.[1]) {
         const parts = m[1].split(",").map((s) => parseFloat(s.trim()));
         tx = parts[4] ?? 0;
       }
@@ -280,7 +280,7 @@ test("reduced motion — morph snaps without transform interpolation", async ({ 
       const cs = window.getComputedStyle(el).transform;
       let tx = 0;
       const m = cs.match(/matrix\(([^)]+)\)/);
-      if (m && m[1]) {
+      if (m?.[1]) {
         const parts = m[1].split(",").map((s) => parseFloat(s.trim()));
         tx = parts[4] ?? 0;
       }
