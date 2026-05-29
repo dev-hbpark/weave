@@ -81,7 +81,7 @@ import {
 import type { ReactNode as ReactNodeAlias } from "react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   type DocFlavor,
   type DomainKind,
@@ -109,6 +109,7 @@ import {
 } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
+import { LocalDesignConflictDialog } from "../document/LocalDesignConflictDialog.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import { useIsTextEditing } from "../document/clipboard/use-is-text-editing.js";
 import { layoutChildFromTextAutoResize } from "../document/domains/derive-text-auto-resize.js";
@@ -547,11 +548,18 @@ const SAVE_TOOLTIP_ACTION = {
 } as const;
 
 export function DesignPage() {
-  return <DesignPageBody />;
+  const { id } = useParams<{ id: string }>();
+  // Key on the design id so navigating directly between designs (e.g. after
+  // saving an offline edit as a NEW design) remounts the editor with fresh
+  // state — React Router reuses the route element on param change, which
+  // would otherwise leave the previous design's hooks (and the reconcile
+  // dialog) mounted.
+  return <DesignPageBody key={id ?? ""} />;
 }
 
 function DesignPageBody() {
   const params = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const designId = params.id ?? "";
 
   const {
@@ -570,6 +578,8 @@ function DesignPageBody() {
     persistNow,
     persistNowAwaitable,
     isLoading,
+    localConflict,
+    resolveLocalConflict,
   } = useDesign(designId);
   const { editor, vm, router, selectionChrome, sync } = useWeaveEditor({
     docInAgocraft,
@@ -1148,6 +1158,31 @@ function DesignPageBody() {
       }
     };
   }, []);
+
+  // Offline-edit reconcile prompt. `useDesign.localConflict` flips true
+  // when the opened design has an unsynced offline copy in localStorage.
+  const [conflictBusy, setConflictBusy] = useState(false);
+  const handleConflictSave = useCallback(async () => {
+    setConflictBusy(true);
+    const { ok, newDesignId } = await resolveLocalConflict("save");
+    setConflictBusy(false);
+    if (ok && newDesignId !== undefined) {
+      // The offline edit was saved as a new design — open it so the user
+      // continues on the copy they just preserved.
+      navigate(`/design/${newDesignId}`);
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.alert(
+        "서버에 저장하지 못했습니다. 변경사항은 로컬에 보관되며 다음에 다시 저장을 시도할 수 있습니다.",
+      );
+    }
+  }, [resolveLocalConflict, navigate]);
+  const handleConflictDiscard = useCallback(async () => {
+    setConflictBusy(true);
+    await resolveLocalConflict("discard");
+    setConflictBusy(false);
+  }, [resolveLocalConflict]);
 
   const swatchFor = useCallback(
     (id: string) => {
@@ -3004,6 +3039,16 @@ function DesignPageBody() {
                             onConfirm={clipboardCommands.handlePasteSpecialConfirm}
                             clipboardHasItems={clipboardCommands.hasItems}
                             hasSelection={selectedIds.size > 0}
+                          />
+                          {/* Offline-edit reconcile prompt — opens when the
+                              design has an unsynced offline copy in
+                              localStorage. "저장" uploads it to the server,
+                              "버리기" discards it and loads the server copy. */}
+                          <LocalDesignConflictDialog
+                            open={localConflict}
+                            busy={conflictBusy}
+                            onSave={() => void handleConflictSave()}
+                            onDiscard={() => void handleConflictDiscard()}
                           />
                           {/* WI-030 — slide preset picker. Add menu →
                           "슬라이드…" opens this Dialog. Picking a

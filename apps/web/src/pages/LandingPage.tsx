@@ -83,20 +83,20 @@ export function LandingPage() {
   // summary re-pull) resolves.
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
-  const refresh = useCallback(() => {
-    setDesigns(listAllDesigns());
+  // Cloud is the source of truth for the design list. We paint the
+  // offline outbox (`listAllDesigns` — now only unsynced offline edits)
+  // instantly, then pull the cloud list and merge. Offline entries win on
+  // id collision (they're the unsynced-newer copy) and surface designs
+  // that only exist offline. Resources still come from LS (bootstrap
+  // mirrors them there).
+  const refresh = useCallback(async () => {
+    const local = listAllDesigns();
     setResources(listResources());
-  }, []);
-
-  // Pure-cloud list refresh — used after `duplicateDesignCloud` so the
-  // newly-created entry shows up without touching localStorage. The
-  // mount-time path keeps using `listAllDesigns()` (LS-cached) for an
-  // instant first paint; this refresher is the cloud-only counterpart
-  // requested for the duplicate flow.
-  const refreshFromCloud = useCallback(async () => {
-    const summaries = await fetchAllDesignsCloud();
-    setDesigns(
-      summaries.map((s) => ({
+    setDesigns(local); // instant paint from the offline outbox
+    const cloud = await fetchAllDesignsCloud();
+    const byId = new Map<string, DesignSummary>();
+    for (const s of cloud) {
+      byId.set(s.id, {
         id: s.id,
         title: s.title,
         width: s.width,
@@ -104,8 +104,10 @@ export function LandingPage() {
         background: s.background,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
-      })),
-    );
+      });
+    }
+    for (const s of local) byId.set(s.id, s);
+    setDesigns([...byId.values()].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)));
   }, []);
 
   const handleDuplicate = useCallback(
@@ -122,35 +124,33 @@ export function LandingPage() {
           }
           return;
         }
-        // Pull the fresh summary list from the cloud so the new entry
-        // appears in-place. Skips LS entirely — the duplicate flow
-        // honors the "no localStorage" contract end-to-end.
-        await refreshFromCloud();
+        // Pull the fresh list (cloud ∪ offline outbox) so the new entry
+        // appears in-place.
+        await refresh();
       } finally {
         setDuplicatingId(null);
       }
     },
-    [duplicatingId, refreshFromCloud],
+    [duplicatingId, refresh],
   );
 
   useEffect(() => {
     let cancelled = false;
-    // Paint instantly with whatever localStorage already has, then pull
-    // the shared cloud workspace and re-paint. The bootstrap is idempotent
-    // (it skips ids already in LS) so re-running it from here in addition
-    // to App.tsx's mount is safe.
-    refresh();
-    void bootstrapFromCloud().then(({ designs: d, resources: r }) => {
+    // Paint the offline outbox instantly, then pull the cloud list and
+    // merge (inside `refresh`). Bootstrap mirrors cloud RESOURCES into LS;
+    // re-refresh once it lands so any cloud-only resources appear.
+    void refresh();
+    void bootstrapFromCloud().then(({ resources: r }) => {
       if (cancelled) return;
-      if (d > 0 || r > 0) refresh();
+      if (r > 0) void refresh();
     });
     // Same-tab `localStorage.setItem` doesn't dispatch `storage`; this
     // listener only catches *cross-tab* updates (e.g. another window
-    // saves a design). Same-tab refresh after bootstrap is handled above.
+    // saves a design offline). Same-tab refresh after bootstrap is above.
     const onStorage = (e: StorageEvent) => {
       if (e.key === null) return;
       if (e.key.startsWith("weave.design.v5.") || e.key.startsWith("weave.resource.v1.")) {
-        refresh();
+        void refresh();
       }
     };
     window.addEventListener("storage", onStorage);
@@ -169,7 +169,7 @@ export function LandingPage() {
           setWizardOpen(next);
           // Wizard close after a navigation — refresh list when user
           // bounces back to the workspace.
-          if (!next) refresh();
+          if (!next) void refresh();
         }}
       />
 
@@ -308,7 +308,7 @@ export function LandingPage() {
                             return;
                           }
                           clearDesign(d.id);
-                          refresh();
+                          void refresh();
                         }}
                         className="bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] rounded-[var(--radius-sm)] px-2 py-1"
                         aria-label="디자인 삭제"
@@ -378,7 +378,7 @@ export function LandingPage() {
                     data-testid="resource-delete"
                     onClick={() => {
                       removeResource(r.id);
-                      refresh();
+                      void refresh();
                     }}
                     className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/55 text-white text-[11px] leading-none rounded px-1.5 py-1"
                     aria-label="리소스 삭제"

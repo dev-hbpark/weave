@@ -25,6 +25,7 @@ import {
   createBlankDesign,
   hydrateSerializedDesign,
   loadDesign,
+  removeLocalDesign,
   saveDesign,
   saveDesignAwaitable,
   type SerializedDesignV5,
@@ -90,10 +91,36 @@ interface UseDesignResult {
    *  when LS already had the design, so well-behaved hosts can render
    *  the spinner unconditionally on `isLoading`. */
   readonly isLoading: boolean;
+  /** True when an UNSYNCED OFFLINE EDIT for this id was found in
+   *  localStorage on open. The hook paints that offline copy (so the
+   *  user sees their unsynced work) and the host must surface a
+   *  reconcile prompt — resolve it via `resolveLocalConflict`. False in
+   *  the normal online path (no local copy → loaded from the cloud). */
+  readonly localConflict: boolean;
+  /** Resolve the offline-edit prompt:
+   *   • "save"    — save the painted offline copy to the server as a NEW
+   *                 design (fresh id), leaving the original server design
+   *                 untouched. On success the original id's outbox entry
+   *                 is dropped and `newDesignId` carries the new design's
+   *                 id so the host can navigate to it. `ok` is false when
+   *                 the round-trip fails (the edit stays in the outbox).
+   *   • "discard" — drop the offline copy and load the server version
+   *                 (blank if the server has none). Always resolves `ok`.
+   *  Clears `localConflict` either way. */
+  readonly resolveLocalConflict: (
+    choice: "save" | "discard",
+  ) => Promise<{ ok: boolean; newDesignId?: string }>;
 }
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+/** Fresh design id — same shape as `NewDesignWizard.makeDesignId` /
+ *  `LandingPage.makeDuplicateDesignId` (matches `isValidId`). Used when an
+ *  offline edit is reconciled by saving it as a new design. */
+function makeDesignId(): string {
+  return `design-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function withDocument(design: Design, document: AgocraftDocument): Design {
@@ -104,37 +131,41 @@ function withDocument(design: Design, document: AgocraftDocument): Design {
   };
 }
 
-/** Resolve the initial Design for `id`. Loads from storage if present,
- *  else builds a blank Design with the default 1920×1080 preset. The
- *  `localMiss` flag tells the caller whether the LS path actually
- *  produced a hit — `true` means the returned Design is the fallback
- *  blank, in which case the host should attempt a cloud fetch before
- *  letting the user start editing.
+/** Resolve the initial Design for `id`.
  *
- *  The flag is necessary because a blank fallback is structurally
- *  indistinguishable from a freshly-created empty design — both have
- *  zero items. Without the flag we'd either skip the cloud probe
- *  (breaking duplicate / migrate flows that don't seed LS) or fire it
- *  for every brand-new design (wasted round-trip). */
-function initialDesign(id: string): { readonly design: Design; readonly localMiss: boolean } {
-  const loaded = loadDesign(id);
-  if (loaded !== undefined) return { design: loaded, localMiss: false };
+ *  `source` discriminates the open path under the offline-first model:
+ *   • "local" — a `weave.design.v5.<id>` entry exists. Under this model
+ *     that is an UNSYNCED OFFLINE EDIT, never a sync cache. We paint it
+ *     (so the user sees their unsynced work) and the host prompts to
+ *     reconcile it against the server (`localConflict`).
+ *   • "blank" — no local copy. The returned Design is a blank placeholder
+ *     and the host fetches the authoritative copy from the cloud (or
+ *     keeps the blank for a brand-new design the cloud doesn't have yet). */
+function initialDesign(id: string): {
+  readonly design: Design;
+  readonly source: "local" | "blank";
+} {
+  const local = loadDesign(id);
+  if (local !== undefined) return { design: local, source: "local" };
   return {
     design: createBlankDesign({ id, title: "Untitled design", width: 1920, height: 1080 }),
-    localMiss: true,
+    source: "blank",
   };
 }
 
 export function useDesign(id: string): UseDesignResult {
-  const initial = useRef<{ readonly design: Design; readonly localMiss: boolean }>();
+  const initial = useRef<{ readonly design: Design; readonly source: "local" | "blank" }>();
   if (initial.current === undefined) initial.current = initialDesign(id);
   const [design, setDesign] = useState<Design>(initial.current.design);
-  // Spinner gate. Starts true only on LS-miss (= the cloud fallback
-  // effect below will fire); on LS-hit there's nothing to wait for so
-  // it starts false. Flips to false in every effect exit path (success,
-  // 404, network error, user-mutated-mid-fetch) so the spinner does
-  // not strand the user.
-  const [isLoading, setIsLoading] = useState<boolean>(initial.current.localMiss);
+  // Spinner gate. True only on the "blank" path (= the cloud fetch below
+  // will fire); on a local-conflict open we already have a copy to paint,
+  // so no spinner — the reconcile dialog masks the editor instead.
+  const [isLoading, setIsLoading] = useState<boolean>(initial.current.source === "blank");
+  // True when the open found an unsynced offline edit. The host renders
+  // the reconcile prompt; `resolveLocalConflict` clears it.
+  const [localConflict, setLocalConflict] = useState<boolean>(
+    initial.current.source === "local",
+  );
 
   // Mirror the latest Design into a ref so persistNow can read it without
   // re-creating the callback on every render. setDesign batching means the
@@ -142,18 +173,25 @@ export function useDesign(id: string): UseDesignResult {
   const designRef = useRef<Design>(design);
   designRef.current = design;
 
-  // Cloud fallback for LS-miss. Fires once per id, only when the
-  // initial load above returned the blank. Successful hydration
-  // replaces the blank Design with the cloud snapshot; failure is a
-  // silent no-op (user keeps editing the blank, which will then save
-  // to the cloud as the first user mutation lands and produces a
-  // patch). Race-protected by reference-equality against the snapshot
-  // we captured at mount: a user who started typing on the blank will
-  // have rotated `designRef.current` to a new object via `setDesign`,
-  // so the bail-out below leaves their work intact.
+  // Ref mirror so the stable persist callbacks can read the current
+  // conflict state. While an offline edit is UNRESOLVED, persistence is
+  // suppressed: the live editor must not auto-sync the painted offline
+  // copy back to the server under the original id (that would silently
+  // overwrite the server version before the user picks save/discard).
+  const localConflictRef = useRef<boolean>(localConflict);
+  localConflictRef.current = localConflict;
+
+  // Cloud fetch on mount — ONLY on the "blank" path (no local copy). The
+  // cloud is authoritative for designs, so this is where a reopened design
+  // picks up edits saved from this or another device. A "local" open does
+  // NOT fetch here: that copy is an unsynced offline edit and must not be
+  // silently overwritten — the host prompts and `resolveLocalConflict`
+  // decides. Race-protected by reference-equality against the mount
+  // snapshot: a user who started editing the blank before the cloud
+  // replied has rotated `designRef.current`, so we leave their work intact.
   const designAtMountRef = useRef(initial.current.design);
   useEffect(() => {
-    if (!initial.current?.localMiss) return undefined;
+    if (initial.current?.source !== "blank") return undefined;
     let cancelled = false;
     void (async () => {
       const raw = await fetchDesignCloud(id);
@@ -179,6 +217,66 @@ export function useDesign(id: string): UseDesignResult {
     };
   }, [id]);
 
+  // Resolve the offline-edit prompt. "save" persists the painted offline
+  // copy to the server as a NEW design (fresh id + title suffix), leaving
+  // the original server design untouched — so neither the offline edit nor
+  // the server version is lost. The host navigates to the returned new id.
+  // "discard" throws away the offline copy and loads the server version
+  // (blank when the cloud has none — a design that only ever existed
+  // offline).
+  const resolveLocalConflict = useCallback(
+    async (choice: "save" | "discard"): Promise<{ ok: boolean; newDesignId?: string }> => {
+      if (choice === "save") {
+        const current = designRef.current;
+        const newId = makeDesignId();
+        const now = nowIso();
+        const newDesign: Design = {
+          ...current,
+          id: newId,
+          title: `${current.title} (오프라인 사본)`,
+          meta: { ...current.meta, createdAt: now, updatedAt: now },
+        };
+        const ok = await saveDesignAwaitable(newDesign);
+        if (ok) {
+          // The offline edit now lives on the server as a new design — drop
+          // the ORIGINAL id's outbox so reopening it no longer prompts.
+          removeLocalDesign(id);
+          // Intentionally leave `localConflict` TRUE: it keeps persistence
+          // gated (so a late debounced auto-save can't overwrite the
+          // original id) until the host navigates to `newDesignId`, which
+          // unmounts this hook and tears the dialog down with it.
+          return { ok, newDesignId: newId };
+        }
+        // Failed round-trip parks `newDesign` in the outbox under `newId`;
+        // we never navigate there, so clear that orphan and keep the
+        // original outbox so the user can retry from this design. Release
+        // the dialog so the user can keep editing offline.
+        removeLocalDesign(newId);
+        setLocalConflict(false);
+        return { ok };
+      }
+      removeLocalDesign(id);
+      setIsLoading(true);
+      const raw = await fetchDesignCloud(id);
+      const hydrated =
+        raw === null ? undefined : hydrateSerializedDesign(raw as unknown as SerializedDesignV5);
+      const current = designRef.current;
+      setDesign(
+        hydrated ??
+          createBlankDesign({
+            id,
+            title: current.title,
+            width: current.width,
+            height: current.height,
+          }),
+      );
+      setIsLoading(false);
+      setLocalConflict(false);
+      return { ok: true };
+    },
+    [id],
+  );
+
   // Persistence is no longer driven by useEffect on design changes —
   // useWeaveEditor wires a debounced ChangeStream sink to persistNow.
   // The first render still establishes the initial Design via initialDesign;
@@ -186,12 +284,15 @@ export function useDesign(id: string): UseDesignResult {
   // brand new from createBlankDesign and will be saved on the first user
   // mutation via the debounced sink).
   const persistNow = useCallback(() => {
+    // Suppress auto-save while an offline edit is unresolved — see
+    // `localConflictRef`. Resolution goes through `resolveLocalConflict`.
+    if (localConflictRef.current) return;
     saveDesign(designRef.current);
   }, []);
-  const persistNowAwaitable = useCallback(
-    () => saveDesignAwaitable(designRef.current),
-    [],
-  );
+  const persistNowAwaitable = useCallback(async () => {
+    if (localConflictRef.current) return false;
+    return saveDesignAwaitable(designRef.current);
+  }, []);
 
   const addItem = useCallback((kind: DomainKind, containerId?: string) => {
     setDesign((prev) => {
@@ -400,6 +501,8 @@ export function useDesign(id: string): UseDesignResult {
     persistNow,
     persistNowAwaitable,
     isLoading,
+    localConflict,
+    resolveLocalConflict,
   };
 }
 

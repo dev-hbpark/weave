@@ -16,7 +16,6 @@
 
 import type { Design } from "./types.js";
 
-const KEY_DESIGN_PREFIX = "weave.design.v5.";
 const KEY_RESOURCE_PREFIX = "weave.resource.v1.";
 
 /** Lightweight check — set to `false` when we hit a network/API error so
@@ -266,9 +265,16 @@ export function deleteResourceCloud(id: string): void {
 
 // ── Bootstrap ────────────────────────────────────────────────────────────
 
-/** Pull the cloud lists into localStorage so the existing sync readers
- *  (listAllDesigns, listResources) see the same data. Called once on
- *  app mount. Returns the counts pulled so the caller can refresh state.
+/** Pull the cloud RESOURCE list into localStorage so the sync resource
+ *  reader (`listResources`) sees it. Called once on app mount. Returns
+ *  the counts pulled so the caller can refresh state.
+ *
+ *  Designs are NOT cached here. Under the offline-first model the cloud
+ *  is the source of truth for designs and a `weave.design.v5.*` entry
+ *  means an unsynced offline edit — caching cloud designs into that key
+ *  would manufacture phantom "offline edits" and trip the open-time
+ *  reconcile prompt for every design. The landing page lists designs
+ *  straight from the cloud (`fetchAllDesignsCloud`) instead.
  *
  *  Concurrent callers (e.g. App.tsx's background prefetch and
  *  LandingPage's mount-time refresh) share the same in-flight promise,
@@ -293,22 +299,8 @@ async function bootstrapFromCloudImpl(): Promise<{
   resources: number;
 }> {
   if (typeof window === "undefined") return { designs: 0, resources: 0 };
-  let designsCount = 0;
+  const designsCount = 0;
   let resourcesCount = 0;
-
-  // Designs — for each summary, fetch the full document and write to LS.
-  const summaries = await fetchAllDesignsCloud();
-  for (const s of summaries) {
-    if (window.localStorage.getItem(KEY_DESIGN_PREFIX + s.id) !== null) {
-      // We already have a local copy. Skip the round-trip; on next save
-      // the local copy will overwrite the cloud's stale snapshot.
-      continue;
-    }
-    const full = await fetchDesignCloud(s.id);
-    if (full === null) continue;
-    window.localStorage.setItem(KEY_DESIGN_PREFIX + s.id, JSON.stringify(full));
-    designsCount++;
-  }
 
   // Resources — flat list.
   const cloudResources = await fetchAllResourcesCloud();

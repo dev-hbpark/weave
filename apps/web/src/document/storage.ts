@@ -40,19 +40,31 @@ const BACKUP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // stashed under `weave.design.v9-backup.<id>` for 1 week (RISK-004 §1).
 const WI032_MIGRATE_ENABLED = true;
 
-// Save-path localStorage gate. When `false`, `saveDesign` skips the LS
-// write line and only fires the cloud (`pushDesignCloud`) mirror — the
-// server becomes the sole persistence target. Read-side (`loadDesign`,
-// `listAllDesigns`) and the cloud → LS bootstrap (`bootstrapFromCloud`)
-// are intentionally left untouched: LS still acts as a per-session
-// cache so reloads inside the same session pick up the in-memory shape
-// without a round-trip. Flip back to `true` to restore the original
-// dual-write behavior.
+// Persistence model (2026-05-29) — offline-first, cloud-authoritative.
 //
-// Set false on user request (2026-05-27): "당장은 로컬스토리지에는 저장하고
-// 싶지 않아 기능을 막아두고 네트워크로 실제 서버에 저장하는것만 동작하게
-// 해줘".
-const LOCAL_STORAGE_SAVE_ENABLED = false;
+// The cloud (`apps/web/api/designs/*`) is the single source of truth. A
+// `weave.design.v5.<id>` entry in localStorage means exactly one thing:
+// an UNSYNCED OFFLINE EDIT (an "outbox"). It is written ONLY when a save
+// can't reach the server, and removed the moment that edit syncs. This
+// is the user's contract — "로컬스토리지에 저장하는 건 오프라인일 때만"
+// (write LS only while offline). It replaces the earlier all-or-nothing
+// gate, which left LS as a stale read-cache that shadowed newer cloud
+// saves on reopen.
+//
+// Consequences:
+//   • `bootstrapFromCloud` no longer caches cloud designs into LS — a
+//     present LS entry is always an offline edit, never a sync cache.
+//   • Opening a design that HAS an LS entry surfaces a reconcile prompt
+//     (save the offline edit to the server, or discard it) instead of
+//     silently using either copy. See `useDesign`'s `localConflict`.
+
+/** True when the browser reports no network connection. The fire-and-
+ *  forget save path writes the offline outbox only in this case; the
+ *  awaitable save path keys off the actual cloud round-trip result. */
+function isOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 const LEGACY_PREFIX_V3 = "weave.doc.v3.";
 const LEGACY_PREFIX_V2 = "weave.doc.v2.";
 const LEGACY_PREFIX_V1 = "weave.doc.v1.";
@@ -350,8 +362,35 @@ export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | unde
   };
 }
 
+// One-time migration for the offline-first switch (2026-05-29). Before
+// this change, `weave.design.v5.*` was a cloud READ-CACHE that bootstrap
+// populated for every design. Under the offline-first model that key
+// means an unsynced offline edit — so a leftover read-cache entry would
+// masquerade as one and trip the open-time reconcile prompt with stale
+// data. No genuine offline edits can predate this change, so the first
+// LS read purges every `weave.design.v5.*` once and records a flag; after
+// that the key is left alone so real offline edits survive.
+const OFFLINE_MODEL_MIGRATION_KEY = "weave.migration.offline-model.v1";
+
+function purgeLegacyDesignCacheOnce(): void {
+  if (typeof window === "undefined") return;
+  if (window.localStorage.getItem(OFFLINE_MODEL_MIGRATION_KEY) !== null) return;
+  const toDelete: string[] = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (key === null || !key.startsWith(KEY_PREFIX_V5)) continue;
+    toDelete.push(key);
+  }
+  for (const k of toDelete) window.localStorage.removeItem(k);
+  window.localStorage.setItem(OFFLINE_MODEL_MIGRATION_KEY, new Date().toISOString());
+}
+
 export function loadDesign(id: string): Design | undefined {
   if (typeof window === "undefined") return undefined;
+
+  // Drop the pre-offline-first read-cache once so stale entries don't
+  // masquerade as offline edits. Flag-guarded — no-op after the first run.
+  purgeLegacyDesignCacheOnce();
 
   // WI-032 — sweep stale v9 backups (older than 1 week) before any read.
   evictStaleBackups();
@@ -494,65 +533,75 @@ export function readV9Backup(id: string): V9BackupBlob | undefined {
   }
 }
 
-export function saveDesign(design: Design): void {
-  if (typeof window === "undefined") return;
-  const docBlob = serializer.toJSON(design.document);
-  const blob: SerializedDesignV5 = {
+/** Serialize a runtime `Design` into the persisted v5 blob shape (shared
+ *  by the cloud push and the offline outbox so both see identical bytes). */
+function toSerializedDesign(design: Design): SerializedDesignV5 {
+  return {
     id: design.id,
     title: design.title,
     width: design.width,
     height: design.height,
     background: design.background,
-    document: docBlob,
+    document: serializer.toJSON(design.document),
     presentationOrder: design.presentationOrder,
     meta: design.meta,
   };
-  if (LOCAL_STORAGE_SAVE_ENABLED) {
+}
+
+/** Drop the offline outbox copy for `id`. Touches ONLY localStorage —
+ *  unlike `clearDesign`, it never deletes the server entry. Used when an
+ *  offline edit has been synced (or explicitly discarded) so a later
+ *  open no longer prompts. */
+export function removeLocalDesign(id: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(KEY_PREFIX_V5 + id);
+}
+
+export function saveDesign(design: Design): void {
+  if (typeof window === "undefined") return;
+  const blob = toSerializedDesign(design);
+  // Offline outbox — keep the work locally ONLY while the network is down
+  // so nothing is lost. The fire-and-forget cloud push below still runs;
+  // if it lands, the next successful awaitable save (or open-time sync)
+  // clears this entry. While online we never touch LS.
+  if (isOffline()) {
     window.localStorage.setItem(KEY_PREFIX_V5 + design.id, JSON.stringify(blob));
   }
-  // WI-025 — mirror to cloud (fire-and-forget). The cloud sees the same
-  // serialized blob as localStorage. Loaded lazily so unit tests don't
-  // pull the cloud module by default. When the LS write above is gated
-  // off, this becomes the sole persistence call — `pushDesignCloud` is
-  // still fire-and-forget, so a failed network round-trip leaves no
-  // local fallback. The user opted into that trade-off (see flag
-  // comment at the top of this file).
+  // Mirror to cloud (fire-and-forget). Loaded lazily so unit tests don't
+  // pull the cloud module by default.
   void import("./cloud-sync.js")
     .then((m) => {
       m.pushDesignCloud(blob as unknown as Design);
     })
     .catch(() => {
-      /* dev / offline — silently skip */
+      /* dev / offline — silently skip; the offline outbox above retains it */
     });
 }
 
-/** Awaitable cousin of `saveDesign`. Skips localStorage (same gate as
- *  the sync sibling) and returns whether the cloud round-trip
- *  succeeded. Used by the manual save button so the UI can flip to a
- *  failure state instead of showing an always-optimistic "저장됨" flash.
- *  Debounced auto-save keeps using the fire-and-forget `saveDesign`. */
+/** Awaitable cousin of `saveDesign`. Awaits the cloud round-trip and
+ *  reconciles the offline outbox against the result: on success the
+ *  outbox copy for this id is dropped (the server now has it); on failure
+ *  the blob is parked in the outbox so the edit survives until the next
+ *  successful save. Used by the manual save button (and the offline-
+ *  reconcile prompt's "저장") so the UI can reflect the real outcome. */
 export async function saveDesignAwaitable(design: Design): Promise<boolean> {
   if (typeof window === "undefined") return false;
-  const docBlob = serializer.toJSON(design.document);
-  const blob: SerializedDesignV5 = {
-    id: design.id,
-    title: design.title,
-    width: design.width,
-    height: design.height,
-    background: design.background,
-    document: docBlob,
-    presentationOrder: design.presentationOrder,
-    meta: design.meta,
-  };
-  if (LOCAL_STORAGE_SAVE_ENABLED) {
-    window.localStorage.setItem(KEY_PREFIX_V5 + design.id, JSON.stringify(blob));
-  }
+  const blob = toSerializedDesign(design);
+  let ok = false;
   try {
     const m = await import("./cloud-sync.js");
-    return await m.pushDesignCloudAwaitable(blob as unknown as Design);
+    ok = await m.pushDesignCloudAwaitable(blob as unknown as Design);
   } catch {
-    return false;
+    ok = false;
   }
+  if (ok) {
+    // Synced — drop any offline outbox copy so reopening won't prompt.
+    window.localStorage.removeItem(KEY_PREFIX_V5 + design.id);
+  } else {
+    // Couldn't reach the server — retain the edit in the offline outbox.
+    window.localStorage.setItem(KEY_PREFIX_V5 + design.id, JSON.stringify(blob));
+  }
+  return ok;
 }
 
 /** Lightweight summary used by the workspace listing — we don't fully
@@ -570,6 +619,8 @@ export interface DesignSummary {
 
 export function listAllDesigns(): ReadonlyArray<DesignSummary> {
   if (typeof window === "undefined") return [];
+  // Same one-time purge as loadDesign — whichever LS read fires first wins.
+  purgeLegacyDesignCacheOnce();
   const out: DesignSummary[] = [];
   for (let i = 0; i < window.localStorage.length; i++) {
     const key = window.localStorage.key(i);
