@@ -795,3 +795,206 @@ describe("weave.item.reparent (WI-039)", () => {
     expect(result.patches).toHaveLength(0);
   });
 });
+
+// ─── WI-050 — weave.frame.removeKeepingChildren (dissolve frame) ───────────
+
+describe("weave.frame.removeKeepingChildren (WI-050)", () => {
+  function nestedFrame(
+    id: string,
+    frame: { x: number; y: number; width: number; height: number; rotation?: number },
+  ): AgocraftItem {
+    return {
+      id: makeItemId(id),
+      kind: "frame",
+      attrs: { frame },
+      units: [],
+      children: [],
+      meta: {
+        createdAt: META_DATE,
+        updatedAt: META_DATE,
+        schemaVersion: 9,
+      } as AgocraftItem["meta"],
+    };
+  }
+  function frameWith(
+    id: string,
+    frame: { x: number; y: number; width: number; height: number },
+  ): Item {
+    return {
+      id,
+      kind: "frame",
+      attrs: { frame },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+  }
+
+  /** Doc layout:
+   *   root
+   *   ├─ p1 (frame, 0,0,0.5,0.5)
+   *   │   ├─ c1 (frame, 0.1,0.1,0.3,0.3)
+   *   │   └─ c2 (frame, 0.5,0.5,0.3,0.3)
+   *   └─ p2 (frame, 0.5,0.5,0.5,0.5)
+   */
+  function makeDissolveCtx(): { ctx: CommandContext; rootId: string } {
+    const weave: WeaveDocument = {
+      id: "doc-dis",
+      title: "Dissolve",
+      items: [
+        frameWith("p1", { x: 0, y: 0, width: 0.5, height: 0.5 }),
+        frameWith("p2", { x: 0.5, y: 0.5, width: 0.5, height: 0.5 }),
+      ],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    let doc = toAgocraftDocument(weave);
+    doc = addChild(doc, nestedFrame("c1", { x: 0.1, y: 0.1, width: 0.3, height: 0.3 }), "p1");
+    doc = addChild(doc, nestedFrame("c2", { x: 0.5, y: 0.5, width: 0.3, height: 0.3 }), "p1");
+    return {
+      ctx: { document: doc, resolve: () => null as never, skipRelations: false },
+      rootId: String(doc.root.id),
+    };
+  }
+
+  function runDissolve(ctx: CommandContext, frameId: string, pending = createPendingCreations()) {
+    const cmds = buildWeaveCommands(spyTargets(), pending);
+    const cmd = cmds.find((c) => c.name === "weave.frame.removeKeepingChildren");
+    if (cmd === undefined) throw new Error("weave.frame.removeKeepingChildren not found");
+    return { result: cmd.run(ctx, { frameId } as never), pending };
+  }
+
+  // Manual inverses (mirror agocraft `invertPatch`) so the test can prove the
+  // single-transaction undo restores the frame WITH its children and does NOT
+  // duplicate them at the root.
+  function invert(p: import("@agocraft/core").Patch): import("@agocraft/core").Patch {
+    if (p.type === "item.children") {
+      return { type: "item.children", itemId: p.itemId, added: p.removed, removed: p.added };
+    }
+    if (p.type === "item.reparent") {
+      return {
+        type: "item.reparent",
+        entries: p.entries.map((e) => ({
+          itemId: e.itemId,
+          oldParentId: e.newParentId,
+          oldIndex: e.newIndex,
+          oldFrameRatio: e.newFrameRatio,
+          newParentId: e.oldParentId,
+          newIndex: e.oldIndex,
+          newFrameRatio: e.oldFrameRatio,
+        })),
+      };
+    }
+    throw new Error(`invert: unexpected patch ${p.type}`);
+  }
+
+  it("emits item.reparent (children → root) then item.children (remove frame), and stages the EMPTY frame", () => {
+    const { ctx, rootId } = makeDissolveCtx();
+    const { result, pending } = runDissolve(ctx, "p1");
+    if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
+    expect(result.patches).toHaveLength(2);
+
+    const [reparent, remove] = result.patches;
+    if (reparent === undefined || reparent.type !== "item.reparent") {
+      throw new Error("patch[0] must be item.reparent");
+    }
+    expect(reparent.entries.map((e) => String(e.itemId))).toEqual(["c1", "c2"]);
+    for (const e of reparent.entries) {
+      expect(String(e.oldParentId)).toBe("p1");
+      expect(String(e.newParentId)).toBe(rootId);
+    }
+    // newIndex counts up from root's current child count ([p1, p2] = 2) so
+    // children keep their original stacking order.
+    expect(reparent.entries[0]!.newIndex).toBe(2);
+    expect(reparent.entries[1]!.newIndex).toBe(3);
+
+    if (remove === undefined || remove.type !== "item.children") {
+      throw new Error("patch[1] must be item.children");
+    }
+    expect(String(remove.itemId)).toBe(rootId);
+    expect(remove.removed.map((id) => String(id))).toEqual(["p1"]);
+
+    // The staged inverse frame must be EMPTY — otherwise undo would resurrect
+    // the children twice (once via re-add, once via the reparent inverse).
+    const staged = pending.lookup("p1");
+    if (staged === undefined) throw new Error("frame not staged for inverse");
+    expect(staged.children).toHaveLength(0);
+  });
+
+  it("forward application: children land at root, frame is gone", () => {
+    const { ctx } = makeDissolveCtx();
+    const { result, pending } = runDissolve(ctx, "p1");
+    if (!result.ok) throw new Error("expected ok");
+    let doc = ctx.document;
+    for (const p of result.patches) doc = applyChangeToDocument(doc, p as never, pending);
+
+    expect(findItemDeepById(doc, "p1")).toBeUndefined();
+    // root started [p1, p2]; reparent appends c1, c2; remove drops p1.
+    expect(doc.root.children.map((c) => String(c.id))).toEqual(["p2", "c1", "c2"]);
+    expect(findItemDeepById(doc, "c1")).toBeDefined();
+    expect(findItemDeepById(doc, "c2")).toBeDefined();
+  });
+
+  it("undo round-trip restores the frame WITH its children and does NOT duplicate them", () => {
+    const { ctx } = makeDissolveCtx();
+    const { result, pending } = runDissolve(ctx, "p1");
+    if (!result.ok) throw new Error("expected ok");
+
+    // Forward.
+    let doc = ctx.document;
+    for (const p of result.patches) doc = applyChangeToDocument(doc, p as never, pending);
+
+    // Undo: invert each patch and apply in REVERSE order (how history replays
+    // a transaction). remove⁻¹ re-adds the empty frame; reparent⁻¹ re-homes
+    // the children.
+    const inverses = result.patches.map(invert).reverse();
+    for (const p of inverses) doc = applyChangeToDocument(doc, p as never, pending);
+
+    // p1 is back at root with both children; c1/c2 do NOT also linger at root.
+    const rootKids = doc.root.children.map((c) => String(c.id));
+    expect(rootKids).toContain("p1");
+    expect(rootKids).not.toContain("c1");
+    expect(rootKids).not.toContain("c2");
+    const p1 = findItemDeepById(doc, "p1");
+    if (p1 === undefined) throw new Error("p1 not restored");
+    expect(p1.children.map((c) => String(c.id))).toEqual(["c1", "c2"]);
+  });
+
+  it("empty frame: only the remove patch, no reparent patch", () => {
+    const { ctx } = makeDissolveCtx();
+    const { result } = runDissolve(ctx, "p2"); // p2 has no children
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.patches).toHaveLength(1);
+    expect(result.patches[0]!.type).toBe("item.children");
+  });
+
+  it("guards: dissolving the root fails; an unknown id fails", () => {
+    const { ctx, rootId } = makeDissolveCtx();
+    const root = runDissolve(ctx, rootId).result;
+    expect(root.ok).toBe(false);
+    if (root.ok) throw new Error("expected fail");
+    expect(root.error.code).toBe("invalid-target");
+
+    const missing = runDissolve(ctx, "nope").result;
+    expect(missing.ok).toBe(false);
+    if (missing.ok) throw new Error("expected fail");
+    expect(missing.error.code).toBe("item-not-found");
+  });
+});
+
+/** Local deep find used by the WI-050 tests (the production helper lives in
+ *  agocraft-mirror but isn't exported under this name). */
+function findItemDeepById(doc: AgocraftDocument, id: string): AgocraftItem | undefined {
+  const walk = (item: AgocraftItem): AgocraftItem | undefined => {
+    if (String(item.id) === id) return item;
+    for (const c of item.children) {
+      const hit = walk(c);
+      if (hit !== undefined) return hit;
+    }
+    return undefined;
+  };
+  for (const c of doc.root.children) {
+    const hit = walk(c);
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
+}

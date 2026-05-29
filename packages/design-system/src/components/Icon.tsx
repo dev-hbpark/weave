@@ -350,6 +350,19 @@ export const IconFrame = forwardRef<SVGSVGElement, IconProps>(function IconFrame
   );
 });
 
+// WI-050 / DR-design-022 — "delete frame, keep children". A dashed container
+// (the frame being dissolved) with two solid children that remain — reads as
+// "the box goes away, the contents stay".
+export const IconUngroup = forwardRef<SVGSVGElement, IconProps>(function IconUngroup(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="2.5 2.5" />
+      <rect x="6" y="6" width="6" height="6" rx="1" />
+      <rect x="12" y="12" width="6" height="6" rx="1" />
+    </SvgRoot>
+  );
+});
+
 // WI-020 / WI-043 RISK-002 C2.4 — 3 layout-type icons for the
 // ContextualToolbar SegmentedControl + Option+drag popup toggle. Each
 // glyph evokes the paradigm visually:

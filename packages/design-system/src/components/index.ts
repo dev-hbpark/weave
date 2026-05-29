@@ -150,6 +150,7 @@ export {
   IconText,
   IconUnderline,
   IconUndo,
+  IconUngroup,
   IconVideo,
   IconVolume,
 } from "./Icon.js";

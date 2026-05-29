@@ -71,6 +71,7 @@ import {
   IconShapeTriangle,
   IconText,
   IconUndo,
+  IconUngroup,
   IconVideo,
   QuickActionBar,
   Spinner,
@@ -109,7 +110,6 @@ import {
 } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
-import { LocalDesignConflictDialog } from "../document/LocalDesignConflictDialog.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import { useIsTextEditing } from "../document/clipboard/use-is-text-editing.js";
 import { layoutChildFromTextAutoResize } from "../document/domains/derive-text-auto-resize.js";
@@ -125,6 +125,7 @@ import { SelectionChromeProvider } from "../document/interactions/selection-chro
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
+import { LocalDesignConflictDialog } from "../document/LocalDesignConflictDialog.js";
 import {
   findFramesAtPoint,
   type LayerHit,
@@ -150,6 +151,7 @@ import {
   type SelectionNavDir,
   setDesignSaver,
   setFrameDeleter,
+  setFrameDissolver,
   setFrameDuplicator,
   setHoverFrameChildAdder,
   setItemAdder,
@@ -168,8 +170,8 @@ import { useWeaveEditor } from "../document/use-weave-editor.js";
 import { registerZOrderAdapters } from "../document/zorder/register.js";
 import { FigmaSelectionLaunchBanner } from "../launch/FigmaSelectionLaunchBanner.js";
 import { TextV1LaunchBanner } from "../launch/TextV1LaunchBanner.js";
-import { cameraFitBox } from "./frame-camera-bridge.js";
 import { FrameStage } from "./FrameStage.js";
+import { cameraFitBox } from "./frame-camera-bridge.js";
 import { SlidePresetPicker } from "./new-design/SlidePresetPicker.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
 
@@ -1783,6 +1785,25 @@ function DesignPageBody() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- removeItem
     // closes over `rawRemoveItem` from useDesign which is stable.
   }, []);
+  // WI-050 — "delete frame, keep children". Reparent the frame's children
+  // to the root design and remove the frame in one transaction. Live design
+  // size is read via ref (rarely changes, but stays exact for a rotated
+  // ancestor under a non-square design). Used by BOTH the QuickActionBar
+  // slot below and the Cmd+Backspace handler in the keydown listener.
+  const designSizeRef = useRef({ width: design.width, height: design.height });
+  designSizeRef.current = { width: design.width, height: design.height };
+  const dissolveFrame = useCallback(
+    (frameId: string) => {
+      editor.exec("weave.frame.removeKeepingChildren", {
+        frameId,
+        designWidth: designSizeRef.current.width,
+        designHeight: designSizeRef.current.height,
+      });
+      selectFrame(null); // the frame is gone — drop the dangling selection.
+    },
+    [editor, selectFrame],
+  );
+  useEffect(() => setFrameDissolver(dissolveFrame), [dissolveFrame]);
   // WI-036 follow-up — multi-selection delete. Iterates the live
   // `selectedIds` (via ref to avoid re-registering on every selection
   // change) and dispatches `weave.item.remove` for each. After the
@@ -1843,6 +1864,21 @@ function DesignPageBody() {
           itemIds: ids,
         });
         if (r.ok && r.value.length > 0) selectFrames(r.value);
+        return;
+      }
+      // WI-050 — Cmd/Ctrl + Backspace: delete the selected frame but keep
+      // its children (reparent them to the root design). Handled here, NOT
+      // in the agocraft hotkey registry, for the same reason as plain
+      // Delete/Backspace: the registry preventDefault()s before its action
+      // can check the focus target, which would hijack native delete inside
+      // a text field. `selectedFrameIdRef` is already frame-only (it tracks
+      // `selection.kind === "frame"`), so a primitive / multi-selection
+      // falls through to the `if (mod) return` below untouched.
+      if (mod && !e.shiftKey && !e.altKey && e.key === "Backspace") {
+        const selId = selectedFrameIdRef.current;
+        if (selId === undefined) return;
+        e.preventDefault();
+        dissolveFrame(selId);
         return;
       }
       // Other Cmd/Ctrl combos are owned by the agocraft hotkey registry
@@ -1917,7 +1953,7 @@ function DesignPageBody() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editor, selectFrames, selectFrame]);
+  }, [editor, selectFrames, selectFrame, dissolveFrame]);
   // Multi-selection align / distribute — single slot dispatched by the
   // 8 `multi.align-*` / `multi.distribute-*` commands. Steps:
   //   1. Read the live selected ids + doc through refs (selection /
@@ -3537,7 +3573,13 @@ function ArrangePreviewOverlay({
     // on-screen bound of a rotated item.
     const W = designWidth > 0 ? designWidth : 1;
     const H = designHeight > 0 ? designHeight : 1;
-    const aabbOf = (f: { x: number; y: number; width: number; height: number; rotation?: number }) => {
+    const aabbOf = (f: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      rotation?: number;
+    }) => {
       const rot = f.rotation ?? 0;
       const c = Math.abs(Math.cos(rot));
       const s = Math.abs(Math.sin(rot));
@@ -3759,6 +3801,8 @@ function QuickActionBarAnchored({
           const glyphNode =
             id === "frame.delete" || id === "multi.delete" ? (
               <IconClose size={14} />
+            ) : id === "frame.removeKeepingChildren" ? (
+              <IconUngroup size={15} />
             ) : id === "image.replaceSrc" || id === "video.replaceSrc" ? (
               <IconRefresh size={14} />
             ) : (

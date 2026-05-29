@@ -44,6 +44,11 @@ interface EditorActionDeps {
  *  populated by DesignPage at mount and cleared on unmount. */
 let frameDuplicator: ((frameId: string) => void) | undefined;
 let frameDeleter: ((frameId: string) => void) | undefined;
+/** WI-050 — "dissolve" the frame: reparent its children to the root design,
+ *  then remove it. Selection-scope, set by DesignPage. The QuickActionBar
+ *  dispatches it via `tryHostSlot`; the Cmd+Backspace hotkey is handled in
+ *  DesignPage's window keydown listener (text-safe), NOT this registry. */
+let frameDissolver: ((frameId: string) => void) | undefined;
 let mediaSrcOpener: ((kind: "image" | "video", frameId: string) => void) | undefined;
 /** WI-035 P2 — hover-scope "add child frame" action. Distinct from the
  *  selection-scope `setItemAdder` (hotkey path) because QuickActionBar
@@ -66,6 +71,12 @@ export function setFrameDeleter(fn: (frameId: string) => void): () => void {
   frameDeleter = fn;
   return () => {
     if (frameDeleter === fn) frameDeleter = undefined;
+  };
+}
+export function setFrameDissolver(fn: (frameId: string) => void): () => void {
+  frameDissolver = fn;
+  return () => {
+    if (frameDissolver === fn) frameDissolver = undefined;
   };
 }
 export function setMediaSrcOpener(
@@ -524,6 +535,29 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       // Dispatched via frameDeleter slot.
     },
   },
+  // WI-050 — "delete frame, keep children". Reparents the frame's direct
+  // children to the root design (positions preserved), then removes the
+  // frame, as ONE undoable transaction. Frame-only (primitives have no
+  // children to release). The `hotkey` field is for tooltip / palette
+  // DISPLAY only — the ⌘⌫ binding is handled in DesignPage's window
+  // keydown listener (Backspace-family keys must bail on text focus
+  // BEFORE preventDefault), so this id is skipped in the registry
+  // registration loop below.
+  {
+    id: "frame.removeKeepingChildren",
+    label: { en: "Delete frame, keep children", ko: "프레임 삭제(자식 유지)" },
+    hint: {
+      en: "Remove this frame but move its children to the root design.",
+      ko: "이 프레임을 삭제하고 자식들은 루트 디자인으로 옮깁니다.",
+    },
+    hotkey: { keys: "⌘ + ⌫", binding: "Mod+Backspace", scope: "editor" },
+    category: "frame",
+    visibleWhen: (ctx) => ctx.selectedKind === "frame",
+    enabledWhen: (ctx) => typeof ctx.selectedId === "string",
+    action: () => {
+      // Dispatched via frameDissolver slot (bar) / DesignPage keydown (hotkey).
+    },
+  },
   {
     id: "image.replaceSrc",
     label: { en: "Replace image", ko: "이미지 교체" },
@@ -861,6 +895,14 @@ function tryHostSlot(id: string, ctx: Readonly<Record<string, unknown>> | undefi
     frameDeleter(selectedId);
     return true;
   }
+  if (
+    id === "frame.removeKeepingChildren" &&
+    frameDissolver !== undefined &&
+    selectedId !== undefined
+  ) {
+    frameDissolver(selectedId);
+    return true;
+  }
   if (id === "frame.addChild" && hoverFrameChildAdder !== undefined && selectedId !== undefined) {
     hoverFrameChildAdder(selectedId);
     return true;
@@ -966,9 +1008,18 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
     };
     const IME_SAFE_COMMAND_IDS = new Set(Object.values(IME_SAFE_TOOL_BINDINGS));
 
+    // WI-050 — these commands declare a `hotkey` for tooltip / palette
+    // display but are bound in DesignPage's window keydown listener
+    // instead. Backspace-family keys must bail when a text surface owns
+    // focus BEFORE preventDefault; the registry preventDefault()s on every
+    // match before its action can check the target, so binding it here
+    // would hijack native delete inside inputs / Lexical.
+    const WINDOW_LISTENER_COMMAND_IDS = new Set(["frame.removeKeepingChildren"]);
+
     const offs = EDITOR_COMMANDS.flatMap((cmd) => {
       if (cmd.hotkey === undefined) return [];
       if (IME_SAFE_COMMAND_IDS.has(cmd.id)) return [];
+      if (WINDOW_LISTENER_COMMAND_IDS.has(cmd.id)) return [];
       const action = findAction(cmd.id);
       if (action === undefined) return [];
       const koLabel = cmd.label.ko;

@@ -22,10 +22,10 @@
 import type {
   Item as AgocraftItem,
   BuiltinItemFrame as AgocraftItemFrame,
+  Unit as AgocraftUnit,
   LayoutChildPolicy,
   LayoutSpec,
   SerializedItem,
-  Unit as AgocraftUnit,
 } from "@agocraft/core";
 import {
   type Command,
@@ -40,7 +40,6 @@ import {
   serializeItemSubtree,
   ref as styleRef,
 } from "@agocraft/core";
-import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import {
   computeReparentFrameRatio,
@@ -60,6 +59,7 @@ import {
   STYLE_ATTRIBUTE_KEYS,
 } from "./clipboard/clipboard-types.js";
 import { type PasteCoordInput, resolvePasteFrame } from "./clipboard/paste-coord.js";
+import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
@@ -135,6 +135,16 @@ export interface RemoveItemInput {
   readonly itemId: string;
   /** Where the removed item lives — same default + override rules as add. */
   readonly containerId?: string;
+}
+/** WI-050 — `weave.frame.removeKeepingChildren` input. Dissolves a frame:
+ *  reparents its direct children to the root design, then removes the frame. */
+export interface RemoveFrameKeepingChildrenInput {
+  readonly frameId: string;
+  /** Live design pixel size — only affects the result when a rotated ancestor
+   *  sits in the chain under a non-square design; omit → unit square is exact
+   *  otherwise. Same semantics as `weave.item.reparent`. */
+  readonly designWidth?: number;
+  readonly designHeight?: number;
 }
 export interface UpdateItemInput {
   readonly itemId: string;
@@ -320,10 +330,7 @@ export function buildWeaveCommands(
       // at the command boundary so every caller benefits.
       const found = findParentAndIndex(ctx.document, input.itemId);
       if (found === undefined) {
-        return fail(
-          "item-not-found",
-          `weave.item.remove: itemId ${input.itemId} not in doc`,
-        );
+        return fail("item-not-found", `weave.item.remove: itemId ${input.itemId} not in doc`);
       }
       const parent = found.parent;
       if (pending !== undefined) {
@@ -925,10 +932,104 @@ export function buildWeaveCommands(
           );
         }
       }
-      return ok(undefined, [
-        { type: "item.reparent", entries: patchEntries },
-        ...layoutPatches,
-      ]);
+      return ok(undefined, [{ type: "item.reparent", entries: patchEntries }, ...layoutPatches]);
+    },
+  };
+
+  // ─── WI-050 — Delete a frame, keep its children ──────────────────────────
+  //
+  // "Dissolve" a frame: reparent every direct child up to the ROOT design
+  // (preserving each child's on-screen position), then remove the now-empty
+  // frame — all in ONE transaction so a single Cmd+Z restores the frame
+  // with its children.
+  //
+  // Patch order is load-bearing: the `item.reparent` patch lands FIRST so the
+  // reducer moves the children out (frame becomes empty), THEN the
+  // `item.children` remove patch deletes the empty frame. History inverts a
+  // transaction's patches in REVERSE order (editor `index.js`), so undo runs:
+  //   1. remove⁻¹ → re-add the frame (we stage the EMPTY frame, NOT the
+  //      original, so its children aren't resurrected here), then
+  //   2. reparent⁻¹ → move the children from root back into the frame.
+  // Staging the frame WITH its children would duplicate them on undo (they'd
+  // come back via both the re-add AND the reparent inverse).
+  const removeFrameKeepingChildren: Command<RemoveFrameKeepingChildrenInput, void> = {
+    name: "weave.frame.removeKeepingChildren",
+    run: (ctx, input) => {
+      const rootId = String(ctx.document.root.id);
+      if (input.frameId === rootId) {
+        return fail(
+          "invalid-target",
+          `weave.frame.removeKeepingChildren: cannot dissolve the root design`,
+        );
+      }
+      const found = findParentAndIndex(ctx.document, input.frameId);
+      const frame = findItemDeep(ctx.document, input.frameId);
+      if (found === undefined || frame === undefined) {
+        return fail(
+          "item-not-found",
+          `weave.frame.removeKeepingChildren: frame ${input.frameId} not in doc`,
+        );
+      }
+      const parent = found.parent;
+
+      // designWidth/Height only matter when a rotated ancestor sits in the
+      // chain under a non-square design; omit → unit square is exact for
+      // every other case (same contract as weave.item.reparent).
+      const designW = input.designWidth ?? 1;
+      const designH = input.designHeight ?? 1;
+      const rootChildCount = ctx.document.root.children.length;
+
+      // One reparent patch carrying every direct child → root. Only the
+      // child's OWN frame becomes root-relative; its subtree rides along
+      // unchanged. `newIndex` counts up from the root's current child count
+      // so the children land in their original stacking order (the reducer
+      // clamps each insert to the growing child list).
+      const patchEntries: ReparentEntry[] = [];
+      let appendPos = 0;
+      frame.children.forEach((child, indexInFrame) => {
+        const itemFrame = (child.attrs as { frame?: ReparentEntry["oldFrameRatio"] }).frame;
+        if (itemFrame === undefined) return; // items always carry a frame; skip defensively
+        // Destructive op — a child must never be lost. Fall back to its
+        // current frame if the rotation-aware ratio can't be computed.
+        const computed = computeReparentFrameRatio(
+          ctx.document,
+          String(child.id),
+          rootId,
+          designW,
+          designH,
+        );
+        patchEntries.push({
+          itemId: child.id,
+          oldParentId: frame.id,
+          oldIndex: indexInFrame,
+          oldFrameRatio: itemFrame,
+          newParentId: ctx.document.root.id,
+          newIndex: rootChildCount + appendPos,
+          newFrameRatio: computed ?? itemFrame,
+        });
+        appendPos += 1;
+      });
+
+      // Stage the EMPTY frame so undo's re-add restores an empty container;
+      // the reparent inverse then re-homes the children. (See header.)
+      const emptyFrame: AgocraftItem = { ...frame, children: [] };
+      if (pending !== undefined) {
+        pending.stage(emptyFrame);
+      } else {
+        targets.removeItem(input.frameId);
+      }
+
+      const patches: Patch[] = [];
+      if (patchEntries.length > 0) {
+        patches.push({ type: "item.reparent", entries: patchEntries });
+      }
+      patches.push({
+        type: "item.children",
+        itemId: parent.id,
+        added: [],
+        removed: [makeItemId(input.frameId)],
+      });
+      return ok(undefined, patches);
     },
   };
 
@@ -1166,14 +1267,8 @@ export function buildWeaveCommands(
   };
 
   const pastePositionHandler: StyleHandler = ({ doc, sourceAttrs, targetIds }) => {
-    const sourceFrame = (sourceAttrs.frame ?? undefined) as
-      | { x?: number; y?: number }
-      | undefined;
-    if (
-      sourceFrame === undefined ||
-      sourceFrame.x === undefined ||
-      sourceFrame.y === undefined
-    ) {
+    const sourceFrame = (sourceAttrs.frame ?? undefined) as { x?: number; y?: number } | undefined;
+    if (sourceFrame === undefined || sourceFrame.x === undefined || sourceFrame.y === undefined) {
       return [];
     }
     const patches: Patch[] = [];
@@ -1306,7 +1401,9 @@ export function buildWeaveCommands(
           item: first,
           items: serializedItems,
           relations: [],
-          ...(primaryParent !== undefined ? { sourceParentId: String(primaryParent.parent.id) } : {}),
+          ...(primaryParent !== undefined
+            ? { sourceParentId: String(primaryParent.parent.id) }
+            : {}),
         },
       };
       clipboardStore.write(payload);
@@ -1612,10 +1709,7 @@ export function buildWeaveCommands(
     run: (ctx, input) => {
       const child = findChild(ctx.document, input.itemId);
       if (child === undefined) {
-        return fail(
-          "item-not-found",
-          `weave.frame.setLayout: no item with id "${input.itemId}"`,
-        );
+        return fail("item-not-found", `weave.frame.setLayout: no item with id "${input.itemId}"`);
       }
       const before = (child.attrs as { layout?: import("@agocraft/core").LayoutSpec }).layout;
       // No-op early-out — skip emitting a patch when the spec is identical
@@ -1645,9 +1739,8 @@ export function buildWeaveCommands(
           `weave.item.setLayoutChild: no item with id "${input.itemId}"`,
         );
       }
-      const before = (
-        child.attrs as { layoutChild?: import("@agocraft/core").LayoutChildPolicy }
-      ).layoutChild;
+      const before = (child.attrs as { layoutChild?: import("@agocraft/core").LayoutChildPolicy })
+        .layoutChild;
       if (before === input.policy) {
         return ok(undefined, []);
       }
@@ -1735,6 +1828,7 @@ export function buildWeaveCommands(
     bringToFront as Command,
     sendToBack as Command,
     reparentItem as Command,
+    removeFrameKeepingChildren as Command,
     addBehavior as Command,
     removeBehavior as Command,
     insertPresetSlide as Command,
