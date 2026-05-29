@@ -7,7 +7,14 @@
 // color + blur + offset sliders shape it. Slider drags use a local draft so the
 // thumb tracks live, committing one transaction per drag.
 
-import { findUnitInItem, SHADOW_UNIT_KIND, type ShadowSpec } from "@agocraft/core";
+import {
+  FILTER_UNIT_KIND,
+  type FilterSpec,
+  findUnitInItem,
+  OPACITY_UNIT_KIND,
+  SHADOW_UNIT_KIND,
+  type ShadowSpec,
+} from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { ColorPicker, NumberSlider, Switch } from "@weave/design-system";
 import { type JSX, useEffect, useState } from "react";
@@ -114,5 +121,121 @@ export function ShadowControls({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Read the first selected item's effective value of `read` from the live doc
+ *  (unit-or-attr resolved by the caller). Returns `fallback` when unavailable. */
+function firstItemValue<T>(
+  doc: ReturnType<typeof useDocumentForResolution>,
+  ids: ReadonlyArray<string>,
+  read: (item: ReturnType<typeof findItemDeep>) => T | undefined,
+  fallback: T,
+): T {
+  if (doc === null) return fallback;
+  for (const id of ids) {
+    const item = findItemDeep(doc, id);
+    if (item === undefined) continue;
+    const v = read(item);
+    if (v !== undefined) return v;
+  }
+  return fallback;
+}
+
+/** Layer opacity as a decoration.opacity UNIT (DR-028). Reads the effective value
+ *  (unit ?? legacy attrs.opacity ?? 1); writes the unit on commit, clearing it at
+ *  100% (1 = identity, no unit). */
+export function OpacityControl({
+  editor,
+  ids,
+}: {
+  readonly editor: Editor;
+  readonly ids: ReadonlyArray<string>;
+}): JSX.Element {
+  const doc = useDocumentForResolution();
+  const value = firstItemValue(
+    doc,
+    ids,
+    (item) =>
+      item === undefined
+        ? undefined
+        : ((findUnitInItem(item, OPACITY_UNIT_KIND)?.attrs as { value: number } | undefined)
+            ?.value ?? (item.attrs as { opacity?: number }).opacity),
+    1,
+  );
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+
+  const write = (v: number): void => {
+    const attrs = v >= 1 ? null : { value: v };
+    for (const id of ids) {
+      editor.exec("weave.item.setDecoration", { itemId: id, kind: OPACITY_UNIT_KIND, attrs });
+    }
+  };
+  return (
+    <NumberSlider
+      aria-label="투명도"
+      value={Math.round(draft * 100)}
+      min={0}
+      max={100}
+      step={1}
+      suffix="%"
+      onValueChange={(v) => setDraft(v / 100)}
+      onValueCommit={(v) => write(v / 100)}
+    />
+  );
+}
+
+/** Layer blur as a decoration.filter UNIT (DR-028). v1 exposes blur (px); other
+ *  FilterSpec fields (brightness/contrast/…) are preserved from the effective
+ *  spec. Clears the unit when the whole filter is identity. */
+export function FilterControl({
+  editor,
+  ids,
+}: {
+  readonly editor: Editor;
+  readonly ids: ReadonlyArray<string>;
+}): JSX.Element {
+  const doc = useDocumentForResolution();
+  const spec = firstItemValue<FilterSpec>(
+    doc,
+    ids,
+    (item) =>
+      item === undefined
+        ? undefined
+        : ((findUnitInItem(item, FILTER_UNIT_KIND)?.attrs as FilterSpec | undefined) ??
+          (item.attrs as { filter?: FilterSpec }).filter),
+    {},
+  );
+  const [draft, setDraft] = useState(spec.blur ?? 0);
+  useEffect(() => setDraft(spec.blur ?? 0), [spec.blur]);
+
+  const write = (blur: number): void => {
+    const next: FilterSpec = { ...spec, blur };
+    const identity =
+      blur === 0 &&
+      spec.brightness === undefined &&
+      spec.contrast === undefined &&
+      spec.saturate === undefined &&
+      spec.hueRotate === undefined;
+    for (const id of ids) {
+      editor.exec("weave.item.setDecoration", {
+        itemId: id,
+        kind: FILTER_UNIT_KIND,
+        attrs: identity ? null : next,
+      });
+    }
+  };
+  return (
+    <NumberSlider
+      aria-label="흐림(필터)"
+      value={draft}
+      min={0}
+      max={20}
+      step={0.5}
+      suffix="px"
+      onValueChange={setDraft}
+      onValueCommit={write}
+    />
   );
 }

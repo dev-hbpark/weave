@@ -17,7 +17,7 @@ import {
   Switch,
 } from "@weave/design-system";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
-import { ShadowControls } from "./shadow-controls.js";
+import { OpacityControl, ShadowControls } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 const FIT_OPTIONS = [
@@ -131,6 +131,10 @@ export const VideoSection: ToolbarSectionComponent = ({
         {/* DR-028 — shadow decoration unit (shared control). */}
         <Bar.Field label="Shadow">
           <ShadowControls editor={editor} ids={ids} />
+        </Bar.Field>
+        {/* DR-028 — opacity decoration unit (video has no legacy attr control). */}
+        <Bar.Field label="Opacity">
+          <OpacityControl editor={editor} ids={ids} />
         </Bar.Field>
       </Bar.More>
     </>

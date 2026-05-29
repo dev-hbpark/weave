@@ -14,7 +14,7 @@ import {
   Select,
 } from "@weave/design-system";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
-import { ShadowControls } from "./shadow-controls.js";
+import { FilterControl, ShadowControls } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 const FIT_OPTIONS = [
@@ -124,6 +124,10 @@ export const ImageSection: ToolbarSectionComponent = ({
         {/* DR-028 — shadow decoration unit (shared control). */}
         <Bar.Field label="Shadow">
           <ShadowControls editor={editor} ids={ids} />
+        </Bar.Field>
+        {/* DR-028 — filter (blur) decoration unit. */}
+        <Bar.Field label="Filter">
+          <FilterControl editor={editor} ids={ids} />
         </Bar.Field>
       </Bar.More>
     </>
