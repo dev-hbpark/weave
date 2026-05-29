@@ -169,7 +169,9 @@ test("opening a design with an offline copy prompts; 저장 saves it as a NEW de
   // design, the original is left untouched, and we navigate to the new one.
   await page.getByTestId("local-conflict-save").click();
   await expect(page.getByTestId("local-conflict-dialog")).toHaveCount(0);
-  await page.waitForURL((url) => /\/design\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith(id));
+  await page.waitForURL(
+    (url) => /\/design\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith(id),
+  );
   const newId = new URL(page.url()).pathname.split("/").pop() ?? "";
   expect(newId).not.toBe(id);
 
@@ -217,4 +219,85 @@ test("opening a design with an offline copy prompts; 버리기 loads the server 
   await expect
     .poll(() => page.evaluate((k) => window.localStorage.getItem(k), lsKey(id)))
     .toBeNull();
+});
+
+test("presentation mode is server-first — cloud content overrides a stale local copy", async ({
+  page,
+}) => {
+  // Fake cloud with a toggleable reachability so we can compare the local
+  // fallback against the server copy in one run.
+  const cloud = new Map<string, StoredDesign>();
+  let serverUp = true;
+
+  await page.route("**/api/designs", async (route) => {
+    const req = route.request();
+    if (req.method() === "POST") {
+      const body = JSON.parse(req.postData() ?? "{}") as StoredDesign;
+      cloud.set(body.id, body);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, id: body.id }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ designs: [] }),
+    });
+  });
+  await page.route("**/api/designs/*", async (route) => {
+    if (!serverUp) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "KV_UNAVAILABLE" } }),
+      });
+      return;
+    }
+    const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop() ?? "");
+    const d = cloud.get(id);
+    await route.fulfill(
+      d === undefined
+        ? { status: 404, contentType: "application/json", body: JSON.stringify({ error: {} }) }
+        : { status: 200, contentType: "application/json", body: JSON.stringify({ design: d }) },
+    );
+  });
+
+  await clearAllDesigns(page);
+
+  // Build a 2-frame server design and a stale 1-frame blob.
+  const id = await prepareDesign(page, { title: "Present server-first" });
+  await addFrame(page, "slide");
+  await saveToCloud(page);
+  const blob1 = structuredClone(cloud.get(id)); // 1 frame
+  await addFrame(page, "slide");
+  await saveToCloud(page);
+  const blob2 = structuredClone(cloud.get(id)); // 2 frames
+
+  // Settle pending auto-saves, then pin cloud = 2 frames and seed a stale
+  // 1-frame offline copy.
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  cloud.set(id, blob2 as StoredDesign);
+  await page.evaluate(({ key, value }) => window.localStorage.setItem(key, value), {
+    key: lsKey(id),
+    value: JSON.stringify(blob1),
+  });
+
+  // Phase A — server unreachable: present mode falls back to the local copy.
+  serverUp = false;
+  await page.goto(`/design/${id}/present`);
+  await expect(page.getByTestId("present-scene").first()).toBeVisible();
+  const localSceneCount = await page.getByTestId("present-scene").count();
+  expect(localSceneCount).toBeGreaterThan(0);
+
+  // Phase B — server reachable: present mode shows the richer cloud copy.
+  serverUp = true;
+  await page.goto(`/design/${id}/present`);
+  await expect(page.getByTestId("present-scene").first()).toBeVisible();
+  await expect
+    .poll(() => page.getByTestId("present-scene").count(), { timeout: 8_000 })
+    .toBeGreaterThan(localSceneCount);
 });

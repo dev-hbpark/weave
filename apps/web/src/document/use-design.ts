@@ -153,18 +153,29 @@ function initialDesign(id: string): {
   };
 }
 
-export function useDesign(id: string): UseDesignResult {
+interface UseDesignOptions {
+  /** Server-first, read-only mode (presentation). The cloud copy is always
+   *  fetched and wins; a local offline copy is used only as an instant
+   *  paint / fallback when the cloud is unreachable, and never raises the
+   *  reconcile prompt (there's no editing surface to reconcile against). */
+  readonly preferCloud?: boolean;
+}
+
+export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignResult {
+  const preferCloud = opts.preferCloud ?? false;
   const initial = useRef<{ readonly design: Design; readonly source: "local" | "blank" }>();
   if (initial.current === undefined) initial.current = initialDesign(id);
   const [design, setDesign] = useState<Design>(initial.current.design);
-  // Spinner gate. True only on the "blank" path (= the cloud fetch below
-  // will fire); on a local-conflict open we already have a copy to paint,
-  // so no spinner — the reconcile dialog masks the editor instead.
+  // Spinner gate. True only when there is nothing to paint yet (= the cloud
+  // fetch below will fire and there's no local copy). A local copy — even in
+  // preferCloud mode — paints immediately and is swapped when the cloud
+  // replies; a local-conflict open is masked by the reconcile dialog.
   const [isLoading, setIsLoading] = useState<boolean>(initial.current.source === "blank");
-  // True when the open found an unsynced offline edit. The host renders
-  // the reconcile prompt; `resolveLocalConflict` clears it.
+  // True when the open found an unsynced offline edit AND we're in the
+  // editing surface. Never set in preferCloud (read-only) mode — present
+  // mode has nothing to reconcile, it just shows the server copy.
   const [localConflict, setLocalConflict] = useState<boolean>(
-    initial.current.source === "local",
+    initial.current.source === "local" && !preferCloud,
   );
 
   // Mirror the latest Design into a ref so persistNow can read it without
@@ -181,17 +192,18 @@ export function useDesign(id: string): UseDesignResult {
   const localConflictRef = useRef<boolean>(localConflict);
   localConflictRef.current = localConflict;
 
-  // Cloud fetch on mount — ONLY on the "blank" path (no local copy). The
-  // cloud is authoritative for designs, so this is where a reopened design
-  // picks up edits saved from this or another device. A "local" open does
-  // NOT fetch here: that copy is an unsynced offline edit and must not be
+  // Cloud fetch on mount. Fires when there's no local copy ("blank" path) —
+  // the cloud is authoritative, so a reopened design picks up edits saved
+  // from this or another device. In the editing surface a "local" open does
+  // NOT fetch here: that copy is an unsynced offline edit that must not be
   // silently overwritten — the host prompts and `resolveLocalConflict`
-  // decides. Race-protected by reference-equality against the mount
-  // snapshot: a user who started editing the blank before the cloud
-  // replied has rotated `designRef.current`, so we leave their work intact.
+  // decides. In `preferCloud` (read-only present) mode the cloud is fetched
+  // even when a local copy exists, and wins; the local copy was only the
+  // instant paint / offline fallback. Race-protected by reference-equality
+  // against the mount snapshot so an in-progress edit is never clobbered.
   const designAtMountRef = useRef(initial.current.design);
   useEffect(() => {
-    if (initial.current?.source !== "blank") return undefined;
+    if (initial.current?.source !== "blank" && !preferCloud) return undefined;
     let cancelled = false;
     void (async () => {
       const raw = await fetchDesignCloud(id);
@@ -215,7 +227,7 @@ export function useDesign(id: string): UseDesignResult {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, preferCloud]);
 
   // Resolve the offline-edit prompt. "save" persists the painted offline
   // copy to the server as a NEW design (fresh id + title suffix), leaving

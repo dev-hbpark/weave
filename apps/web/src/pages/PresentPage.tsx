@@ -170,7 +170,9 @@ function isHoverRevealTarget(
 export function PresentPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { design, docInAgocraft } = useDesign(id ?? "");
+  // Presentation is read-only and server-first: always show the cloud copy,
+  // falling back to a local offline copy only when the cloud is unreachable.
+  const { design, docInAgocraft } = useDesign(id ?? "", { preferCloud: true });
   const [step, setStep] = useState(0);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
   // Phase 13d-4 — which scene's hover-effect is currently active. dim-others
