@@ -279,6 +279,218 @@ describe("buildWeaveCommands — patch-emitting (Phase 4b)", () => {
   });
 });
 
+// ── WI-055 — weave.shape.setCornerRadius ────────────────────────────────────
+function makeShapeCtx(): CommandContext {
+  const rectItem = {
+    id: "rect-1",
+    kind: "shape",
+    attrs: {
+      frame: FULL_FRAME,
+      shape: "rectangle",
+      fill: { type: "solid", color: "#cbd5f5" },
+      stroke: null,
+      shadow: null,
+      opacity: 1,
+      subAttrs: { shape: "rectangle", cornerRadii: { tl: 0, tr: 0, br: 0, bl: 0 } },
+    },
+    behaviors: [],
+    createdAt: META_DATE,
+  } as unknown as Item;
+  const ellipseItem = {
+    id: "ellipse-1",
+    kind: "shape",
+    attrs: {
+      frame: FULL_FRAME,
+      shape: "ellipse",
+      fill: { type: "solid", color: "#cbd5f5" },
+      stroke: null,
+      shadow: null,
+      opacity: 1,
+      subAttrs: { shape: "ellipse" },
+    },
+    behaviors: [],
+    createdAt: META_DATE,
+  } as unknown as Item;
+  const weave: WeaveDocument = {
+    id: "doc-shape",
+    title: "Shapes",
+    items: [rectItem, ellipseItem],
+    updatedAt: META_DATE,
+    schemaVersion: 3,
+  };
+  return {
+    document: toAgocraftDocument(weave),
+    resolve: () => null as never,
+    skipRelations: false,
+  };
+}
+
+describe("weave.shape.setCornerRadius (WI-055)", () => {
+  function cmd() {
+    const c = buildWeaveCommands(spyTargets()).find(
+      (x) => x.name === "weave.shape.setCornerRadius",
+    );
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+
+  it("uniform radius sets all four corners in a complete subAttrs", () => {
+    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1", radius: 12 });
+    if (!result.ok) throw new Error("unexpected fail");
+    expect(result.patches).toHaveLength(1);
+    const patch = result.patches[0];
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect((patch.after as { subAttrs: unknown }).subAttrs).toEqual({
+      shape: "rectangle",
+      cornerRadii: { tl: 12, tr: 12, br: 12, bl: 12 },
+    });
+  });
+
+  it("per-corner radii merges only the supplied corners", () => {
+    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1", radii: { tl: 24 } });
+    if (!result.ok) throw new Error("unexpected fail");
+    const patch = result.patches[0];
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect((patch.after as { subAttrs: { cornerRadii: unknown } }).subAttrs.cornerRadii).toEqual({
+      tl: 24,
+      tr: 0,
+      br: 0,
+      bl: 0,
+    });
+  });
+
+  it("clamps negative radius to 0", () => {
+    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1", radius: -5 });
+    if (!result.ok) throw new Error("unexpected fail");
+    const patch = result.patches[0];
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect(
+      (patch.after as { subAttrs: { cornerRadii: { tl: number } } }).subAttrs.cornerRadii.tl,
+    ).toBe(0);
+  });
+
+  it("fails with not-a-rectangle for a non-rectangle shape", () => {
+    const result = cmd().run(makeShapeCtx(), { itemId: "ellipse-1", radius: 10 });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("not-a-rectangle");
+  });
+
+  it("fails with invalid-input when both radius and radii are sent", () => {
+    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1", radius: 8, radii: { tl: 4 } });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("invalid-input");
+  });
+
+  it("fails with invalid-input when neither radius nor radii is sent", () => {
+    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("invalid-input");
+  });
+
+  it("fails with item-not-found for a missing item", () => {
+    const result = cmd().run(makeShapeCtx(), { itemId: "ghost", radius: 5 });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("item-not-found");
+  });
+});
+
+// ── WI-056 — weave.shape.setFill ────────────────────────────────────────────
+describe("weave.shape.setFill (WI-056)", () => {
+  function cmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.shape.setFill");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+
+  it("sets a linear-gradient fill as an item.attrs Patch", () => {
+    const fill = {
+      type: "linear-gradient",
+      angle: 90,
+      stops: [
+        { offset: 0, color: "#ff0000" },
+        { offset: 1, color: "#0000ff" },
+      ],
+    };
+    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1", fill });
+    if (!result.ok) throw new Error("unexpected fail");
+    expect(result.patches).toHaveLength(1);
+    const patch = result.patches[0];
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect((patch.after as { fill: unknown }).fill).toEqual(fill);
+  });
+
+  it("sets a radial-gradient fill", () => {
+    const fill = {
+      type: "radial-gradient",
+      cx: 0.5,
+      cy: 0.5,
+      stops: [
+        { offset: 0, color: "#ffffff" },
+        { offset: 1, color: "#000000" },
+      ],
+    };
+    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1", fill });
+    if (!result.ok) throw new Error("unexpected fail");
+    expect((result.patches[0] as { after: { fill: unknown } }).after.fill).toEqual(fill);
+  });
+
+  it("sets a solid fill", () => {
+    const result = cmd().run(makeShapeCtx(), {
+      itemId: "rect-1",
+      fill: { type: "solid", color: "#00ff00" },
+    });
+    if (!result.ok) throw new Error("unexpected fail");
+    expect((result.patches[0] as { after: { fill: { color: string } } }).after.fill.color).toBe(
+      "#00ff00",
+    );
+  });
+
+  it("rejects a gradient with fewer than 2 stops", () => {
+    const result = cmd().run(makeShapeCtx(), {
+      itemId: "rect-1",
+      fill: { type: "linear-gradient", angle: 0, stops: [{ offset: 0, color: "#f00" }] },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("invalid-input");
+  });
+
+  it("rejects an unknown fill type", () => {
+    const result = cmd().run(makeShapeCtx(), {
+      itemId: "rect-1",
+      fill: { type: "plaid" } as never,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("invalid-input");
+  });
+
+  it("fails with item-not-found for a missing item", () => {
+    const result = cmd().run(makeShapeCtx(), {
+      itemId: "ghost",
+      fill: { type: "solid", color: "#000000" },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("item-not-found");
+  });
+
+  it("fails with not-a-shape for a non-shape item", () => {
+    // makeCtx seeds a "slide" item, not a shape.
+    const result = cmd().run(makeCtx(), {
+      itemId: "slide-1",
+      fill: { type: "solid", color: "#000000" },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("not-a-shape");
+  });
+});
+
 // ── WI-030 — weave.preset.insertSlide ───────────────────────────────────────
 //
 // Verifies the core feasibility claim (FR-003 §F1): a multi-item preset

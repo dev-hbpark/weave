@@ -140,6 +140,32 @@ export interface UpdateItemInput {
   readonly attrs?: Readonly<Record<string, unknown>>;
 }
 
+/** WI-055 — rectangle corner radius. Targets `attrs.subAttrs.cornerRadii`
+ *  (absolute px; the renderer caps at min(w,h)/2). Rectangle-only.
+ *  Exactly one of `radius` (uniform — all four corners) / `radii` (per-corner
+ *  partial — only the supplied corners change) must be set. */
+export interface SetShapeCornerRadiusInput {
+  readonly itemId: string;
+  /** Uniform radius (px) applied to all four corners. 0 = square. */
+  readonly radius?: number;
+  /** Per-corner partial override (px). Omitted corners keep their current value. */
+  readonly radii?: {
+    readonly tl?: number;
+    readonly tr?: number;
+    readonly br?: number;
+    readonly bl?: number;
+  };
+}
+
+/** WI-056 — shape fill (`PaintSpec`). Replaces `attrs.fill` wholesale with the
+ *  supplied paint: solid / linear-gradient / radial-gradient / none / image /
+ *  video. Shape-only. The renderer (`ShapeBlock`) already materializes every
+ *  variant via `paintToSvgFill`. */
+export interface SetShapeFillInput {
+  readonly itemId: string;
+  readonly fill: import("@agocraft/core").PaintSpec;
+}
+
 /** WI-020 / WI-043 — explicit layout-spec mutation. Targets `attrs.layout`
  *  via the agocraft `item.layout` Patch variant (self-inverting before/after
  *  swap, mergeKeyOf folds rapid SegmentedControl flips into one undo). */
@@ -408,6 +434,139 @@ export function buildWeaveCommands(
       if (extraPatches.length > 0) {
         return ok(undefined, [patch, ...extraPatches]);
       }
+      return ok(undefined, [patch]);
+    },
+  };
+
+  // WI-055 — rectangle corner radius. A thin, dedicated command over the
+  // generic `weave.item.update`: it (a) guards that the target is a rectangle,
+  // (b) rebuilds the COMPLETE `subAttrs` object (the `item.attrs` reducer
+  // replaces the whole attrs map — a partial subAttrs would drop `shape`), and
+  // (c) accepts either a uniform `radius` or a per-corner `radii` partial. The
+  // renderer caps each radius at min(w,h)/2, so only a >= 0 floor is enforced.
+  const setShapeCornerRadius: Command<SetShapeCornerRadiusInput, void> = {
+    name: "weave.shape.setCornerRadius",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail(
+          "item-not-found",
+          `weave.shape.setCornerRadius: no item with id "${input.itemId}"`,
+        );
+      }
+      const attrs = child.attrs as unknown as {
+        readonly subAttrs?: {
+          readonly shape?: string;
+          readonly cornerRadii?: {
+            readonly tl: number;
+            readonly tr: number;
+            readonly br: number;
+            readonly bl: number;
+          };
+        };
+      };
+      const sub = attrs.subAttrs;
+      if (sub === undefined || sub.shape !== "rectangle") {
+        return fail(
+          "not-a-rectangle",
+          `weave.shape.setCornerRadius: item "${input.itemId}" is not a rectangle shape`,
+        );
+      }
+      // Exactly one of `radius` / `radii`.
+      const hasUniform = input.radius !== undefined;
+      const hasPerCorner = input.radii !== undefined;
+      if (hasUniform === hasPerCorner) {
+        return fail(
+          "invalid-input",
+          "weave.shape.setCornerRadius: provide exactly one of `radius` or `radii`",
+        );
+      }
+      const norm = (v: number | undefined, fallback: number): number =>
+        v === undefined ? fallback : Number.isFinite(v) ? Math.max(0, v) : fallback;
+      const cur = sub.cornerRadii ?? { tl: 0, tr: 0, br: 0, bl: 0 };
+      const nextRadii = hasUniform
+        ? (() => {
+            const r = Math.max(0, input.radius as number);
+            if (!Number.isFinite(r)) {
+              return undefined;
+            }
+            return { tl: r, tr: r, br: r, bl: r };
+          })()
+        : {
+            tl: norm(input.radii?.tl, cur.tl),
+            tr: norm(input.radii?.tr, cur.tr),
+            br: norm(input.radii?.br, cur.br),
+            bl: norm(input.radii?.bl, cur.bl),
+          };
+      if (nextRadii === undefined) {
+        return fail(
+          "invalid-input",
+          "weave.shape.setCornerRadius: `radius` must be a finite number",
+        );
+      }
+      const after: Readonly<Record<string, unknown>> = {
+        ...(child.attrs as unknown as Record<string, unknown>),
+        subAttrs: { ...sub, shape: "rectangle", cornerRadii: nextRadii },
+      };
+      const patch: Patch = {
+        type: "item.attrs",
+        itemId: child.id,
+        before: child.attrs,
+        after,
+      };
+      return ok(undefined, [patch]);
+    },
+  };
+
+  // WI-056 — set a shape's fill (PaintSpec). Dedicated over the generic
+  // `weave.item.update` so the agent has a typed, discoverable surface for
+  // gradient fills (the UI gradient picker writes the same `attrs.fill`). The
+  // fill object is validated structurally (known `type` + gradient stops) and
+  // replaces `attrs.fill` wholesale.
+  const SHAPE_FILL_TYPES = new Set([
+    "none",
+    "solid",
+    "linear-gradient",
+    "radial-gradient",
+    "image",
+    "video",
+  ]);
+  const setShapeFill: Command<SetShapeFillInput, void> = {
+    name: "weave.shape.setFill",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail("item-not-found", `weave.shape.setFill: no item with id "${input.itemId}"`);
+      }
+      if (child.kind !== "shape") {
+        return fail("not-a-shape", `weave.shape.setFill: item "${input.itemId}" is not a shape`);
+      }
+      const fill = input.fill as { type?: unknown; stops?: unknown } | undefined;
+      if (fill === undefined || typeof fill.type !== "string" || !SHAPE_FILL_TYPES.has(fill.type)) {
+        return fail(
+          "invalid-input",
+          `weave.shape.setFill: \`fill.type\` must be one of ${[...SHAPE_FILL_TYPES].join(", ")}`,
+        );
+      }
+      if (
+        (fill.type === "linear-gradient" || fill.type === "radial-gradient") &&
+        (!Array.isArray(fill.stops) || fill.stops.length < 2)
+      ) {
+        return fail(
+          "invalid-input",
+          "weave.shape.setFill: a gradient fill needs `stops` with at least 2 entries",
+        );
+      }
+      const after: Readonly<Record<string, unknown>> = {
+        ...(child.attrs as unknown as Record<string, unknown>),
+        fill: input.fill,
+      };
+      const patch: Patch = {
+        type: "item.attrs",
+        itemId: child.id,
+        before: child.attrs,
+        after,
+      };
       return ok(undefined, [patch]);
     },
   };
@@ -1102,6 +1261,8 @@ export function buildWeaveCommands(
     removeItem as Command,
     removeItems as Command,
     updateItem as Command,
+    setShapeCornerRadius as Command,
+    setShapeFill as Command,
     resizeMulti as Command,
     updateBehavior as Command,
     reset as Command,

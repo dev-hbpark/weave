@@ -372,6 +372,28 @@ export const IconUngroup = forwardRef<SVGSVGElement, IconProps>(function IconUng
   );
 });
 
+// WI-055 / DR-design-025 — corner-radius link toggle. IconLink = a closed
+// chain (corners move together); IconLinkOff = a broken chain (corners edit
+// independently). Same SvgRoot contract as every other glyph.
+export const IconLink = forwardRef<SVGSVGElement, IconProps>(function IconLink(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M10 13a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1.5 1.5" />
+      <path d="M14 11a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1.5-1.5" />
+    </SvgRoot>
+  );
+});
+
+export const IconLinkOff = forwardRef<SVGSVGElement, IconProps>(function IconLinkOff(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M9 17H7a4 4 0 0 1 0-8h2" />
+      <path d="M15 7h2a4 4 0 0 1 3.5 6" />
+      <path d="M3 3l18 18" />
+    </SvgRoot>
+  );
+});
+
 // WI-020 / WI-043 RISK-002 C2.4 — 3 layout-type icons for the
 // ContextualToolbar SegmentedControl + Option+drag popup toggle. Each
 // glyph evokes the paradigm visually:

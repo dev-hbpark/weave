@@ -3,11 +3,13 @@
 // Quick: fill swatch + stroke swatch (the two highest-frequency shape
 // edits). More: Shape sub-kind picker, Opacity, image/video fill ops.
 
-import type { ShapeAttrs, ShapeSubKind } from "@agocraft/core";
+import { type PaintSpec, paintToCss, type ShapeAttrs, type ShapeSubKind } from "@agocraft/core";
 import {
   ContextualToolbar as Bar,
   Button,
   ColorPicker,
+  CornerRadiusControl,
+  type CornerRadiusValue,
   IconClose,
   IconImage,
   IconShape,
@@ -24,6 +26,7 @@ import {
   Select,
 } from "@weave/design-system";
 import type { ReactNode } from "react";
+import { parseLinearGradientPaint } from "../../style/fill-paint.js";
 import {
   isMixed,
   MixedBadge,
@@ -88,15 +91,40 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
     items,
     (it) => (it.attrs as unknown as ShapeAttrs).fill.type,
   );
+  // WI-056 — the ColorPicker round-trips solid AND gradient via one string.
+  // Solid → the color (StyleRef-resolved by the hook); linear/radial gradient
+  // → the canonical `linear-gradient(...)` / `radial-gradient(...)` CSS so the
+  // picker re-opens in gradient mode showing the actual stops, instead of the
+  // old `#000000` fallback that silently discarded the gradient on display.
   const fillColor = useResolveSharedColor(items, (it) => {
     const f = (it.attrs as unknown as ShapeAttrs).fill;
-    return f.type === "solid" ? f.color : "#000000";
+    if (f.type === "solid") return f.color;
+    if (f.type === "linear-gradient" || f.type === "radial-gradient") return paintToCss(f);
+    return "#000000";
   });
+  // WI-056 — translate a ColorPicker emit back into a PaintSpec: a
+  // linear-gradient string becomes a gradient spec; anything else stays solid
+  // (StyleRef-normalized so `var(--token)` keeps its semantic identity).
+  const fillFromEmit = (v: string): PaintSpec =>
+    parseLinearGradientPaint(v) ??
+    ({ type: "solid", color: pickerValueToStored(v) } as unknown as PaintSpec);
   const strokeColor = useResolveSharedColor(items, (it) => {
     const s = (it.attrs as unknown as ShapeAttrs).stroke;
     return s?.paint.type === "solid" ? s.paint.color : "#000000";
   });
   const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as ShapeAttrs).opacity);
+  // WI-055 — corner radius is rectangle-only. The control renders only when the
+  // shared sub-kind is uniformly "rectangle". Read the per-corner radii; compare
+  // by component so a 4-tuple match counts as "agree".
+  const isRectangleUniform = !isMixed(shape) && shape === "rectangle";
+  const cornerRadii = sharedValue<CornerRadiusValue>(
+    items,
+    (it) => {
+      const sa = (it.attrs as unknown as ShapeAttrs).subAttrs;
+      return sa.shape === "rectangle" ? sa.cornerRadii : { tl: 0, tr: 0, br: 0, bl: 0 };
+    },
+    (a, b) => a.tl === b.tl && a.tr === b.tr && a.br === b.br && a.bl === b.bl,
+  );
   const fillIsMediaUniform = !isMixed(fillType) && (fillType === "image" || fillType === "video");
   const fillMediaSrc = sharedValue<string>(items, (it) => {
     const f = (it.attrs as unknown as ShapeAttrs).fill;
@@ -108,7 +136,8 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
       <Bar.Kind icon={<IconShape size={18} />} label="Shape" />
       <Bar.Quick>
         {/* Fill swatch — opens picker on click. Multi-aware + StyleRef
-            cascade-resolved via useResolveSharedColor. */}
+            cascade-resolved via useResolveSharedColor. WI-056 — preserves a
+            gradient emit instead of flattening it to solid. */}
         <ColorPicker
           aria-label="채우기"
           value={isMixed(fillColor) ? "#cccccc" : (fillColor ?? "#000000")}
@@ -116,7 +145,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
             updateAll(editor, ids, (prev) => ({
               attrs: {
                 ...prev.attrs,
-                fill: { type: "solid", color: pickerValueToStored(v) },
+                fill: fillFromEmit(v),
               } as unknown as Readonly<Record<string, unknown>>,
             }))
           }
@@ -223,7 +252,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
                   updateAll(editor, ids, (prev) => ({
                     attrs: {
                       ...prev.attrs,
-                      fill: { type: "solid", color: pickerValueToStored(v) },
+                      fill: fillFromEmit(v),
                     } as unknown as Readonly<Record<string, unknown>>,
                   }))
                 }
@@ -300,6 +329,32 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
           />
           <MixedBadge visible={isMixed(opacity)} />
         </Bar.Field>
+        {isRectangleUniform && (
+          <Bar.Field label="Corner radius">
+            <CornerRadiusControl
+              value={isMixed(cornerRadii) ? { tl: 0, tr: 0, br: 0, bl: 0 } : cornerRadii}
+              mixed={isMixed(cornerRadii)}
+              onChange={(next) =>
+                updateAll(editor, ids, (prev) => {
+                  const prevAttrs = prev.attrs as unknown as ShapeAttrs;
+                  // Rebuild the COMPLETE subAttrs — the item.attrs reducer
+                  // replaces the whole attrs map, so a partial would drop
+                  // `shape`. Guard keeps non-rectangles untouched.
+                  if (prevAttrs.subAttrs.shape !== "rectangle") {
+                    return { attrs: prev.attrs };
+                  }
+                  return {
+                    attrs: {
+                      ...prev.attrs,
+                      subAttrs: { shape: "rectangle", cornerRadii: next },
+                    } as unknown as Readonly<Record<string, unknown>>,
+                  };
+                })
+              }
+            />
+            <MixedBadge visible={isMixed(cornerRadii)} />
+          </Bar.Field>
+        )}
       </Bar.More>
     </>
   );

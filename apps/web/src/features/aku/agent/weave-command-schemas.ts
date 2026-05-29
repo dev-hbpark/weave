@@ -67,6 +67,8 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.remove": "아이템 삭제",
   "weave.items.remove": "여러 아이템 삭제",
   "weave.item.update": "아이템 수정",
+  "weave.shape.setCornerRadius": "모서리 둥글기",
+  "weave.shape.setFill": "채우기 설정",
   "weave.items.resizeMulti": "크기 조정",
   "weave.behavior.update": "동작 수정",
   "weave.doc.reset": "문서 초기화",
@@ -128,6 +130,87 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     // sub-objects (e.g. the full `frame` { x, y, width, height }) — a partial
     // sub-object replaces the whole key. The snapshot gives current values.
     inputSchema: obj({ itemId: STR, attrs: ATTRS }, ["itemId", "attrs"]),
+  },
+  // ── rectangle corner radius (WI-055) ──
+  // Rectangle-only (`shape` item with `subAttrs.shape === "rectangle"`). The
+  // radius is in **absolute px** of the shape's rendered bbox — NOT a 0..1
+  // ratio (unlike image/frame `borderRadius`). The renderer caps each corner at
+  // min(width, height) / 2, so a large value is safe. Send EXACTLY ONE of:
+  //   • `radius`  — uniform: all four corners set to this value (0 = square).
+  //   • `radii`   — per-corner partial: only the supplied corners change; tl =
+  //                 top-left, tr = top-right, br = bottom-right, bl = bottom-left.
+  // Sending both, or neither, is rejected with `invalid-input`. A non-rectangle
+  // target is rejected with `not-a-rectangle`. The edit is reversible (Cmd+Z).
+  "weave.shape.setCornerRadius": {
+    label: label("weave.shape.setCornerRadius"),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        radius: { type: "number", minimum: 0 },
+        radii: {
+          type: "object",
+          properties: {
+            tl: { type: "number", minimum: 0 },
+            tr: { type: "number", minimum: 0 },
+            br: { type: "number", minimum: 0 },
+            bl: { type: "number", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+      },
+      // `radius` XOR `radii` is enforced at runtime by the command, not by JSON
+      // Schema (which can't express "exactly one of these optional keys").
+      ["itemId"],
+    ),
+  },
+  // ── shape fill incl. gradient (WI-056) ──
+  // Shape-only. Replaces `attrs.fill` with a `PaintSpec`. The `fill` is a
+  // discriminated union on `type`:
+  //   • solid           — { type:"solid", color:"#rrggbb" | "#rrggbbaa" | "var(--token)" }
+  //   • linear-gradient — { type:"linear-gradient", angle:<deg 0..360, 0=up 90=right>,
+  //                         stops:[{ offset:0..1, color:"#rrggbbaa" }, …] }  (≥2 stops)
+  //   • radial-gradient — { type:"radial-gradient", cx:0..1, cy:0..1, stops:[…] }  (≥2 stops)
+  //   • none            — { type:"none" }  (transparent)
+  //   • image | video   — { type:"image"|"video", src:"<url>", fit?, opacity? }
+  // Gradient `offset`/`stops[].color` are absolute values, NOT theme tokens.
+  // The renderer materializes every variant; a non-shape target → `not-a-shape`.
+  "weave.shape.setFill": {
+    label: label("weave.shape.setFill"),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        fill: {
+          type: "object",
+          properties: {
+            type: {
+              type: "string",
+              enum: ["solid", "linear-gradient", "radial-gradient", "none", "image", "video"],
+            },
+            // solid
+            color: STR,
+            // linear-gradient
+            angle: NUM,
+            // radial-gradient
+            cx: NUM,
+            cy: NUM,
+            // gradient stops (linear + radial)
+            stops: {
+              type: "array",
+              items: obj({ offset: NUM, color: STR }, ["offset", "color"]),
+            },
+            // image / video
+            src: STR,
+            fit: STR,
+            opacity: NUM,
+            muted: { type: "boolean" },
+            loop: { type: "boolean" },
+          },
+          required: ["type"],
+          additionalProperties: false,
+        },
+      },
+      ["itemId", "fill"],
+    ),
   },
   "weave.items.resizeMulti": {
     label: label("weave.items.resizeMulti"),

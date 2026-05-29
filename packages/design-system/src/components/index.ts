@@ -66,6 +66,11 @@ export {
   type ContextualToolbarProps,
 } from "./ContextualToolbar.js";
 export {
+  CornerRadiusControl,
+  type CornerRadiusControlProps,
+  type CornerRadiusValue,
+} from "./CornerRadiusControl.js";
+export {
   type DashPattern,
   DashPatternPicker,
   type DashPatternPickerProps,
@@ -133,6 +138,8 @@ export {
   IconLayoutAbsolute,
   IconLayoutFlex,
   IconLayoutGrid,
+  IconLink,
+  IconLinkOff,
   IconMore,
   IconPencil,
   IconPlay,
