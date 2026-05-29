@@ -29,10 +29,16 @@ const widthClass: Record<PanelWidth, string> = {
 };
 
 const positionClass: Record<PanelPosition, string> = {
+  // docked panels sit inside the app's own dark bg → the translucent `--surface-1`
+  // theme glass (from baseClass) reads correctly.
   "docked-right": "border-l",
   "docked-left": "border-r",
-  // floating uses `--shadow-glass` and self-positions via inline style/parent
-  floating: "rounded-[var(--radius-md)] border shadow-[var(--shadow-glass)]",
+  // Floating panels self-position over the design CANVAS (any colour). Per the
+  // tokens.css "floating chrome" guidance they use the opaque `--surface-overlay`
+  // product-layer tokens — NOT `--surface-1` (6% white glass), which washes out /
+  // blends into the canvas. twMerge lets these override baseClass's surface utils.
+  floating:
+    "rounded-[var(--radius-md)] border shadow-[var(--shadow-overlay)] bg-[color:var(--surface-overlay)] border-[color:var(--surface-overlay-border)] text-[color:var(--text-overlay)]",
 };
 
 const baseClass = [
