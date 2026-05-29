@@ -3,11 +3,10 @@
 // Quick: fill swatch + stroke swatch (the two highest-frequency shape
 // edits). More: Shape sub-kind picker, Opacity, image/video fill ops.
 
-import { type PaintSpec, paintToCss, type ShapeAttrs, type ShapeSubKind } from "@agocraft/core";
+import type { ShapeAttrs, ShapeSubKind } from "@agocraft/core";
 import {
   ContextualToolbar as Bar,
   Button,
-  ColorPicker,
   CornerRadiusControl,
   type CornerRadiusValue,
   IconClose,
@@ -26,17 +25,8 @@ import {
   Select,
 } from "@weave/design-system";
 import type { ReactNode } from "react";
-import { parseLinearGradientPaint } from "../../style/fill-paint.js";
-import {
-  isMixed,
-  MixedBadge,
-  pickerValueToStored,
-  sharedValue,
-  truncateUrl,
-  updateAll,
-  useResolveSharedColor,
-} from "../multi-edit.js";
-import { OpacityControl, ShadowControls } from "./shadow-controls.js";
+import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
+import { FillControl, OpacityControl, ShadowControls, StrokeControl } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 // Shape sub-kind options — 8 kinds with design-system icons (icons-only
@@ -105,27 +95,9 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
     items,
     (it) => (it.attrs as unknown as ShapeAttrs).fill.type,
   );
-  // WI-056 — the ColorPicker round-trips solid AND gradient via one string.
-  // Solid → the color (StyleRef-resolved by the hook); linear/radial gradient
-  // → the canonical `linear-gradient(...)` / `radial-gradient(...)` CSS so the
-  // picker re-opens in gradient mode showing the actual stops, instead of the
-  // old `#000000` fallback that silently discarded the gradient on display.
-  const fillColor = useResolveSharedColor(items, (it) => {
-    const f = (it.attrs as unknown as ShapeAttrs).fill;
-    if (f.type === "solid") return f.color;
-    if (f.type === "linear-gradient" || f.type === "radial-gradient") return paintToCss(f);
-    return "#000000";
-  });
-  // WI-056 — translate a ColorPicker emit back into a PaintSpec: a
-  // linear-gradient string becomes a gradient spec; anything else stays solid
-  // (StyleRef-normalized so `var(--token)` keeps its semantic identity).
-  const fillFromEmit = (v: string): PaintSpec =>
-    parseLinearGradientPaint(v) ??
-    ({ type: "solid", color: pickerValueToStored(v) } as unknown as PaintSpec);
-  const strokeColor = useResolveSharedColor(items, (it) => {
-    const s = (it.attrs as unknown as ShapeAttrs).stroke;
-    return s?.paint.type === "solid" ? s.paint.color : "#000000";
-  });
+  // WI-056 fill/stroke color editing is now the decoration.fill / decoration.stroke
+  // units (FillControl / StrokeControl), reading from the live doc — no per-attr
+  // sharedValue color reads here (DR-028).
   // WI-055 — corner radius is rectangle-only. The control renders only when the
   // shared sub-kind is uniformly "rectangle". Read the per-corner radii; compare
   // by component so a 4-tuple match counts as "agree".
@@ -148,52 +120,9 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
     <>
       <Bar.Kind icon={<IconShape size={18} />} label="Shape" />
       <Bar.Quick>
-        {/* Fill swatch — opens picker on click. Multi-aware + StyleRef
-            cascade-resolved via useResolveSharedColor. WI-056 — preserves a
-            gradient emit instead of flattening it to solid. */}
-        <ColorPicker
-          aria-label="채우기"
-          value={isMixed(fillColor) ? "#cccccc" : (fillColor ?? "#000000")}
-          onValueCommit={(v) =>
-            updateAll(editor, ids, (prev) => ({
-              attrs: {
-                ...prev.attrs,
-                fill: fillFromEmit(v),
-              } as unknown as Readonly<Record<string, unknown>>,
-            }))
-          }
-          onValueChange={() => {
-            /* commit-only */
-          }}
-        />
-        {/* Stroke swatch */}
-        <ColorPicker
-          aria-label="윤곽선"
-          value={isMixed(strokeColor) ? "#cccccc" : (strokeColor ?? "#000000")}
-          onValueCommit={(v) =>
-            updateAll(editor, ids, (prev) => {
-              const prevAttrs = prev.attrs as unknown as ShapeAttrs;
-              const storedColor = pickerValueToStored(v);
-              const existingStroke = prevAttrs.stroke ?? {
-                paint: { type: "solid" as const, color: storedColor },
-                width: 2,
-              };
-              return {
-                attrs: {
-                  ...prev.attrs,
-                  stroke: {
-                    ...existingStroke,
-                    paint: { type: "solid", color: storedColor },
-                  },
-                } as unknown as Readonly<Record<string, unknown>>,
-              };
-            })
-          }
-          onValueChange={() => {
-            /* commit-only */
-          }}
-        />
-        <MixedBadge visible={isMixed(fillColor) || isMixed(strokeColor)} />
+        {/* DR-028 — fill is a decoration UNIT (FillControl). Stroke editing lives
+            in the More panel's Stroke field (StrokeControl). */}
+        <FillControl editor={editor} ids={ids} />
       </Bar.Quick>
       <Bar.More>
         <Bar.Field label="Shape">
@@ -258,22 +187,8 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
-              <ColorPicker
-                aria-label="채우기 색상"
-                value={isMixed(fillColor) ? "#cccccc" : (fillColor ?? "#000000")}
-                onValueCommit={(v) =>
-                  updateAll(editor, ids, (prev) => ({
-                    attrs: {
-                      ...prev.attrs,
-                      fill: fillFromEmit(v),
-                    } as unknown as Readonly<Record<string, unknown>>,
-                  }))
-                }
-                onValueChange={() => {
-                  /* commit-only */
-                }}
-              />
-              <MixedBadge visible={isMixed(fillColor) || isMixed(fillType)} />
+              {/* DR-028 — solid/gradient fill via the decoration.fill unit. */}
+              <FillControl editor={editor} ids={ids} />
               <Button
                 variant="subtle"
                 size="md"
@@ -297,34 +212,9 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
             </div>
           )}
         </Bar.Field>
+        {/* DR-028 — stroke is a decoration unit (color + width). */}
         <Bar.Field label="Stroke">
-          <ColorPicker
-            aria-label="윤곽선 색상"
-            value={isMixed(strokeColor) ? "#cccccc" : (strokeColor ?? "#000000")}
-            onValueCommit={(v) =>
-              updateAll(editor, ids, (prev) => {
-                const prevAttrs = prev.attrs as unknown as ShapeAttrs;
-                const storedColor = pickerValueToStored(v);
-                const existingStroke = prevAttrs.stroke ?? {
-                  paint: { type: "solid" as const, color: storedColor },
-                  width: 2,
-                };
-                return {
-                  attrs: {
-                    ...prev.attrs,
-                    stroke: {
-                      ...existingStroke,
-                      paint: { type: "solid", color: storedColor },
-                    },
-                  } as unknown as Readonly<Record<string, unknown>>,
-                };
-              })
-            }
-            onValueChange={() => {
-              /* commit-only */
-            }}
-          />
-          <MixedBadge visible={isMixed(strokeColor)} />
+          <StrokeControl editor={editor} ids={ids} />
         </Bar.Field>
         {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
         <Bar.Field label="Opacity">

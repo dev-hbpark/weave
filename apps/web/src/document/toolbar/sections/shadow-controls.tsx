@@ -8,18 +8,24 @@
 // thumb tracks live, committing one transaction per drag.
 
 import {
+  FILL_UNIT_KIND,
   FILTER_UNIT_KIND,
   type FilterSpec,
   findUnitInItem,
   OPACITY_UNIT_KIND,
+  type PaintSpec,
   SHADOW_UNIT_KIND,
   type ShadowSpec,
+  STROKE_UNIT_KIND,
+  type StrokeSpec,
 } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { ColorPicker, NumberSlider, Switch } from "@weave/design-system";
 import { type JSX, useEffect, useState } from "react";
 import { findItemDeep } from "../../agocraft-mirror.js";
-import { useDocumentForResolution } from "../../style/resolver-context.js";
+import { parseLinearGradientPaint } from "../../style/fill-paint.js";
+import { useDocumentForResolution, useResolveColorById } from "../../style/resolver-context.js";
+import { pickerValueToStored } from "../multi-edit.js";
 
 const DEFAULT_SHADOW: ShadowSpec = { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(0,0,0,0.25)" };
 
@@ -52,9 +58,7 @@ export function ShadowControls({
   // Live draft so slider thumbs track during a drag; re-synced when the committed
   // value (or selection) changes.
   const [draft, setDraft] = useState<ShadowSpec>(spec);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: resync the draft only
-  // when the COMMITTED spec values change — `spec` itself is a fresh object each
-  // render (depending on it would loop).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resync on committed spec field values; `spec` is a fresh object each render (depending on it would loop)
   useEffect(() => {
     setDraft(spec);
   }, [spec.x, spec.y, spec.blur, spec.spread, spec.color]);
@@ -237,5 +241,117 @@ export function FilterControl({
       onValueChange={setDraft}
       onValueCommit={write}
     />
+  );
+}
+
+/** Paint from a ColorPicker emit: a linear-gradient string → gradient spec, else
+ *  a solid paint (StyleRef-normalized so `var(--token)` keeps its identity). */
+function paintFromEmit(v: string): PaintSpec {
+  return (
+    parseLinearGradientPaint(v) ??
+    ({ type: "solid", color: pickerValueToStored(v) } as unknown as PaintSpec)
+  );
+}
+
+/** Fill as a decoration.fill UNIT (DR-028). Reads the effective paint (unit ??
+ *  legacy attrs.fill); writes the unit on commit. Solid + linear-gradient via the
+ *  ColorPicker; image/video fill stays on the section's detailed field for now. */
+export function FillControl({
+  editor,
+  ids,
+}: {
+  readonly editor: Editor;
+  readonly ids: ReadonlyArray<string>;
+}): JSX.Element {
+  const doc = useDocumentForResolution();
+  const fill = firstItemValue<PaintSpec>(
+    doc,
+    ids,
+    (item) =>
+      item === undefined
+        ? undefined
+        : ((findUnitInItem(item, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined) ??
+          (item.attrs as { fill?: PaintSpec }).fill),
+    { type: "solid", color: "#cccccc" },
+  );
+  const raw = fill.type === "solid" ? (fill as { color?: string }).color : undefined;
+  const resolved = useResolveColorById(raw, ids[0] ?? "", "#cccccc");
+  const write = (v: string): void => {
+    const next = paintFromEmit(v);
+    for (const id of ids) {
+      editor.exec("weave.item.setDecoration", { itemId: id, kind: FILL_UNIT_KIND, attrs: next });
+    }
+  };
+  return (
+    <ColorPicker
+      aria-label="채우기"
+      value={fill.type === "solid" ? (resolved ?? "#cccccc") : "#cccccc"}
+      onValueChange={() => {}}
+      onValueCommit={write}
+    />
+  );
+}
+
+/** Stroke as a decoration.stroke UNIT (DR-028). Color + width; width 0 clears the
+ *  unit (no stroke). Picking a color when there's no stroke creates a 1px one. */
+export function StrokeControl({
+  editor,
+  ids,
+}: {
+  readonly editor: Editor;
+  readonly ids: ReadonlyArray<string>;
+}): JSX.Element {
+  const doc = useDocumentForResolution();
+  const stroke = firstItemValue<StrokeSpec>(
+    doc,
+    ids,
+    (item) =>
+      item === undefined
+        ? undefined
+        : ((findUnitInItem(item, STROKE_UNIT_KIND)?.attrs as StrokeSpec | undefined) ??
+          (item.attrs as { stroke?: StrokeSpec | null }).stroke ??
+          undefined),
+    { paint: { type: "solid", color: "#000000" }, width: 0 },
+  );
+  const raw =
+    stroke.paint.type === "solid" ? (stroke.paint as { color?: string }).color : undefined;
+  const resolved = useResolveColorById(raw, ids[0] ?? "", "#000000");
+  const [draftW, setDraftW] = useState(stroke.width);
+  useEffect(() => setDraftW(stroke.width), [stroke.width]);
+
+  const setStroke = (next: StrokeSpec): void => {
+    for (const id of ids) {
+      editor.exec("weave.item.setDecoration", {
+        itemId: id,
+        kind: STROKE_UNIT_KIND,
+        attrs: next.width <= 0 ? null : next,
+      });
+    }
+  };
+  return (
+    <div className="grid gap-1.5">
+      <ColorPicker
+        aria-label="외곽선 색"
+        value={stroke.paint.type === "solid" ? (resolved ?? "#000000") : "#000000"}
+        onValueChange={() => {}}
+        onValueCommit={(v) =>
+          setStroke({
+            ...stroke,
+            paint: paintFromEmit(v),
+            width: stroke.width > 0 ? stroke.width : 1,
+          })
+        }
+      />
+      <NumberSlider
+        aria-label="외곽선 두께"
+        value={draftW}
+        min={0}
+        max={40}
+        step={1}
+        suffix="px"
+        onValueChange={setDraftW}
+        onValueCommit={(w) => setStroke({ ...stroke, width: w })}
+      />
+    </div>
   );
 }
