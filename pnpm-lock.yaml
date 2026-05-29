@@ -1563,7 +1563,7 @@ packages:
     os: [win32]
 
   '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz':
-    resolution: {integrity: sha512-+x5yB7W0IDf7hnVUu8eMos+A64EnpW8k6n0Xty+rwqfDct37WMvUxBxG4PNLA8psJoomNnwqMJVxGJ95b+/b7A==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz}
+    resolution: {integrity: sha512-2mguIvIugvd/nAJ07dRUeDAnIEu2kp77xEf8tPTgKHnq4I4bdNB85254+ZJ+MFRQgStIEYARXgh3cV8LzmATXg==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz}
     version: 0.1.0
 
   '@stablelib/base64@1.0.1':

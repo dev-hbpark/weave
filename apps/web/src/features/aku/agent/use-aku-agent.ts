@@ -223,7 +223,13 @@ export function useAkuAgent(deps: {
         ...(images.length > 0 ? { images } : {}),
         at: now,
       };
-      const assistantMsg: AkuAssistantMessage = { role: "assistant", text: "", edits: [], at: now };
+      const assistantMsg: AkuAssistantMessage = {
+        role: "assistant",
+        text: "",
+        edits: [],
+        at: now,
+        activity: "연결 중…",
+      };
       commit([...messagesRef.current, userMsg, assistantMsg]);
       setStatus("streaming");
 
@@ -240,14 +246,30 @@ export function useAkuAgent(deps: {
       try {
         const handle = await getHandle();
         if (genRef.current !== gen) return;
-        // `event` is inferred as the client's TaskEvent union (turn / response /
-        // tool); we render each `tool` event as a live edit-chip.
         const res = await handle.submit(task, {
+          // Attached images go to the server for vision (data URLs; the server
+          // parses media-type + bytes into the model's first turn).
+          ...(images.length > 0 ? { images } : {}),
+          // `event` is the client's TaskEvent union (turn / response / tool). We
+          // surface it as a live activity caption + accumulate tool edit-chips so
+          // the panel visibly "works" before the final reply lands.
           onEvent: (event) => {
             if (genRef.current !== gen) return;
-            if (event.type !== "tool") return;
+            if (event.type === "turn") {
+              patchLastAssistant((prev) => ({ ...prev, activity: "생각 중…" }));
+              return;
+            }
+            if (event.type === "response") {
+              patchLastAssistant((prev) => ({
+                ...prev,
+                activity: event.toolUses > 0 ? "편집 적용 중…" : "정리 중…",
+              }));
+              return;
+            }
+            // tool
             patchLastAssistant((prev) => ({
               ...prev,
+              activity: `${chipLabel(event.name)} ${event.ok ? "적용" : "실패"}`,
               edits: [
                 ...(prev.edits ?? []),
                 { tool: event.name, summary: chipLabel(event.name), ok: event.ok },

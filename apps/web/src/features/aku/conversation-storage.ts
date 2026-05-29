@@ -29,8 +29,9 @@ function isMessage(v: unknown): v is AkuMessage {
 /** Strip live-only / oversize fields before writing to storage. */
 function lighten(message: AkuMessage): AkuMessage {
   if (message.role === "assistant") {
-    // historyDepthAfter / undoEntryCount are meaningless after reload.
-    const { historyDepthAfter: _d, undoEntryCount: _c, ...rest } = message;
+    // historyDepthAfter / undoEntryCount / activity are live-only (meaningless
+    // after reload — the undo stack resets and no turn is streaming).
+    const { historyDepthAfter: _d, undoEntryCount: _c, activity: _a, ...rest } = message;
     return rest;
   }
   if (message.images === undefined || message.images.length === 0) return message;

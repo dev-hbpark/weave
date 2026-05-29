@@ -116,6 +116,7 @@ function MessageBubble({
 }): JSX.Element {
   const isUser = message.role === "user";
   const edits = !isUser && message.role === "assistant" ? message.edits : undefined;
+  const activity = !isUser && message.role === "assistant" ? message.activity : undefined;
   const canUndoTurn =
     !isUser &&
     message.role === "assistant" &&
@@ -158,10 +159,26 @@ function MessageBubble({
           )}
 
           {streaming && isLast ? (
-            <span
-              className="inline-block w-[2px] h-[1em] align-[-0.15em] ml-0.5 bg-[color:var(--accent)] motion-safe:animate-pulse"
-              aria-hidden="true"
-            />
+            message.text.trim() === "" ? (
+              // Working, no reply text yet → show what the agent is doing now.
+              <span
+                className="inline-flex items-center gap-1.5 text-[12px] text-[color:var(--text-soft)]"
+                data-aku-activity
+                aria-live="polite"
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-[color:var(--accent)] motion-safe:animate-pulse"
+                  aria-hidden="true"
+                />
+                {activity ?? "생각 중…"}
+              </span>
+            ) : (
+              // Reply text is arriving → blinking caret after it.
+              <span
+                className="inline-block w-[2px] h-[1em] align-[-0.15em] ml-0.5 bg-[color:var(--accent)] motion-safe:animate-pulse"
+                aria-hidden="true"
+              />
+            )
           ) : null}
 
           {edits !== undefined && edits.length > 0 ? (

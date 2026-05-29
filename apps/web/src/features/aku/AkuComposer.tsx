@@ -23,8 +23,9 @@ import type { AkuImage } from "./types.js";
 
 /** Per-image cap; oversize files are skipped (a real backend would compress). */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-/** Auto-grow ceiling for the textarea (px) before it scrolls. */
-const MAX_TEXTAREA_PX = 160;
+/** Auto-grow ceiling for the textarea (px) before it scrolls. Generous so a
+ *  pasted long document stays editable; past this the textarea scrolls. */
+const MAX_TEXTAREA_PX = 280;
 
 /** Content loaded into the composer by an external action (editFrom). The
  *  `nonce` lets us reload even when text/images are unchanged. */
@@ -181,11 +182,23 @@ export function AkuComposer({
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
-    const files = Array.from(e.clipboardData.files ?? []);
-    if (files.some((f) => f.type.startsWith("image/"))) {
+    const dt = e.clipboardData;
+    // Pasted images land in `.files` (file managers) OR only in `.items`
+    // (images copied from a web page / screenshots) — check both.
+    const fromFiles = Array.from(dt.files ?? []).filter((f) => f.type.startsWith("image/"));
+    const fromItems =
+      fromFiles.length > 0
+        ? []
+        : Array.from(dt.items ?? [])
+            .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+            .map((it) => it.getAsFile())
+            .filter((f): f is File => f !== null);
+    const imageFiles = [...fromFiles, ...fromItems];
+    if (imageFiles.length > 0) {
       e.preventDefault();
-      void addImages(files);
+      void addImages(imageFiles);
     }
+    // No image → let the textarea paste text natively (long documents included).
   };
 
   const onDrop = (e: DragEvent<HTMLDivElement>): void => {

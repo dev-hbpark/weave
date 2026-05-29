@@ -42,6 +42,10 @@ export interface AkuAssistantMessage {
    *  "이 변경 되돌리기" is offered only while the edits are still on top. */
   readonly historyDepthAfter?: number;
   readonly undoEntryCount?: number;
+  /** Live progress caption while the turn is streaming (e.g. "생각 중…",
+   *  "편집 적용 중: 배경색 변경"). Set from streamed agent events, cleared when
+   *  the turn settles. Live-session only — stripped before persistence. */
+  readonly activity?: string;
 }
 
 export type AkuMessage = AkuUserMessage | AkuAssistantMessage;
