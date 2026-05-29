@@ -22,7 +22,7 @@ const SvgRoot = forwardRef<SVGSVGElement, IconProps & { children: React.ReactNod
         width={size}
         height={size}
         {...baseProps}
-        aria-hidden
+        aria-hidden="true"
         className={cn("inline-block shrink-0", className)}
         {...rest}
       >
@@ -329,6 +329,15 @@ export const IconImage = forwardRef<SVGSVGElement, IconProps>(function IconImage
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <circle cx="9" cy="10" r="1.5" />
       <path d="M21 16l-5-5-9 9" />
+    </SvgRoot>
+  );
+});
+
+export const IconArrowUp = forwardRef<SVGSVGElement, IconProps>(function IconArrowUp(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <path d="M12 19V5" />
+      <path d="M6 11l6-6 6 6" />
     </SvgRoot>
   );
 });

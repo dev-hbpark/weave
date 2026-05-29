@@ -141,6 +141,7 @@ import { projectHoverAffordance } from "../document/render/hover-affordance-proj
 import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 import { ContextualToolbar } from "../document/toolbar/ContextualToolbar.js";
+import { AkuAssistant } from "../features/aku/AkuAssistant.js";
 import { MediaSrcDialog } from "../document/toolbar/MediaSrcDialog.js";
 import { CursorTooltipBridge } from "../document/tooltip/CursorTooltipBridge.js";
 import {
@@ -2967,6 +2968,11 @@ function DesignPageBody() {
                               </div>,
                               document.body,
                             )}
+                          {/* WI-052 — 아쿠 (Aku) assistant: floating launcher →
+                          expandable chat panel. Mounted inside the providers so
+                          its design-aware tools read live selection + edit via
+                          editor.exec; self-portals to <body>. */}
+                          <AkuAssistant editor={editor} document={docInAgocraft} />
                           <CursorTooltipBridge
                             hover={hoverContext}
                             selectedIds={selectedIds}
