@@ -144,6 +144,7 @@ export {
   IconPencil,
   IconPlay,
   IconPlus,
+  IconQr,
   IconRedo,
   IconRefresh,
   IconShape,
@@ -234,7 +235,7 @@ export { Stage, type StageScene } from "./Stage.js";
 export { Switch, type SwitchProps } from "./Switch.js";
 export { Textarea } from "./Textarea.js";
 export { FieldGroup, TextField } from "./TextField.js";
-export { ThemeSwitcher } from "./ThemeSwitcher.js";
+export { ThemePicker } from "./ThemePicker.js";
 export { Toolbar, ToolbarDivider } from "./Toolbar.js";
 export { Tooltip, type TooltipProps } from "./Tooltip.js";
 export { TooltipCard, type TooltipCardProps } from "./TooltipCard.js";

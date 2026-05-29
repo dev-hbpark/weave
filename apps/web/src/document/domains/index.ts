@@ -12,6 +12,7 @@ import type { ComponentType } from "react";
 import type { AgoItem, DomainKind, ItemAttrsByKind } from "../types.js";
 import { FrameBlock } from "./FrameBlock.js";
 import { ImageBlock } from "./ImageBlock.js";
+import { QrBlock } from "./QrBlock.js";
 import { ShapeBlock } from "./ShapeBlock.js";
 import { TextBlock } from "./TextBlock.js";
 import { VideoBlock } from "./VideoBlock.js";
@@ -29,6 +30,7 @@ export const DOMAIN_RENDERERS: {
   video: VideoBlock,
   shape: ShapeBlock,
   text: TextBlock,
+  qr: QrBlock,
 };
 
-export { FrameBlock, ImageBlock, ShapeBlock, TextBlock, VideoBlock };
+export { FrameBlock, ImageBlock, QrBlock, ShapeBlock, TextBlock, VideoBlock };

@@ -35,7 +35,9 @@ export type DomainKind =
   | "video"
   | "shape"
   // Phase 15 — WI-023 text primitive (agocraft `text` kind).
-  | "text";
+  | "text"
+  // WI-058 — data-driven QR code (weave-local kind; not an agocraft builtin).
+  | "qr";
 
 // ── ItemFrame — universal parent-relative bounding box ──────────────────────
 //
@@ -99,6 +101,12 @@ export const DOMAIN_REGISTRY: Readonly<Record<DomainKind, DomainMeta>> = {
     label: "Text",
     tagline: "Text box with font family / size / color controls",
     accentVar: "--domain-block-accent",
+  },
+  qr: {
+    kind: "qr",
+    label: "QR Code",
+    tagline: "Data-driven QR — set the data string, error level, colors",
+    accentVar: "--domain-media-accent",
   },
 };
 
@@ -192,12 +200,33 @@ export type VideoAttrs = AgocraftVideoAttrs;
 export type ShapeAttrs = AgocraftShapeAttrs;
 export type TextAttrs = AgocraftTextAttrs;
 
+/** WI-058 — data-driven QR code. The module matrix is generated from `data` at
+ *  render time (weave-local Nayuki encoder), so editing `data` regenerates it.
+ *  `foreground` reuses `PaintSpec` (solid OR gradient, like shape fill). */
+export interface QrAttrs {
+  readonly frame: ItemFrame;
+  /** Encoded payload (URL / text). Empty → renders a placeholder. */
+  readonly data: string;
+  /** Error-correction level (default "M"). Higher = more redundancy. */
+  readonly ecLevel?: "L" | "M" | "Q" | "H";
+  /** Dark-module paint (solid / linear / radial gradient). Default solid #000. */
+  readonly foreground?: ShapeAttrs["fill"];
+  /** Light-module / background paint. `null` = transparent. Default solid #fff. */
+  readonly background?: ShapeAttrs["fill"] | null;
+  /** Quiet-zone width in modules (default 4 per the QR spec). */
+  readonly margin?: number;
+  /** Module glyph shape (default "square"). */
+  readonly moduleStyle?: "square" | "dot" | "rounded";
+  readonly opacity?: number;
+}
+
 export type ItemAttrsByKind = {
   frame: FrameAttrs;
   image: ImageAttrs;
   video: VideoAttrs;
   shape: ShapeAttrs;
   text: TextAttrs;
+  qr: QrAttrs;
 };
 
 // ── Doc flavor — the "kind" of the top-level document (root.attrs.flavor) ──

@@ -56,6 +56,7 @@ import {
   IconLayoutGrid,
   IconPlay,
   IconPlus,
+  IconQr,
   IconRedo,
   IconRefresh,
   IconShape,
@@ -74,7 +75,7 @@ import {
   IconVideo,
   QuickActionBar,
   Spinner,
-  ThemeSwitcher,
+  ThemePicker,
   UnifiedTooltip,
   useCommandHost,
 } from "@weave/design-system";
@@ -546,6 +547,17 @@ const SAVE_TOOLTIP_ACTION = {
   failed: "다시 시도하려면 클릭",
 } as const;
 
+// DR-design-027 — per-state icon tint for the header save button. idle/saving
+// inherit the subtle IconButton's neutral text; saved/failed use the shared
+// semantic status tokens so the acknowledgement reads consistently in every
+// theme. One row per state (Rule 6) — no inline ternary on status.
+const SAVE_TINT_BY_STATUS = {
+  idle: "",
+  saving: "",
+  saved: "text-[color:var(--status-success)]",
+  failed: "text-[color:var(--status-warn)]",
+} as const;
+
 export function DesignPage() {
   const { id } = useParams<{ id: string }>();
   // Key on the design id so navigating directly between designs (e.g. after
@@ -838,8 +850,10 @@ function DesignPageBody() {
   //
   // Text: the box height is set to EXACTLY one line of the chosen font
   // (rounded fontSize × lineHeight) so the height tracks the font, and the
-  // font is stored as `fontSizeRatio` (ratio of the parent height — the
-  // model the user chose) alongside the derived px the renderer reads.
+  // font is stored as `fontSizeSpec { kind:"ratio" }` (ratio of the parent
+  // height — the model the user chose; resolved back to px at render by
+  // resolveFontSize) alongside the derived px legacy mirror. `fontSizeRatio`
+  // below is just the computed ratio value the caller writes into the spec.
   const TEXT_LINE_HEIGHT = 1.4;
   function computeAddGeometry(
     containerId: string,
@@ -1089,7 +1103,14 @@ function DesignPageBody() {
       if (kind === "text") {
         if (geo?.fontSizePx !== undefined) {
           attrsOverride.fontSize = Math.max(1, Math.round(geo.fontSizePx));
-          attrsOverride.fontSizeRatio = geo.fontSizeRatio;
+          // WI-fontsize-spec — store the responsive ratio as the canonical
+          // agocraft fontSizeSpec (resolved at render via resolveFontSize +
+          // ParentFrameHeightContext, so the text re-scales when the frame
+          // resizes). `fontSize` above stays as the px mirror for legacy
+          // readers. Replaces the orphaned weave-local `fontSizeRatio`.
+          if (geo.fontSizeRatio !== undefined) {
+            attrsOverride.fontSizeSpec = { kind: "ratio", value: geo.fontSizeRatio };
+          }
         }
         // Fixed resize mode (NONE) — the box keeps the size we set instead
         // of auto-growing to content, so the font-filled height sticks.
@@ -1780,7 +1801,14 @@ function DesignPageBody() {
       if (spec.kind === "text") {
         if (geo?.fontSizePx !== undefined) {
           attrsOverride.fontSize = Math.max(1, Math.round(geo.fontSizePx));
-          attrsOverride.fontSizeRatio = geo.fontSizeRatio;
+          // WI-fontsize-spec — store the responsive ratio as the canonical
+          // agocraft fontSizeSpec (resolved at render via resolveFontSize +
+          // ParentFrameHeightContext, so the text re-scales when the frame
+          // resizes). `fontSize` above stays as the px mirror for legacy
+          // readers. Replaces the orphaned weave-local `fontSizeRatio`.
+          if (geo.fontSizeRatio !== undefined) {
+            attrsOverride.fontSizeSpec = { kind: "ratio", value: geo.fontSizeRatio };
+          }
         }
         attrsOverride.layoutChild = layoutChildFromTextAutoResize("NONE");
       }
@@ -2448,6 +2476,23 @@ function DesignPageBody() {
                                       >
                                         말풍선
                                       </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuLabel>코드</DropdownMenuLabel>
+                                      <DropdownMenuItem
+                                        icon={<IconQr size={16} />}
+                                        onSelect={() => addNewItem("qr")}
+                                        data-testid="add-qr"
+                                        draggable
+                                        onDragStart={(e) => {
+                                          e.dataTransfer.setData(
+                                            "application/x-weave-add-kind",
+                                            "qr",
+                                          );
+                                          e.dataTransfer.effectAllowed = "copy";
+                                        }}
+                                      >
+                                        QR 코드
+                                      </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                   <span
@@ -2466,7 +2511,7 @@ function DesignPageBody() {
                                   {/* Design 배경색 — file-level 속성이라 selection 과
                                 무관한 영구 chrome 인 header 의 우 cluster 에
                                 상주. ContextualToolbar 의 selection==0
-                                variant 를 대체. ThemeSwitcher 와 같은
+                                variant 를 대체. ThemePicker 와 같은
                                 design-level 컨트롤 군에 속하므로 인접 배치.
                                 `setDesignBackgroundViaEditor` 는
                                 weave.design.setBackground 명령을 통해 History
@@ -2487,32 +2532,32 @@ function DesignPageBody() {
                                       aria-label="Design background"
                                     />
                                   </span>
-                                  <ThemeSwitcher />
+                                  <ThemePicker />
                                   {/* DR-design-017 — manual cloud save trigger.
                                   Click forces an immediate `persistNow()`
                                   even if the debounced auto-save window
                                   hasn't elapsed. Glyph flashes to a check
                                   for 1.5s after dispatch so the user
                                   sees an explicit acknowledgement (the
-                                  cloud POST itself is fire-and-forget). */}
+                                  cloud POST itself is fire-and-forget).
+                                  DR-design-027 — `subtle` circular chip +
+                                  status-token tint so it reads as a real
+                                  button coherent with the Present CTA. */}
                                   <IconButton
                                     aria-label="Save design to server"
-                                    size="sm"
+                                    variant="subtle"
+                                    size="md"
                                     onClick={() => void handleManualSave()}
                                     disabled={saveStatus === "saving"}
                                     data-testid="toolbar-save"
                                     data-state={saveStatus}
                                     data-tip={SAVE_TOOLTIP_CONTEXT[saveStatus]}
                                     data-tip-kbd={SAVE_TOOLTIP_ACTION[saveStatus]}
-                                    className={
-                                      saveStatus === "failed"
-                                        ? "text-[color:var(--text-warn,#d97706)]"
-                                        : undefined
-                                    }
+                                    className={`rounded-[var(--radius-pill)] ${SAVE_TINT_BY_STATUS[saveStatus]}`}
                                   >
                                     {SAVE_GLYPH_BY_STATUS[saveStatus]}
                                   </IconButton>
-                                  <Button size="md" trailingIcon={<IconPlay size={14} />} asChild>
+                                  <Button size="md" leadingIcon={<IconPlay size={16} />} asChild>
                                     <Link
                                       to={`/design/${designId}/present`}
                                       data-testid="toolbar-present"
@@ -2997,6 +3042,11 @@ function DesignPageBody() {
                             editor={editor}
                             document={docInAgocraft}
                             designId={designId}
+                            designInfo={{
+                              width: design.width,
+                              height: design.height,
+                              background: design.background,
+                            }}
                           />
                           <CursorTooltipBridge
                             hover={hoverContext}

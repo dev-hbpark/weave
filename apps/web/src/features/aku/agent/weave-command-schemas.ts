@@ -38,20 +38,30 @@ const ATTRS: Json = { type: "object", additionalProperties: true };
 // resize modes, role-based fontSize guidance) lives in WEAVE_CAPABILITIES'
 // `text` itemKind; this is the one-line reminder the agent sees on the command.
 const TEXT_ATTRS_NOTE =
-  "For text items: attrs.fontSize is absolute DESIGN-px (not a ratio) — size it " +
-  "relative to the canvas px size in the task's [디자인] line (heading ~5–9% of " +
-  "canvas height, body ~24–32px, default 24). A text box is AUTO-HEIGHT by " +
-  "default, so set frame.width to control wrapping and let height auto-fit. " +
+  "For text items, size via EITHER attrs.fontSize (absolute DESIGN-px number) OR " +
+  "attrs.fontSizeSpec — { kind:'px', value } or { kind:'ratio', value } where value " +
+  "is a 0..1 fraction of the parent frame height (root = design height; responsive). " +
+  "NEVER put a fraction in the plain fontSize number (0.07 → sub-pixel); express ratios " +
+  "only via fontSizeSpec {kind:'ratio'}. Roles: heading 48–96px (~ratio 0.05–0.09), " +
+  "body ~24–32px (default 24) — canvas px is in the task's [디자인] line. A text box is " +
+  "AUTO-HEIGHT by default, so set frame.width to control wrapping and let height auto-fit. " +
   "Other text fields: fontFamily, fontWeight, fontStyle, color, textAlignHorizontal/" +
   "Vertical, lineHeightSpec, letterSpacing. See the text itemKind capabilities for full detail.";
 
-/** Open attrs bag carrying the text sizing note in its description — used by the
- *  two attrs-editing commands so the hint rides along on `item.add` /
+// WI-058 — data-driven QR. The code regenerates from `data` on every render.
+const QR_ATTRS_NOTE =
+  "For qr items: attrs.data is the encoded URL/text (the QR regenerates from it). " +
+  "Optional: ecLevel ('L'|'M'|'Q'|'H', default M), moduleStyle ('square'|'dot'|'rounded'), " +
+  "margin (quiet-zone modules, default 4), foreground/background (PaintSpec: " +
+  "{type:'solid',color} or a linear/radial gradient; background null = transparent).";
+
+/** Open attrs bag carrying the text + qr field notes in its description — used by
+ *  the two attrs-editing commands so the hint rides along on `item.add` /
  *  `item.update` without bloating the shared `ATTRS` used elsewhere. */
 const ATTRS_WITH_TEXT_NOTE: Json = {
   type: "object",
   additionalProperties: true,
-  description: TEXT_ATTRS_NOTE,
+  description: `${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE}`,
 };
 
 function obj(properties: Readonly<Record<string, Json>>, required: ReadonlyArray<string>): Json {
@@ -66,10 +76,10 @@ const FRAME: Json = obj({ x: NUM, y: NUM, width: NUM, height: NUM, rotation: NUM
   "height",
 ]);
 
-/** The five domain item kinds weave can create (`seed.ts` / mock ADDABLE). */
+/** The domain item kinds weave can create (`seed.ts`). */
 const ITEM_KIND: Json = {
   type: "string",
-  enum: ["frame", "image", "video", "shape", "text"],
+  enum: ["frame", "image", "video", "shape", "text", "qr"],
 };
 
 /** An interaction behavior payload (camera-target / hotspot / …). Open beyond

@@ -334,6 +334,18 @@ export const IconShapeSpeechBubble = forwardRef<SVGSVGElement, IconProps>(
   },
 );
 
+// WI-058 — QR code kind glyph (three finder squares + a few modules).
+export const IconQr = forwardRef<SVGSVGElement, IconProps>(function IconQr(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <path d="M14 14h3v3M20 14v.01M14 20h.01M17 20h.01M20 17v3" />
+    </SvgRoot>
+  );
+});
+
 export const IconImage = forwardRef<SVGSVGElement, IconProps>(function IconImage(props, ref) {
   return (
     <SvgRoot ref={ref} {...props}>

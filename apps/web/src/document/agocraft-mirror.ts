@@ -483,10 +483,12 @@ export function getBehaviors(item: {
  *  render in FrameStage and participate in selection / drill flows. */
 export function isDomainItem(item: AgocraftItem): boolean {
   const k = item.kind;
-  // WI-032 Phase 3 — frame (container) + 4 primitives (image / video /
-  // shape / text). FrameStage filters root.children by this predicate to
-  // skip the synthetic "weave-doc" root + any unknown kinds.
-  return k === "frame" || k === "image" || k === "video" || k === "shape" || k === "text";
+  // WI-032 Phase 3 — frame (container) + primitives. FrameStage filters
+  // root.children by this predicate to skip the synthetic "weave-doc" root +
+  // any unknown kinds. WI-058 — `qr` is a renderable primitive.
+  return (
+    k === "frame" || k === "image" || k === "video" || k === "shape" || k === "text" || k === "qr"
+  );
 }
 
 /** Project an agocraft Item back to a weave Item. Returns undefined when the

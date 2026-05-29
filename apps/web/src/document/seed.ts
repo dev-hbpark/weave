@@ -165,6 +165,17 @@ export function createDefaultItem<K extends DomainKind>(
       // `lineHeight: 1.4` (multiplier). New readers prefer this.
       lineHeightSpec: { value: 1.4, unit: "multiplier" },
     },
+    // WI-058 — data-driven QR. Regenerated from `data` on every render.
+    qr: {
+      frame: FULL_FRAME,
+      data: "https://example.com",
+      ecLevel: "M",
+      foreground: { type: "solid", color: "#111827" },
+      background: { type: "solid", color: "#ffffff" },
+      margin: 4,
+      moduleStyle: "square",
+      opacity: 1,
+    },
   };
   return {
     id,
