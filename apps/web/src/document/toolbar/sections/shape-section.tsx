@@ -23,7 +23,6 @@ import {
   IconShapeStar,
   IconShapeTriangle,
   IconVideo,
-  NumberSlider,
   Select,
 } from "@weave/design-system";
 import type { ReactNode } from "react";
@@ -37,7 +36,7 @@ import {
   updateAll,
   useResolveSharedColor,
 } from "../multi-edit.js";
-import { ShadowControls } from "./shadow-controls.js";
+import { OpacityControl, ShadowControls } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 // Shape sub-kind options — 8 kinds with design-system icons (icons-only
@@ -127,7 +126,6 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
     const s = (it.attrs as unknown as ShapeAttrs).stroke;
     return s?.paint.type === "solid" ? s.paint.color : "#000000";
   });
-  const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as ShapeAttrs).opacity);
   // WI-055 — corner radius is rectangle-only. The control renders only when the
   // shared sub-kind is uniformly "rectangle". Read the per-corner radii; compare
   // by component so a 4-tuple match counts as "agree".
@@ -328,21 +326,9 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
           />
           <MixedBadge visible={isMixed(strokeColor)} />
         </Bar.Field>
+        {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
         <Bar.Field label="Opacity">
-          <NumberSlider
-            value={isMixed(opacity) ? 1 : opacity}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, opacity: v },
-              }))
-            }
-            min={0}
-            max={1}
-            step={0.01}
-            format={(v) => `${Math.round(v * 100)}%`}
-            className="w-full"
-          />
-          <MixedBadge visible={isMixed(opacity)} />
+          <OpacityControl editor={editor} ids={ids} />
         </Bar.Field>
         {isRectangleUniform && (
           <Bar.Field label="Corner radius">

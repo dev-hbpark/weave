@@ -14,7 +14,7 @@ import {
   Select,
 } from "@weave/design-system";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
-import { FilterControl, ShadowControls } from "./shadow-controls.js";
+import { FilterControl, OpacityControl, ShadowControls } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 const FIT_OPTIONS = [
@@ -32,7 +32,6 @@ export const ImageSection: ToolbarSectionComponent = ({
   onEditMediaSrc,
 }) => {
   const fit = sharedValue<ImageFit>(items, (it) => (it.attrs as unknown as ImageAttrs).fit);
-  const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as ImageAttrs).opacity);
   const borderRadius = sharedValue<number>(
     items,
     (it) => (it.attrs as unknown as ImageAttrs).borderRadius,
@@ -86,23 +85,9 @@ export const ImageSection: ToolbarSectionComponent = ({
           />
           <MixedBadge visible={isMixed(fit)} />
         </Bar.Field>
+        {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
         <Bar.Field label="Opacity">
-          <NumberSlider
-            value={isMixed(opacity) ? 1 : opacity}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, opacity: v },
-              }))
-            }
-            min={0}
-            max={1}
-            step={0.01}
-            suffix=""
-            format={(v) => `${Math.round(v * 100)}%`}
-            aria-label="Image opacity"
-            className="w-full"
-          />
-          <MixedBadge visible={isMixed(opacity)} />
+          <OpacityControl editor={editor} ids={ids} />
         </Bar.Field>
         <Bar.Field label="Border radius">
           <NumberSlider
