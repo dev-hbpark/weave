@@ -5,10 +5,12 @@
 // `paintToSvgFill` so gradients land in `<defs>`. Arrow markers also live
 // in `<defs>`.
 
-import type { Item as AgocraftItem } from "@agocraft/core";
+import type { Item as AgocraftItem, ShadowSpec } from "@agocraft/core";
 import {
   type ArrowHeadStyle,
+  findUnitInItem,
   paintToSvgFill,
+  SHADOW_UNIT_KIND,
   shadowToCss,
   shapeToSvgGeometry,
   strokeToSvgAttrs,
@@ -193,7 +195,13 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
     ? (strokeAttrs as unknown as SVGAttributes<SVGElement>)
     : {};
 
-  const shadow = a.shadow ? shadowToCss(a.shadow) : undefined;
+  // DR-028 — prefer the decoration.shadow UNIT; fall back to the legacy
+  // attrs.shadow until that attr is migrated away.
+  const shadowSpec =
+    (findUnitInItem(itemRef, SHADOW_UNIT_KIND)?.attrs as ShadowSpec | undefined) ??
+    a.shadow ??
+    undefined;
+  const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
 
   return (
     <div

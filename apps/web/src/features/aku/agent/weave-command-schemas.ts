@@ -33,6 +33,27 @@ const STR_ARR: Json = { type: "array", items: { type: "string" } };
 /** Open object — the agent supplies a partial attrs/policy bag. */
 const ATTRS: Json = { type: "object", additionalProperties: true };
 
+// Text attrs sizing note, shared by `weave.item.add` (attrsOverride) and
+// `weave.item.update` (attrs). The detailed per-field model (units, defaults,
+// resize modes, role-based fontSize guidance) lives in WEAVE_CAPABILITIES'
+// `text` itemKind; this is the one-line reminder the agent sees on the command.
+const TEXT_ATTRS_NOTE =
+  "For text items: attrs.fontSize is absolute DESIGN-px (not a ratio) — size it " +
+  "relative to the canvas px size in the task's [디자인] line (heading ~5–9% of " +
+  "canvas height, body ~24–32px, default 24). A text box is AUTO-HEIGHT by " +
+  "default, so set frame.width to control wrapping and let height auto-fit. " +
+  "Other text fields: fontFamily, fontWeight, fontStyle, color, textAlignHorizontal/" +
+  "Vertical, lineHeightSpec, letterSpacing. See the text itemKind capabilities for full detail.";
+
+/** Open attrs bag carrying the text sizing note in its description — used by the
+ *  two attrs-editing commands so the hint rides along on `item.add` /
+ *  `item.update` without bloating the shared `ATTRS` used elsewhere. */
+const ATTRS_WITH_TEXT_NOTE: Json = {
+  type: "object",
+  additionalProperties: true,
+  description: TEXT_ATTRS_NOTE,
+};
+
 function obj(properties: Readonly<Record<string, Json>>, required: ReadonlyArray<string>): Json {
   return { type: "object", properties, required: [...required], additionalProperties: false };
 }
@@ -94,6 +115,7 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.swapGridCells": "그리드 셀 교환",
   "weave.item.swapFlexOrder": "플렉스 순서 교환",
   "weave.item.dropGridCell": "그리드 셀 이동",
+  "weave.item.setDecoration": "장식 설정",
 };
 
 const label = (name: string): string => WEAVE_COMMAND_LABELS[name] ?? name;
@@ -101,11 +123,16 @@ const label = (name: string): string => WEAVE_COMMAND_LABELS[name] ?? name;
 /** Every weave editing command, keyed by its `weave.*` registry name. */
 export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> = {
   // ── lifecycle ──
+  // For `kind: "text"`, `attrsOverride` seeds the new box's text attrs. Pick a
+  // `fontSize` (absolute design-px) relative to the canvas px size in the task's
+  // [디자인] line; the box is AUTO-HEIGHT, so `frame.width` (a 0..1 ratio) drives
+  // wrapping while height auto-fits. See TEXT_ATTRS_NOTE / the text capabilities.
   "weave.item.add": {
     label: label("weave.item.add"),
-    inputSchema: obj({ kind: ITEM_KIND, containerId: STR, frame: FRAME, attrsOverride: ATTRS }, [
-      "kind",
-    ]),
+    inputSchema: obj(
+      { kind: ITEM_KIND, containerId: STR, frame: FRAME, attrsOverride: ATTRS_WITH_TEXT_NOTE },
+      ["kind"],
+    ),
   },
   "weave.item.remove": {
     label: label("weave.item.remove"),
@@ -129,7 +156,9 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     // `attrs` is shallow-merged over the item's current attrs. Provide COMPLETE
     // sub-objects (e.g. the full `frame` { x, y, width, height }) — a partial
     // sub-object replaces the whole key. The snapshot gives current values.
-    inputSchema: obj({ itemId: STR, attrs: ATTRS }, ["itemId", "attrs"]),
+    // For text items, `attrs` is the path for fontSize / color / alignment /
+    // lineHeightSpec etc. (sizing rules in TEXT_ATTRS_NOTE).
+    inputSchema: obj({ itemId: STR, attrs: ATTRS_WITH_TEXT_NOTE }, ["itemId", "attrs"]),
   },
   // ── rectangle corner radius (WI-055) ──
   // Rectangle-only (`shape` item with `subAttrs.shape === "rectangle"`). The
@@ -369,5 +398,30 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   "weave.item.dropGridCell": {
     label: label("weave.item.dropGridCell"),
     inputSchema: obj({ itemId: STR, x: NUM, y: NUM }, ["itemId", "x", "y"]),
+  },
+  // DR-028 — decorations are units. One command sets/replaces/clears a decoration
+  // unit; `attrs` IS the spec for that kind (null clears). Shadow:
+  // { x, y, blur, spread, color }. Stroke: { paint:{type,color}, width, dashArray? }.
+  // Fill: a PaintSpec ({type:"solid",color} | gradient | image). Filter:
+  // { brightness?, contrast?, saturate?, blur?, hueRotate? }. Opacity: { value:0..1 }.
+  "weave.item.setDecoration": {
+    label: label("weave.item.setDecoration"),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        kind: {
+          type: "string",
+          enum: [
+            "decoration.shadow",
+            "decoration.stroke",
+            "decoration.fill",
+            "decoration.filter",
+            "decoration.opacity",
+          ],
+        },
+        attrs: { type: ["object", "null"], additionalProperties: true },
+      },
+      ["itemId", "kind", "attrs"],
+    ),
   },
 };

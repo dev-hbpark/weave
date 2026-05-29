@@ -36,6 +36,7 @@ import {
   createRemoveItemsCommand,
   createReorderChildrenCommand,
   createReparentCommand,
+  createSetDecorationCommand,
   fail,
   itemId as makeItemId,
   unitId as makeUnitId,
@@ -1289,6 +1290,9 @@ export function buildWeaveCommands(
     swapGridCells as Command,
     swapFlexOrder as Command,
     dropGridCell as Command,
+    // DR-028 — decoration as units (shadow/stroke/fill/filter/opacity). The
+    // agocraft kit owns the patch semantics; weave just names + uses it.
+    createSetDecorationCommand("weave.item.setDecoration") as Command,
   ];
 }
 
