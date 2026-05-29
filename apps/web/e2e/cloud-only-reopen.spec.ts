@@ -301,3 +301,69 @@ test("presentation mode is server-first — cloud content overrides a stale loca
     .poll(() => page.getByTestId("present-scene").count(), { timeout: 8_000 })
     .toBeGreaterThan(localSceneCount);
 });
+
+test("presentation mode renders a cloud design with NO local copy (no Rules-of-Hooks crash)", async ({
+  page,
+}) => {
+  // Regression for React #310: with no local copy present mode paints blank
+  // (0 camera targets → early return) on the first render, then the cloud
+  // copy arrives and camera targets appear. A hook placed after that early
+  // return would be reached only on the second render → "rendered more hooks
+  // than during the previous render" and a blank, crashed page.
+  const cloud = new Map<string, StoredDesign>();
+  await page.route("**/api/designs", async (route) => {
+    const req = route.request();
+    if (req.method() === "POST") {
+      const body = JSON.parse(req.postData() ?? "{}") as StoredDesign;
+      cloud.set(body.id, body);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, id: body.id }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ designs: [] }),
+    });
+  });
+  await page.route("**/api/designs/*", async (route) => {
+    const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop() ?? "");
+    const d = cloud.get(id);
+    await route.fulfill(
+      d === undefined
+        ? { status: 404, contentType: "application/json", body: JSON.stringify({ error: {} }) }
+        : { status: 200, contentType: "application/json", body: JSON.stringify({ design: d }) },
+    );
+  });
+
+  await clearAllDesigns(page);
+  const id = await prepareDesign(page, { title: "Present no-local" });
+  await addFrame(page, "slide");
+  await saveToCloud(page);
+  await addFrame(page, "slide");
+  await saveToCloud(page);
+
+  // Drop the local copy entirely so the open hits the blank → cloud path.
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await page.evaluate((k) => window.localStorage.removeItem(k), lsKey(id));
+
+  const hookErrors: string[] = [];
+  page.on("console", (m) => {
+    const t = m.text();
+    if (/order of Hooks|more hooks|#310/i.test(t)) hookErrors.push(t);
+  });
+  page.on("pageerror", (e) => {
+    if (/Minified React error #310|more hooks/i.test(e.message)) hookErrors.push(e.message);
+  });
+
+  await page.goto(`/design/${id}/present`);
+  // Renders scenes (would be 0 on a #310 crash) and logs no hooks error.
+  await expect
+    .poll(() => page.getByTestId("present-scene").count(), { timeout: 8_000 })
+    .toBeGreaterThan(0);
+  expect(hookErrors).toEqual([]);
+});

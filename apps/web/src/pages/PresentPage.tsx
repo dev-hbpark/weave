@@ -589,6 +589,35 @@ export function PresentPage() {
     activeSubtreeIds,
   ]);
 
+  // Match FrameStage's tone heuristic so document-scope tokens stay aligned
+  // between edit and present. Same helper as in FrameStage — inline here to
+  // avoid a cross-page import; identical 0.2126/0.7152/0.0722 weighting.
+  //
+  // MUST stay ABOVE the `totalSteps === 0` early return: every hook has to
+  // run unconditionally. When the design loads asynchronously (blank first
+  // paint → 0 camera targets → early return, then the cloud copy arrives and
+  // camera targets appear) a hook placed after the return would be reached
+  // only on the second render, throwing React #310 ("rendered more hooks
+  // than during the previous render"). This bug surfaced once present mode
+  // became server-first (`preferCloud`), which always paints blank first.
+  const bgTone: "light" | "dark" = useMemo(() => {
+    const color = design.background ?? "#ffffff";
+    if (typeof document === "undefined") return "light";
+    const c = document.createElement("canvas");
+    c.width = 1;
+    c.height = 1;
+    const ctx = c.getContext("2d");
+    if (ctx === null) return "light";
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 1, 1);
+    const d = ctx.getImageData(0, 0, 1, 1).data;
+    const r = (d[0] ?? 0) / 255;
+    const g = (d[1] ?? 0) / 255;
+    const b = (d[2] ?? 0) / 255;
+    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return l >= 0.5 ? "light" : "dark";
+  }, [design.background]);
+
   if (totalSteps === 0) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[color:var(--bg-page)] text-[color:var(--text-soft)]">
@@ -607,27 +636,6 @@ export function PresentPage() {
   }
 
   const activeId = cameraTargets[safeStep]?.behavior.id ?? cameraTargets[0]?.behavior.id ?? "";
-
-  // Match FrameStage's tone heuristic so document-scope tokens stay aligned
-  // between edit and present. Same helper as in FrameStage — inline here to
-  // avoid a cross-page import; identical 0.2126/0.7152/0.0722 weighting.
-  const bgTone: "light" | "dark" = useMemo(() => {
-    const color = design.background ?? "#ffffff";
-    if (typeof document === "undefined") return "light";
-    const c = document.createElement("canvas");
-    c.width = 1;
-    c.height = 1;
-    const ctx = c.getContext("2d");
-    if (ctx === null) return "light";
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, 1, 1);
-    const d = ctx.getImageData(0, 0, 1, 1).data;
-    const r = (d[0] ?? 0) / 255;
-    const g = (d[1] ?? 0) / 255;
-    const b = (d[2] ?? 0) / 255;
-    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return l >= 0.5 ? "light" : "dark";
-  }, [design.background]);
 
   return (
     <div className="fixed inset-0">
