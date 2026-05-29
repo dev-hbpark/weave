@@ -8,9 +8,7 @@ import { IconButton, IconClose, IconPlus, IconSparkle, Panel } from "@weave/desi
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { MessageList } from "./MessageList.js";
-import type { AkuHistoryController } from "./tools/types.js";
-import type { AkuImage, AkuMessage } from "./transport/types.js";
-import type { AkuStatus } from "./useAkuConversation.js";
+import type { AkuHistoryController, AkuImage, AkuMessage, AkuStatus } from "./types.js";
 import type { AkuGeometry } from "./useAkuGeometry.js";
 
 export function AkuPanel({

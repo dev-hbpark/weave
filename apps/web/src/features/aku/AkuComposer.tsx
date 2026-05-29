@@ -19,7 +19,7 @@ import {
   useState,
 } from "react";
 import { type SlashCommandItem, SlashCommandMenu } from "./SlashCommandMenu.js";
-import type { AkuImage } from "./transport/types.js";
+import type { AkuImage } from "./types.js";
 
 /** Per-image cap; oversize files are skipped (a real backend would compress). */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;

@@ -1,27 +1,20 @@
-// 아쿠 (Aku) entry (WI-052) — mounted once inside DesignPage's providers.
-// Owns open/closed state and wires the swappable seams: a transport (mock now,
-// Claude later) + a design-aware toolset (reads latest doc/selection via refs,
-// edits via editor.exec). Renders the launcher (collapsed) or panel (expanded),
-// portaled to <body> so it floats above canvas chrome.
+// 아쿠 (Aku) entry (WI-052 → WI-054) — mounted once inside DesignPage's
+// providers. Owns open/closed state; the conversation + agent loop live in
+// `useAkuAgent` (reverse-MCP: the small-think server reasons with Claude and
+// drives weave's commands back over the link, streaming progress). Renders the
+// launcher (collapsed) or panel (expanded), portaled to <body> so it floats
+// above canvas chrome.
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { IconSparkle, OnboardingCoachmark } from "@weave/design-system";
-import {
-  type PointerEvent as ReactPointerEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSelection } from "../../document/interactions/selection-context.js";
 import type { AkuComposerSeed } from "./AkuComposer.js";
 import { AkuLauncher } from "./AkuLauncher.js";
 import { AkuPanel } from "./AkuPanel.js";
-import { createAkuTools } from "./tools/aku-tools.js";
-import { createMockAkuTransport } from "./transport/mock-transport.js";
-import { useAkuConversation } from "./useAkuConversation.js";
+import { useAkuAgent } from "./agent/use-aku-agent.js";
 import { useAkuGeometry } from "./useAkuGeometry.js";
 
 export function AkuAssistant({
@@ -42,30 +35,23 @@ export function AkuAssistant({
     const t = setTimeout(() => setHintReady(true), 800);
     return () => clearTimeout(t);
   }, []);
-  const { selectedIds, selectFrames } = useSelection();
+  const { selectedIds } = useSelection();
 
-  // Refs so the memoized toolset always reads the LATEST doc + selection and
-  // calls the latest selection setter without rebuilding the executors map.
+  // Refs so the agent hook always reads the LATEST doc + selection without
+  // re-opening the reverse-MCP link.
   const docRef = useRef(agoDocument);
   docRef.current = agoDocument;
   const selRef = useRef(selectedIds);
   selRef.current = selectedIds;
-  const selectFramesRef = useRef(selectFrames);
-  selectFramesRef.current = selectFrames;
 
-  const toolset = useMemo(
-    () =>
-      createAkuTools({
-        editor,
-        getDocument: () => docRef.current,
-        getSelection: () => [...selRef.current],
-        selectItems: (ids) => selectFramesRef.current(ids),
-      }),
-    [editor],
+  const { messages, status, send, stop, regenerate, editFrom, retry, clear, history } = useAkuAgent(
+    {
+      editor,
+      getDocument: () => docRef.current,
+      getSelection: () => [...selRef.current],
+      designId,
+    },
   );
-  const transport = useMemo(() => createMockAkuTransport(), []);
-  const { messages, status, send, stop, regenerate, editFrom, retry, clear, history } =
-    useAkuConversation({ transport, toolset, designId });
   const { geometry, beginMove, beginResize } = useAkuGeometry();
 
   // editFrom loads a past user turn back into the composer (seed); the nonce

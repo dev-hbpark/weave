@@ -8,7 +8,7 @@
 // and oversize image data URLs are dropped from the stored copy to stay well
 // under the ~5MB localStorage budget.
 
-import type { AkuMessage } from "./transport/types.js";
+import type { AkuMessage } from "./types.js";
 
 const PREFIX = "weave.aku.conversation.";
 const MAX_MESSAGES = 100;

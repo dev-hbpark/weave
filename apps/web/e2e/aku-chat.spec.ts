@@ -1,7 +1,13 @@
-// WI-052 — 아쿠 (Aku) chat agent e2e. The runtime-wire gate: not just "the UI
-// renders" but "Aku's edits are REAL, undoable canvas transactions" (mock token
-// stream, real editor.exec path). Backend is the mock transport; the canvas
-// edits go through the same History contract as any user action.
+// WI-052 → WI-054 — 아쿠 (Aku) panel e2e. After WI-054 the agent loop lives on
+// the small-think server (reverse-MCP), so the conversational assertions ("send
+// a prompt → streamed reply → real edit") now require a running agent-server +
+// model and live in a separate, server-dependent suite (not run in offline CI).
+//
+// What stays here is everything verifiable WITHOUT the agent: the panel shell
+// (launch / close / drag / resize / first-run coachmark) and the load-bearing
+// runtime invariant that typing in the composer never leaks into canvas hotkeys.
+// The latter seeds its fixture item via `editor.exec` directly (not via Aku) so
+// it needs no backend.
 
 import { expect, type Page, test } from "@playwright/test";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
@@ -18,10 +24,10 @@ async function openAku(page: Page): Promise<void> {
   await expect(page.locator("[data-aku-panel]")).toBeVisible();
 }
 
-async function docBackground(page: Page): Promise<string | null> {
-  return await page.evaluate(() => {
-    const w = window as unknown as { __weaveDoc?: { attrs?: { background?: string | null } } };
-    return w.__weaveDoc?.attrs?.background ?? null;
+function childCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<unknown> } } };
+    return w.__weaveDoc?.root.children.length ?? 0;
   });
 }
 
@@ -36,40 +42,6 @@ test("launcher expands the panel; close collapses it", async ({ page }) => {
   await page.getByLabel("아쿠 닫기").click();
   await expect(page.locator("[data-aku-panel]")).toHaveCount(0);
   await expect(page.locator("[data-aku-launcher]")).toBeVisible();
-});
-
-test("sending a prompt streams an assistant reply", async ({ page }) => {
-  await openAku(page);
-  await composer(page).fill("안녕 아쿠");
-  await composer(page).press("Enter");
-
-  // user turn shows immediately; assistant streams in.
-  await expect(page.locator('[data-aku-message="user"]')).toContainText("안녕 아쿠");
-  const assistant = page.locator('[data-aku-message="assistant"]').last();
-  await expect(assistant).not.toHaveText("", { timeout: 4000 });
-  await expect(assistant).toContainText("아쿠", { timeout: 4000 });
-});
-
-test("design-aware: '배경을 파랑으로' actually sets the background AND is undoable", async ({
-  page,
-}) => {
-  await openAku(page);
-  const before = await docBackground(page);
-
-  await composer(page).fill("배경을 파랑으로 바꿔줘");
-  await composer(page).press("Enter");
-
-  // The edit chip appears once the tool-call executed via editor.exec.
-  await expect(page.locator('[data-aku-edit="setBackground"]')).toBeVisible({ timeout: 5000 });
-  // The REAL document changed — not a UI illusion.
-  await expect.poll(() => docBackground(page), { timeout: 5000 }).toBe("#3b82f6");
-
-  // Aku's edit is a normal undoable transaction (History contract).
-  await page.evaluate(() => {
-    const w = window as unknown as { __weaveEditor?: { history: { undo: () => void } } };
-    w.__weaveEditor?.history.undo();
-  });
-  await expect.poll(() => docBackground(page), { timeout: 3000 }).toBe(before);
 });
 
 test("first-run coachmark invites the first use, then stays dismissed", async ({ page }) => {
@@ -141,26 +113,19 @@ test("panel can be resized from the corner", async ({ page }) => {
 
 test("typing in the composer does not trigger canvas hotkeys", async ({ page }) => {
   await openAku(page);
-  // Seed a child via Aku so there's something a stray Delete could remove.
-  await composer(page).fill("텍스트 추가해줘");
-  await composer(page).press("Enter");
-  await expect(page.locator('[data-aku-edit="addItem"]')).toBeVisible({ timeout: 5000 });
-  const childCount = await page.evaluate(() => {
-    const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<unknown> } } };
-    return w.__weaveDoc?.root.children.length ?? 0;
+  // Seed a child directly via the editor (NOT via Aku — this suite is backend-free)
+  // so there's something a stray Delete could remove.
+  await page.evaluate(() => {
+    const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+    w.__weaveEditor?.exec("weave.item.add", { kind: "text" });
   });
+  await expect.poll(() => childCount(page), { timeout: 4000 }).toBeGreaterThan(0);
+  const seeded = await childCount(page);
 
   // Type + press Backspace/Delete WHILE the composer is focused — must edit the
   // text field, never delete a canvas item.
   await composer(page).fill("지울 텍스트");
   await composer(page).press("Backspace");
   await composer(page).press("Delete");
-  await expect(
-    page.evaluate(() => {
-      const w = window as unknown as {
-        __weaveDoc?: { root: { children: ReadonlyArray<unknown> } };
-      };
-      return w.__weaveDoc?.root.children.length ?? 0;
-    }),
-  ).resolves.toBe(childCount);
+  await expect(childCount(page)).resolves.toBe(seeded);
 });

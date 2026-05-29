@@ -131,7 +131,13 @@ export interface RemoveFrameKeepingChildrenInput {
 }
 export interface UpdateItemInput {
   readonly itemId: string;
-  readonly patch: (it: WeaveItem) => WeaveItem;
+  /** Imperative patcher (UI callers). Mutually exclusive with `attrs`. */
+  readonly patch?: (it: WeaveItem) => WeaveItem;
+  /** WI-054 — declarative, JSON-serializable alternative for the agent surface:
+   *  shallow-merged over the item's current `attrs`. Provide COMPLETE sub-objects
+   *  (e.g. the full `frame`) — a partial replaces the whole key. Exactly one of
+   *  `patch` / `attrs` must be set. */
+  readonly attrs?: Readonly<Record<string, unknown>>;
 }
 
 /** WI-020 / WI-043 — explicit layout-spec mutation. Targets `attrs.layout`
@@ -168,7 +174,11 @@ export interface DropGridCellInput {
 export interface UpdateBehaviorInput {
   readonly itemId: string;
   readonly behaviorId: string;
-  readonly patch: (b: InteractionBehavior) => InteractionBehavior;
+  /** Imperative patcher (UI callers). Mutually exclusive with `behavior`. */
+  readonly patch?: (b: InteractionBehavior) => InteractionBehavior;
+  /** WI-054 — declarative, JSON-serializable alternative for the agent surface:
+   *  shallow-merged over the current behavior payload. */
+  readonly behavior?: Readonly<Record<string, unknown>>;
 }
 
 /** WI-030 — `weave.preset.insertSlide` input. */
@@ -331,7 +341,21 @@ export function buildWeaveCommands(
         behaviors: [],
         createdAt: child.meta.createdAt,
       };
-      const after = input.patch(weaveItem).attrs as unknown as Readonly<Record<string, unknown>>;
+      // WI-054 — `patch` (UI) or `attrs` (declarative, agent). The declarative
+      // form shallow-merges the supplied attrs over the item's current attrs.
+      if (input.patch === undefined && input.attrs === undefined) {
+        return fail("invalid-input", "weave.item.update: provide `patch` or `attrs`");
+      }
+      const patchFn =
+        input.patch ??
+        ((it: WeaveItem): WeaveItem => ({
+          ...it,
+          attrs: {
+            ...(it.attrs as unknown as Record<string, unknown>),
+            ...(input.attrs ?? {}),
+          } as unknown as WeaveItem["attrs"],
+        }));
+      const after = patchFn(weaveItem).attrs as unknown as Readonly<Record<string, unknown>>;
       // DR-017 ADR-D — drag auto-merge.
       //   agocraft's `mergeKeyOf` derives the merge key from the patch's
       //   target identity (e.g. `item.attrs#${itemId}`) and the editor's
@@ -472,7 +496,15 @@ export function buildWeaveCommands(
           `weave.behavior.update: unit ${input.behaviorId} carries no behavior payload`,
         );
       }
-      const after = input.patch(before);
+      // WI-054 — `patch` (UI) or `behavior` (declarative, agent: shallow-merge).
+      if (input.patch === undefined && input.behavior === undefined) {
+        return fail("invalid-input", "weave.behavior.update: provide `patch` or `behavior`");
+      }
+      const behaviorPatchFn =
+        input.patch ??
+        ((b: InteractionBehavior): InteractionBehavior =>
+          ({ ...b, ...(input.behavior ?? {}) }) as InteractionBehavior);
+      const after = behaviorPatchFn(before);
       const patch: Patch = {
         type: "unit.attrs",
         itemId: child.id,

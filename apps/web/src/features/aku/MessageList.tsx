@@ -17,8 +17,7 @@ import {
   IconUndo,
 } from "@weave/design-system";
 import { lazy, Suspense, useState } from "react";
-import type { AkuHistoryController } from "./tools/types.js";
-import type { AkuEditRecord, AkuImage, AkuMessage } from "./transport/types.js";
+import type { AkuEditRecord, AkuHistoryController, AkuImage, AkuMessage } from "./types.js";
 
 function formatTime(at: number | undefined): string {
   if (at === undefined) return "";
