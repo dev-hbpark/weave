@@ -186,6 +186,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       ],
       ux: {},
     });
+    // biome-ignore lint/correctness/useHookAtTopLevel: e.useDocumentType is an editor API method, not a React hook (the use* name is coincidental).
     e.useDocumentType("weave-doc");
     return e;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally

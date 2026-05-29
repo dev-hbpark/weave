@@ -109,10 +109,10 @@ export function SelectionLayer({
   targetRef,
   resolveHandles,
   capability,
-  onMoveStart,
+  // onMoveStart / moveLabel are part of the props contract but unused by this
+  // impl (move is driven through the host) — kept on the type, not destructured.
   onResizeStart,
   onRotateStart,
-  moveLabel,
   hideOutline,
 }: SelectionLayerProps) {
   const [box, setBox] = useState<TrackedBox | null>(null);

@@ -164,7 +164,6 @@ export function PointStackInspector(props: PointStackInspectorProps): JSX.Elemen
 
   return (
     <section
-      role="region"
       aria-label="Point Stack Inspector"
       style={{
         position: "absolute",

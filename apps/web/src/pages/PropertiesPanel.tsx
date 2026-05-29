@@ -126,7 +126,6 @@ export function PropertiesPanel({
   return (
     <aside
       className="fixed right-4 top-32 z-30 w-[300px] max-h-[calc(100vh-180px)] overflow-y-auto"
-      role="complementary"
       aria-label="Frame properties"
       data-testid="properties-panel"
     >

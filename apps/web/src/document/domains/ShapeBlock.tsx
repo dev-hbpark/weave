@@ -206,6 +206,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
         preserveAspectRatio="none"
         width="100%"
         height="100%"
+        aria-hidden="true"
         style={{ display: "block", overflow: "visible" }}
       >
         <defs>

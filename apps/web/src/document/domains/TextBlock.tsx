@@ -277,7 +277,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   }, [isEditing, isFrameSelected]);
   const inner =
     editable && isEditing ? (
-      <Suspense fallback={<>{renderReadOnly(a.text, a.textRuns)}</>}>
+      <Suspense fallback={renderReadOnly(a.text, a.textRuns)}>
         <LexicalTextEditor
           anchorId={String(item.id)}
           value={a.text}
@@ -287,7 +287,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         />
       </Suspense>
     ) : (
-      <>{renderReadOnly(a.text, a.textRuns)}</>
+      renderReadOnly(a.text, a.textRuns)
     );
   const linked =
     !editable && a.hyperlink != null && a.hyperlink.url.length > 0 ? (

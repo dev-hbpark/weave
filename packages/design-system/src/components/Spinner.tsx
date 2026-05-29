@@ -25,7 +25,7 @@ export const Spinner = forwardRef<SVGSVGElement, SpinnerProps>(function Spinner(
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      aria-hidden
+      aria-hidden="true"
       className={cn("inline-block shrink-0 animate-spin motion-reduce:animate-none", className)}
       {...rest}
     >

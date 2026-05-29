@@ -76,7 +76,7 @@ export const DashPatternPicker = forwardRef<HTMLDivElement, DashPatternPickerPro
                 "transition-[background] duration-[var(--motion-quick)]",
               )}
             >
-              <svg width="22" height="6" viewBox="0 0 22 6" aria-hidden>
+              <svg width="22" height="6" viewBox="0 0 22 6" aria-hidden="true">
                 <line
                   x1={1}
                   y1={3}

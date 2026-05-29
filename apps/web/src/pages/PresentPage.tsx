@@ -488,7 +488,9 @@ export function PresentPage() {
         // so the frame's renderer fires AND any non-frame children render
         // at their relative position within the frame's bbox. Nested frames
         // skip themselves — they have their own scene.
-        const sceneBody = <PresentFrameTree item={item as unknown as AgocraftItem} />;
+        const sceneBody = (
+          <PresentFrameTree key={String(item.id)} item={item as unknown as AgocraftItem} />
+        );
         // Phase 13d-3 — entrance-animation behavior (if any) drives a Web
         // Animations API call when this entry becomes the active step.
         const units =

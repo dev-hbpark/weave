@@ -219,14 +219,14 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
                 const cs = containerSizeRef.current;
                 const sx = host.offsetWidth > 0 ? r.width / host.offsetWidth : 1;
                 const sy = host.offsetHeight > 0 ? r.height / host.offsetHeight : 1;
-                return {
-                  x: (cx - r.left) / sx,
-                  y: (cy - r.top) / sy,
-                };
                 // (Note: when an explicit clientToLocal is supplied — typically
                 //  the design-plane host that targets `cs.width × cs.height`
                 //  design coords — that closure handles the conversion.)
                 void cs;
+                return {
+                  x: (cx - r.left) / sx,
+                  y: (cy - r.top) / sy,
+                };
               }),
             capability: adaptedCapability,
             modifiers: requireAltKey === true ? { alt: "required", button: 0 } : { button: 0 },

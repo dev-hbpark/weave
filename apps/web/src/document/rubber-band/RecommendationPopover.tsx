@@ -117,7 +117,6 @@ export function RecommendationPopover({
       ) : null}
       <ul
         data-testid="rubber-band-popover-list"
-        role="listbox"
         aria-label="비율 기반 추천"
         className="flex flex-col gap-0.5"
       >

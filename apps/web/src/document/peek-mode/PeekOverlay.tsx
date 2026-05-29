@@ -134,7 +134,9 @@ export function PeekOverlay(props: PeekOverlayProps): JSX.Element | null {
 
     const liftedIds = liftSet.orderedIds;
     const rankOf = new Map<string, number>();
-    liftedIds.forEach((id, idx) => rankOf.set(id, idx));
+    liftedIds.forEach((id, idx) => {
+      rankOf.set(id, idx);
+    });
 
     // Apply markers + per-frame translateZ + border colour. Existing inline
     // transform (e.g., `rotate(Nrad)` on rotated frames) is preserved and

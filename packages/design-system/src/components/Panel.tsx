@@ -51,6 +51,7 @@ function PanelRoot(
   ref: React.Ref<HTMLElement>,
 ): JSX.Element {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: generic floating/docked panel — an explicit region landmark (labelled via aria-label) is intentional; no single HTML element fits all panel uses.
     <aside
       ref={ref}
       role="region"
@@ -137,6 +138,7 @@ const PanelFooter = forwardRef<HTMLDivElement, SectionProps>(function PanelFoote
   ref,
 ) {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: panel footer uses contentinfo within a region; no element-level equivalent for a nested contentinfo.
     <div
       ref={ref}
       role="contentinfo"
