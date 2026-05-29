@@ -1,0 +1,104 @@
+// WI-057 Phase 2 — draggable vertex handles for the freeform `poly`.
+// Verifies in the live runtime: selecting a poly shows a handle per vertex;
+// dragging a handle moves that vertex (via weave.shape.setVertices); Cmd+Z
+// reverts the whole drag in one step.
+
+import { expect, type Page, test } from "@playwright/test";
+import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
+
+test.beforeEach(async ({ page }) => {
+  await clearAllDesigns(page);
+});
+
+const TRIANGLE = [
+  { x: 0.5, y: 0 },
+  { x: 1, y: 1 },
+  { x: 0, y: 1 },
+];
+
+async function addPoly(page: Page): Promise<string> {
+  const id = await page.evaluate(
+    ({ points }) => {
+      const w = window as unknown as {
+        __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
+        __weaveDoc?: { root: { id: unknown } };
+      };
+      const r = w.__weaveEditor!.exec("weave.item.add", {
+        kind: "shape",
+        containerId: String(w.__weaveDoc!.root.id),
+        frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
+        attrsOverride: { shape: "poly", subAttrs: { shape: "poly", points, closed: true } },
+      });
+      return String(r.value);
+    },
+    { points: TRIANGLE },
+  );
+  await page.waitForTimeout(120);
+  return id;
+}
+
+async function readVertex(
+  page: Page,
+  itemId: string,
+  idx: number,
+): Promise<{ x: number; y: number } | undefined> {
+  return page.evaluate(
+    ({ cid, i }) => {
+      type Pt = { x: number; y: number };
+      type N = {
+        id: unknown;
+        attrs?: { subAttrs?: { points?: ReadonlyArray<Pt> } };
+        children?: ReadonlyArray<N>;
+      };
+      const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<N> } } };
+      const find = (nodes: ReadonlyArray<N>): N | undefined => {
+        for (const n of nodes) {
+          if (String(n.id) === cid) return n;
+          const hit = find(n.children ?? []);
+          if (hit !== undefined) return hit;
+        }
+        return undefined;
+      };
+      return find(w.__weaveDoc?.root.children ?? [])?.attrs?.subAttrs?.points?.[i];
+    },
+    { cid: itemId, i: idx },
+  );
+}
+
+test("WI-057 — dragging a vertex handle moves the vertex; Cmd+Z reverts", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-057-vertex" });
+  const id = await addPoly(page);
+  await setSelection(page, [id]);
+
+  // Three vertex handles appear for the selected poly.
+  const h0 = page.getByTestId("poly-vertex-0");
+  await expect(h0).toBeVisible();
+  await expect(page.getByTestId("poly-vertex-1")).toBeVisible();
+  await expect(page.getByTestId("poly-vertex-2")).toBeVisible();
+
+  const orig = await readVertex(page, id, 0);
+  expect(orig).toEqual({ x: 0.5, y: 0 });
+
+  // Drag vertex 0 (top-center) right + down.
+  const box = await h0.boundingBox();
+  if (box === null) throw new Error("no handle bbox");
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(cx + (60 * i) / 6, cy + (40 * i) / 6);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(80);
+
+  const moved = await readVertex(page, id, 0);
+  if (moved === undefined) throw new Error("vertex gone");
+  expect(moved.x).toBeGreaterThan(0.5); // dragged right
+  expect(moved.y).toBeGreaterThan(0); // dragged down
+
+  // One undo reverts the whole drag.
+  await page.keyboard.press("ControlOrMeta+z");
+  await page.waitForTimeout(80);
+  await expect.poll(() => readVertex(page, id, 0)).toEqual({ x: 0.5, y: 0 });
+});

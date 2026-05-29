@@ -133,6 +133,7 @@ import { PeekOverlay, PointStackInspector, usePeekMode } from "../document/peek-
 import { PresenceCursors } from "../document/presence/PresenceCursors.js";
 import { usePresenceLocalCursor } from "../document/presence/use-presence-local-cursor.js";
 import { projectHoverAffordance } from "../document/render/hover-affordance-projector.js";
+import { createPolyVertexHandleViewModel } from "../document/selection-chrome/poly-vertex-handle.js";
 import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 import { ContextualToolbar } from "../document/toolbar/ContextualToolbar.js";
@@ -683,6 +684,26 @@ function DesignPageBody() {
   // resize / rotate set continues to render alongside; registry merges.
   useEffect(() => {
     return selectionChrome.registerItemViewModel(createSlideBulletHandleViewModel({ editor }));
+  }, [selectionChrome, editor]);
+
+  // WI-057 Phase 2 — register draggable vertex handles for freeform `poly`
+  // shapes. The view-model reads the live vertices through docInAgocraftRef so
+  // it always sees current points; dragging dispatches weave.shape.setVertices.
+  useEffect(() => {
+    return selectionChrome.registerItemViewModel(
+      createPolyVertexHandleViewModel({
+        editor,
+        getPolyPoints: (itemId) => {
+          const item = findItemDeep(docInAgocraftRef.current, itemId);
+          const sub = (
+            item?.attrs as
+              | { subAttrs?: { shape?: string; points?: ReadonlyArray<{ x: number; y: number }> } }
+              | undefined
+          )?.subAttrs;
+          return sub?.shape === "poly" ? (sub.points ?? []) : null;
+        },
+      }),
+    );
   }, [selectionChrome, editor]);
 
   // WI-019 Phase 3 — register design-frame ZOrderCapability adapter for the
