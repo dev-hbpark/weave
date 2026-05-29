@@ -5,12 +5,14 @@
 // `paintToSvgFill` so gradients land in `<defs>`. Arrow markers also live
 // in `<defs>`.
 
-import type { Item as AgocraftItem, ShadowSpec } from "@agocraft/core";
+import type { Item as AgocraftItem, PaintSpec, ShadowSpec, StrokeSpec } from "@agocraft/core";
 import {
   type ArrowHeadStyle,
+  FILL_UNIT_KIND,
   findUnitInItem,
   paintToSvgFill,
   SHADOW_UNIT_KIND,
+  STROKE_UNIT_KIND,
   shadowToCss,
   shapeToSvgGeometry,
   strokeToSvgAttrs,
@@ -169,19 +171,28 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
   // type-erased value), and the substitution only touches the `.color`
   // field when present.
   const itemRef = item as unknown as AgocraftItem;
-  const fillColorRaw = a.fill.type === "solid" ? (a.fill as { color?: unknown }).color : undefined;
+  // DR-028 — prefer the decoration.fill / decoration.stroke UNITS; fall back to
+  // the legacy attrs.fill / attrs.stroke until those attrs are migrated away.
+  const effectiveFill: PaintSpec =
+    (findUnitInItem(itemRef, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined) ?? a.fill;
+  const effectiveStroke =
+    (findUnitInItem(itemRef, STROKE_UNIT_KIND)?.attrs as StrokeSpec | undefined) ?? a.stroke;
+  const fillColorRaw =
+    effectiveFill.type === "solid" ? (effectiveFill as { color?: unknown }).color : undefined;
   const resolvedFillColor = useResolveColor(fillColorRaw, itemRef, undefined);
   const resolvedFill =
-    a.fill.type === "solid" && resolvedFillColor !== undefined
-      ? { ...a.fill, color: resolvedFillColor }
-      : a.fill;
+    effectiveFill.type === "solid" && resolvedFillColor !== undefined
+      ? { ...effectiveFill, color: resolvedFillColor }
+      : effectiveFill;
   const strokeColorRaw =
-    a.stroke?.paint.type === "solid" ? (a.stroke.paint as { color?: unknown }).color : undefined;
+    effectiveStroke?.paint.type === "solid"
+      ? (effectiveStroke.paint as { color?: unknown }).color
+      : undefined;
   const resolvedStrokeColor = useResolveColor(strokeColorRaw, itemRef, undefined);
   const resolvedStroke =
-    a.stroke?.paint.type === "solid" && resolvedStrokeColor !== undefined
-      ? { ...a.stroke, paint: { ...a.stroke.paint, color: resolvedStrokeColor } }
-      : a.stroke;
+    effectiveStroke?.paint.type === "solid" && resolvedStrokeColor !== undefined
+      ? { ...effectiveStroke, paint: { ...effectiveStroke.paint, color: resolvedStrokeColor } }
+      : effectiveStroke;
 
   const fillId = `${uid}-fill`;
   const fill = paintToSvgFill(resolvedFill, fillId);
