@@ -148,7 +148,7 @@ export function MixedBadge({ visible }: { readonly visible: boolean }): JSX.Elem
     <span
       data-testid="mixed-badge"
       className="ml-1 text-[10px] uppercase tracking-wider text-[color:var(--text-soft)] border border-[color:var(--surface-overlay-border)] rounded px-1 py-0.5"
-      aria-label="Mixed values"
+      title="Mixed values"
     >
       Mixed
     </span>

@@ -362,7 +362,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                       aria-label="Flex 분포"
                       triggerClassName="w-full"
                     />
-                    <label className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                    <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
                       <Switch
                         checked={homogeneousSpec.align === "stretch"}
                         onCheckedChange={(on) =>
@@ -371,7 +371,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                         aria-label="교차축 늘이기"
                       />
                       늘이기
-                    </label>
+                    </span>
                   </div>
                 </div>
               </Bar.Field>
@@ -437,7 +437,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                     data-testid="grid-align-pad"
                   />
                   <div className="flex flex-1 flex-col gap-1.5">
-                    <label className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                    <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
                       <Switch
                         checked={homogeneousSpec.justify === "stretch"}
                         onCheckedChange={(on) =>
@@ -446,8 +446,8 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                         aria-label="가로 늘이기"
                       />
                       가로 늘이기
-                    </label>
-                    <label className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                    </span>
+                    <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
                       <Switch
                         checked={homogeneousSpec.align === "stretch"}
                         onCheckedChange={(on) =>
@@ -456,7 +456,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                         aria-label="세로 늘이기"
                       />
                       세로 늘이기
-                    </label>
+                    </span>
                   </div>
                 </div>
               </Bar.Field>

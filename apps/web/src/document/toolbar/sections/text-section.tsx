@@ -325,7 +325,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                   aria-label="텍스트 정렬"
                   data-testid="text-align-pad"
                 />
-                <label className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
                   <Switch
                     checked={!isMixed(textAlign) && textAlign === "justify"}
                     onCheckedChange={(on) =>
@@ -340,7 +340,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                     aria-label="양쪽 맞춤"
                   />
                   양쪽 맞춤
-                </label>
+                </span>
                 <MixedBadge visible={isMixed(textAlign) || isMixed(textAlignVertical)} />
               </div>
             </Bar.Field>
