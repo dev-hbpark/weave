@@ -17,6 +17,7 @@ import {
   IconUndo,
 } from "@weave/design-system";
 import { lazy, Suspense, useState } from "react";
+import { AkuMascot } from "./AkuMascot.js";
 import type { AkuEditRecord, AkuHistoryController, AkuImage, AkuMessage } from "./types.js";
 
 function formatTime(at: number | undefined): string {
@@ -244,7 +245,7 @@ export function MessageList({
   if (messages.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-center gap-2 px-6 text-[color:var(--text-soft)]">
-        <IconSparkle size={28} className="text-[color:var(--accent)]" />
+        <AkuMascot variant="full" className="w-16 h-16" />
         <p className="text-[13px]">
           아쿠에게 무엇이든 물어보세요.
           <br />

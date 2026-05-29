@@ -4,9 +4,10 @@
 // a bottom-right grabber resizes. Header = 아쿠 title (drag) + 새 대화 + close;
 // Body = transcript; Footer = composer.
 
-import { IconButton, IconClose, IconPlus, IconSparkle, Panel } from "@weave/design-system";
+import { IconButton, IconClose, IconPlus, Panel } from "@weave/design-system";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
+import { AkuMascot } from "./AkuMascot.js";
 import { MessageList } from "./MessageList.js";
 import type { AkuHistoryController, AkuImage, AkuMessage, AkuStatus } from "./types.js";
 import type { AkuGeometry } from "./useAkuGeometry.js";
@@ -56,9 +57,7 @@ export function AkuPanel({
             onPointerDown={onMoveStart}
             data-aku-drag-handle
           >
-            <span className="text-[color:var(--accent)]" aria-hidden="true">
-              <IconSparkle size={18} />
-            </span>
+            <AkuMascot variant="mark" className="w-5 h-5 shrink-0" />
             <Panel.Title>아쿠</Panel.Title>
           </div>
           <IconButton

@@ -7,15 +7,27 @@
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
-import { IconSparkle, OnboardingCoachmark } from "@weave/design-system";
+import { OnboardingCoachmark } from "@weave/design-system";
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSelection } from "../../document/interactions/selection-context.js";
 import type { AkuComposerSeed } from "./AkuComposer.js";
 import { AkuLauncher } from "./AkuLauncher.js";
+import { AkuMascot } from "./AkuMascot.js";
 import { AkuPanel } from "./AkuPanel.js";
+import { AkuTipBubble } from "./AkuTipBubble.js";
 import { useAkuAgent } from "./agent/use-aku-agent.js";
 import { useAkuGeometry } from "./useAkuGeometry.js";
+import { useAkuTips } from "./useAkuTips.js";
+
+const COACHMARK_KEY = "weave.coachmark.aku-intro";
+function coachmarkAlreadySeen(): boolean {
+  try {
+    return window.localStorage.getItem(COACHMARK_KEY) === "shown";
+  } catch {
+    return false;
+  }
+}
 
 export function AkuAssistant({
   editor,
@@ -73,6 +85,14 @@ export function AkuAssistant({
       beginMove(e, { onTap: () => setOpen(true) }),
   };
 
+  // Floating-mascot tips (요정처럼 둥둥 + 말풍선) — only after the first-run
+  // coachmark is done, and only while the panel is closed (anti-Clippy).
+  const [coachmarkSeen, setCoachmarkSeen] = useState(coachmarkAlreadySeen);
+  const showCoachmark = !coachmarkSeen && hintReady;
+  const { tip, dismiss, disableForever } = useAkuTips({
+    enabled: !open && coachmarkSeen,
+  });
+
   if (typeof document === "undefined") return null;
   return createPortal(
     open ? (
@@ -92,21 +112,30 @@ export function AkuAssistant({
         undo={history}
         seed={seed}
       />
-    ) : hintReady ? (
+    ) : showCoachmark ? (
       // First-run nudge to drive discovery — one-shot, anchored to the launcher
       // (persisted under weave.coachmark.aku-intro; silent on later visits).
       <OnboardingCoachmark
         persistKey="aku-intro"
         side="bottom"
         align="start"
-        icon={<IconSparkle size={18} />}
+        icon={<AkuMascot variant="mark" className="w-5 h-5" />}
         headline="아쿠에게 맡겨보세요"
         dismissLabel="알겠어요"
+        onDismissed={() => setCoachmarkSeen(true)}
         anchor={<AkuLauncher {...launcherProps} />}
       >
         배경 변경, 텍스트·슬라이드 추가 같은 편집을 대화로 처리해 드려요. 드래그로 옮기고 모서리로
         크기를 바꿀 수 있어요.
       </OnboardingCoachmark>
+    ) : tip !== null ? (
+      // Recurring floating-mascot tip (요정처럼 말풍선) — anchored to the launcher.
+      <AkuTipBubble
+        tip={tip}
+        onDismiss={dismiss}
+        onDisableForever={disableForever}
+        anchor={<AkuLauncher {...launcherProps} />}
+      />
     ) : (
       <AkuLauncher {...launcherProps} />
     ),

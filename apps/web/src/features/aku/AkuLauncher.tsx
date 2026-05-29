@@ -1,12 +1,14 @@
-// Aku floating launcher (WI-052) — the collapsed state. A labeled accent PILL
-// (icon + "아쿠"), positioned by the host via `style` (top-left by default,
-// user-draggable). Presentational + forwardRef + full prop spread so it works
-// both as a draggable surface (host passes onPointerDown) AND as the
-// OnboardingCoachmark anchor (Radix Popover `asChild` merges its ref + handlers).
-// ([[feedback_radix_slot_wrapper_forwardref]])
+// Aku floating launcher (WI-052 → WI-053) — the collapsed state, now a floating
+// CHARACTER mascot (둥둥 떠다니는 요정 컨셉) instead of a labeled pill. Positioned
+// by the host via `style` (top-left by default, user-draggable). The button box
+// stays stable (so a Popover/Coachmark anchors cleanly) while an INNER wrapper
+// bobs via the `aku-bob` transform animation (reduced-motion safe, CSS).
+// Presentational + forwardRef + full prop spread so it works both as a draggable
+// surface (host passes onPointerDown) AND as a Popover/Coachmark anchor (Radix
+// `asChild` merges its ref + handlers). ([[feedback_radix_slot_wrapper_forwardref]])
 
-import { IconSparkle } from "@weave/design-system";
 import { type ButtonHTMLAttributes, forwardRef } from "react";
+import { AkuMascot } from "./AkuMascot.js";
 
 export const AkuLauncher = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>(
   function AkuLauncher({ className, ...rest }, ref) {
@@ -16,11 +18,16 @@ export const AkuLauncher = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HT
         type="button"
         aria-label="아쿠 열기"
         data-aku-launcher
-        className={`fixed z-[48] inline-flex items-center gap-2 h-12 pl-3.5 pr-4 rounded-full text-[var(--text-on-accent)] bg-[image:var(--accent-gradient)] shadow-[var(--shadow-glow)] hover:brightness-110 active:brightness-95 focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)] transition-[filter,box-shadow] duration-[var(--motion-fast)] touch-none cursor-grab active:cursor-grabbing ${className ?? ""}`}
+        className={`fixed z-[48] w-16 h-16 rounded-full touch-none cursor-grab active:cursor-grabbing hover:brightness-105 active:brightness-95 focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)] transition-[filter] duration-[var(--motion-fast)] ${className ?? ""}`}
         {...rest}
       >
-        <IconSparkle size={20} />
-        <span className="text-[14px] font-semibold tracking-tight">아쿠</span>
+        {/* inner wrapper bobs; the button box itself stays put (anchor stability) */}
+        <span className="aku-bob block w-full h-full">
+          <AkuMascot
+            variant="mark"
+            className="w-full h-full drop-shadow-[0_4px_10px_rgba(0,0,0,0.35)]"
+          />
+        </span>
       </button>
     );
   },
