@@ -5,7 +5,8 @@
 // agocraft's `@agocraft/core/visual` helpers so the same conversion stays
 // canonical across hosts.
 
-import { filterToCss, shadowToCss } from "@agocraft/core";
+import type { Item as AgocraftItem, ShadowSpec } from "@agocraft/core";
+import { filterToCss, findUnitInItem, SHADOW_UNIT_KIND, shadowToCss } from "@agocraft/core";
 import type { CSSProperties } from "react";
 import type { AgoItem, ImageAttrs } from "../types.js";
 
@@ -26,7 +27,14 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
           ? "none"
           : "cover";
 
-  const shadow = a.shadow ? shadowToCss(a.shadow) : undefined;
+  // DR-028 — prefer the decoration.shadow UNIT; fall back to legacy attrs.shadow.
+  const shadowSpec =
+    (findUnitInItem(item as unknown as AgocraftItem, SHADOW_UNIT_KIND)?.attrs as
+      | ShadowSpec
+      | undefined) ??
+    a.shadow ??
+    undefined;
+  const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
   const filterCss = filterToCss(a.filter);
 
   // Crop region (0..1 ratio) is implemented via `object-position` + an

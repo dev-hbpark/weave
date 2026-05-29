@@ -5,7 +5,8 @@
 // pauses past endMs. Autoplay is honoured only when muted is true
 // (browsers reject autoplay+sound combinations).
 
-import { shadowToCss } from "@agocraft/core";
+import type { Item as AgocraftItem, ShadowSpec } from "@agocraft/core";
+import { findUnitInItem, SHADOW_UNIT_KIND, shadowToCss } from "@agocraft/core";
 import { type CSSProperties, useEffect, useRef } from "react";
 import type { AgoItem, VideoAttrs } from "../types.js";
 
@@ -56,7 +57,14 @@ export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
           ? "none"
           : "cover";
 
-  const shadow = a.shadow ? shadowToCss(a.shadow) : undefined;
+  // DR-028 — prefer the decoration.shadow UNIT; fall back to legacy attrs.shadow.
+  const shadowSpec =
+    (findUnitInItem(item as unknown as AgocraftItem, SHADOW_UNIT_KIND)?.attrs as
+      | ShadowSpec
+      | undefined) ??
+    a.shadow ??
+    undefined;
+  const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
 
   return (
     <div
