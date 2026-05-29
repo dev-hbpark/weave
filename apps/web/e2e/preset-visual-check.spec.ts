@@ -37,7 +37,7 @@ for (const variant of VARIANTS) {
     await page.waitForTimeout(300); // let any lazy text render settle
 
     // Click out so selection chrome doesn't dominate the screenshot.
-    await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+    await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
     await page.waitForTimeout(100);
 
     await page.screenshot({

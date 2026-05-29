@@ -7,8 +7,13 @@ import type {
   Document as AgocraftDocument,
   Item as AgocraftItem,
   CommandContext,
+  Token,
 } from "@agocraft/core";
-import { itemId as makeItemId } from "@agocraft/core";
+import {
+  CapabilityRegistryToken,
+  createCapabilityRegistry,
+  itemId as makeItemId,
+} from "@agocraft/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   absoluteFrameTransform,
@@ -17,13 +22,10 @@ import {
   computeReparentFrameRatio,
   toAgocraftDocument,
 } from "./agocraft-mirror.js";
-import {
-  buildWeaveCommands,
-  createPendingCreations,
-  type WeaveCommandTargets,
-} from "./commands.js";
+import { buildWeaveCommands, type WeaveCommandTargets } from "./commands.js";
 import type { CameraTargetBehavior, Item, Document as WeaveDocument } from "./types.js";
 import { FULL_FRAME } from "./types.js";
+import { registerZOrderAdapters } from "./zorder/register.js";
 
 function spyTargets() {
   // WI-032 Phase 3b — `updateShape` / `removeShape` removed alongside the
@@ -142,42 +144,41 @@ function makeNestedCtx(): CommandContext {
 }
 
 describe("buildWeaveCommands — direct (Phase 2)", () => {
-  it("weave.item.add calls targets.addItem and returns empty patches", () => {
-    const targets = spyTargets();
-    const cmd = buildWeaveCommands(targets).find((c) => c.name === "weave.item.add");
+  it("weave.item.add emits a self-contained item.create patch (WI-024)", () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
     if (cmd === undefined) throw new Error("command not found");
-    const result = cmd.run(makeCtx(), { kind: "slide" });
-    expect(targets.addItem).toHaveBeenCalledWith("slide");
+    const ctx = makeCtx();
+    const rootId = String(ctx.document.root.id);
+    const result = cmd.run(ctx, { kind: "slide" });
     if (!result.ok) throw new Error("unexpected fail");
-    expect(result.patches).toEqual([]);
+    expect(result.patches).toHaveLength(1);
+    const patch = result.patches[0];
+    if (patch === undefined || patch.type !== "item.create")
+      throw new Error("expected item.create");
+    expect(String(patch.parentId)).toBe(rootId);
+    expect(String(patch.item.id)).toBe(result.value);
   });
 
-  it("weave.item.remove calls targets.removeItem and emits an item.children removal patch", () => {
-    const targets = spyTargets();
-    const cmd = buildWeaveCommands(targets).find((c) => c.name === "weave.item.remove");
+  it("weave.item.remove emits a self-contained item.remove patch for a root item (WI-024)", () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.remove");
     if (cmd === undefined) throw new Error("command not found");
     const ctx = makeCtx();
     const rootId = String(ctx.document.root.id);
     const result = cmd.run(ctx, { itemId: "slide-1" });
-    expect(targets.removeItem).toHaveBeenCalledWith("slide-1");
     if (!result.ok) throw new Error("unexpected fail");
     expect(result.patches).toHaveLength(1);
     const patch = result.patches[0];
-    expect(patch).toMatchObject({
-      type: "item.children",
-      itemId: makeItemId(rootId),
-      removed: [makeItemId("slide-1")],
-    });
+    if (patch === undefined || patch.type !== "item.remove")
+      throw new Error("expected item.remove");
+    expect(String(patch.parentId)).toBe(rootId);
+    expect(String(patch.item.id)).toBe("slide-1");
   });
 
-  // Regression — WI-XXX: nested items were silently failing to delete
-  // because the command always built the removal patch against the
-  // caller's `containerId` (defaulting to root). The patch then targeted
-  // root.children and the reducer's deep walk could find no `itemId` to
-  // strip there. Fix: derive the actual parent from the itemId.
+  // Regression — nested items were silently failing to delete because the
+  // command built the removal patch against the caller's `containerId`
+  // (defaulting to root). Fix: derive the actual parent from the itemId.
   it("weave.item.remove derives the actual parent for a nested item", () => {
-    const targets = spyTargets();
-    const cmd = buildWeaveCommands(targets).find((c) => c.name === "weave.item.remove");
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.remove");
     if (cmd === undefined) throw new Error("command not found");
     const ctx = makeNestedCtx();
     const result = cmd.run(ctx, { itemId: "child-1" });
@@ -185,25 +186,21 @@ describe("buildWeaveCommands — direct (Phase 2)", () => {
     expect(result.patches).toHaveLength(1);
     const patch = result.patches[0];
     // The patch must target the *parent frame*, not the root.
-    expect(patch).toMatchObject({
-      type: "item.children",
-      itemId: makeItemId("parent-1"),
-      removed: [makeItemId("child-1")],
-    });
+    if (patch === undefined || patch.type !== "item.remove")
+      throw new Error("expected item.remove");
+    expect(String(patch.parentId)).toBe("parent-1");
+    expect(String(patch.item.id)).toBe("child-1");
   });
 
   it("weave.item.remove ignores a wrong containerId hint and still derives the right parent", () => {
-    const targets = spyTargets();
-    const cmd = buildWeaveCommands(targets).find((c) => c.name === "weave.item.remove");
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.remove");
     if (cmd === undefined) throw new Error("command not found");
     const ctx = makeNestedCtx();
     const rootId = String(ctx.document.root.id);
-    // Caller passes the wrong containerId (root) — the command must
-    // still emit a patch against the actual parent.
     const result = cmd.run(ctx, { itemId: "child-1", containerId: rootId });
     if (!result.ok) throw new Error("unexpected fail");
     const patch = result.patches[0];
-    expect(patch).toMatchObject({ itemId: makeItemId("parent-1") });
+    expect(patch).toMatchObject({ parentId: makeItemId("parent-1") });
   });
 
   it("weave.item.remove fails when the itemId is not in the doc", () => {
@@ -290,61 +287,35 @@ describe("buildWeaveCommands — patch-emitting (Phase 4b)", () => {
 // entry. `Cmd+Z` reverting the entire subtree is the natural consequence.
 
 describe("weave.preset.insertSlide (WI-030 Phase 1)", () => {
-  it("stages a slide with populated children and emits one item.children patch", () => {
+  it("emits one self-contained item.create carrying the populated slide subtree", () => {
     const targets = spyTargets();
-    const pending = createPendingCreations();
-    const cmds = buildWeaveCommands(targets, pending);
+    const cmds = buildWeaveCommands(targets);
     const cmd = cmds.find((c) => c.name === "weave.preset.insertSlide");
     if (cmd === undefined) throw new Error("command not found");
 
     const result = cmd.run(makeCtx(), { presetId: "cover.bold" });
-    expect(targets.addItem).not.toHaveBeenCalled();
     if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
 
     // Exactly one patch — single history entry contract.
     expect(result.patches).toHaveLength(1);
     const patch = result.patches[0];
-    if (patch === undefined || patch.type !== "item.children") {
-      throw new Error("expected item.children");
+    if (patch === undefined || patch.type !== "item.create") {
+      throw new Error("expected item.create");
     }
-    expect(patch.added).toHaveLength(1);
-    expect(patch.removed).toHaveLength(0);
-    const stagedId = patch.added[0];
-    if (stagedId === undefined) throw new Error("missing staged id");
-    expect(String(stagedId)).toBe(result.value);
-
-    // Staged root carries the children — FR-003 §F1. WI-032 Phase 4 — root
-    // kind is now `frame` (the canvas container of the new paradigm); the
-    // preset name "insertSlide" is preserved as the command's identifier
-    // but the emitted Item is a frame.
-    const stagedSlide = pending.lookup(String(stagedId));
-    if (stagedSlide === undefined) throw new Error("root not staged");
-    expect(stagedSlide.kind).toBe("frame");
-    expect(stagedSlide.children.length).toBeGreaterThan(1);
+    expect(String(patch.item.id)).toBe(result.value);
+    // WI-032 Phase 4 — root kind is `frame` (the canvas container); the patch
+    // carries the full subtree (FR-003 §F1) so no PendingCreations is needed.
+    expect(patch.item.kind).toBe("frame");
     // cover.bold = accent-bar (shape) + title + subtitle + meta (3 texts).
-    expect(stagedSlide.children).toHaveLength(4);
-    const kinds = stagedSlide.children.map((c) => c.kind);
+    expect(patch.item.children).toHaveLength(4);
+    const kinds = patch.item.children.map((c) => c.kind);
     expect(kinds).toContain("shape");
     expect(kinds.filter((k) => k === "text")).toHaveLength(3);
   });
 
-  it("uses the host fallback when no pending side-channel is wired", () => {
-    const targets = spyTargets();
-    const cmds = buildWeaveCommands(targets);
-    const cmd = cmds.find((c) => c.name === "weave.preset.insertSlide");
-    if (cmd === undefined) throw new Error("command not found");
-    const result = cmd.run(makeCtx(), { presetId: "cover.bold" });
-    if (!result.ok) throw new Error("expected ok");
-    // WI-032 Phase 3 — fallback now seeds a `frame` (the new canvas
-    // container) instead of a legacy `slide`.
-    expect(targets.addItem).toHaveBeenCalledWith("frame");
-    expect(result.patches).toEqual([]);
-  });
-
   it("fails with preset-not-found for an unknown preset id", () => {
     const targets = spyTargets();
-    const pending = createPendingCreations();
-    const cmds = buildWeaveCommands(targets, pending);
+    const cmds = buildWeaveCommands(targets);
     const cmd = cmds.find((c) => c.name === "weave.preset.insertSlide");
     if (cmd === undefined) throw new Error("command not found");
     const result = cmd.run(makeCtx(), { presetId: "does.not.exist" });
@@ -355,18 +326,17 @@ describe("weave.preset.insertSlide (WI-030 Phase 1)", () => {
 
   it("resolves to a unique stable id per child (no collisions within one preset)", () => {
     const targets = spyTargets();
-    const pending = createPendingCreations();
-    const cmds = buildWeaveCommands(targets, pending);
+    const cmds = buildWeaveCommands(targets);
     const cmd = cmds.find((c) => c.name === "weave.preset.insertSlide");
     if (cmd === undefined) throw new Error("command not found");
     const result = cmd.run(makeCtx(), { presetId: "cover.hero" });
     if (!result.ok) throw new Error("expected ok");
-    const slide = pending.lookup(String(result.value));
-    if (slide === undefined) throw new Error("slide not staged");
-    const ids = slide.children.map((c) => String(c.id));
+    const patch = result.patches[0];
+    if (patch === undefined || patch.type !== "item.create")
+      throw new Error("expected item.create");
+    const ids = patch.item.children.map((c) => String(c.id));
     expect(new Set(ids).size).toBe(ids.length);
-    // The slide's own id should also be distinct from any child id.
-    expect(ids).not.toContain(String(slide.id));
+    expect(ids).not.toContain(String(patch.item.id));
   });
 });
 
@@ -418,9 +388,20 @@ describe("z-order commands (WI-038)", () => {
     let doc = toAgocraftDocument(weave);
     doc = addChild(doc, nestedAgoItem("b-1", "shape"), "b");
     doc = addChild(doc, nestedAgoItem("b-2", "shape"), "b");
+    // WI-022 S1 — the z-order commands delegate to `agocraft.zOrder.*`, which
+    // resolve the ZOrderCapability adapter from this registry (production wires
+    // `editor.capabilities`). Register the design-frame adapter so the
+    // delegation dispatches to a real splice.
+    const capabilities = createCapabilityRegistry();
+    registerZOrderAdapters({ capabilityRegistry: capabilities, getDocument: () => doc });
     return {
       document: doc,
-      resolve: () => null as never,
+      resolve: (<T>(token: Token<T>): T => {
+        if (token === (CapabilityRegistryToken as unknown as Token<T>)) {
+          return capabilities as unknown as T;
+        }
+        return null as never;
+      }) as CommandContext["resolve"],
       skipRelations: false,
     };
   }
@@ -856,19 +837,19 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
     };
   }
 
-  function runDissolve(ctx: CommandContext, frameId: string, pending = createPendingCreations()) {
-    const cmds = buildWeaveCommands(spyTargets(), pending);
+  function runDissolve(ctx: CommandContext, frameId: string) {
+    const cmds = buildWeaveCommands(spyTargets());
     const cmd = cmds.find((c) => c.name === "weave.frame.removeKeepingChildren");
     if (cmd === undefined) throw new Error("weave.frame.removeKeepingChildren not found");
-    return { result: cmd.run(ctx, { frameId } as never), pending };
+    return { result: cmd.run(ctx, { frameId } as never) };
   }
 
   // Manual inverses (mirror agocraft `invertPatch`) so the test can prove the
   // single-transaction undo restores the frame WITH its children and does NOT
-  // duplicate them at the root.
+  // duplicate them at the root. WI-024 — remove's inverse is `item.create`.
   function invert(p: import("@agocraft/core").Patch): import("@agocraft/core").Patch {
-    if (p.type === "item.children") {
-      return { type: "item.children", itemId: p.itemId, added: p.removed, removed: p.added };
+    if (p.type === "item.remove") {
+      return { type: "item.create", parentId: p.parentId, position: p.position, item: p.item };
     }
     if (p.type === "item.reparent") {
       return {
@@ -887,9 +868,9 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
     throw new Error(`invert: unexpected patch ${p.type}`);
   }
 
-  it("emits item.reparent (children → root) then item.children (remove frame), and stages the EMPTY frame", () => {
+  it("emits item.reparent (children → root) then item.remove carrying the EMPTY frame", () => {
     const { ctx, rootId } = makeDissolveCtx();
-    const { result, pending } = runDissolve(ctx, "p1");
+    const { result } = runDissolve(ctx, "p1");
     if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
     expect(result.patches).toHaveLength(2);
 
@@ -902,30 +883,25 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
       expect(String(e.oldParentId)).toBe("p1");
       expect(String(e.newParentId)).toBe(rootId);
     }
-    // newIndex counts up from root's current child count ([p1, p2] = 2) so
-    // children keep their original stacking order.
     expect(reparent.entries[0]!.newIndex).toBe(2);
     expect(reparent.entries[1]!.newIndex).toBe(3);
 
-    if (remove === undefined || remove.type !== "item.children") {
-      throw new Error("patch[1] must be item.children");
+    if (remove === undefined || remove.type !== "item.remove") {
+      throw new Error("patch[1] must be item.remove");
     }
-    expect(String(remove.itemId)).toBe(rootId);
-    expect(remove.removed.map((id) => String(id))).toEqual(["p1"]);
-
-    // The staged inverse frame must be EMPTY — otherwise undo would resurrect
-    // the children twice (once via re-add, once via the reparent inverse).
-    const staged = pending.lookup("p1");
-    if (staged === undefined) throw new Error("frame not staged for inverse");
-    expect(staged.children).toHaveLength(0);
+    expect(String(remove.parentId)).toBe(rootId);
+    expect(String(remove.item.id)).toBe("p1");
+    // The carried frame must be EMPTY — otherwise undo (item.create) would
+    // resurrect the children twice (once via re-create, once via reparent⁻¹).
+    expect(remove.item.children).toHaveLength(0);
   });
 
   it("forward application: children land at root, frame is gone", () => {
     const { ctx } = makeDissolveCtx();
-    const { result, pending } = runDissolve(ctx, "p1");
+    const { result } = runDissolve(ctx, "p1");
     if (!result.ok) throw new Error("expected ok");
     let doc = ctx.document;
-    for (const p of result.patches) doc = applyChangeToDocument(doc, p as never, pending);
+    for (const p of result.patches) doc = applyChangeToDocument(doc, p as never);
 
     expect(findItemDeepById(doc, "p1")).toBeUndefined();
     // root started [p1, p2]; reparent appends c1, c2; remove drops p1.
@@ -936,18 +912,18 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
 
   it("undo round-trip restores the frame WITH its children and does NOT duplicate them", () => {
     const { ctx } = makeDissolveCtx();
-    const { result, pending } = runDissolve(ctx, "p1");
+    const { result } = runDissolve(ctx, "p1");
     if (!result.ok) throw new Error("expected ok");
 
     // Forward.
     let doc = ctx.document;
-    for (const p of result.patches) doc = applyChangeToDocument(doc, p as never, pending);
+    for (const p of result.patches) doc = applyChangeToDocument(doc, p as never);
 
     // Undo: invert each patch and apply in REVERSE order (how history replays
-    // a transaction). remove⁻¹ re-adds the empty frame; reparent⁻¹ re-homes
-    // the children.
+    // a transaction). remove⁻¹ (item.create) re-adds the empty frame;
+    // reparent⁻¹ re-homes the children.
     const inverses = result.patches.map(invert).reverse();
-    for (const p of inverses) doc = applyChangeToDocument(doc, p as never, pending);
+    for (const p of inverses) doc = applyChangeToDocument(doc, p as never);
 
     // p1 is back at root with both children; c1/c2 do NOT also linger at root.
     const rootKids = doc.root.children.map((c) => String(c.id));
@@ -964,7 +940,7 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
     const { result } = runDissolve(ctx, "p2"); // p2 has no children
     if (!result.ok) throw new Error("expected ok");
     expect(result.patches).toHaveLength(1);
-    expect(result.patches[0]!.type).toBe("item.children");
+    expect(result.patches[0]!.type).toBe("item.remove");
   });
 
   it("guards: dissolving the root fails; an unknown id fails", () => {

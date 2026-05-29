@@ -25,7 +25,7 @@ test.beforeEach(async ({ page }) => {
 test("Add menu surfaces 'Slide' entry that opens the preset picker", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Preset-A" });
 
-  await expect(page.locator("[data-frame-id]")).toHaveCount(0);
+  await expect(page.getByTestId("frame-stage").locator("[data-frame-id]")).toHaveCount(0);
 
   await page.getByTestId("toolbar-add").click();
   const slideEntry = page.getByTestId("add-slide");
@@ -54,7 +54,7 @@ test("Picking cover.bold inserts slide + multiple children; history drain revert
   // tree carries its own `data-frame-id`, so cover.bold = 1 slide + 4
   // children = 5 frame markers.
   await expect(page.getByTestId("slide-preset-picker")).toBeHidden();
-  await expect(page.locator("[data-frame-id]")).toHaveCount(5, { timeout: 3000 });
+  await expect(page.getByTestId("frame-stage").locator("[data-frame-id]")).toHaveCount(5, { timeout: 3000 });
 
   // The slide carries pre-populated children (FR-003 §F1 — staged as one
   // subtree, materialized via a single `item.children` patch).
@@ -77,7 +77,7 @@ test("Picking cover.bold inserts slide + multiple children; history drain revert
     for (let i = 0; i < 32 && ed.history.canUndo(); i++) ed.history.undo();
   });
   await page.waitForTimeout(100);
-  await expect(page.locator("[data-frame-id]")).toHaveCount(0, { timeout: 3000 });
+  await expect(page.getByTestId("frame-stage").locator("[data-frame-id]")).toHaveCount(0, { timeout: 3000 });
 
   // Redo all the way back.
   await page.evaluate(() => {
@@ -87,7 +87,7 @@ test("Picking cover.bold inserts slide + multiple children; history drain revert
     for (let i = 0; i < 32 && ed.history.canRedo(); i++) ed.history.redo();
   });
   await page.waitForTimeout(100);
-  await expect(page.locator("[data-frame-id]")).toHaveCount(5, { timeout: 3000 });
+  await expect(page.getByTestId("frame-stage").locator("[data-frame-id]")).toHaveCount(5, { timeout: 3000 });
 });
 
 test("Cancel button closes the picker without inserting anything", async ({ page }) => {
@@ -99,5 +99,5 @@ test("Cancel button closes the picker without inserting anything", async ({ page
 
   await page.getByTestId("slide-preset-picker-cancel").click();
   await expect(page.getByTestId("slide-preset-picker")).toBeHidden();
-  await expect(page.locator("[data-frame-id]")).toHaveCount(0);
+  await expect(page.getByTestId("frame-stage").locator("[data-frame-id]")).toHaveCount(0);
 });

@@ -81,9 +81,12 @@ describe("reorderRootChildren", () => {
     expect(reorderRootChildren(d, [])).toBe(d);
   });
 
-  it("updates root.meta.updatedAt when a real change happens", () => {
+  it("updates the document-level meta.updatedAt when a real change happens", () => {
+    // WI-022 S1: the @agocraft/core reorder helper is clock-free; weave stamps
+    // the doc-level `meta.updatedAt` (the persistence-freshness contract) via
+    // the host shim. Per-node timestamps are no longer bumped on a live edit.
     const d = doc([frame("a", "slide"), frame("b", "slide")]);
     const next = reorderRootChildren(d, ["b", "a"]);
-    expect(next.root.meta.updatedAt).not.toBe(d.root.meta.updatedAt);
+    expect(next.meta.updatedAt).not.toBe(d.meta.updatedAt);
   });
 });

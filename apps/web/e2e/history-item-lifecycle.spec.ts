@@ -25,7 +25,7 @@ test("Cmd+Z undoes an item.add; Cmd+Shift+Z redoes it", async ({ page }) => {
   await addFrame(page, "slide");
   expect(await countDomainItems(page)).toBe(initial + 1);
 
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(50);
   expect(await countDomainItems(page)).toBe(initial);
@@ -56,7 +56,7 @@ test.skip("Cmd+Z undoes an item.remove; Cmd+Shift+Z redoes it", async ({ page })
   await page.getByTestId("ctx-delete-frame").click();
   expect(await countDomainItems(page)).toBe(initial - 1);
 
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(50);
   expect(await countDomainItems(page)).toBe(initial);

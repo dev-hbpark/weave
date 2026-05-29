@@ -7,12 +7,10 @@
 import type { Document as AgocraftDocument, Unit as AgocraftUnit, Change } from "@agocraft/core";
 import { unitId as makeUnitId } from "@agocraft/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchDesignCloud } from "./cloud-sync.js";
 import {
   addChild,
   applyChangeToDocument,
   ensureRootStyleProvider,
-  type PendingCreationLookup,
   removeChild,
   reorderRootChildren,
   toAgocraftItem,
@@ -20,25 +18,19 @@ import {
   updateChild,
   updateUnitAttrs,
 } from "./agocraft-mirror.js";
+import { fetchDesignCloud } from "./cloud-sync.js";
 import { createDefaultItem } from "./seed.js";
 import {
   createBlankDesign,
   hydrateSerializedDesign,
   loadDesign,
   removeLocalDesign,
+  type SerializedDesignV5,
   saveDesign,
   saveDesignAwaitable,
-  type SerializedDesignV5,
 } from "./storage.js";
 import { resolveStoredColor } from "./style/resolver.js";
-import type {
-  CanvasAttrs,
-  CanvasShape,
-  Design,
-  DomainKind,
-  InteractionBehavior,
-  Item,
-} from "./types.js";
+import type { Design, DomainKind, InteractionBehavior, Item } from "./types.js";
 
 interface UseDesignResult {
   readonly design: Design;
@@ -52,7 +44,7 @@ interface UseDesignResult {
   ) => void;
   readonly updateItem: (itemId: string, patch: (it: Item) => Item) => void;
   readonly reset: () => void;
-  readonly applyChange: (change: Change, pending?: PendingCreationLookup) => void;
+  readonly applyChange: (change: Change) => void;
   /** WI-028 Phase 3b — replace the entire Document with a CRDT-derived one
    *  (remote actor edited the shared doc). Bypasses History; see comment in
    *  use-design.ts. */
@@ -400,9 +392,9 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
   // become history-aware) lands in a follow-up PR with the Phase 1.5
   // schema migration. Until then, direct setter calls still bypass history;
   // editor.exec-driven calls flow through this mirror and undo correctly.
-  const applyChange = useCallback((change: Change, pending?: PendingCreationLookup) => {
+  const applyChange = useCallback((change: Change) => {
     setDesign((prev) => {
-      const nextDoc = applyChangeToDocument(prev.document, change, pending);
+      const nextDoc = applyChangeToDocument(prev.document, change);
       const docAttrs = (nextDoc.attrs ?? {}) as Readonly<Record<string, unknown>>;
       const bg = docAttrs.background;
       const order = docAttrs.presentationOrder;

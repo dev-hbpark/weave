@@ -104,7 +104,7 @@ test("online reopen reflects the latest cloud save (no local copy shadows it)", 
   await clearAllDesigns(page);
 
   // Create a design, add two frames, save online each time.
-  const id = await prepareDesign(page, { title: "Online reopen" });
+  const id = await prepareDesign(page, { title: "Online reopen", online: true });
   await addFrame(page, "slide");
   await saveToCloud(page);
   await addFrame(page, "slide");
@@ -136,7 +136,7 @@ test("opening a design with an offline copy prompts; 저장 saves it as a NEW de
   await clearAllDesigns(page);
 
   // Build two real blobs: a 1-frame (server) and a 2-frame (offline edit).
-  const id = await prepareDesign(page, { title: "Offline save" });
+  const id = await prepareDesign(page, { title: "Offline save", online: true });
   await addFrame(page, "slide");
   await saveToCloud(page);
   const blob1 = structuredClone(cloud.get(id)); // server: 1 frame
@@ -195,7 +195,7 @@ test("opening a design with an offline copy prompts; 버리기 loads the server 
   await clearAllDesigns(page);
 
   // Server: 2 frames. Offline outbox: a stale 1-frame copy.
-  const id = await prepareDesign(page, { title: "Offline discard" });
+  const id = await prepareDesign(page, { title: "Offline discard", online: true });
   await addFrame(page, "slide");
   await saveToCloud(page);
   const blob1 = structuredClone(cloud.get(id)); // 1 frame
@@ -268,7 +268,7 @@ test("presentation mode is server-first — cloud content overrides a stale loca
   await clearAllDesigns(page);
 
   // Build a 2-frame server design and a stale 1-frame blob.
-  const id = await prepareDesign(page, { title: "Present server-first" });
+  const id = await prepareDesign(page, { title: "Present server-first", online: true });
   await addFrame(page, "slide");
   await saveToCloud(page);
   const blob1 = structuredClone(cloud.get(id)); // 1 frame
@@ -340,7 +340,7 @@ test("presentation mode renders a cloud design with NO local copy (no Rules-of-H
   });
 
   await clearAllDesigns(page);
-  const id = await prepareDesign(page, { title: "Present no-local" });
+  const id = await prepareDesign(page, { title: "Present no-local", online: true });
   await addFrame(page, "slide");
   await saveToCloud(page);
   await addFrame(page, "slide");

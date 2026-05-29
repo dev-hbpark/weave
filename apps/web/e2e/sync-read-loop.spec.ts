@@ -34,7 +34,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("remote Y.Doc update reflects in React state via Phase 3b observer", async ({ page }) => {
-  await prepareDesign(page, { flavor: "mixed", title: "Sync read loop" });
+  await prepareDesign(page, { flavor: "mixed", title: "Sync read loop", online: true });
   await addFrame(page, "slide");
 
   // Wait for the dev-only globals to be wired. `__weaveYjs` resolves

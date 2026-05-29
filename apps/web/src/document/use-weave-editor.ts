@@ -36,7 +36,6 @@ import {
   toCanonical,
 } from "@agocraft/editor";
 import {
-  addItemTreeToYDoc,
   applyPatchToYDoc,
   createHttpPollProvider,
   createSnapshotPolicy,
@@ -49,13 +48,7 @@ import {
 } from "@agocraft/sync";
 import { useEffect, useMemo, useRef } from "react";
 import * as Y from "yjs";
-import type { PendingCreationLookup } from "./agocraft-mirror.js";
-import {
-  createPendingCreations,
-  type PendingCreations,
-  registerWeaveCommands,
-  type WeaveCommandTargets,
-} from "./commands.js";
+import { registerWeaveCommands, type WeaveCommandTargets } from "./commands.js";
 // WI-032 Phase 3b — canvas-shape capability + agocraft-bridge removed
 // alongside the legacy `canvas-design` kind.
 import { attachIndexedDbPersistence } from "./sync/offline-persistence.js";
@@ -70,9 +63,8 @@ export interface UseWeaveEditorDeps {
   /** Phase 4b / 5 — apply a Change emitted by the editor's TransactionRunner
    *  back into useDocument's agocraft Document state. The bridge inside this
    *  hook subscribes to `editor.changeStream` and calls this callback for each
-   *  user-command / system Change. The optional `pending` lookup resolves
-   *  `item.children` added Patches against newly-staged Items. */
-  readonly applyChange?: (change: Change, pending?: PendingCreationLookup) => void;
+   *  user-command / system Change. */
+  readonly applyChange?: (change: Change) => void;
   /** WI-028 Phase 3b — invoked when a remote actor's edit lands in the
    *  Y.Doc. The Document derived from the merged CRDT state replaces the
    *  host's React state directly (no History entry — we cannot undo
@@ -380,13 +372,6 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
   // (`disposed = true`) and silently kill every subsequent dispatch. The
   // editor is per-route, so GC reclaims it when the route unmounts.
 
-  // Phase 5 — side-channel for new Items. addItem command stages the full
-  // AgocraftItem here; the reducer consumes on item.children-added.
-  const pendingCreationsRef = useRef<PendingCreations | undefined>(undefined);
-  if (pendingCreationsRef.current === undefined) {
-    pendingCreationsRef.current = createPendingCreations();
-  }
-
   // Register weave.* commands when targets are supplied. Re-runs only when
   // commandTargets identity changes — useDocument provides stable callbacks
   // via useCallback, so this effectively runs once.
@@ -408,7 +393,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       },
       reset: () => targetsRef.current?.reset(),
     };
-    const offCommands = registerWeaveCommands(editor, proxy, pendingCreationsRef.current);
+    const offCommands = registerWeaveCommands(editor, proxy);
 
     // WI-032 Phase 3b — `bridgeCanvasShapeIntoAgocraft` lived here under
     // legacy DR-010; with canvas-design removed there's no longer a
@@ -419,12 +404,11 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     // Changes to useDocument's state via `applyChange`. The filter restricts
     // to user-command + system origins (the latter for History.undo() replay);
     // propagation-origin changes from the RelationEngine are skipped.
-    const pending = pendingCreationsRef.current;
     const offChangeSink = editor.changeStream.subscribe(
       (change) => {
         const apply = applyChangeRef.current;
         if (apply === undefined) return;
-        apply(change, pending);
+        apply(change);
       },
       { origins: ["user-command", "system"] },
     );
@@ -501,23 +485,9 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
         (change) => {
           const patch = changeToPatch(change);
           if (patch === undefined) return;
-          // An `item.children` "added" Patch carries only the ItemId,
-          // not the full Item shape. Without the lines below the Y.Doc
-          // would gain a dangling id and remote peers would never see
-          // the actual item content — `deriveDocumentFromYDoc` filters
-          // unknown ids silently. The local doc has the full shape
-          // (the pending side-channel supplied it for the same
-          // transaction), so we read it back and seed the Y.Doc BEFORE
-          // applying the parent's children-array Patch.
-          if (patch.type === "item.children") {
-            const lookup = pendingCreationsRef.current?.lookup;
-            if (lookup !== undefined) {
-              for (const addedId of patch.added) {
-                const item = lookup(String(addedId));
-                if (item !== undefined) addItemTreeToYDoc(sync.yDoc, item);
-              }
-            }
-          }
+          // WI-024 — item / unit adds are self-contained `item.create` /
+          // `unit.create` patches (carry the full subtree), so `applyPatchToYDoc`
+          // seeds the Y.Doc catalogue directly — no PendingCreations lookup.
           applyPatchToYDoc(sync.yDoc, patch);
         },
         { origins: ["user-command", "system"] },

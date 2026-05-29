@@ -35,13 +35,34 @@ interface PrepareOptions {
   /** Default 16:9. */
   readonly presetId?: string;
   readonly title?: string;
+  /** Keep the session online. Default `false` — see the offline note below.
+   *  Set `true` only for specs that genuinely exercise the cloud path
+   *  (cloud-only-reopen, sync-read-loop). */
+  readonly online?: boolean;
 }
 
 /** Walk the new-design wizard and land on /design/:id. Returns the id. */
 export async function prepareDesign(
   page: Page,
-  { flavor = "mixed", presetId = "16:9", title = "E2E design" }: PrepareOptions = {},
+  { flavor = "mixed", presetId = "16:9", title = "E2E design", online = false }: PrepareOptions = {},
 ): Promise<string> {
+  // The e2e dev server is plain `vite` (`pnpm dev`), which does NOT serve the
+  // `apps/web/api/*` Vercel functions. So the online persistence path
+  // (`saveDesign` → fire-and-forget `/api` push) 404s and a freshly-created
+  // design — including the wizard's flavor seed — is never retrievable, so
+  // `useDesign` loads an empty document. Forcing the session offline routes
+  // `saveDesign` through localStorage (which `useDesign` reads first), so the
+  // seed survives the navigate-to-/design/:id round-trip. This overrides only
+  // the `navigator.onLine` getter — real network (the Vite bundle) still
+  // loads. Test-only; production storage behavior is untouched.
+  if (!online) {
+    await page.addInitScript(() => {
+      Object.defineProperty(window.navigator, "onLine", {
+        get: () => false,
+        configurable: true,
+      });
+    });
+  }
   await page.goto("/");
   await page.getByTestId("landing-new-design").click();
 
@@ -75,6 +96,21 @@ export async function prepareDesign(
   // toolbar-undo timeout failures (empirically: removing this wait took
   // us from 11 → 15 group fails).
   await page.waitForLoadState("networkidle");
+  if (!online) {
+    // Forcing offline routes the new design through localStorage, so on the
+    // design page `useDesign` opens it as a "local" source and raises the
+    // offline-reconcile dialog (`LocalDesignConflictDialog`). Resolve it via
+    // "save": with no API served the cloud round-trip fails, which releases
+    // the dialog and KEEPS the current (seeded) design loaded — see
+    // `resolveLocalConflict("save")` in use-design.ts. ("discard" would fetch
+    // the absent server copy and blank the canvas.) The dialog blocks all
+    // implicit dismissal, so an explicit action is required.
+    const conflict = page.getByTestId("local-conflict-dialog");
+    if (await conflict.isVisible().catch(() => false)) {
+      await page.getByTestId("local-conflict-save").click();
+      await conflict.waitFor({ state: "hidden" });
+    }
+  }
   const url = new URL(page.url());
   const match = url.pathname.match(/^\/design\/([^/]+)$/);
   if (match === null) throw new Error(`unexpected URL after wizard: ${url.pathname}`);

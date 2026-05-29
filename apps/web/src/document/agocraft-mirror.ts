@@ -22,11 +22,27 @@ import {
   type ItemMeta as AgocraftItemMeta,
   type Unit as AgocraftUnit,
   type UnitMeta as AgocraftUnitMeta,
+  applyPatch,
+  addChild as coreAddChild,
+  findDescendantSet as coreFindDescendantSet,
+  findItemDeep as coreFindItemDeep,
+  findParentAndIndex as coreFindParentAndIndex,
+  findTrailDeep as coreFindTrailDeep,
+  removeChild as coreRemoveChild,
+  reorderRootChildren as coreReorderRootChildren,
+  updateChild as coreUpdateChild,
   createSchema,
   itemId,
   STYLE_PROVIDER_UNIT_KIND,
   unitId,
 } from "@agocraft/core";
+import {
+  type AbsoluteFrameTransform,
+  absoluteFrameBoxFromTrail,
+  absoluteFrameTransformFromTrail,
+  computeReparentFrameRatio as coreComputeReparentFrameRatio,
+  type FrameRect,
+} from "@agocraft/spatial";
 import { buildThemeTokenMap } from "./style/theme-tokens.js";
 import type { InteractionBehavior, Document as WeaveDocument, Item as WeaveItem } from "./types.js";
 
@@ -163,320 +179,24 @@ export function unitToBehavior(unit: AgocraftUnit): InteractionBehavior | undefi
   return carried;
 }
 
-// ── WI-013 Phase 4b — Change → Document reducer ──────────────────────────
+// ── WI-013 Phase 4b / WI-024 Phase 2b — Change → Document reducer ─────────
 //
-// Applies a single emitted Change back to the AgocraftDocument state. Commands
-// that produce real Patches (in-place attribute / unit edits) flow through
-// this reducer: command → patches → TransactionRunner → ChangeStream →
-// `applyChangeToDocument` → `setAgoDoc(next)`.
-//
-// What this round handles (the common in-place edits):
-//   - `item.attrs` — replace child Item's attrs wholesale (before/after).
-//   - `unit.attrs` — set `item.unit.attrs[path[0]] = after` (path-targeted).
-//
-// What it skips (kept on the direct-setter path for now):
-//   - `item.children` — adding new items needs the full new Item, which the
-//     Patch alone doesn't carry. addItem/removeItem still mutate state via
-//     `addChild` / `removeChild` directly.
-//   - `item.units` — same reasoning.
-//
-// Future Phase 5: extend the reducer to handle children/units adds via a
-// side-channel that ships the new Item/Unit shape alongside the Patch.
+// `@agocraft/core`'s `applyPatch` is the single owner of the forward reducer —
+// every Patch variant's apply semantics live in the library, not here. weave
+// only re-applies its doc-level `updatedAt` bump via `opts.now` (`applyPatch`
+// is clock-free by design — S1 R2 policy). Item / unit creation and removal
+// flow through the self-contained `item.create` / `unit.create` / `item.remove`
+// / `unit.remove` variants (WI-024 / DR-026), so no `PendingCreations`
+// side-channel is needed: command → patches → TransactionRunner → ChangeStream
+// → `applyChangeToDocument` → `setAgoDoc(next)`.
 
 import type { Change as AgocraftChange } from "@agocraft/core";
-
-/** Optional side-channel — `weave.item.add` and `weave.item.remove` both
- *  stage the affected Item's full shape here. The reducer reads (without
- *  removing) on every `item.children` added Patch — including inverses
- *  emitted by `editor.history.undo()`. See `commands.ts` →
- *  `createPendingCreations`. */
-export interface PendingCreationLookup {
-  readonly lookup: (itemId: string) => AgocraftItem | undefined;
-}
 
 export function applyChangeToDocument(
   doc: AgocraftDocument,
   change: AgocraftChange,
-  pending?: PendingCreationLookup,
 ): AgocraftDocument {
-  switch (change.type) {
-    case "item.attrs": {
-      const targetId = String(change.itemId);
-      const next = mapItemDeep(doc.root, targetId, (it) => ({
-        ...it,
-        attrs: change.after,
-        meta: { ...it.meta, updatedAt: nowIso() },
-      }));
-      return next === doc.root ? doc : withRoot(doc, next);
-    }
-    case "unit.attrs": {
-      const targetItemId = String(change.itemId);
-      const targetUnitId = String(change.unitId);
-      const pathKey = String(change.path[0] ?? "");
-      if (pathKey === "") return doc;
-      const next = mapItemDeep(doc.root, targetItemId, (it) => ({
-        ...it,
-        units: it.units.map((u) =>
-          String(u.id) === targetUnitId
-            ? {
-                ...u,
-                attrs: { ...u.attrs, [pathKey]: change.after },
-                meta: { ...u.meta, updatedAt: nowIso() } as typeof u.meta,
-              }
-            : u,
-        ),
-        meta: { ...it.meta, updatedAt: nowIso() },
-      }));
-      return next === doc.root ? doc : withRoot(doc, next);
-    }
-    case "item.children": {
-      // Phase 5/9/10a — add/remove children inside a container at ANY depth.
-      // The container is identified by `change.itemId`. The walk descends the
-      // tree to find the matching node and applies the add/remove there.
-      // Added items' full shapes come from the side-channel (pending); without
-      // it (no host wired), the Patch is observational only.
-      const containerId = String(change.itemId);
-      const removedIds = new Set(change.removed.map((id) => String(id)));
-      const addedFresh: AgocraftItem[] = (() => {
-        if (change.added.length === 0 || pending === undefined) return [];
-        const out: AgocraftItem[] = [];
-        for (const id of change.added) {
-          const item = pending.lookup(String(id));
-          if (item !== undefined) out.push(item);
-        }
-        return out;
-      })();
-      const applyToChildren = (children: ReadonlyArray<AgocraftItem>): AgocraftItem[] => {
-        const filtered = children.filter((c) => !removedIds.has(String(c.id)));
-        const existingIds = new Set(filtered.map((c) => String(c.id)));
-        for (const fresh of addedFresh) {
-          if (existingIds.has(String(fresh.id))) continue;
-          filtered.push(fresh);
-        }
-        return filtered;
-      };
-      const next = mapItemDeep(doc.root, containerId, (container) => ({
-        ...container,
-        children: applyToChildren(container.children),
-        meta: { ...container.meta, updatedAt: nowIso() },
-      }));
-      return next === doc.root ? doc : withRoot(doc, next);
-    }
-    case "item.units": {
-      // WI-029 R2 — apply unit add/remove through the patch path so
-      // weave.item.addBehavior / removeBehavior become history-aware.
-      // Same side-channel contract as `item.children`: the command stages
-      // the *full Item* (with new units appended for add, or with the
-      // to-be-removed unit still present for remove); the reducer reads
-      // back the staged shape to graft the right Unit body.
-      const targetItemId = String(change.itemId);
-      const removedIds = new Set(change.removed.map((id) => String(id)));
-      const addedUnits: ReadonlyArray<AgocraftUnit> = (() => {
-        if (change.added.length === 0 || pending === undefined) return [];
-        const stagedItem = pending.lookup(targetItemId);
-        if (stagedItem === undefined) return [];
-        const wantedIds = new Set(change.added.map((id) => String(id)));
-        return stagedItem.units.filter((u) => wantedIds.has(String(u.id)));
-      })();
-      const next = mapItemDeep(doc.root, targetItemId, (item) => {
-        const existingById = new Set(item.units.map((u) => String(u.id)));
-        const filtered = item.units.filter((u) => !removedIds.has(String(u.id)));
-        const nextUnits = [...filtered];
-        for (const added of addedUnits) {
-          if (existingById.has(String(added.id))) continue;
-          nextUnits.push(added);
-        }
-        return {
-          ...item,
-          units: nextUnits,
-          meta: { ...item.meta, updatedAt: nowIso() },
-        };
-      });
-      return next === doc.root ? doc : withRoot(doc, next);
-    }
-    // ─── WI-029 / HANDOFF-007 — design-level patch variants ─────────────
-    case "document.attrs": {
-      // Replace the root document.attrs Record with `change.after`. Host's
-      // wrapper-level mirrors (design.background / design.presentationOrder)
-      // are kept in sync in `use-design.ts` (follow-up PR will fold those
-      // wrapper fields into doc.attrs entirely).
-      return { ...doc, attrs: change.after };
-    }
-    case "item.children.reorder": {
-      // Reorder a container's children to match `change.after` (permutation
-      // of `change.before`). The reducer trusts the patch was validated by
-      // its emitter (commands.ts) and does a lookup+map.
-      const containerId = String(change.itemId);
-      const targetOrder = change.after.map(String);
-      const next = mapItemDeep(doc.root, containerId, (container) => {
-        const byId = new Map(container.children.map((c) => [String(c.id), c]));
-        const reordered: AgocraftItem[] = [];
-        for (const id of targetOrder) {
-          const item = byId.get(id);
-          if (item !== undefined) reordered.push(item);
-        }
-        // Preserve any children that weren't in the order (defensive — should
-        // not happen for valid patches, but keeps reducer idempotent).
-        if (reordered.length !== container.children.length) {
-          for (const c of container.children) {
-            if (!targetOrder.includes(String(c.id))) reordered.push(c);
-          }
-        }
-        return {
-          ...container,
-          children: reordered,
-          meta: { ...container.meta, updatedAt: nowIso() },
-        };
-      });
-      return next === doc.root ? doc : withRoot(doc, next);
-    }
-    // ─── WI-019 B2 + WI-020 / WI-043 — layout policy mutations ─────────
-    //
-    // Sets `attrs.layout` / `attrs.layoutChild` on the target item. The
-    // agocraft Change carries the full new value (or undefined when
-    // clearing); the reducer writes it onto the item's attrs map and
-    // bumps updatedAt so dependent views (ContextualToolbar,
-    // PropertiesPanel) re-render with the latest layout policy.
-    case "item.layout": {
-      const targetId = String(change.itemId);
-      const next = mapItemDeep(doc.root, targetId, (it) => {
-        const nextAttrs = { ...it.attrs } as Record<string, unknown>;
-        if (change.after === undefined) {
-          delete nextAttrs["layout"];
-        } else {
-          nextAttrs["layout"] = change.after;
-        }
-        return {
-          ...it,
-          attrs: nextAttrs as typeof it.attrs,
-          meta: { ...it.meta, updatedAt: nowIso() },
-        };
-      });
-      return next === doc.root ? doc : withRoot(doc, next);
-    }
-    case "item.layoutChild": {
-      const targetId = String(change.itemId);
-      const next = mapItemDeep(doc.root, targetId, (it) => {
-        const nextAttrs = { ...it.attrs } as Record<string, unknown>;
-        if (change.after === undefined) {
-          delete nextAttrs["layoutChild"];
-        } else {
-          nextAttrs["layoutChild"] = change.after;
-        }
-        return {
-          ...it,
-          attrs: nextAttrs as typeof it.attrs,
-          meta: { ...it.meta, updatedAt: nowIso() },
-        };
-      });
-      return next === doc.root ? doc : withRoot(doc, next);
-    }
-    // ─── WI-039 — Item / Frame reparent ────────────────────────────────
-    case "item.reparent": {
-      // Each entry: detach the item from its current parent, splice into
-      // newParent's children at newIndex, replace attrs.frame with
-      // newFrameRatio. Entries are applied serially. The reducer trusts
-      // its emitter (weave.item.reparent command) has cycle / dedupe
-      // guarded — agocraft itself does not validate (HANDOFF-002 §3).
-      let nextRoot = doc.root;
-      for (const entry of change.entries) {
-        const targetId = String(entry.itemId);
-        const item = findItemInTree(nextRoot, targetId);
-        if (item === undefined) continue;
-        const itemWithNewFrame: AgocraftItem = {
-          ...item,
-          attrs: { ...item.attrs, frame: entry.newFrameRatio },
-          meta: { ...item.meta, updatedAt: nowIso() },
-        };
-        const detached = removeItemFromTree(nextRoot, targetId);
-        const inserted = insertItemIntoParent(
-          detached,
-          String(entry.newParentId),
-          itemWithNewFrame,
-          entry.newIndex,
-        );
-        if (inserted !== undefined) {
-          nextRoot = inserted;
-        }
-      }
-      return nextRoot === doc.root ? doc : withRoot(doc, nextRoot);
-    }
-    default:
-      return doc;
-  }
-}
-
-/** WI-039 — drop the subtree whose root has `targetId` from `root`'s
- *  descendants. Returns a new root if a removal happened, the same
- *  reference otherwise. */
-function removeItemFromTree(root: AgocraftItem, targetId: string): AgocraftItem {
-  if (root.children.length === 0) return root;
-  let changed = false;
-  const nextChildren: AgocraftItem[] = [];
-  for (const c of root.children) {
-    if (String(c.id) === targetId) {
-      changed = true;
-      continue;
-    }
-    const nc = removeItemFromTree(c, targetId);
-    if (nc !== c) changed = true;
-    nextChildren.push(nc);
-  }
-  if (!changed) return root;
-  return { ...root, children: nextChildren, meta: { ...root.meta, updatedAt: nowIso() } };
-}
-
-/** WI-039 — splice `item` into `parentId`'s children at `index`. Returns
- *  the new root reference if the parent was found, `undefined`
- *  otherwise. Out-of-range indices clamp to `[0, children.length]`. */
-function insertItemIntoParent(
-  root: AgocraftItem,
-  parentId: string,
-  item: AgocraftItem,
-  index: number,
-): AgocraftItem | undefined {
-  if (String(root.id) === parentId) {
-    const insertAt = Math.max(0, Math.min(index, root.children.length));
-    const next = [...root.children];
-    next.splice(insertAt, 0, item);
-    return { ...root, children: next, meta: { ...root.meta, updatedAt: nowIso() } };
-  }
-  if (root.children.length === 0) return undefined;
-  let foundIn: number | null = null;
-  const nextChildren = root.children.map((c, idx) => {
-    if (foundIn !== null) return c;
-    const nc = insertItemIntoParent(c, parentId, item, index);
-    if (nc !== undefined) {
-      foundIn = idx;
-      return nc;
-    }
-    return c;
-  });
-  if (foundIn === null) return undefined;
-  return { ...root, children: nextChildren, meta: { ...root.meta, updatedAt: nowIso() } };
-}
-
-/** Recursively walk an Item's subtree (including the item itself) and return
- *  a new tree where the item matching `targetId` has been transformed by
- *  `patch`. Returns the original reference if no match was found (cheap
- *  identity check for the caller to skip a no-op `withRoot`). */
-function mapItemDeep(
-  item: AgocraftItem,
-  targetId: string,
-  patch: (item: AgocraftItem) => AgocraftItem,
-): AgocraftItem {
-  if (String(item.id) === targetId) {
-    return patch(item);
-  }
-  if (item.children.length === 0) return item;
-  let changed = false;
-  const nextChildren = item.children.map((c) => {
-    const n = mapItemDeep(c, targetId, patch);
-    if (n !== c) changed = true;
-    return n;
-  });
-  if (!changed) return item;
-  return { ...item, children: nextChildren };
+  return applyPatch(doc, change, { now: nowIso() });
 }
 
 // ── WI-013 Phase 4 — in-place mutations on agocraft Document ─────────────
@@ -495,13 +215,16 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function withRoot(doc: AgocraftDocument, nextRoot: AgocraftItem): AgocraftDocument {
-  const ts = nowIso();
-  return {
-    ...doc,
-    root: nextRoot,
-    meta: { ...doc.meta, updatedAt: ts },
-  };
+/** WI-022 / DR-025 S1 — the `@agocraft/core` tree helpers are clock-free (R2):
+ *  they perform pure structural transforms and never stamp a timestamp. weave
+ *  re-applies its doc-level `updatedAt` bump here so persistence sinks still
+ *  see a fresh timestamp on every structural mutation, exactly as the previous
+ *  host-local `withRoot` did. (Per-item `updatedAt` is intentionally not bumped
+ *  — it is read only at migrate / load time, never during a live edit.)
+ *  Returns the SAME reference on a no-op so the host's re-render skip holds. */
+function bumpDocUpdatedAt(prev: AgocraftDocument, next: AgocraftDocument): AgocraftDocument {
+  if (next === prev) return prev;
+  return { ...next, meta: { ...next.meta, updatedAt: nowIso() } };
 }
 
 /** Append `child` to the container's children. Defaults to the document
@@ -512,13 +235,14 @@ export function addChild(
   child: AgocraftItem,
   containerId?: string,
 ): AgocraftDocument {
-  const target = containerId ?? String(doc.root.id);
-  const next = mapItemDeep(doc.root, target, (container) => ({
-    ...container,
-    children: [...container.children, child],
-    meta: { ...container.meta, updatedAt: nowIso() },
-  }));
-  return next === doc.root ? doc : withRoot(doc, next);
+  // WI-022 S1 shim — delegate the structural append to @agocraft/core; brand
+  // the host string id and re-apply the doc-level timestamp (see bumpDocUpdatedAt).
+  const next = coreAddChild(
+    doc,
+    child,
+    containerId === undefined ? undefined : itemId(containerId),
+  );
+  return bumpDocUpdatedAt(doc, next);
 }
 
 /** Reorder root.children according to `orderedAsc` (z-ascending). Any child
@@ -530,54 +254,19 @@ export function reorderRootChildren(
   doc: AgocraftDocument,
   orderedAsc: ReadonlyArray<string>,
 ): AgocraftDocument {
-  const current = doc.root.children;
-  if (orderedAsc.length === 0) return doc;
-  const indexInOrder = new Map<string, number>();
-  orderedAsc.forEach((id, i) => indexInOrder.set(id, i));
-
-  // Items in the local stack reordered per orderedAsc; items outside stay
-  // in their existing relative order, placed at the end (highest z).
-  const inStack: AgocraftItem[] = [];
-  const outOfStack: AgocraftItem[] = [];
-  for (const child of current) {
-    if (indexInOrder.has(String(child.id))) inStack.push(child);
-    else outOfStack.push(child);
-  }
-  inStack.sort((a, b) => {
-    const ai = indexInOrder.get(String(a.id)) ?? 0;
-    const bi = indexInOrder.get(String(b.id)) ?? 0;
-    return ai - bi;
-  });
-  const nextChildren = [...inStack, ...outOfStack];
-
-  // Identical ordering — return doc as-is to avoid spurious re-render.
-  let same = nextChildren.length === current.length;
-  if (same) {
-    for (let i = 0; i < current.length; i += 1) {
-      if (current[i] !== nextChildren[i]) {
-        same = false;
-        break;
-      }
-    }
-  }
-  if (same) return doc;
-
-  const nextRoot: AgocraftItem = {
-    ...doc.root,
-    children: nextChildren,
-    meta: { ...doc.root.meta, updatedAt: nowIso() },
-  };
-  return withRoot(doc, nextRoot);
+  // WI-022 S1 shim — @agocraft/core owns the reorder algorithm (out-of-stack
+  // items keep their order at the end; SAME ref when the order is unchanged).
+  const next = coreReorderRootChildren(doc, orderedAsc.map(itemId));
+  return bumpDocUpdatedAt(doc, next);
 }
 
 /** Remove the child whose id matches `childId`, searched anywhere in the
  *  tree. Returns `doc` unchanged if no match. */
 export function removeChild(doc: AgocraftDocument, childId: string): AgocraftDocument {
-  let removed = false;
-  const next = stripChildDeep(doc.root, childId, () => {
-    removed = true;
-  });
-  return removed ? withRoot(doc, next) : doc;
+  // WI-022 S1 shim — @agocraft/core drops the subtree by id anywhere in the
+  // tree (never the root); SAME ref when nothing was removed.
+  const next = coreRemoveChild(doc, itemId(childId));
+  return bumpDocUpdatedAt(doc, next);
 }
 
 /** Patch the child whose id matches `childId`, searched anywhere in the
@@ -587,46 +276,17 @@ export function updateChild(
   childId: string,
   patch: (item: AgocraftItem) => AgocraftItem,
 ): AgocraftDocument {
-  const next = mapItemDeep(doc.root, childId, patch);
-  return next === doc.root ? doc : withRoot(doc, next);
-}
-
-function stripChildDeep(item: AgocraftItem, childId: string, onRemove: () => void): AgocraftItem {
-  const idx = item.children.findIndex((c) => String(c.id) === childId);
-  if (idx >= 0) {
-    onRemove();
-    const nextChildren = item.children.slice();
-    nextChildren.splice(idx, 1);
-    return {
-      ...item,
-      children: nextChildren,
-      meta: { ...item.meta, updatedAt: nowIso() },
-    };
-  }
-  if (item.children.length === 0) return item;
-  let changed = false;
-  const nextChildren = item.children.map((c) => {
-    const n = stripChildDeep(c, childId, onRemove);
-    if (n !== c) changed = true;
-    return n;
-  });
-  if (!changed) return item;
-  return { ...item, children: nextChildren };
+  // WI-022 S1 shim — @agocraft/core walks to the node and applies `patch`;
+  // SAME ref when no node matched.
+  const next = coreUpdateChild(doc, itemId(childId), patch);
+  return bumpDocUpdatedAt(doc, next);
 }
 
 /** Find an Item anywhere in the tree (root, root.children, grandchildren, …).
  *  Returns undefined if not found. */
-export function findItemDeep(doc: AgocraftDocument, itemId: string): AgocraftItem | undefined {
-  return findItemInTree(doc.root, itemId);
-}
-
-function findItemInTree(item: AgocraftItem, itemId: string): AgocraftItem | undefined {
-  if (String(item.id) === itemId) return item;
-  for (const c of item.children) {
-    const found = findItemInTree(c, itemId);
-    if (found !== undefined) return found;
-  }
-  return undefined;
+export function findItemDeep(doc: AgocraftDocument, id: string): AgocraftItem | undefined {
+  // WI-022 S1 shim — delegate to @agocraft/core (brand the host string id).
+  return coreFindItemDeep(doc, itemId(id));
 }
 
 /** Return the chain of Items from a direct child of `root` down to the
@@ -634,20 +294,11 @@ function findItemInTree(item: AgocraftItem, itemId: string): AgocraftItem | unde
  *  when no path exists. */
 export function findTrailDeep(
   doc: AgocraftDocument,
-  itemId: string,
+  id: string,
 ): ReadonlyArray<AgocraftItem> | undefined {
-  if (String(doc.root.id) === itemId) return [];
-  const trail: AgocraftItem[] = [];
-  function walk(item: AgocraftItem): boolean {
-    for (const c of item.children) {
-      trail.push(c);
-      if (String(c.id) === itemId) return true;
-      if (walk(c)) return true;
-      trail.pop();
-    }
-    return false;
-  }
-  return walk(doc.root) ? trail : undefined;
+  // WI-022 S1 shim — @agocraft/core owns the tree walk (root-direct-child →
+  // target inclusive; `[]` for the root; `undefined` when no path exists).
+  return coreFindTrailDeep(doc, itemId(id));
 }
 
 /** Locate the direct parent container of `itemId` and the child index inside
@@ -665,218 +316,88 @@ export function findTrailDeep(
  *  primitive nested inside one. */
 export function findParentAndIndex(
   doc: AgocraftDocument,
-  itemId: string,
+  id: string,
 ):
   | {
       readonly parent: AgocraftItem;
       readonly indexInParent: number;
     }
   | undefined {
-  const trail = findTrailDeep(doc, itemId);
-  if (trail === undefined || trail.length === 0) return undefined;
-  const parent = trail.length === 1 ? doc.root : trail[trail.length - 2]!;
-  const indexInParent = parent.children.findIndex((c) => String(c.id) === itemId);
-  if (indexInParent < 0) return undefined;
-  return { parent, indexInParent };
+  // WI-022 S1 shim — @agocraft/core resolves the direct parent + index
+  // (undefined for the root or a missing id).
+  return coreFindParentAndIndex(doc, itemId(id));
 }
 
-/** WI-038 Phase 2 — compute the absolute axis-aligned bbox of an item in
- *  design-space pixels by walking from the root and composing each
- *  ancestor's `attrs.frame` (0..1 ratio of its parent). Rotation is
- *  intentionally ignored — composing a rotated chain into an axis-aligned
- *  box isn't meaningful, and weave's v1 hit-test treats every frame as
- *  axis-aligned.
- *
- *  Returns `null` when the item isn't in the tree or any intermediate
- *  ancestor lacks a `frame`. The document root maps to
- *  `(0, 0, designW, designH)` for symmetry with descendants. */
+// ── Rotation-aware frame geometry (WI-022 / DR-025 S1 — R1 decomposition) ──
+//
+// The coordinate math now lives in @agocraft/spatial (project-neutral, fed a
+// FrameRect chain). This file keeps the ONE thing that math can't know: that
+// weave stores a frame at `item.attrs.frame`. `frameTrail` is that single
+// extraction point — it walks the tree via the (now library-backed) shim and
+// pulls each ancestor's frame into a `FrameRect[]`. The three exported
+// functions are thin adapters: extract → delegate to spatial.
+
+/** Extract the FrameRect chain for `id` (root-direct-child → target, inclusive).
+ *  The only place that reads weave's `attrs.frame` shape. Returns:
+ *    • `[]` when `id` is the document root (spatial treats it as the full box),
+ *    • `null` when `id` is missing OR any ancestor lacks a `frame`. */
+function frameTrail(doc: AgocraftDocument, id: string): FrameRect[] | null {
+  const trail = findTrailDeep(doc, id);
+  if (trail === undefined) return null;
+  const frames: FrameRect[] = [];
+  for (const item of trail) {
+    const frame = (item.attrs as { frame?: FrameRect }).frame;
+    if (!frame) return null;
+    frames.push(frame);
+  }
+  return frames;
+}
+
+/** Absolute axis-aligned bbox of an item in design-space pixels (rotation
+ *  ignored — v1 hit-test is axis-aligned). `null` when the item is missing or
+ *  any ancestor lacks a `frame`. The document root maps to
+ *  `(0, 0, designW, designH)`. */
 export function absoluteFrameBox(
   doc: AgocraftDocument,
-  itemId: string,
+  id: string,
   designW: number,
   designH: number,
 ): { readonly x: number; readonly y: number; readonly w: number; readonly h: number } | null {
-  if (String(doc.root.id) === itemId) {
-    return { x: 0, y: 0, w: designW, h: designH };
-  }
-  const trail = findTrailDeep(doc, itemId);
-  if (trail === undefined) return null;
-  let box = { x: 0, y: 0, w: designW, h: designH };
-  for (const item of trail) {
-    const frame = (
-      item.attrs as { frame?: { x: number; y: number; width: number; height: number } }
-    ).frame;
-    if (!frame) return null;
-    box = {
-      x: box.x + frame.x * box.w,
-      y: box.y + frame.y * box.h,
-      w: frame.width * box.w,
-      h: frame.height * box.h,
-    };
-  }
-  return box;
+  const frames = frameTrail(doc, id);
+  if (frames === null) return null;
+  return absoluteFrameBoxFromTrail(frames, designW, designH);
 }
 
-/** Compute an item's new `frame` (ratio of `newParentId`) such that the
- *  item — and therefore its WHOLE child subtree, which is stored relative
- *  to the item — keeps the exact same ON-SCREEN position and rotation
- *  after a reparent. This is rotation-aware end to end:
- *
- *    • position: the item's true visual CENTER (with every ancestor's
- *      rotation applied) is pulled back into the new parent's children
- *      space via the new parent's inverse transform — so moving into / out
- *      of a rotated ancestor lands the item where the user sees it, not at
- *      the axis-aligned `absoluteFrameBox` guess.
- *    • rotation: new own-rotation = item's absolute angle − new parent's
- *      absolute angle (CSS rotations compose down the tree).
- *    • size: width/height are pixel-invariant under rotation, so they are a
- *      plain ratio of the new parent's box.
- *
- *  Children need no per-node fix-up: they are ratios of THIS item's box, so
- *  preserving the item's center+rotation+size preserves the subtree.
- *
- *  `designW`/`designH` set the aspect ratio of the pixel space rotations
- *  happen in; they only matter when a rotated ancestor is involved AND the
- *  design is non-square (pass 1×1 otherwise — the result is identical).
- *  Returns null when either item is missing / lacks a frame, or the new
- *  parent has zero area. */
+/** Rotation-aware absolute transform of a frame. `null` when the item is
+ *  missing or an ancestor lacks a `frame`; the root maps to the full
+ *  `designW × designH` box, identity matrix. */
+export function absoluteFrameTransform(
+  doc: AgocraftDocument,
+  id: string,
+  designW: number,
+  designH: number,
+): AbsoluteFrameTransform | null {
+  const frames = frameTrail(doc, id);
+  if (frames === null) return null;
+  return absoluteFrameTransformFromTrail(frames, designW, designH);
+}
+
+/** Compute an item's new `frame` (ratio of `newParentId`) so the item — and
+ *  its whole child subtree — keeps the same ON-SCREEN center, rotation, and
+ *  size after a reparent. Rotation-aware end to end (see @agocraft/spatial's
+ *  `computeReparentFrameRatio`). Returns null when either item is missing /
+ *  lacks a frame, or the new parent has zero area. */
 export function computeReparentFrameRatio(
   doc: AgocraftDocument,
-  itemId: string,
+  id: string,
   newParentId: string,
   designW: number,
   designH: number,
 ): { x: number; y: number; width: number; height: number; rotation: number } | null {
-  const itemT = absoluteFrameTransform(doc, itemId, designW, designH);
-  const parentT = absoluteFrameTransform(doc, newParentId, designW, designH);
-  if (itemT === null || parentT === null) return null;
-  if (parentT.box.w <= 0 || parentT.box.h <= 0) return null;
-
-  // Pull the item's design-space center into the new parent's children
-  // U-space (childMatrix maps that space → design, incl. the parent's own +
-  // ancestor rotations), then express it as a ratio of the parent's box.
-  const inv = matInverse(parentT.childMatrix);
-  const localCenter = matApply(inv, itemT.center.x, itemT.center.y);
-  const widthRatio = itemT.box.w / parentT.box.w;
-  const heightRatio = itemT.box.h / parentT.box.h;
-  return {
-    x: (localCenter.x - parentT.box.x) / parentT.box.w - widthRatio / 2,
-    y: (localCenter.y - parentT.box.y) / parentT.box.h - heightRatio / 2,
-    width: widthRatio,
-    height: heightRatio,
-    rotation: itemT.rotation - parentT.rotation,
-  };
-}
-
-// ── Rotation-aware absolute transform ────────────────────────────────
-//
-// `absoluteFrameBox` deliberately ignores rotation (axis-aligned hit-test
-// world). But reparenting an item that lives under — or moves into — a
-// ROTATED ancestor must preserve the item's true ON-SCREEN center, and
-// that center depends on every ancestor's rotation (CSS `rotate()` on a
-// parent rotates the whole child subtree around the parent's center).
-//
-// We model the chain as 2D affine matrices in design-pixel space. Frames
-// are laid out axis-aligned within their parent's box (that accumulation
-// is exactly `absoluteFrameBox` — call it "U-space"), and each frame's own
-// rotation is a rigid rotate about its U-center that also applies to all
-// its descendants. So the map U-space → design space is a product of
-// rotate-about-center matrices, one per ancestor.
-
-/** 2x3 affine matrix `[a, b, c, d, e, f]`: x' = a·x + c·y + e, y' = b·x + d·y + f. */
-type Mat = readonly [number, number, number, number, number, number];
-const MAT_IDENTITY: Mat = [1, 0, 0, 1, 0, 0];
-
-/** Compose `m ∘ n` — apply `n` first, then `m`. */
-function matMul(m: Mat, n: Mat): Mat {
-  const [a, b, c, d, e, f] = m;
-  const [a2, b2, c2, d2, e2, f2] = n;
-  return [
-    a * a2 + c * b2,
-    b * a2 + d * b2,
-    a * c2 + c * d2,
-    b * c2 + d * d2,
-    a * e2 + c * f2 + e,
-    b * e2 + d * f2 + f,
-  ];
-}
-
-/** Rotation by `theta` (radians) about the point `(px, py)`. */
-function matRotateAbout(theta: number, px: number, py: number): Mat {
-  const cos = Math.cos(theta);
-  const sin = Math.sin(theta);
-  return [cos, sin, -sin, cos, px - cos * px + sin * py, py - sin * px - cos * py];
-}
-
-function matApply(m: Mat, x: number, y: number): { x: number; y: number } {
-  return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] };
-}
-
-function matInverse(m: Mat): Mat {
-  const [a, b, c, d, e, f] = m;
-  const det = a * d - b * c;
-  if (det === 0) return MAT_IDENTITY; // degenerate — caller treats as no-op
-  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
-}
-
-export interface AbsoluteFrameTransform {
-  /** The frame's visual center in design pixels (ancestor rotations applied). */
-  readonly center: { readonly x: number; readonly y: number };
-  /** Sum of `frame.rotation` along the chain — the frame's absolute angle. */
-  readonly rotation: number;
-  /** The frame's own box in U-space (axis-aligned accumulation = `absoluteFrameBox`).
-   *  `w`/`h` are the frame's pixel dimensions (invariant under rotation). */
-  readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
-  /** Maps this frame's CHILDREN U-space (where children are laid out) to design
-   *  space — includes this frame's own rotation plus every ancestor's. Invert it
-   *  to express a design-space point as a ratio of this frame's box. */
-  readonly childMatrix: Mat;
-}
-
-/** Rotation-aware absolute transform of a frame — see the block comment above.
- *  Returns null when the item isn't in the tree or an ancestor lacks a frame.
- *  The document root maps to the full `designW × designH` box, identity matrix. */
-export function absoluteFrameTransform(
-  doc: AgocraftDocument,
-  itemId: string,
-  designW: number,
-  designH: number,
-): AbsoluteFrameTransform | null {
-  if (String(doc.root.id) === itemId) {
-    return {
-      center: { x: designW / 2, y: designH / 2 },
-      rotation: 0,
-      box: { x: 0, y: 0, w: designW, h: designH },
-      childMatrix: MAT_IDENTITY,
-    };
-  }
-  const trail = findTrailDeep(doc, itemId);
-  if (trail === undefined) return null;
-  let m: Mat = MAT_IDENTITY;
-  let box = { x: 0, y: 0, w: designW, h: designH };
-  let rotation = 0;
-  let center = { x: designW / 2, y: designH / 2 };
-  for (const item of trail) {
-    const frame = (
-      item.attrs as { frame?: { x: number; y: number; width: number; height: number; rotation?: number } }
-    ).frame;
-    if (!frame) return null;
-    const b = {
-      x: box.x + frame.x * box.w,
-      y: box.y + frame.y * box.h,
-      w: frame.width * box.w,
-      h: frame.height * box.h,
-    };
-    const centerU = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
-    // Center BEFORE this frame's own rotation (own rotation is about this very
-    // center, so it doesn't move the center — only ancestors shift it).
-    center = matApply(m, centerU.x, centerU.y);
-    const rot = frame.rotation ?? 0;
-    rotation += rot;
-    if (rot !== 0) m = matMul(m, matRotateAbout(rot, centerU.x, centerU.y));
-    box = b;
-  }
-  return { center, rotation, box, childMatrix: m };
+  const itemFrames = frameTrail(doc, id);
+  const parentFrames = frameTrail(doc, newParentId);
+  if (itemFrames === null || parentFrames === null) return null;
+  return coreComputeReparentFrameRatio(itemFrames, parentFrames, designW, designH);
 }
 
 /** WI-039 — collect every descendant id of `itemId` (inclusive of the
@@ -885,16 +406,11 @@ export function absoluteFrameTransform(
  *  item or any of its descendants, the reparent is rejected. Also used
  *  by the three reparent surfaces (modifier drag, ThumbnailPanel drop,
  *  ContextMenu picker) to compute the disabled-target set up front. */
-export function findDescendantSet(doc: AgocraftDocument, itemId: string): ReadonlySet<string> {
-  const item = findItemDeep(doc, itemId);
-  if (item === undefined) return new Set();
-  const ids = new Set<string>();
-  function walk(node: AgocraftItem): void {
-    ids.add(String(node.id));
-    for (const c of node.children) walk(c);
-  }
-  walk(item);
-  return ids;
+export function findDescendantSet(doc: AgocraftDocument, id: string): ReadonlySet<string> {
+  // WI-022 S1 shim — @agocraft/core collects the inclusive descendant id set.
+  // Rebuild as a Set<string> so host callers keep their plain-string `.has(...)`
+  // contract (the library returns a branded `ReadonlySet<ItemId>`).
+  return new Set<string>(coreFindDescendantSet(doc, itemId(id)));
 }
 
 export function updateAttrs(

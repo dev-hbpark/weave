@@ -24,12 +24,12 @@ test.skip("Cmd+Z undoes a slide title commit; Cmd+Shift+Z redoes it", async ({ p
   await title.blur();
   await expect(title).toHaveText("Edited title");
 
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(title).toHaveText("New slide", { timeout: 2_000 });
 
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect(title).toHaveText("Edited title", { timeout: 2_000 });
 });

@@ -14,6 +14,7 @@
 // adapters aren't mounted and relayout is a no-op, so the assertions only
 // hold when the feature is enabled.
 
+import type { Patch } from "@agocraft/core";
 import {
   type Document as AgocraftDocument,
   type Item as AgocraftItem,
@@ -22,20 +23,27 @@ import {
   createAutoFlexSpec,
   createAutoGridChildPolicy,
   createAutoGridSpec,
-  itemId as makeItemId,
   type LayoutSpec,
+  itemId as makeItemId,
   trackFr,
 } from "@agocraft/core";
-import { describe, expect, it } from "vitest";
-import {
-  buildWeaveCommands,
-  createPendingCreations,
-  type WeaveCommandTargets,
-} from "./commands.js";
+import { describe, expect, it, vi } from "vitest";
+import { buildWeaveCommands, type WeaveCommandTargets } from "./commands.js";
 import { WI020_LAYOUT_VARIANTS_ENABLED } from "./layout/registry.js";
-import { vi } from "vitest";
 
-const META = { createdAt: "2026-05-28T00:00:00Z", updatedAt: "2026-05-28T00:00:00Z", schemaVersion: 11 };
+const META = {
+  createdAt: "2026-05-28T00:00:00Z",
+  updatedAt: "2026-05-28T00:00:00Z",
+  schemaVersion: 11,
+};
+
+/** WI-024 — `weave.item.add` now emits a self-contained `item.create`; the new
+ *  child's computed frame lives in the carried subtree's `attrs.frame`. */
+function createdFrame(patches: ReadonlyArray<Patch>): Record<string, number> | undefined {
+  const p = patches.find((x) => x.type === "item.create");
+  if (p === undefined || p.type !== "item.create") return undefined;
+  return (p.item.attrs as { frame?: Record<string, number> }).frame;
+}
 
 function spyTargets(): WeaveCommandTargets {
   return {
@@ -74,14 +82,15 @@ function frameItem(
 
 /** Build a CommandContext whose root holds a single parent frame carrying
  *  `parentLayout` + one existing child at `existingChildFrame`. */
-function makeCtx(
-  parentLayout: LayoutSpec,
-  existingChild: AgocraftItem,
-): CommandContext {
-  const parent = frameItem("parent", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 }, layout: parentLayout }, [
-    existingChild,
+function makeCtx(parentLayout: LayoutSpec, existingChild: AgocraftItem): CommandContext {
+  const parent = frameItem(
+    "parent",
+    { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 }, layout: parentLayout },
+    [existingChild],
+  );
+  const root = frameItem("root", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 } }, [
+    parent,
   ]);
-  const root = frameItem("root", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 } }, [parent]);
   const doc = {
     id: "doc",
     schema: undefined as unknown as AgocraftDocument["schema"],
@@ -91,7 +100,13 @@ function makeCtx(
   return { document: doc, resolve: () => null as never, skipRelations: false } as CommandContext;
 }
 
-const F = (x: number, y: number, w: number, h: number) => ({ x, y, width: w, height: h, rotation: 0 });
+const F = (x: number, y: number, w: number, h: number) => ({
+  x,
+  y,
+  width: w,
+  height: h,
+  rotation: 0,
+});
 
 describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
   "weave.item.add — relayout on child add (auto-flex)",
@@ -110,8 +125,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       });
       const ctx = makeCtx(flex, existing);
 
-      const pending = createPendingCreations();
-      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
       if (cmd === undefined) throw new Error("weave.item.add not found");
 
       // Add a 2nd child with basis 0.5, intentionally dropped at a wrong
@@ -126,10 +140,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
 
       // The staged new child must be at the SECOND flex slot (x = 0.5),
       // NOT at its raw drop frame (0.9) — proving auto-arrangement ran.
-      const stagedId = String(result.value);
-      const staged = pending.lookup(stagedId);
-      if (staged === undefined) throw new Error("new child not staged");
-      const stagedFrame = (staged.attrs as { frame?: { x: number; width: number } }).frame;
+      const stagedFrame = createdFrame(result.patches);
       expect(stagedFrame?.x).toBeCloseTo(0.5, 6);
       expect(stagedFrame?.width).toBeCloseTo(0.5, 6);
     });
@@ -149,8 +160,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       });
       const ctx = makeCtx(flex, existing);
 
-      const pending = createPendingCreations();
-      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
       if (cmd === undefined) throw new Error("weave.item.add not found");
 
       const result = cmd.run(ctx, {
@@ -161,9 +171,9 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       });
       if (!result.ok) throw new Error("expected ok");
 
-      // One item.children (add) + at least one item.attrs (existing sibling
+      // One item.create (add) + at least one item.attrs (existing sibling
       // shifting to slot 0) — all in this transaction (single Cmd+Z).
-      const childrenPatches = result.patches.filter((p) => p.type === "item.children");
+      const childrenPatches = result.patches.filter((p) => p.type === "item.create");
       const attrsPatches = result.patches.filter((p) => p.type === "item.attrs");
       expect(childrenPatches).toHaveLength(1);
       expect(attrsPatches.length).toBeGreaterThanOrEqual(1);
@@ -204,15 +214,17 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       } as AgocraftItem;
       const ctx = makeCtx(flex, existing);
 
-      const pending = createPendingCreations();
-      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
       if (cmd === undefined) throw new Error("weave.item.add not found");
 
       const result = cmd.run(ctx, {
         kind: "shape",
         containerId: "parent",
         frame: F(0.9, 0.9, 0.01, 0.01),
-        attrsOverride: { shape: "rectangle", layoutChild: createAutoFlexChildPolicy({ basis: 0.5 }) },
+        attrsOverride: {
+          shape: "rectangle",
+          layoutChild: createAutoFlexChildPolicy({ basis: 0.5 }),
+        },
       });
       if (!result.ok) throw new Error("expected ok");
 
@@ -250,11 +262,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       // seeds one, so assemble the doc inline here).
       const c1 = frameItem("c1", { frame: F(0, 0, 0.5, 1), layoutChild: policy });
       const c2 = frameItem("c2", { frame: F(0.5, 0, 0.5, 1), layoutChild: policy });
-      const parent = frameItem(
-        "parent",
-        { frame: F(0, 0, 1, 1), layout: flex },
-        [c1, c2],
-      );
+      const parent = frameItem("parent", { frame: F(0, 0, 1, 1), layout: flex }, [c1, c2]);
       const root = frameItem("root", { frame: F(0, 0, 1, 1) }, [parent]);
       const doc = {
         id: "doc",
@@ -262,10 +270,13 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
         root,
         meta: { id: "doc", ...META, schemaRefs: [] },
       } as unknown as AgocraftDocument;
-      const ctx = { document: doc, resolve: () => null as never, skipRelations: false } as CommandContext;
+      const ctx = {
+        document: doc,
+        resolve: () => null as never,
+        skipRelations: false,
+      } as CommandContext;
 
-      const pending = createPendingCreations();
-      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
       if (cmd === undefined) throw new Error("weave.item.add not found");
 
       const result = cmd.run(ctx, {
@@ -277,8 +288,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       if (!result.ok) throw new Error("expected ok");
 
       // New child ends at the 3rd slot, shrunk to 1/3 width.
-      const staged = pending.lookup(String(result.value));
-      const sFrame = (staged?.attrs as { frame?: { x: number; width: number } }).frame;
+      const sFrame = createdFrame(result.patches);
       expect(sFrame?.width).toBeCloseTo(1 / 3, 5);
       expect(sFrame?.x).toBeCloseTo(2 / 3, 5);
 
@@ -313,8 +323,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       });
       const ctx = makeCtx(grid, existing);
 
-      const pending = createPendingCreations();
-      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
       if (cmd === undefined) throw new Error("weave.item.add not found");
 
       const result = cmd.run(ctx, {
@@ -325,9 +334,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       });
       if (!result.ok) throw new Error("expected ok");
 
-      const staged = pending.lookup(String(result.value));
-      if (staged === undefined) throw new Error("new child not staged");
-      const stagedFrame = (staged.attrs as { frame?: { x: number; width: number } }).frame;
+      const stagedFrame = createdFrame(result.patches);
       // Column 2 of a 2-fr grid (stretch) → x = 0.5, width = 0.5.
       expect(stagedFrame?.x).toBeCloseTo(0.5, 6);
       expect(stagedFrame?.width).toBeCloseTo(0.5, 6);
@@ -343,8 +350,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       const existing = frameItem("c1", { frame: F(0, 0, 0.3, 0.3) });
       const ctx = makeCtx(absolute, existing);
 
-      const pending = createPendingCreations();
-      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
       if (cmd === undefined) throw new Error("weave.item.add not found");
 
       const result = cmd.run(ctx, {
@@ -356,11 +362,10 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
 
       // absolute-constraints onParentResize is scale-factor based and
       // returns [] on a no-op resize → the new child keeps its drop frame.
-      const staged = pending.lookup(String(result.value));
-      const stagedFrame = (staged?.attrs as { frame?: { x: number; y: number } }).frame;
+      const stagedFrame = createdFrame(result.patches);
       expect(stagedFrame?.x).toBeCloseTo(0.4, 6);
       expect(stagedFrame?.y).toBeCloseTo(0.4, 6);
-      // No sibling patches — only the item.children add.
+      // No sibling patches — only the item.create add.
       expect(result.patches.filter((p) => p.type === "item.attrs")).toHaveLength(0);
     });
 
@@ -375,10 +380,13 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
         root,
         meta: { id: "doc", ...META, schemaRefs: [] },
       } as unknown as AgocraftDocument;
-      const ctx = { document: doc, resolve: () => null as never, skipRelations: false } as CommandContext;
+      const ctx = {
+        document: doc,
+        resolve: () => null as never,
+        skipRelations: false,
+      } as CommandContext;
 
-      const pending = createPendingCreations();
-      const cmd = buildWeaveCommands(spyTargets(), pending).find((c) => c.name === "weave.item.add");
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
       if (cmd === undefined) throw new Error("weave.item.add not found");
 
       const result = cmd.run(ctx, {
@@ -387,8 +395,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
         frame: F(0.4, 0.4, 0.2, 0.2),
       });
       if (!result.ok) throw new Error("expected ok");
-      const staged = pending.lookup(String(result.value));
-      const stagedFrame = (staged?.attrs as { frame?: { x: number } }).frame;
+      const stagedFrame = createdFrame(result.patches);
       expect(stagedFrame?.x).toBeCloseTo(0.4, 6);
       expect(result.patches.filter((p) => p.type === "item.attrs")).toHaveLength(0);
     });
@@ -415,7 +422,11 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
         root,
         meta: { id: "doc", ...META, schemaRefs: [] },
       } as unknown as AgocraftDocument;
-      return { document: doc, resolve: () => null as never, skipRelations: false } as CommandContext;
+      return {
+        document: doc,
+        resolve: () => null as never,
+        skipRelations: false,
+      } as CommandContext;
     }
 
     it("Absolute → Flex rearranges children into a row (with full-attrs + reassigned policy)", () => {
@@ -424,7 +435,11 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       const c1 = {
         id: makeItemId("c1"),
         kind: "shape",
-        attrs: { frame: F(0.1, 0.7, 0.2, 0.2), shape: "ellipse", fill: "var(--a)" } as AgocraftItem["attrs"],
+        attrs: {
+          frame: F(0.1, 0.7, 0.2, 0.2),
+          shape: "ellipse",
+          fill: "var(--a)",
+        } as AgocraftItem["attrs"],
         units: [],
         children: [],
         meta: { ...META },
@@ -432,7 +447,11 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       const c2 = {
         id: makeItemId("c2"),
         kind: "shape",
-        attrs: { frame: F(0.6, 0.1, 0.2, 0.2), shape: "rectangle", fill: "var(--b)" } as AgocraftItem["attrs"],
+        attrs: {
+          frame: F(0.6, 0.1, 0.2, 0.2),
+          shape: "rectangle",
+          fill: "var(--b)",
+        } as AgocraftItem["attrs"],
         units: [],
         children: [],
         meta: { ...META },
@@ -462,8 +481,12 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       // Children land at distinct, increasing x (row spread) — NOT their old
       // scattered positions.
       const byId = new Map(attrsPatches.map((p) => [String(p.itemId), p]));
-      const a1 = (byId.get("c1")!.after as { frame?: { x: number }; shape?: string; layoutChild?: { kind: string } });
-      const a2 = (byId.get("c2")!.after as { frame?: { x: number } });
+      const a1 = byId.get("c1")!.after as {
+        frame?: { x: number };
+        shape?: string;
+        layoutChild?: { kind: string };
+      };
+      const a2 = byId.get("c2")!.after as { frame?: { x: number } };
       expect(a1.frame?.x).toBeLessThan(a2.frame!.x);
       // Each child's other attrs survived AND its policy was reassigned to flex.
       expect(a1.shape).toBe("ellipse");
@@ -510,7 +533,10 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
 
     it("Flex → Absolute emits ONLY the layout patch (children keep frames, free placement)", () => {
       const flex: LayoutSpec = createAutoFlexSpec();
-      const c1 = frameItem("c1", { frame: F(0, 0, 0.5, 1), layoutChild: createAutoFlexChildPolicy() });
+      const c1 = frameItem("c1", {
+        frame: F(0, 0, 0.5, 1),
+        layoutChild: createAutoFlexChildPolicy(),
+      });
       const ctx = ctxWithChildren(flex, [c1]);
 
       const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.frame.setLayout");

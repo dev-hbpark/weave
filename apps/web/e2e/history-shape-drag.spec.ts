@@ -57,7 +57,7 @@ test.fixme("Cmd+Z reverts a shape drag-move as one undo step", async ({ page }) 
   expect(movedShape.x).toBeGreaterThan(origShape.x + 0.01);
   expect(movedShape.y).toBeGreaterThan(origShape.y + 0.01);
 
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(50);
 
@@ -103,7 +103,7 @@ test.skip("Cmd+Z reverts a canvas-shape resize-SE as one undo step", async ({ pa
   }
   await page.mouse.up();
 
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(50);
 

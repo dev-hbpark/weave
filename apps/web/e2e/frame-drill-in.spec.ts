@@ -39,7 +39,7 @@ test.describe
       await expect(page.getByTestId("breadcrumb-entered-title")).toBeVisible();
 
       // Esc exits.
-      await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+      await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
       await page.keyboard.press("Escape");
       await page.waitForTimeout(80);
       await expect(page.getByTestId("breadcrumb-entered-title")).toHaveCount(0);

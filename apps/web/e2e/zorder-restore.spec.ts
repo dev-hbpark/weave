@@ -65,7 +65,7 @@ test('editor.exec("weave.item.bringToFront") moves the frame to last and Cmd+Z r
   expect(afterFront).not.toEqual(initial);
 
   // Cmd+Z reverts.
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(80);
   expect(await rootChildIds(page)).toEqual(initial);
@@ -90,7 +90,7 @@ test("hotkey `]` brings the selected frame one step forward and Cmd+Z reverts", 
 
   // Move focus off the canvas so the keyboard event is captured by the
   // editor scope (the hotkey registry skips text-editing surfaces).
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await selectFrameInVm(page, first);
   await page.keyboard.press("]");
   await page.waitForTimeout(80);
@@ -182,7 +182,7 @@ test("peek (L hold) + controller drag commits a reorder against the peek contain
   expect(afterDrag[afterDrag.length - 1]).toBe(draggedId);
 
   // Cmd+Z reverts.
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(80);
   expect(await rootChildIds(page)).toEqual(initial);
@@ -299,7 +299,7 @@ test("peek (L hold) + controller drag commits a reorder against the peek contain
   expect(innerAfter[innerAfter.length - 1]).toBe(firstInner);
 
   // Cmd+Z reverts.
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(80);
   const innerAfterUndo = await page.evaluate((cid) => {
@@ -367,7 +367,7 @@ test("nested: bringForward operates inside the parent frame, not at root", async
   expect(innerAfter[innerAfter.length - 1]).toBe(firstInner);
 
   // Cmd+Z reverts the nested reorder.
-  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 5 } });
+  await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(80);
   const innerAfterUndo = await page.evaluate((cid) => {

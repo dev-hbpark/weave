@@ -23,36 +23,49 @@ import type {
   Item as AgocraftItem,
   BuiltinItemFrame as AgocraftItemFrame,
   Unit as AgocraftUnit,
-  LayoutChildPolicy,
-  LayoutSpec,
-  SerializedItem,
 } from "@agocraft/core";
 import {
+  type ClipboardTransport,
   type Command,
   type CommandContext,
+  createClipboardCommands,
+  createDissolveFrameCommand,
+  createDuplicateItemCommand,
+  createDuplicateItemsCommand,
+  createRemoveItemCommand,
+  createRemoveItemsCommand,
+  createReorderChildrenCommand,
+  createReparentCommand,
   fail,
-  IdGeneratorToken,
   itemId as makeItemId,
   unitId as makeUnitId,
+  moveAboveCommand,
+  moveBelowCommand,
+  moveToBottomCommand,
+  moveToTopCommand,
   ok,
   type Patch,
-  remapIds,
   serializeItemSubtree,
+  serializeUnitSubtree,
   ref as styleRef,
 } from "@agocraft/core";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import {
+  createDropGridCellCommand,
+  createSetFrameLayoutCommand,
+  createSetItemLayoutChildCommand,
+  createSwapFlexOrderCommand,
+  createSwapGridCellsCommand,
+} from "@agocraft/layout";
+import {
   computeReparentFrameRatio,
-  findDescendantSet,
   findItemDeep,
   findParentAndIndex,
   toAgocraftItem,
 } from "./agocraft-mirror.js";
-import { serializedItemToAgocraft } from "./clipboard/clipboard-converter.js";
 import { clipboardStore } from "./clipboard/clipboard-store.js";
 import {
-  countSubtreeNodes,
-  type ItemsClipboardPayload,
+  type KnownClipboardPayload,
   MAX_PASTE_NODES,
   type PasteMode,
   SESSION_ORIGIN,
@@ -65,36 +78,6 @@ import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
 import type { DomainKind, InteractionBehavior, ItemFrame, Item as WeaveItem } from "./types.js";
-
-/** Side-channel — per-editor map of Item shapes referenced by `item.children`
- *  Patches. Used in two directions:
- *
- *  - **forward** (`weave.item.add`): stage the brand-new Item; the reducer
- *    pulls its shape on the `item.children` added Patch to insert into the doc.
- *  - **inverse** (`weave.item.remove`): stage the to-be-removed Item before
- *    the Patch fires, so undo (which inverts the Patch into `added: [id]`)
- *    can put the Item back without losing its attrs / units / children.
- *
- *  Stored entries are NEVER deleted — they persist across undo / redo so
- *  history replay finds the right shape. Memory grows with total add/remove
- *  ops in the session; bounded by history capacity in practice. */
-export interface PendingCreations {
-  readonly stage: (item: AgocraftItem) => void;
-  /** Persistent lookup — does not delete on read. */
-  readonly lookup: (itemId: string) => AgocraftItem | undefined;
-}
-
-export function createPendingCreations(): PendingCreations {
-  const map = new Map<string, AgocraftItem>();
-  return {
-    stage(item) {
-      map.set(String(item.id), item);
-    },
-    lookup(itemId) {
-      return map.get(itemId);
-    },
-  };
-}
 
 /** Slice of useDocument's callback surface used by the *direct* commands
  *  (add / remove / reset). In-place commands no longer call into this.
@@ -209,10 +192,9 @@ function findChild(doc: CommandContext["document"], itemId: string) {
 
 export function buildWeaveCommands(
   targets: WeaveCommandTargets,
-  pending?: PendingCreations,
   presetRegistry: PresetRegistry = defaultPresetRegistry(),
 ): ReadonlyArray<Command> {
-  // ── lifecycle commands (Phase 5/9/10a) — event-sourced via PendingCreations ──
+  // ── lifecycle commands — self-contained item.create / item.remove patches ──
   //
   // `containerId` lets the command target a nested container (a sub-doc Item)
   // instead of the root. Phase 10a switched to a recursive deep walk so the
@@ -294,96 +276,32 @@ export function buildWeaveCommands(
         layoutSiblingPatches = result.siblingPatches;
       }
 
-      if (pending !== undefined) {
-        pending.stage(stagedItem);
-      } else {
-        targets.addItem(input.kind);
-        return ok(String(stagedItem.id), []);
-      }
+      // WI-024 Phase 2b — emit self-contained `item.create` (carries the full
+      // subtree); `applyPatch` materializes it and its inverse removes it. No
+      // PendingCreations side-channel.
       const patches: Patch[] = [
         {
-          type: "item.children",
-          itemId: container.id,
-          added: [stagedItem.id],
-          removed: [],
+          type: "item.create",
+          parentId: container.id,
+          position: container.children.length,
+          item: serializeItemSubtree(stagedItem),
         },
         ...layoutSiblingPatches,
       ];
       return ok(String(stagedItem.id), patches);
     },
   };
-  const removeItem: Command<RemoveItemInput, void> = {
-    name: "weave.item.remove",
-    run: (ctx: CommandContext, input: RemoveItemInput) => {
-      // The `containerId` input is treated as a hint only — the command
-      // derives the *actual* parent of `input.itemId` so a caller that
-      // doesn't (or can't) re-derive the parent per call (e.g. a multi-
-      // delete loop, a hover-action slot that only knows the item id)
-      // still emits a correct structural patch.
-      //
-      // Without this derivation, a nested item's removal would emit a
-      // patch against the root (the default containerId) → the
-      // reducer's `mapItemDeep(root.id, ...)` walk lands on the root
-      // and tries to remove `itemId` from `root.children`, which is a
-      // no-op because the item lives deeper. The bug surfaced as "only
-      // items at the design root delete; children don't" — fixed here
-      // at the command boundary so every caller benefits.
-      const found = findParentAndIndex(ctx.document, input.itemId);
-      if (found === undefined) {
-        return fail("item-not-found", `weave.item.remove: itemId ${input.itemId} not in doc`);
-      }
-      const parent = found.parent;
-      if (pending !== undefined) {
-        const target = parent.children[found.indexInParent];
-        if (target !== undefined) {
-          pending.stage(target);
-        }
-      } else {
-        targets.removeItem(input.itemId);
-      }
-      const removed = makeItemId(input.itemId);
-      const patches: Patch[] = [
-        {
-          type: "item.children",
-          itemId: parent.id,
-          added: [],
-          removed: [removed],
-        },
-      ];
-      return ok(undefined, patches);
-    },
-  };
-  // Batch remove — every selected item removed in ONE transaction so a
-  // single Cmd+Z restores them all (multi-delete parity with paste/cut).
-  // Each item's removal patch targets its OWN parent (resolved from the
-  // pre-mutation doc), so items across different parents delete correctly.
-  interface RemoveItemsInput {
-    readonly itemIds: ReadonlyArray<string>;
-  }
-  const removeItems: Command<RemoveItemsInput, void> = {
-    name: "weave.items.remove",
-    run: (ctx: CommandContext, input: RemoveItemsInput) => {
-      const patches: Patch[] = [];
-      for (const id of input.itemIds) {
-        const found = findParentAndIndex(ctx.document, id);
-        if (found === undefined) continue;
-        const parent = found.parent;
-        if (pending !== undefined) {
-          const target = parent.children[found.indexInParent];
-          if (target !== undefined) pending.stage(target);
-        } else {
-          targets.removeItem(id);
-        }
-        patches.push({
-          type: "item.children",
-          itemId: parent.id,
-          added: [],
-          removed: [makeItemId(id)],
-        });
-      }
-      return ok(undefined, patches);
-    },
-  };
+  // WI-025 (DR-025 S3) — generic remove absorbed into the @agocraft/core
+  // editing-command kit. weave injects only the command NAME; the kit derives
+  // the item's actual parent (so nested removals emit a correct structural
+  // patch) and emits the self-contained `item.remove` (WI-024). Identical
+  // behavior + error code (`item-not-found`) to the prior inline body.
+  const removeItem = createRemoveItemCommand("weave.item.remove");
+  // WI-025 (DR-025 S3) — batch remove absorbed into the editing-command kit.
+  // Every selected item removed in ONE transaction so a single Cmd+Z restores
+  // them all; each removal patch targets the item's OWN parent (resolved from
+  // the pre-mutation doc) so items across different parents delete correctly.
+  const removeItems = createRemoveItemsCommand("weave.items.remove");
   const reset: Command<void, void> = {
     name: "weave.doc.reset",
     run: () => {
@@ -643,21 +561,13 @@ export function buildWeaveCommands(
         },
         meta: { createdAt: ts, updatedAt: ts, schemaVersion: 1 } as AgocraftUnit["meta"],
       };
-      if (pending !== undefined) {
-        // Stage the full item with the new Unit appended — reducer's item.units
-        // case looks it up by itemId and grafts the new unit into the live item.
-        const stagedItem: AgocraftItem = {
-          ...item,
-          units: [...item.units, newUnit],
-          meta: { ...item.meta, updatedAt: ts } as AgocraftItem["meta"],
-        };
-        pending.stage(stagedItem);
-      }
+      // WI-024 Phase 2b — self-contained unit.create (carries the Unit body);
+      // inverse = unit.remove → item.units removed. No PendingCreations.
       const patch: Patch = {
-        type: "item.units",
+        type: "unit.create",
         itemId: item.id,
-        added: [newUnit.id],
-        removed: [],
+        position: item.units.length,
+        unit: serializeUnitSubtree(newUnit),
       };
       return ok(input.behavior.id, [patch]);
     },
@@ -680,134 +590,98 @@ export function buildWeaveCommands(
           `weave.item.removeBehavior: no unit ${input.behaviorId} on ${input.itemId}`,
         );
       }
-      if (pending !== undefined) {
-        // Stage the *current* item (with the to-be-removed Unit still present)
-        // — undo's inverse `added: [unitId]` will look up here to restore.
-        pending.stage(item);
-      }
+      // WI-024 Phase 2b — self-contained unit.remove (carries the Unit so its
+      // inverse, unit.create, restores it on undo). No PendingCreations.
+      const position = item.units.findIndex((u) => String(u.id) === input.behaviorId);
       const patch: Patch = {
-        type: "item.units",
+        type: "unit.remove",
         itemId: item.id,
-        added: [],
-        removed: [unitToRemove.id],
+        position,
+        unit: serializeUnitSubtree(unitToRemove),
       };
       return ok(undefined, [patch]);
     },
   };
 
-  const reorderChildren: Command<
-    { readonly containerId?: string; readonly order: ReadonlyArray<string> },
-    void
-  > = {
-    name: "weave.design.reorderChildren",
+  // WI-025 (DR-025 S3) — child reorder absorbed into the editing-command kit.
+  // Validates `order` is a permutation of the container's current children
+  // (else `order-mismatch`) and emits one self-inverting `item.children.reorder`
+  // patch. Resolves root or any nested container by id — same behavior + error
+  // codes (`container-not-found` / `order-mismatch`) as the prior inline body.
+  const reorderChildren = createReorderChildrenCommand("weave.design.reorderChildren");
+
+  // ─── WI-038 / WI-022 S1 — Per-item z-order commands ───────────────────
+  //
+  // These four commands keep weave's names + hotkeys, but their bodies now
+  // DELEGATE to the `agocraft.zOrder.*` library commands (DR-021), which
+  // dispatch to the `ZOrderCapability` adapter (`design-frame.zorder.ts`).
+  // The adapter builds the real `item.children.reorder` Patch by splicing the
+  // item within its *direct parent container* (root for a top-level frame, the
+  // containing frame for a nested primitive). The previous raw-splice
+  // reimplementation here was the duplication DR-025 S1 removes.
+  //
+  // Z-stacking convention (unchanged): paint order = doc order. `children[0]`
+  // is the bottom, `children[N-1]` the top. "Bring forward" = above the next
+  // sibling (index+1); "Send backward" = below the previous (index-1); "Bring
+  // to front" / "Send to back" = top / bottom of the parent stack. No-op (at
+  // the boundary or a one-element parent) returns ok with an empty patch list.
+
+  const bringToFront: Command<{ readonly itemId: string }, void> = {
+    name: "weave.item.bringToFront",
     run: (ctx, input) => {
-      const container = findContainer(ctx.document, input.containerId);
-      if (container === undefined) {
-        return fail(
-          "container-not-found",
-          `weave.design.reorderChildren: container ${input.containerId} not in doc`,
-        );
+      // Guard keeps the `item-not-found` code uniform across all four commands
+      // (the library command would otherwise return `invalid-unknown-item`).
+      if (findParentAndIndex(ctx.document, input.itemId) === undefined) {
+        return fail("item-not-found", `weave.item.bringToFront: no item "${input.itemId}"`);
       }
-      const before = container.children.map((c) => c.id);
-      // Validate: `input.order` must be a permutation of current children
-      const beforeSet = new Set(before.map(String));
-      const afterSet = new Set(input.order);
-      if (beforeSet.size !== afterSet.size || [...beforeSet].some((id) => !afterSet.has(id))) {
-        return fail(
-          "order-mismatch",
-          `weave.design.reorderChildren: order ${JSON.stringify(input.order)} is not a permutation of current children`,
-        );
-      }
-      const after = input.order.map((s) => {
-        const found = before.find((id) => String(id) === s);
-        if (found === undefined) {
-          throw new Error(`unreachable: validated above`);
-        }
-        return found;
-      });
-      return ok(undefined, [
-        {
-          type: "item.children.reorder",
-          itemId: container.id,
-          before,
-          after,
-        },
-      ]);
+      return moveToTopCommand.run(ctx, { itemId: makeItemId(input.itemId) });
     },
   };
-
-  // ─── WI-038 — Per-item z-order commands ───────────────────────────────
-  //
-  // After WI-032's frame-only paradigm the only z-order surface (Peek mode)
-  // could only reorder root.children, but the real demo doc has a single
-  // root frame whose primitives are nested one level down — so dragging
-  // in the peek inspector did nothing user-visible. These four commands
-  // emit a single `item.children.reorder` patch against the item's *direct
-  // parent container*, so the same dispatch works whether the selected
-  // item is a top-level frame or a primitive inside a frame.
-  //
-  // Z-stacking convention: paint order = doc order. `children[0]` is the
-  // bottom, `children[N-1]` is the top. "Bring forward" = swap with the
-  // sibling at index+1, "Send backward" = swap with index-1. "Bring to
-  // front" / "Send to back" splice the item to the end / start.
-  //
-  // No-op (already at front/back, or one-element parent) returns ok with
-  // an empty patch list so callers don't have to special-case the
-  // boundary — the editor / history records nothing because nothing
-  // changed.
-
-  function zorderTargetIndex(
-    length: number,
-    indexInParent: number,
-    direction: "forward" | "backward" | "front" | "back",
-  ): number | null {
-    if (length <= 1) return null;
-    const lastIdx = length - 1;
-    let targetIdx: number;
-    if (direction === "forward") targetIdx = Math.min(lastIdx, indexInParent + 1);
-    else if (direction === "backward") targetIdx = Math.max(0, indexInParent - 1);
-    else if (direction === "front") targetIdx = lastIdx;
-    else targetIdx = 0;
-    if (targetIdx === indexInParent) return null;
-    return targetIdx;
-  }
-
-  const makeZOrderCommand = (
-    name: string,
-    direction: "forward" | "backward" | "front" | "back",
-  ): Command<{ readonly itemId: string }, void> => ({
-    name,
+  const sendToBack: Command<{ readonly itemId: string }, void> = {
+    name: "weave.item.sendToBack",
+    run: (ctx, input) => {
+      if (findParentAndIndex(ctx.document, input.itemId) === undefined) {
+        return fail("item-not-found", `weave.item.sendToBack: no item "${input.itemId}"`);
+      }
+      return moveToBottomCommand.run(ctx, { itemId: makeItemId(input.itemId) });
+    },
+  };
+  const bringForward: Command<{ readonly itemId: string }, void> = {
+    name: "weave.item.bringForward",
+    run: (ctx, input) => {
+      // "One step forward" = above the immediate next sibling — weave's policy
+      // for which sibling counts as one step; the splice itself is the adapter's.
+      const found = findParentAndIndex(ctx.document, input.itemId);
+      if (found === undefined) {
+        return fail("item-not-found", `weave.item.bringForward: no item "${input.itemId}"`);
+      }
+      const { parent, indexInParent } = found;
+      const targetIdx = Math.min(parent.children.length - 1, indexInParent + 1);
+      if (targetIdx === indexInParent) return ok(undefined, []);
+      const targetId = String(parent.children[targetIdx]?.id);
+      return moveAboveCommand.run(ctx, {
+        itemId: makeItemId(input.itemId),
+        targetId: makeItemId(targetId),
+      });
+    },
+  };
+  const sendBackward: Command<{ readonly itemId: string }, void> = {
+    name: "weave.item.sendBackward",
     run: (ctx, input) => {
       const found = findParentAndIndex(ctx.document, input.itemId);
       if (found === undefined) {
-        return fail(
-          "item-not-found",
-          `${name}: no item with id "${input.itemId}" (or it is the root)`,
-        );
+        return fail("item-not-found", `weave.item.sendBackward: no item "${input.itemId}"`);
       }
       const { parent, indexInParent } = found;
-      const targetIdx = zorderTargetIndex(parent.children.length, indexInParent, direction);
-      if (targetIdx === null) return ok(undefined, []);
-      const before = parent.children.map((c) => c.id);
-      const after = [...before];
-      const [moved] = after.splice(indexInParent, 1);
-      if (moved === undefined) return ok(undefined, []);
-      after.splice(targetIdx, 0, moved);
-      return ok(undefined, [
-        {
-          type: "item.children.reorder",
-          itemId: parent.id,
-          before,
-          after,
-        },
-      ]);
+      const targetIdx = Math.max(0, indexInParent - 1);
+      if (targetIdx === indexInParent) return ok(undefined, []);
+      const targetId = String(parent.children[targetIdx]?.id);
+      return moveBelowCommand.run(ctx, {
+        itemId: makeItemId(input.itemId),
+        targetId: makeItemId(targetId),
+      });
     },
-  });
-
-  const bringForward = makeZOrderCommand("weave.item.bringForward", "forward");
-  const sendBackward = makeZOrderCommand("weave.item.sendBackward", "backward");
-  const bringToFront = makeZOrderCommand("weave.item.bringToFront", "front");
-  const sendToBack = makeZOrderCommand("weave.item.sendToBack", "back");
+  };
 
   // ─── WI-039 — Item / Frame reparent ─────────────────────────────────────
   //
@@ -821,120 +695,17 @@ export function buildWeaveCommands(
   // Validation responsibility (HANDOFF-002 §3): agocraft's patch reducer
   // does NOT check cycle / dedupe / unknown — surface UI + this command
   // body are the two defensive tiers.
-  type ReparentInput = {
-    readonly entries: ReadonlyArray<{
-      readonly itemId: string;
-      readonly newParentId: string;
-    }>;
-    // Design pixel size — sets the aspect ratio of the space rotations are
-    // composed in. Only affects the result when a rotated ANCESTOR is in the
-    // old or new chain AND the design is non-square; omit (→ unit square) is
-    // exact for every other case. Hosts pass the live design.width/height.
-    readonly designWidth?: number;
-    readonly designHeight?: number;
-  };
-  type ReparentEntry = Extract<Patch, { type: "item.reparent" }>["entries"][number];
-
-  const reparentItem: Command<ReparentInput, void> = {
+  // WI-025 (DR-025 S3 increment 2) — reparent absorbed into the editing-command
+  // kit. weave injects only the NAME + its geometry (`computeReparentFrameRatio`,
+  // sourced from @agocraft/spatial) + the LayoutEngine reflow hook (gated on
+  // LAYOUT_FEATURE_ENABLED). The kit owns dedupe + cycle guard (HANDOFF-002
+  // middle tier) + the item.reparent assembly; same behavior + `reparent-cycle`
+  // error code as the prior inline body.
+  const reparentItem = createReparentCommand({
     name: "weave.item.reparent",
-    run: (ctx, input) => {
-      const requested = input.entries;
-      if (requested.length === 0) return ok(undefined, []); // no-op
-
-      // Dedupe — same itemId twice = caller bug; keep last entry. agocraft
-      // doesn't reject duplicates (Q1, HANDOFF-002 §4) so doing it here.
-      const dedup = new Map<string, (typeof requested)[number]>();
-      for (const e of requested) dedup.set(e.itemId, e);
-      const uniqueEntries = [...dedup.values()];
-
-      // Cycle guard — reject if newParentId is the item itself or any
-      // of its descendants. 3-tier defense's middle tier (surface UI is
-      // first, agocraft is intentionally absent).
-      for (const e of uniqueEntries) {
-        if (e.newParentId === e.itemId) {
-          return fail(
-            "reparent-cycle",
-            `weave.item.reparent: newParentId "${e.newParentId}" equals itemId`,
-          );
-        }
-        const descendants = findDescendantSet(ctx.document, e.itemId);
-        if (descendants.has(e.newParentId)) {
-          return fail(
-            "reparent-cycle",
-            `weave.item.reparent: newParentId "${e.newParentId}" is a descendant of "${e.itemId}"`,
-          );
-        }
-      }
-
-      // Compute oldState + newFrameRatio for every entry. The new frame is
-      // computed by `computeReparentFrameRatio` which preserves the item's
-      // (and therefore its whole subtree's) ON-SCREEN position + rotation —
-      // rotation-aware end to end, so reparenting into / out of a rotated
-      // ancestor lands the item where the user sees it. designWidth/Height
-      // (default unit square) set the rotation aspect ratio; they only
-      // matter for a rotated ancestor under a non-square design.
-      const designW = input.designWidth ?? 1;
-      const designH = input.designHeight ?? 1;
-      const patchEntries: ReparentEntry[] = [];
-      for (const e of uniqueEntries) {
-        const cur = findParentAndIndex(ctx.document, e.itemId);
-        if (cur === undefined) continue; // unknown item — skip
-        const item = findItemDeep(ctx.document, e.itemId);
-        if (item === undefined) continue;
-        const newParent = findItemDeep(ctx.document, e.newParentId);
-        if (newParent === undefined) continue;
-
-        const newFrameRatio = computeReparentFrameRatio(
-          ctx.document,
-          e.itemId,
-          e.newParentId,
-          designW,
-          designH,
-        );
-        if (newFrameRatio === null) continue;
-
-        // oldFrameRatio = the item's current attrs.frame (already old-parent-relative).
-        const itemFrame = (item.attrs as { frame?: ReparentEntry["oldFrameRatio"] }).frame;
-        if (itemFrame === undefined) continue;
-
-        patchEntries.push({
-          itemId: item.id,
-          oldParentId: cur.parent.id,
-          oldIndex: cur.indexInParent,
-          oldFrameRatio: itemFrame,
-          newParentId: newParent.id,
-          newIndex: newParent.children.length, // v1 = append to end of new parent
-          newFrameRatio,
-        });
-      }
-
-      if (patchEntries.length === 0) return ok(undefined, []);
-
-      // WI-019/WI-021 — the moved item LEFT its old parent's layout and
-      // JOINED the new parent's, so the new parent's layout now owns its
-      // position (and its per-child policy is reassigned to the new
-      // paradigm); the old parent reflows to close the gap. The agocraft
-      // LayoutEngine owns all of this — weave only appends the returned
-      // full-attrs Patches AFTER the tree-move patch (so the reducer finds
-      // the item under its new parent). Computed against the pre-move doc;
-      // the engine simulates the move.
-      const layoutPatches: Patch[] = [];
-      if (LAYOUT_FEATURE_ENABLED) {
-        const engine = getLayoutEngine();
-        for (const pe of patchEntries) {
-          layoutPatches.push(
-            ...engine.onReparent({
-              root: ctx.document.root,
-              itemId: pe.itemId,
-              oldParentId: pe.oldParentId,
-              newParentId: pe.newParentId,
-            }),
-          );
-        }
-      }
-      return ok(undefined, [{ type: "item.reparent", entries: patchEntries }, ...layoutPatches]);
-    },
-  };
+    computeFrameRatio: computeReparentFrameRatio,
+    onReparentLayout: (args) => (LAYOUT_FEATURE_ENABLED ? getLayoutEngine().onReparent(args) : []),
+  });
 
   // ─── WI-050 — Delete a frame, keep its children ──────────────────────────
   //
@@ -952,86 +723,16 @@ export function buildWeaveCommands(
   //   2. reparent⁻¹ → move the children from root back into the frame.
   // Staging the frame WITH its children would duplicate them on undo (they'd
   // come back via both the re-add AND the reparent inverse).
-  const removeFrameKeepingChildren: Command<RemoveFrameKeepingChildrenInput, void> = {
+  // WI-025 (DR-025 S3 increment 2) — dissolve absorbed into the editing-command
+  // kit. The kit owns the load-bearing compose invariant: item.reparent
+  // (children→root) FIRST, then item.remove carrying the EMPTIED frame, so undo
+  // (reverse order) re-adds the empty frame then re-homes the children without
+  // duplication. weave injects only the NAME + geometry. Same `invalid-target`
+  // / `item-not-found` error codes as the prior inline body.
+  const removeFrameKeepingChildren = createDissolveFrameCommand({
     name: "weave.frame.removeKeepingChildren",
-    run: (ctx, input) => {
-      const rootId = String(ctx.document.root.id);
-      if (input.frameId === rootId) {
-        return fail(
-          "invalid-target",
-          `weave.frame.removeKeepingChildren: cannot dissolve the root design`,
-        );
-      }
-      const found = findParentAndIndex(ctx.document, input.frameId);
-      const frame = findItemDeep(ctx.document, input.frameId);
-      if (found === undefined || frame === undefined) {
-        return fail(
-          "item-not-found",
-          `weave.frame.removeKeepingChildren: frame ${input.frameId} not in doc`,
-        );
-      }
-      const parent = found.parent;
-
-      // designWidth/Height only matter when a rotated ancestor sits in the
-      // chain under a non-square design; omit → unit square is exact for
-      // every other case (same contract as weave.item.reparent).
-      const designW = input.designWidth ?? 1;
-      const designH = input.designHeight ?? 1;
-      const rootChildCount = ctx.document.root.children.length;
-
-      // One reparent patch carrying every direct child → root. Only the
-      // child's OWN frame becomes root-relative; its subtree rides along
-      // unchanged. `newIndex` counts up from the root's current child count
-      // so the children land in their original stacking order (the reducer
-      // clamps each insert to the growing child list).
-      const patchEntries: ReparentEntry[] = [];
-      let appendPos = 0;
-      frame.children.forEach((child, indexInFrame) => {
-        const itemFrame = (child.attrs as { frame?: ReparentEntry["oldFrameRatio"] }).frame;
-        if (itemFrame === undefined) return; // items always carry a frame; skip defensively
-        // Destructive op — a child must never be lost. Fall back to its
-        // current frame if the rotation-aware ratio can't be computed.
-        const computed = computeReparentFrameRatio(
-          ctx.document,
-          String(child.id),
-          rootId,
-          designW,
-          designH,
-        );
-        patchEntries.push({
-          itemId: child.id,
-          oldParentId: frame.id,
-          oldIndex: indexInFrame,
-          oldFrameRatio: itemFrame,
-          newParentId: ctx.document.root.id,
-          newIndex: rootChildCount + appendPos,
-          newFrameRatio: computed ?? itemFrame,
-        });
-        appendPos += 1;
-      });
-
-      // Stage the EMPTY frame so undo's re-add restores an empty container;
-      // the reparent inverse then re-homes the children. (See header.)
-      const emptyFrame: AgocraftItem = { ...frame, children: [] };
-      if (pending !== undefined) {
-        pending.stage(emptyFrame);
-      } else {
-        targets.removeItem(input.frameId);
-      }
-
-      const patches: Patch[] = [];
-      if (patchEntries.length > 0) {
-        patches.push({ type: "item.reparent", entries: patchEntries });
-      }
-      patches.push({
-        type: "item.children",
-        itemId: parent.id,
-        added: [],
-        removed: [makeItemId(input.frameId)],
-      });
-      return ok(undefined, patches);
-    },
-  };
+    computeFrameRatio: computeReparentFrameRatio,
+  });
 
   // WI-030 — Slide preset batch insert.
   //
@@ -1081,22 +782,14 @@ export function buildWeaveCommands(
         now,
       });
 
-      if (pending !== undefined) {
-        pending.stage(slide);
-      } else {
-        // Host fallback — useDocument.addItem can't carry the pre-built
-        // subtree, so degrade gracefully to a single empty frame. Tests
-        // that need the full subtree should provide `pending`.
-        targets.addItem("frame");
-        return ok(String(slide.id), []);
-      }
-
+      // WI-024 Phase 2b — self-contained item.create carries the full preset
+      // subtree; one history entry, Cmd+Z reverts the whole preset.
       const patches: Patch[] = [
         {
-          type: "item.children",
-          itemId: container.id,
-          added: [slide.id],
-          removed: [],
+          type: "item.create",
+          parentId: container.id,
+          position: container.children.length,
+          item: serializeItemSubtree(slide),
         },
       ];
       return ok(String(slide.id), patches);
@@ -1126,50 +819,6 @@ export function buildWeaveCommands(
   // SESSION_ORIGIN is module-level (clipboard-types.ts) so the
   // BroadcastChannel transport can read the same constant — see
   // `mountBroadcastChannelTransport`.
-
-  /** Persistent counter — bumped each time a paste lands. Reset to 0
-   *  whenever a new payload is written (a fresh copy). The counter only
-   *  needs single-session lifetime so a module-level closure suffices. */
-  let pasteStackIndex = 0;
-
-  interface ClipboardCopyInput {
-    /** Items to copy, in selection order. Every id is serialised into the
-     *  clipboard payload (multi-select copy); paste clones them all. */
-    readonly itemIds: ReadonlyArray<string>;
-  }
-
-  interface ClipboardCutInput extends ClipboardCopyInput {
-    /** Fallback parent container hint. Each cut item's removal patch
-     *  targets its own resolved parent; this is only used when an item's
-     *  parent can't be resolved from the live doc. */
-    readonly containerId?: string;
-  }
-
-  interface ClipboardPasteInput {
-    /** Target container for the `everything` mode. Defaults to the
-     *  document root. Ignored by Paste Special modes — those mutate
-     *  `targetIds` in place. */
-    readonly containerId?: string;
-    /** Resolved pixel size of the destination container. Provided by the
-     *  host (FrameStage knows the rendered frame box). Required for the
-     *  D5 paste-coordinate resolver. */
-    readonly containerSizePx: { readonly width: number; readonly height: number };
-    /** Pointer's last frame-local pixel position when paste fires via a
-     *  pointer-context (Cmd+V right after a hover, ContextMenu paste).
-     *  `undefined` for keyboard-only paste — the resolver falls back to
-     *  the source frame + offset. */
-    readonly pointerInContainer?: PasteCoordInput["pointerInContainer"];
-    /** Paste mode (DR-019 D6). Defaults to `"everything"` for plain
-     *  Cmd+V. Cmd+Opt+V opens the Paste Special dialog which then
-     *  invokes this command with one of the four "only" modes. */
-    readonly mode?: PasteMode;
-    /** Currently-selected target Item ids. Required by every Paste
-     *  Special mode (style / text / size / position). v1 v iterates
-     *  the list and emits one Patch per target so a single Cmd+Z
-     *  reverts every recipient at once (history's automerge collapses
-     *  same-transaction patches into one entry). */
-    readonly targetIds?: ReadonlyArray<string>;
-  }
 
   // ── Paste Special handlers — declarative registry (Rule 6) ──────────────
   //
@@ -1299,395 +948,75 @@ export function buildWeaveCommands(
     position: pastePositionHandler,
   };
 
-  const clipboardCopy: Command<ClipboardCopyInput, void> = {
-    name: "weave.clipboard.copy",
-    run: (ctx: CommandContext, input: ClipboardCopyInput) => {
-      if (input.itemIds.length === 0) {
-        return fail("nothing-selected", "No items selected to copy");
-      }
-      // Serialise every selected subtree (multi-select copy). Missing ids
-      // are skipped; the order follows the selection so paste preserves it.
-      const serializedItems: SerializedItem[] = [];
-      let totalNodes = 0;
-      for (const id of input.itemIds) {
-        const item = findItemDeep(ctx.document, id);
-        if (item === undefined) continue;
-        const s = serializeItemSubtree(item);
-        totalNodes += countSubtreeNodes(s);
-        serializedItems.push(s);
-      }
-      const first = serializedItems[0];
-      if (first === undefined) {
-        return fail(
-          "item-not-found",
-          `weave.clipboard.copy: none of [${input.itemIds.join(", ")}] are in the doc`,
-        );
-      }
-      // Phase 4 — MAX_PASTE_NODES gate, now summed across the whole
-      // selection. Refused copies leave the existing clipboard untouched so
-      // users can still paste their last successful copy. The host's
-      // hotkey / context-menu dispatcher surfaces `clipboard-too-large`.
-      if (totalNodes > MAX_PASTE_NODES) {
-        return fail(
-          "clipboard-too-large",
-          `weave.clipboard.copy: selection has ${totalNodes} nodes, max ${MAX_PASTE_NODES}`,
-          { nodes: totalNodes, max: MAX_PASTE_NODES },
-        );
-      }
-      const parent = findParentAndIndex(ctx.document, String(input.itemIds[0]));
-      const payload: ItemsClipboardPayload = {
-        schemaVersion: 1,
-        appVersion: APP_VERSION,
-        origin: SESSION_ORIGIN,
-        timestamp: Date.now(),
-        kind: "weave/items.v1",
-        data: {
-          item: first,
-          items: serializedItems,
-          relations: [],
-          ...(parent !== undefined ? { sourceParentId: String(parent.parent.id) } : {}),
-        },
+  // WI-025 (DR-025 S3 increment 5) — copy / cut / paste("everything") absorbed
+  // into the @agocraft/core clipboard kit. weave injects its host-specific bits:
+  //   • transport  — the clipboardStore (adapted: kit payloads carry a `string`
+  //                  kind + required `items`; weave's store uses a literal kind
+  //                  + optional `items`, normalized here on read).
+  //   • envelope   — payloadKind / appVersion / origin / clock.
+  //   • resolvePasteFrame — weave's paste-coord policy (stacking + pointer).
+  //   • pasteSpecial — the style/text/size/position handlers (host attr-
+  //                  semantics) stay in weave and are dispatched by the kit.
+  // The kit owns serialize+cap, the paste-stack counter, remapIds, and the
+  // item.create / item.remove assembly. Same `weave.*` names + behavior.
+  const clipboardTransport: ClipboardTransport = {
+    write: (p) => clipboardStore.write(p as unknown as KnownClipboardPayload),
+    read: () => {
+      const p = clipboardStore.read();
+      if (p === undefined) return undefined;
+      // Normalize to the kit's required `items` (back-compat with payloads
+      // written before the multi-item field).
+      return { ...p, data: { ...p.data, items: p.data.items ?? [p.data.item] } };
+    },
+  };
+  const {
+    copy: clipboardCopy,
+    cut: clipboardCut,
+    paste: clipboardPaste,
+  } = createClipboardCommands({
+    names: {
+      copy: "weave.clipboard.copy",
+      cut: "weave.clipboard.cut",
+      paste: "weave.clipboard.paste",
+    },
+    transport: clipboardTransport,
+    payloadKind: "weave/items.v1",
+    appVersion: APP_VERSION,
+    origin: SESSION_ORIGIN,
+    now: () => Date.now(),
+    maxNodes: MAX_PASTE_NODES,
+    resolvePasteFrame: (a) => {
+      const base = {
+        sourceFrame: a.sourceFrame as ItemFrame,
+        containerSizePx: a.containerSizePx,
+        pasteIndex: a.pasteIndex,
       };
-      clipboardStore.write(payload);
-      pasteStackIndex = 0; // fresh payload — reset paste-stacking offset
-      return ok(undefined, []);
+      return a.pointerInContainer !== undefined
+        ? resolvePasteFrame({
+            ...base,
+            pointerInContainer: a.pointerInContainer as NonNullable<
+              PasteCoordInput["pointerInContainer"]
+            >,
+          })
+        : resolvePasteFrame(base);
     },
-  };
+    pasteSpecial: PASTE_SPECIAL_HANDLERS as Readonly<Record<string, StyleHandler>>,
+  });
 
-  const clipboardCut: Command<ClipboardCutInput, void> = {
-    name: "weave.clipboard.cut",
-    run: (ctx: CommandContext, input: ClipboardCutInput) => {
-      if (input.itemIds.length === 0) {
-        return fail("nothing-selected", "No items selected to cut");
-      }
-      // First serialise the whole selection to the clipboard — a
-      // side-effect that happens BEFORE any removal so a paste right after
-      // (or in another tab) sees the snapshot, and so the cap check below
-      // can refuse before mutating the doc.
-      const serializedItems: SerializedItem[] = [];
-      let totalNodes = 0;
-      for (const id of input.itemIds) {
-        const item = findItemDeep(ctx.document, id);
-        if (item === undefined) continue;
-        const s = serializeItemSubtree(item);
-        totalNodes += countSubtreeNodes(s);
-        serializedItems.push(s);
-      }
-      const first = serializedItems[0];
-      if (first === undefined) {
-        return fail(
-          "item-not-found",
-          `weave.clipboard.cut: none of [${input.itemIds.join(", ")}] are in the doc`,
-        );
-      }
-      // Phase 4 — MAX_PASTE_NODES gate, summed across the selection. A cut
-      // above the cap is refused BEFORE any removal patch fires, so the
-      // source items stay in the doc and the user can recover.
-      if (totalNodes > MAX_PASTE_NODES) {
-        return fail(
-          "clipboard-too-large",
-          `weave.clipboard.cut: selection has ${totalNodes} nodes, max ${MAX_PASTE_NODES}`,
-          { nodes: totalNodes, max: MAX_PASTE_NODES },
-        );
-      }
-      const primaryParent = findParentAndIndex(ctx.document, String(input.itemIds[0]));
-      const payload: ItemsClipboardPayload = {
-        schemaVersion: 1,
-        appVersion: APP_VERSION,
-        origin: SESSION_ORIGIN,
-        timestamp: Date.now(),
-        kind: "weave/items.v1",
-        data: {
-          item: first,
-          items: serializedItems,
-          relations: [],
-          ...(primaryParent !== undefined
-            ? { sourceParentId: String(primaryParent.parent.id) }
-            : {}),
-        },
-      };
-      clipboardStore.write(payload);
-      pasteStackIndex = 0;
-      // Now the structural removal — one `item.children { removed }` patch
-      // per item, each targeting the item's *actual* parent (not the
-      // hinted `input.containerId`) so nested items are removed correctly.
-      // All patches land in one transaction → a single Cmd+Z restores the
-      // whole cut.
-      const fallback = findContainer(ctx.document, input.containerId);
-      const patches: Patch[] = [];
-      for (const id of input.itemIds) {
-        const item = findItemDeep(ctx.document, id);
-        if (item === undefined) continue;
-        const parent = findParentAndIndex(ctx.document, id);
-        if (pending !== undefined) {
-          pending.stage(item); // so undo can restore the original Item shape
-        } else {
-          targets.removeItem(id);
-        }
-        const removalContainerId =
-          parent !== undefined ? parent.parent.id : (fallback?.id ?? ctx.document.root.id);
-        patches.push({
-          type: "item.children",
-          itemId: removalContainerId,
-          added: [],
-          removed: [makeItemId(id)],
-        });
-      }
-      return ok(undefined, patches);
-    },
-  };
-
-  const clipboardPaste: Command<ClipboardPasteInput, ReadonlyArray<string>> = {
-    name: "weave.clipboard.paste",
-    run: (ctx: CommandContext, input: ClipboardPasteInput) => {
-      const payload = clipboardStore.read();
-      if (payload === undefined) {
-        return fail("clipboard-empty", "weave.clipboard.paste: clipboard is empty");
-      }
-      if (payload.kind !== "weave/items.v1") {
-        return fail(
-          "unsupported-kind",
-          `weave.clipboard.paste: kind "${payload.kind}" not supported in v1`,
-        );
-      }
-
-      // Paste Special — mode-aware dispatch through the registry. The
-      // four "only" modes don't touch the document tree; they project a
-      // slice of the (primary) source's attrs onto every selected target.
-      const mode: PasteMode = input.mode ?? "everything";
-      if (mode !== "everything") {
-        const handler = PASTE_SPECIAL_HANDLERS[mode];
-        const targetIds = input.targetIds ?? [];
-        if (targetIds.length === 0) {
-          return fail(
-            "no-targets",
-            `weave.clipboard.paste(${mode}): no selected targets to apply to`,
-          );
-        }
-        const patches = handler({
-          doc: ctx.document,
-          sourceAttrs: payload.data.item.attrs,
-          targetIds,
-        });
-        // Empty patch list = source had no applicable slice or none of
-        // the targets accept it (e.g., `text` mode on a non-text
-        // selection). Return ok so the clipboard stays intact and the
-        // host's Paste Special dialog closes cleanly.
-        return ok([], patches);
-      }
-
-      const container = findContainer(ctx.document, input.containerId);
-      if (container === undefined) {
-        return fail(
-          "container-not-found",
-          `weave.clipboard.paste: container ${input.containerId} not in doc`,
-        );
-      }
-      if (pending === undefined) {
-        // The host MUST initialise the editor with a `PendingCreations`
-        // side-channel (every production path does). Falling back to a
-        // direct `targets.addItem` would lose the subtree shape, so we
-        // refuse instead.
-        return fail(
-          "no-pending-channel",
-          "weave.clipboard.paste: PendingCreations side-channel not configured",
-        );
-      }
-
-      // Multi-item paste: clone every copied subtree. Fall back to the
-      // single `item` for payloads written before the `items` field (or by
-      // an older tab). Pointer-centring only makes sense for a single item;
-      // for a multi-paste we keep each item's own source frame and apply
-      // the same stack offset so relative positions are preserved.
-      const sources = payload.data.items ?? [payload.data.item];
-      const idGen = ctx.resolve(IdGeneratorToken);
-      pasteStackIndex += 1;
-      const usePointer = sources.length === 1 && input.pointerInContainer !== undefined;
-      const patches: Patch[] = [];
-      const newIds: string[] = [];
-      for (const source of sources) {
-        // 1) Re-issue every ItemId / UnitId so a same-doc paste never
-        //    collides with the source (DR-019 D3).
-        const { subtree } = remapIds(source, idGen, payload.data.relations);
-        // 2) Resolve the destination frame from this item's own source frame.
-        const sourceFrame: ItemFrame = (source.attrs as { frame?: ItemFrame }).frame ?? {
-          x: 0,
-          y: 0,
-          width: 0.5,
-          height: 0.5,
-          rotation: 0,
-        };
-        const newFrame = resolvePasteFrame({
-          sourceFrame,
-          containerSizePx: input.containerSizePx,
-          pasteIndex: pasteStackIndex,
-          ...(usePointer ? { pointerInContainer: input.pointerInContainer } : {}),
-        });
-        // 3) Convert → AgocraftItem and overwrite the root frame. Children's
-        //    frames are parent-relative ratios — the layout survives.
-        const pastedRoot = serializedItemToAgocraft(subtree);
-        const pastedWithFrame: AgocraftItem = {
-          ...pastedRoot,
-          attrs: { ...pastedRoot.attrs, frame: newFrame } as typeof pastedRoot.attrs,
-        };
-        // 4) Stage each subtree and emit one `item.children { added }`
-        //    patch. All patches land in one transaction → a single Cmd+Z
-        //    reverts the whole paste.
-        pending.stage(pastedWithFrame);
-        patches.push({
-          type: "item.children",
-          itemId: container.id,
-          added: [pastedWithFrame.id],
-          removed: [],
-        });
-        newIds.push(String(pastedWithFrame.id));
-      }
-      return ok(newIds, patches);
-    },
-  };
-
-  // Cmd+D duplicate — deep-clone the selected subtree in place (no
-  // clipboard involvement, so the user's copy buffer is untouched). Reuses
-  // the same serialize → remap-ids → convert pipeline as paste, reads the
-  // source from the live doc, offsets the root frame slightly so the copy
-  // is visible, and stages it as a sibling under the source's parent. One
-  // `item.children { added }` patch → a single Cmd+Z reverts the whole copy.
-  interface DuplicateItemInput {
-    readonly itemId: string;
-  }
-  const duplicateItem: Command<DuplicateItemInput, string> = {
+  // WI-025 (DR-025 S3 increment 3) — duplicate (single + batch) absorbed into
+  // the editing-command kit. Deep-clone (fresh ids) → nudge the root frame →
+  // stage as a sibling via self-contained item.create; one transaction → one
+  // Cmd+Z. weave injects only the NAME + its MAX_PASTE_NODES cap (offset
+  // defaults to the same 0.02). Same behavior + error codes (item-not-found /
+  // no-parent / subtree-too-large) as the prior inline bodies.
+  const duplicateItem = createDuplicateItemCommand({
     name: "weave.item.duplicate",
-    run: (ctx: CommandContext, input: DuplicateItemInput) => {
-      const item = findItemDeep(ctx.document, input.itemId);
-      if (item === undefined) {
-        return fail("item-not-found", `weave.item.duplicate: no item with id "${input.itemId}"`);
-      }
-      const parent = findParentAndIndex(ctx.document, input.itemId);
-      if (parent === undefined) {
-        return fail(
-          "no-parent",
-          `weave.item.duplicate: ${input.itemId} has no parent (the root is not duplicable)`,
-        );
-      }
-      if (pending === undefined) {
-        return fail(
-          "no-pending-channel",
-          "weave.item.duplicate: PendingCreations side-channel not configured",
-        );
-      }
-      const serialized: SerializedItem = serializeItemSubtree(item);
-      const nodes = countSubtreeNodes(serialized);
-      if (nodes > MAX_PASTE_NODES) {
-        return fail(
-          "subtree-too-large",
-          `weave.item.duplicate: subtree has ${nodes} nodes, max ${MAX_PASTE_NODES}`,
-          { nodes, max: MAX_PASTE_NODES },
-        );
-      }
-      const idGen = ctx.resolve(IdGeneratorToken);
-      const { subtree } = remapIds(serialized, idGen, []);
-      const srcFrame: ItemFrame = (item.attrs as { frame?: ItemFrame }).frame ?? {
-        x: 0,
-        y: 0,
-        width: 0.5,
-        height: 0.5,
-        rotation: 0,
-      };
-      const OFFSET = 0.02;
-      const dupFrame: ItemFrame = {
-        ...srcFrame,
-        x: Math.min(Math.max(srcFrame.x + OFFSET, 0), Math.max(0, 1 - srcFrame.width)),
-        y: Math.min(Math.max(srcFrame.y + OFFSET, 0), Math.max(0, 1 - srcFrame.height)),
-      };
-      const dupRoot = serializedItemToAgocraft(subtree);
-      const dupWithFrame: AgocraftItem = {
-        ...dupRoot,
-        attrs: { ...dupRoot.attrs, frame: dupFrame } as typeof dupRoot.attrs,
-      };
-      pending.stage(dupWithFrame);
-      const patches: Patch[] = [
-        {
-          type: "item.children",
-          itemId: parent.parent.id,
-          added: [dupWithFrame.id],
-          removed: [],
-        },
-      ];
-      return ok(String(dupWithFrame.id), patches);
-    },
-  };
-
-  // Batch duplicate — every selected item's offset copy staged in ONE
-  // transaction so a single Cmd+Z removes them all (multi-duplicate parity
-  // with paste). Same clone pipeline as the single duplicate; the node cap
-  // is summed across the whole selection and checked BEFORE any staging so
-  // an oversized batch leaves the doc untouched.
-  interface DuplicateItemsInput {
-    readonly itemIds: ReadonlyArray<string>;
-  }
-  const duplicateItems: Command<DuplicateItemsInput, ReadonlyArray<string>> = {
+    maxNodes: MAX_PASTE_NODES,
+  });
+  const duplicateItems = createDuplicateItemsCommand({
     name: "weave.items.duplicate",
-    run: (ctx: CommandContext, input: DuplicateItemsInput) => {
-      if (input.itemIds.length === 0) return ok([], []);
-      if (pending === undefined) {
-        return fail(
-          "no-pending-channel",
-          "weave.items.duplicate: PendingCreations side-channel not configured",
-        );
-      }
-      const idGen = ctx.resolve(IdGeneratorToken);
-      const staged: { parentId: AgocraftItem["id"]; dup: AgocraftItem }[] = [];
-      let totalNodes = 0;
-      for (const id of input.itemIds) {
-        const item = findItemDeep(ctx.document, id);
-        if (item === undefined) continue;
-        const parent = findParentAndIndex(ctx.document, id);
-        if (parent === undefined) continue;
-        const serialized: SerializedItem = serializeItemSubtree(item);
-        totalNodes += countSubtreeNodes(serialized);
-        const { subtree } = remapIds(serialized, idGen, []);
-        const srcFrame: ItemFrame = (item.attrs as { frame?: ItemFrame }).frame ?? {
-          x: 0,
-          y: 0,
-          width: 0.5,
-          height: 0.5,
-          rotation: 0,
-        };
-        const OFFSET = 0.02;
-        const dupFrame: ItemFrame = {
-          ...srcFrame,
-          x: Math.min(Math.max(srcFrame.x + OFFSET, 0), Math.max(0, 1 - srcFrame.width)),
-          y: Math.min(Math.max(srcFrame.y + OFFSET, 0), Math.max(0, 1 - srcFrame.height)),
-        };
-        const dupRoot = serializedItemToAgocraft(subtree);
-        const dupWithFrame: AgocraftItem = {
-          ...dupRoot,
-          attrs: { ...dupRoot.attrs, frame: dupFrame } as typeof dupRoot.attrs,
-        };
-        staged.push({ parentId: parent.parent.id, dup: dupWithFrame });
-      }
-      if (totalNodes > MAX_PASTE_NODES) {
-        return fail(
-          "subtree-too-large",
-          `weave.items.duplicate: selection has ${totalNodes} nodes, max ${MAX_PASTE_NODES}`,
-          { nodes: totalNodes, max: MAX_PASTE_NODES },
-        );
-      }
-      const patches: Patch[] = [];
-      const newIds: string[] = [];
-      for (const s of staged) {
-        pending.stage(s.dup);
-        patches.push({
-          type: "item.children",
-          itemId: s.parentId,
-          added: [s.dup.id],
-          removed: [],
-        });
-        newIds.push(String(s.dup.id));
-      }
-      return ok(newIds, patches);
-    },
-  };
+    maxNodes: MAX_PASTE_NODES,
+  });
 
   // ─── WI-020 / WI-043 — explicit layout mutations ──────────────────────
   //
@@ -1704,113 +1033,37 @@ export function buildWeaveCommands(
   //      name without constructing a full WeaveItem projection.
   //   3. Hosts using the SDK get a typed surface for layout changes.
 
-  const setFrameLayout: Command<SetFrameLayoutInput, void> = {
+  // WI-025 (DR-025 S3 increment 4) — the 5 layout commands absorbed into the
+  // @agocraft/layout command kit (they live in the layout package because they
+  // are thin shells over the LayoutEngine, which already lives there). weave
+  // injects only the NAME + its engine accessor (`getLayoutEngine`) + the
+  // `LAYOUT_FEATURE_ENABLED` gate. Same behavior + `item-not-found` error code
+  // as the prior inline bodies (setFrameLayout is intentionally ungated).
+  const layoutGate = () => LAYOUT_FEATURE_ENABLED;
+  const setFrameLayout = createSetFrameLayoutCommand({
     name: "weave.frame.setLayout",
-    run: (ctx, input) => {
-      const child = findChild(ctx.document, input.itemId);
-      if (child === undefined) {
-        return fail("item-not-found", `weave.frame.setLayout: no item with id "${input.itemId}"`);
-      }
-      const before = (child.attrs as { layout?: import("@agocraft/core").LayoutSpec }).layout;
-      // No-op early-out — skip emitting a patch when the spec is identical
-      // (e.g. user clicks the already-selected SegmentedControl option).
-      if (before === input.layout) {
-        return ok(undefined, []);
-      }
-      // WI-021 — the LayoutEngine owns the paradigm switch: it returns the
-      // item.layout Patch plus the child Patches that rearrange + reassign
-      // per-child policy for the new paradigm (Absolute → no child Patches).
-      // weave only emits them.
-      const { layoutPatch, childPatches } = getLayoutEngine().onLayoutChange({
-        parent: child,
-        newLayout: input.layout,
-      });
-      return ok(undefined, [layoutPatch, ...childPatches]);
-    },
-  };
-
-  const setItemLayoutChild: Command<SetItemLayoutChildInput, void> = {
+    getEngine: getLayoutEngine,
+  });
+  const setItemLayoutChild = createSetItemLayoutChildCommand({
     name: "weave.item.setLayoutChild",
-    run: (ctx, input) => {
-      const child = findChild(ctx.document, input.itemId);
-      if (child === undefined) {
-        return fail(
-          "item-not-found",
-          `weave.item.setLayoutChild: no item with id "${input.itemId}"`,
-        );
-      }
-      const before = (child.attrs as { layoutChild?: import("@agocraft/core").LayoutChildPolicy })
-        .layoutChild;
-      if (before === input.policy) {
-        return ok(undefined, []);
-      }
-      // WI-019/WI-021 — changing a child's per-child policy (grow / alignSelf)
-      // must RE-LAY-OUT the parent so the change is visible immediately (e.g.
-      // flipping to grow makes the child fill). The agocraft LayoutEngine owns
-      // the reflow; its returned full-attrs Patch for the changed child carries
-      // the new policy, so it's the single source when a reflow happens.
-      if (LAYOUT_FEATURE_ENABLED && input.policy !== undefined) {
-        const reflow = getLayoutEngine().onChildPolicyChange({
-          root: ctx.document.root,
-          itemId: child.id,
-          newPolicy: input.policy,
-        });
-        if (reflow.length > 0) {
-          return ok(undefined, reflow);
-        }
-      }
-      // No layout / no reflow (absolute parent, or clearing) → just the policy.
-      const patch: Patch = {
-        type: "item.layoutChild",
-        itemId: child.id,
-        before,
-        after: input.policy,
-      };
-      return ok(undefined, [patch]);
-    },
-  };
-
-  // WI-043 — grid cell-swap (drag a selected grid child onto another). The
-  // engine swaps their cell placement + reflows; both moves ride one
-  // transaction so Cmd+Z is atomic.
-  const swapGridCells: Command<LayoutSiblingSwapInput, void> = {
+    getEngine: getLayoutEngine,
+    enabled: layoutGate,
+  });
+  const swapGridCells = createSwapGridCellsCommand({
     name: "weave.item.swapGridCells",
-    run: (ctx, input) => {
-      if (!LAYOUT_FEATURE_ENABLED || input.aId === input.bId) return ok(undefined, []);
-      const patches = getLayoutEngine().onGridCellSwap({
-        root: ctx.document.root,
-        aId: input.aId as import("@agocraft/core").ItemId,
-        bId: input.bId as import("@agocraft/core").ItemId,
-      });
-      return ok(undefined, patches);
-    },
-  };
-
-  const swapFlexOrder: Command<LayoutSiblingSwapInput, void> = {
+    getEngine: getLayoutEngine,
+    enabled: layoutGate,
+  });
+  const swapFlexOrder = createSwapFlexOrderCommand({
     name: "weave.item.swapFlexOrder",
-    run: (ctx, input) => {
-      if (!LAYOUT_FEATURE_ENABLED || input.aId === input.bId) return ok(undefined, []);
-      const patches = getLayoutEngine().onFlexReorder({
-        root: ctx.document.root,
-        aId: input.aId as import("@agocraft/core").ItemId,
-        bId: input.bId as import("@agocraft/core").ItemId,
-      });
-      return ok(undefined, patches);
-    },
-  };
-
-  const dropGridCell: Command<DropGridCellInput, void> = {
+    getEngine: getLayoutEngine,
+    enabled: layoutGate,
+  });
+  const dropGridCell = createDropGridCellCommand({
     name: "weave.item.dropGridCell",
-    run: (ctx, input) => {
-      if (!LAYOUT_FEATURE_ENABLED) return ok(undefined, []);
-      const patches = getLayoutEngine().onGridCellDrop({
-        root: ctx.document.root,
-        itemId: input.itemId as import("@agocraft/core").ItemId,
-        point: { x: input.x, y: input.y },
-      });
-      return ok(undefined, patches);
-    },
-  };
+    getEngine: getLayoutEngine,
+    enabled: layoutGate,
+  });
 
   return [
     addItem as Command,
@@ -1847,17 +1100,15 @@ export function buildWeaveCommands(
 }
 
 /** Register the command set on an editor. Returns a single teardown that
- *  unregisters all commands. When `pending` is provided, `weave.item.add`
- *  becomes event-sourced (stages new Items in the side-channel; reducer
- *  pulls them on item.children-added). Without it, addItem falls back to
- *  direct mutation via `targets.addItem`. */
+ *  unregisters all commands. Creation / removal commands emit self-contained
+ *  `item.create` / `unit.create` / `item.remove` / `unit.remove` patches
+ *  (WI-024) — no `PendingCreations` side-channel. */
 export function registerWeaveCommands(
   editor: Editor,
   targets: WeaveCommandTargets,
-  pending?: PendingCreations,
   presetRegistry?: PresetRegistry,
 ): () => void {
-  const commands = buildWeaveCommands(targets, pending, presetRegistry);
+  const commands = buildWeaveCommands(targets, presetRegistry);
   const registry = editor.container.resolve(CommandRegistryToken);
   const offs: Array<() => void> = [];
   for (const cmd of commands) {
