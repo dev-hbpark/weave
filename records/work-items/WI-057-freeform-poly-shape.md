@@ -59,13 +59,25 @@ Verify: e2e `shape-poly-vertex-edit.spec.ts` — select poly → 3 handles → d
 vertex 0 → moves right+down → **Cmd+Z reverts in one step**. All 10 shape e2e
 green.
 
-### Phase 2.1 — known limitation (follow-up)
+### Phase 2.1 — done (vertex add/remove + rotation-aware handles)
 
-- **Rotation**: handles track the item's axis-aligned bbox (`bounds`), so a
-  rotated poly's handles sit on the AABB, not the rotated vertices. Correct for
-  unrotated polys (the common case).
-- Add-vertex (double-click edge) / remove-vertex (Delete) + a dedicated
-  vertex-edit mode (vs always-on handles) are future niceties.
+- **Vertex add**: a hollow MIDPOINT handle per edge; pointer-down inserts a
+  vertex at that midpoint and the same gesture drags it (Figma-style).
+- **Vertex remove**: double-click a vertex handle removes it (floored at the
+  min — 3 closed / 2 open).
+- **Rotation-aware**: handles read the item's `transform: rotate(θ)` off
+  `[data-frame-id]`, recover the un-rotated frame size from (AABB, θ), and place
+  handles + invert the drag in the true rotated basis. (Exact 45° → the
+  AABB→size solve is singular; falls back to AABB. Measure-zero.)
+
+Verify: `shape-poly-vertex-edit.spec.ts` — drag (Cmd+Z reverts), midpoint add
+(3→4), double-click remove (4→3, floored at 3). All 12 shape e2e green.
+
+### Remaining (optional)
+
+- A dedicated vertex-edit *mode* (handles are currently always-on when a poly is
+  selected, alongside the default resize/rotate chrome).
+- Exact-45° rotation precision.
 
 ## Workflow trail
 

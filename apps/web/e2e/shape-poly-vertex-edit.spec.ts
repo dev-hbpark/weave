@@ -102,3 +102,53 @@ test("WI-057 — dragging a vertex handle moves the vertex; Cmd+Z reverts", asyn
   await page.waitForTimeout(80);
   await expect.poll(() => readVertex(page, id, 0)).toEqual({ x: 0.5, y: 0 });
 });
+
+async function countPoints(page: Page, itemId: string): Promise<number> {
+  return page.evaluate((cid) => {
+    type Pt = { x: number; y: number };
+    type N = {
+      id: unknown;
+      attrs?: { subAttrs?: { points?: ReadonlyArray<Pt> } };
+      children?: ReadonlyArray<N>;
+    };
+    const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<N> } } };
+    const find = (nodes: ReadonlyArray<N>): N | undefined => {
+      for (const n of nodes) {
+        if (String(n.id) === cid) return n;
+        const hit = find(n.children ?? []);
+        if (hit !== undefined) return hit;
+      }
+      return undefined;
+    };
+    return find(w.__weaveDoc?.root.children ?? [])?.attrs?.subAttrs?.points?.length ?? 0;
+  }, itemId);
+}
+
+test("WI-057 — midpoint handle inserts a vertex (3 → 4)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-057-add" });
+  const id = await addPoly(page);
+  await setSelection(page, [id]);
+  await expect(page.getByTestId("poly-midpoint-0")).toBeVisible();
+  expect(await countPoints(page, id)).toBe(3);
+
+  await page.getByTestId("poly-midpoint-0").click();
+  await expect.poll(() => countPoints(page, id)).toBe(4);
+});
+
+test("WI-057 — double-click a vertex removes it, but not below min 3", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-057-remove" });
+  const id = await addPoly(page);
+  await setSelection(page, [id]);
+
+  // Add one so we have 4, then remove one back to 3.
+  await page.getByTestId("poly-midpoint-0").click();
+  await expect.poll(() => countPoints(page, id)).toBe(4);
+
+  await page.getByTestId("poly-vertex-0").dblclick();
+  await expect.poll(() => countPoints(page, id)).toBe(3);
+
+  // A closed poly cannot drop below 3 — further removal is a no-op.
+  await page.getByTestId("poly-vertex-0").dblclick();
+  await page.waitForTimeout(100);
+  expect(await countPoints(page, id)).toBe(3);
+});

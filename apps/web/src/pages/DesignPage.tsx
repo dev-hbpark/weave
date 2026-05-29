@@ -693,14 +693,22 @@ function DesignPageBody() {
     return selectionChrome.registerItemViewModel(
       createPolyVertexHandleViewModel({
         editor,
-        getPolyPoints: (itemId) => {
+        getPoly: (itemId) => {
           const item = findItemDeep(docInAgocraftRef.current, itemId);
           const sub = (
             item?.attrs as
-              | { subAttrs?: { shape?: string; points?: ReadonlyArray<{ x: number; y: number }> } }
+              | {
+                  subAttrs?: {
+                    shape?: string;
+                    points?: ReadonlyArray<{ x: number; y: number }>;
+                    closed?: boolean;
+                  };
+                }
               | undefined
           )?.subAttrs;
-          return sub?.shape === "poly" ? (sub.points ?? []) : null;
+          return sub?.shape === "poly"
+            ? { points: sub.points ?? [], closed: sub.closed ?? true }
+            : null;
         },
       }),
     );
