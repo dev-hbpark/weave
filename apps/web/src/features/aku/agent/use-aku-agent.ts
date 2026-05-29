@@ -286,13 +286,21 @@ export function useAkuAgent(deps: {
           // Attached images go to the server for vision (data URLs; the server
           // parses media-type + bytes into the model's first turn).
           ...(images.length > 0 ? { images } : {}),
-          // `event` is the client's TaskEvent union (turn / response / tool). We
-          // surface it as a live activity caption + accumulate tool edit-chips so
-          // the panel visibly "works" before the final reply lands.
+          // `event` is the client's TaskEvent union (turn / message / response /
+          // tool). We stream the model's prose (`message`) into the bubble and
+          // accumulate tool edit-chips, so the panel reads explain → act.
           onEvent: (event) => {
             if (genRef.current !== gen) return;
             if (event.type === "turn") {
               patchLastAssistant((prev) => ({ ...prev, activity: "생각 중…" }));
+              return;
+            }
+            if (event.type === "message") {
+              // The model's plan / narration for this turn → append to the bubble.
+              patchLastAssistant((prev) => ({
+                ...prev,
+                text: prev.text === "" ? event.text : `${prev.text}\n\n${event.text}`,
+              }));
               return;
             }
             if (event.type === "response") {
@@ -318,7 +326,13 @@ export function useAkuAgent(deps: {
         const succeeded = res.ok && res.error === undefined;
         patchLastAssistant((prev) => ({
           ...prev,
-          text: succeeded ? (res.finalText ?? "") : (res.error ?? "요청을 처리하지 못했어요."),
+          // Keep the streamed prose if we got any; else fall back to finalText, or
+          // a confirmation when the turn was pure tool calls with no prose.
+          text: succeeded
+            ? prev.text !== ""
+              ? prev.text
+              : (res.finalText ?? "완료했어요.")
+            : (res.error ?? "요청을 처리하지 못했어요."),
           ...(succeeded ? {} : { error: true }),
           historyDepthAfter: depthAfter,
           undoEntryCount: Math.max(0, depthAfter - depthBefore),
