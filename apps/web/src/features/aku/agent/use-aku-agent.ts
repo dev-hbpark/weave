@@ -30,6 +30,7 @@ import type {
   AkuMessage,
   AkuStatus,
 } from "../types.js";
+import { WEAVE_CAPABILITIES, WEAVE_TASK_PRIMER } from "./weave-capabilities.js";
 import { WEAVE_COMMAND_LABELS, WEAVE_COMMAND_SCHEMAS } from "./weave-command-schemas.js";
 
 export interface UseAkuAgent {
@@ -53,6 +54,9 @@ export interface UseAkuAgent {
   readonly hasToken: boolean;
   /** Save a token (persisted to this browser) → unblocks the connection. */
   setToken(token: string): void;
+  /** Forget the saved token → returns the panel to the token-setup gate.
+   *  Use when a wrong token was entered (connection keeps failing). */
+  resetToken(): void;
 }
 
 /** Dev-default URL. Production must inject a real URL (the deployed weave is an
@@ -60,6 +64,8 @@ export interface UseAkuAgent {
  *  hardcoded fallback: when none is configured the panel prompts for it. */
 const DEV_URL = "ws://localhost:8788";
 const TOKEN_KEY = "weave.aku.token";
+/** Fail a stuck connection attempt instead of hanging the panel forever. */
+const CONNECT_TIMEOUT_MS = 15_000;
 
 function envStr(key: string): string | undefined {
   const v = (import.meta.env as Record<string, unknown>)[key];
@@ -69,9 +75,8 @@ function envStr(key: string): string | undefined {
 /** Token saved in this browser (per the no-account shared-workspace model). */
 function loadToken(): string | null {
   try {
-    return "REDACTED-DEV-TOKEN";
-    //const v = window.localStorage.getItem(TOKEN_KEY);
-    //return v !== null && v !== "" ? v : null;
+    const v = window.localStorage.getItem(TOKEN_KEY);
+    return v !== null && v !== "" ? v : null;
   } catch {
     return null;
   }
@@ -164,19 +169,34 @@ export function useAkuAgent(deps: {
     }
     if (connectingRef.current === null) {
       const schema = getDocumentRef.current().schema as Schema | undefined;
-      connectingRef.current = connectAgocraftAgent({
+      const connect = connectAgocraftAgent({
         editor,
         commands,
         getDocument: () => getDocumentRef.current(),
         schemas: WEAVE_COMMAND_SCHEMAS,
+        // Curated, weave-accurate capabilities → grounds the agent's (cached)
+        // system prompt in weave's kinds/attrs/coordinate model (WI-054 hardening).
+        capabilities: WEAVE_CAPABILITIES,
         userId: `weave:${designId === "" ? "default" : designId}`,
         url,
         token,
         ...(schema !== undefined ? { schema } : {}),
-      }).then((h) => {
-        handleRef.current = h;
-        return h;
       });
+      // Fail fast if the server never completes the handshake; on ANY failure
+      // clear the cached attempt so the next send reconnects cleanly.
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("연결 시간 초과")), CONNECT_TIMEOUT_MS),
+      );
+      connectingRef.current = Promise.race([connect, timeout]).then(
+        (h) => {
+          handleRef.current = h;
+          return h;
+        },
+        (err) => {
+          connectingRef.current = null;
+          throw err;
+        },
+      );
     }
     return connectingRef.current;
   }, [editor, commands, designId, url, token]);
@@ -209,13 +229,13 @@ export function useAkuAgent(deps: {
 
       const depthBefore = editor.history.undoSize();
 
-      // Selection is view-state (not in the server's document snapshot); surface
-      // it as context so "이걸 …" style prompts can target the current selection.
+      // Each submit is an independent server-side run (no conversation memory):
+      // give it the weave conventions primer + the current selection (view-state,
+      // absent from the document snapshot) so it can resolve "이걸 …" prompts.
       const selected = getSelectionRef.current();
-      const task =
-        selected.length > 0
-          ? `[컨텍스트] 현재 선택된 아이템 id: ${selected.join(", ")}\n\n${text}`
-          : text;
+      const selectionLine =
+        selected.length > 0 ? `\n\n[컨텍스트] 현재 선택된 아이템 id: ${selected.join(", ")}` : "";
+      const task = `${WEAVE_TASK_PRIMER}${selectionLine}\n\n${text}`;
 
       try {
         const handle = await getHandle();
@@ -308,6 +328,36 @@ export function useAkuAgent(deps: {
     setStatus("idle");
   }, [commit, designId]);
 
+  /** Drop any link opened with a prior token so the next send reconnects fresh. */
+  const dropLink = useCallback((): void => {
+    genRef.current += 1;
+    void handleRef.current?.close();
+    handleRef.current = null;
+    connectingRef.current = null;
+  }, []);
+
+  const setToken = useCallback(
+    (next: string): void => {
+      const t = next.trim();
+      if (t === "") return;
+      saveToken(t);
+      dropLink();
+      setTokenState(t);
+    },
+    [dropLink],
+  );
+
+  const resetToken = useCallback((): void => {
+    try {
+      window.localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      // ignore
+    }
+    dropLink();
+    setStatus("idle");
+    setTokenState(null);
+  }, [dropLink]);
+
   return {
     messages,
     status,
@@ -318,5 +368,8 @@ export function useAkuAgent(deps: {
     editFrom,
     clear,
     history,
+    hasToken,
+    setToken,
+    resetToken,
   };
 }

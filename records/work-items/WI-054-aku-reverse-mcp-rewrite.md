@@ -58,3 +58,37 @@ lifecycle(add/remove/items.remove/doc.reset) · attrs(item.update/items.resizeMu
 - apps/web `pnpm typecheck` = exit 0.
 - biome check (변경 파일) = 에러 0 (기존 경고 2건만).
 - `pnpm declarativecheck` (Rule 6) = 위반 없음.
+
+## 고도화 2026-05-30 — 에이전트 정상 동작 견고화 (검증 전 전반 보강)
+
+조사 결과 가장 큰 약점은 **에이전트가 받는 정보**였다. small-think design 프롬프트는 `capabilities`(캐시 블록) + 문서 스냅샷(원본 JSON, 20k자 컷)으로 구성되는데, `connectAgocraftAgent`의 자동 capabilities는 `description = kind`(플레이스홀더)뿐이라 에이전트가 attrs 의 **의미·좌표 규약**을 모른 채 추측한다. 또한 각 `submit`은 **독립 실행(대화 메모리 없음)** — 현재 문서 상태 + 주입 컨텍스트만 본다.
+
+보강(weave-local):
+
+- **`agent/weave-capabilities.ts`** — weave-정확 `WEAVE_CAPABILITIES`(5 itemKinds + 3 layoutKinds + 3 unitKinds)를 `connectAgocraftAgent({ capabilities })`로 주입. 각 kind에 의미·attrs·좌표(0..1 비율)·중첩(containerId) 규약을 서술 → 캐시되는 시스템 프롬프트에 들어가 정확도↑. `WEAVE_TASK_PRIMER`(좌표계/ id-discipline / create-then-adjust)는 매 task에 prepend(독립 실행이라 매번 필요, 토큰 소량).
+- **연결 견고화** (`use-aku-agent.ts`): 15s 연결 타임아웃 + 실패 시 `connectingRef` 해제(다음 전송에서 깨끗이 재연결). no-token 방어 가드.
+- **토큰 재설정** UX: 잘못된 토큰이 막다른 길이 되지 않게 `resetToken()` + 패널 헤더 "토큰 재설정" 버튼(저장 토큰 삭제 → 설정 게이트 복귀).
+
+검증: apps/web typecheck exit 0 · biome(변경 파일) 0건 · declarativecheck 위반 없음. (라이브 루프는 여전히 서버+키 필요 — 아래 런북.)
+
+### 서버 런북 (아쿠가 실제로 동작하려면)
+
+`workspace/small-think` agent-server 를 띄울 때 필요한 env:
+
+| 변수 | 필수 | 설명 |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | ✅ | LLM 추론 키 (없으면 에이전트 루프 실패) |
+| `SMALL_THINK_TOKEN` | ✅ | ctl 채널 공유 토큰 — weave 패널의 "토큰 재설정"/입력값과 **일치**해야 함 |
+| `PORT` | — | 기본 8787. weave 클라 기본 URL은 `ws://localhost:8788`(`DEV_URL`) → **불일치 주의**. `VITE_AKU_AGENT_URL`로 맞추거나 서버 PORT를 8788로. |
+| `SMALL_THINK_MODEL` | — | 기본 모델 오버라이드 |
+| `SMALL_THINK_MAX_TURNS` | — | 에이전트 최대 턴(멀티스텝 편집 충분히) |
+| `SMALL_THINK_CRITIQUE_PASSES` | — | self-critique 횟수. PoC 속도 우선이면 `0` 권장 |
+| `SMALL_THINK_DISTILL` / `SMALL_THINK_PREF_DB` / `SMALL_THINK_PREF_DIR` | — | 취향 학습(distill/저장) 옵트인 |
+
+> **포트 정합성**이 첫 연결 실패의 흔한 원인 — 서버 PORT와 weave `DEV_URL`/`VITE_AKU_AGENT_URL`을 반드시 일치시킬 것.
+
+### 남은 후속 (고도화 추가분)
+
+- **대화 메모리 없음**: 각 submit이 독립 → "방금 그거 더 크게" 같은 참조 대화 불가(현재 문서 상태로만 추론). 서버에 세션 히스토리 채널 추가가 필요(small-think HANDOFF 후보).
+- **스냅샷 노이즈**: 원본 문서 JSON 그대로 → 큰 디자인은 20k 컷에 걸릴 수 있음. 에이전트-친화 요약 스냅샷(id/kind/frame/text/childIds)은 bridge(@small-think/client) 변경 필요.
+- 이미지 첨부 vision 미연결(WI-054 본문 참조).

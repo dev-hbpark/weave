@@ -30,6 +30,7 @@ export function AkuPanel({
   seed,
   hasToken,
   onSetToken,
+  onResetToken,
 }: {
   readonly geometry: AkuGeometry;
   readonly onMoveStart: (e: ReactPointerEvent) => void;
@@ -48,6 +49,8 @@ export function AkuPanel({
   /** When false, the body shows the token-setup gate and the composer is hidden. */
   readonly hasToken: boolean;
   readonly onSetToken: (token: string) => void;
+  /** Forget the saved token → back to the setup gate (escape a wrong token). */
+  readonly onResetToken: () => void;
 }): JSX.Element {
   return (
     <div
@@ -66,6 +69,16 @@ export function AkuPanel({
             <AkuMascot variant="mark" className="w-5 h-5 shrink-0" />
             <Panel.Title>아쿠</Panel.Title>
           </div>
+          {hasToken ? (
+            <button
+              type="button"
+              onClick={onResetToken}
+              data-testid="aku-token-reset"
+              className="text-[11px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] px-1.5 py-1 rounded-[var(--radius-sm)] hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+            >
+              토큰 재설정
+            </button>
+          ) : null}
           <IconButton
             aria-label="새 대화"
             variant="ghost"

@@ -68,6 +68,7 @@ export function AkuAssistant({
     history,
     hasToken,
     setToken,
+    resetToken,
   } = useAkuAgent({
     editor,
     getDocument: () => docRef.current,
@@ -123,6 +124,7 @@ export function AkuAssistant({
         seed={seed}
         hasToken={hasToken}
         onSetToken={setToken}
+        onResetToken={resetToken}
       />
     ) : showCoachmark ? (
       // First-run nudge to drive discovery — one-shot, anchored to the launcher
