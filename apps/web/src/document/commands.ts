@@ -37,6 +37,7 @@ import {
   createReorderChildrenCommand,
   createReparentCommand,
   createSetDecorationCommand,
+  createSetPolyPointsCommand,
   fail,
   itemId as makeItemId,
   unitId as makeUnitId,
@@ -899,6 +900,10 @@ export function buildWeaveCommands(
     onReparentLayout: (args) => (LAYOUT_FEATURE_ENABLED ? getLayoutEngine().onReparent(args) : []),
   });
 
+  // WI-057 — set freeform polygon vertices (agocraft kit command, registered
+  // under weave's vocabulary). All item mutation goes through a command.
+  const setPolyVertices = createSetPolyPointsCommand("weave.shape.setVertices");
+
   // ─── WI-050 — Delete a frame, keep its children ──────────────────────────
   //
   // "Dissolve" a frame: reparent every direct child up to the ROOT design
@@ -1275,6 +1280,7 @@ export function buildWeaveCommands(
     bringToFront as Command,
     sendToBack as Command,
     reparentItem as Command,
+    setPolyVertices as Command,
     removeFrameKeepingChildren as Command,
     addBehavior as Command,
     removeBehavior as Command,

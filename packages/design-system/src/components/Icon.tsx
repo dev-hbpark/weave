@@ -303,6 +303,17 @@ export const IconShapePolygon = forwardRef<SVGSVGElement, IconProps>(
   },
 );
 
+// WI-057 — freeform polygon (irregular vertices) vs IconShapePolygon (regular).
+export const IconShapePoly = forwardRef<SVGSVGElement, IconProps>(
+  function IconShapePoly(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M12 3 L21 10 L17 20 L7 18 L3 8 Z" />
+      </SvgRoot>
+    );
+  },
+);
+
 export const IconShapeHeart = forwardRef<SVGSVGElement, IconProps>(
   function IconShapeHeart(props, ref) {
     return (

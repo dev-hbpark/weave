@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@agocraft/agent-client": "file:vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz",
-    "@agocraft/core": "file:vendor/agocraft/agocraft-core-1.0.0-rc.20260529232610.tgz",
+    "@agocraft/core": "file:vendor/agocraft/agocraft-core-1.0.0-rc.20260529204521.tgz",
     "@agocraft/domain-block-doc": "file:vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260528101821.tgz",
     "@agocraft/domain-canvas-design": "file:vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260528101821.tgz",
     "@agocraft/domain-media": "file:vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260528101821.tgz",

@@ -29,7 +29,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@agocraft/core": "file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260529232610.tgz",
+      "@agocraft/core": "file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260529204521.tgz",
       "@agocraft/domain-block-doc": "file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260528101821.tgz",
       "@agocraft/domain-canvas-design": "file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260528101821.tgz",
       "@agocraft/domain-media": "file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260528101821.tgz",

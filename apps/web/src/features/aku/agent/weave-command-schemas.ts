@@ -90,6 +90,7 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.update": "아이템 수정",
   "weave.shape.setCornerRadius": "모서리 둥글기",
   "weave.shape.setFill": "채우기 설정",
+  "weave.shape.setVertices": "다각형 정점 편집",
   "weave.items.resizeMulti": "크기 조정",
   "weave.behavior.update": "동작 수정",
   "weave.doc.reset": "문서 초기화",
@@ -239,6 +240,29 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         },
       },
       ["itemId", "fill"],
+    ),
+  },
+  // ── freeform polygon vertices (WI-057) ──
+  // Target a `shape` item whose `subAttrs.shape === "poly"` (a freeform polygon,
+  // distinct from the parametric regular "polygon"/sides and the opaque "path").
+  // `points` is the COMPLETE replacement vertex list — each {x,y} is a 0..1 ratio
+  // of the shape's bbox (NOT px), so the polygon rides the item's resize/rotate.
+  // `closed` (optional) toggles filled polygon (true, ≥3 pts) vs open polyline
+  // (false, ≥2 pts); omit to keep the current value. Coords clamp to [0,1].
+  // Rejects: not-a-poly (wrong target), invalid-points (too few / non-finite).
+  "weave.shape.setVertices": {
+    label: label("weave.shape.setVertices"),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        points: {
+          type: "array",
+          items: obj({ x: NUM, y: NUM }, ["x", "y"]),
+          description: "Vertices, each {x,y} a 0..1 ratio of the shape bbox.",
+        },
+        closed: { type: "boolean" },
+      },
+      ["itemId", "points"],
     ),
   },
   "weave.items.resizeMulti": {

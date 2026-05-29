@@ -151,6 +151,7 @@ export {
   IconShapeEllipse,
   IconShapeHeart,
   IconShapeLine,
+  IconShapePoly,
   IconShapePolygon,
   IconShapeRectangle,
   IconShapeSpeechBubble,

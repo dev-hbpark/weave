@@ -17,6 +17,7 @@ import {
   IconShapeEllipse,
   IconShapeHeart,
   IconShapeLine,
+  IconShapePoly,
   IconShapePolygon,
   IconShapeRectangle,
   IconShapeStar,
@@ -49,6 +50,7 @@ const SHAPE_SUB_KIND_OPTIONS = [
   { value: "triangle", label: "삼각형", icon: <IconShapeTriangle size={15} /> },
   { value: "star", label: "별", icon: <IconShapeStar size={15} /> },
   { value: "polygon", label: "다각형", icon: <IconShapePolygon size={15} /> },
+  { value: "poly", label: "자유 다각형", icon: <IconShapePoly size={15} /> },
   { value: "heart", label: "하트", icon: <IconShapeHeart size={15} /> },
 ] as const;
 
@@ -72,6 +74,18 @@ function defaultSubAttrsForKind(
       return { shape: "star", points: 5, innerRatio: 0.5 };
     case "polygon":
       return { shape: "polygon", sides: 6 };
+    case "poly":
+      // Freeform default = inscribed triangle; reshaped via vertex editing /
+      // weave.shape.setVertices.
+      return {
+        shape: "poly",
+        points: [
+          { x: 0.5, y: 0 },
+          { x: 1, y: 1 },
+          { x: 0, y: 1 },
+        ],
+        closed: true,
+      };
     case "path":
       return { shape: "path", d: "" };
     case "speech-bubble":
