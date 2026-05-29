@@ -48,7 +48,8 @@
       "@agocraft/sync": "file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260529121812.tgz",
       "@agocraft/testing": "file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260528101821.tgz",
       "@agocraft/agent-client": "file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz",
-      "@small-think/client": "file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz"
+      "@small-think/client": "file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz",
+      "zod": "^3.25.0"
     }
   }
 }

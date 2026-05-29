@@ -25,6 +25,7 @@ overrides:
   '@agocraft/testing': file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260528101821.tgz
   '@agocraft/agent-client': file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz
   '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz
+  zod: ^3.25.0
 
 importers:
 
@@ -41,7 +42,7 @@ importers:
     dependencies:
       '@agocraft/agent-client':
         specifier: file:vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.22.4)
+        version: file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.25.76)
       '@agocraft/core':
         specifier: file:vendor/agocraft/agocraft-core-1.0.0-rc.20260529232610.tgz
         version: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260529232610.tgz(typescript@5.9.3)
@@ -83,7 +84,7 @@ importers:
         version: file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260529121812.tgz(typescript@5.9.3)
       '@anthropic-ai/sdk':
         specifier: ^0.100.1
-        version: 0.100.1(zod@3.22.4)
+        version: 0.100.1(zod@3.25.76)
       '@lexical/react':
         specifier: ^0.44.0
         version: 0.44.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(yjs@13.6.31)
@@ -303,7 +304,7 @@ packages:
     resolution: {integrity: sha512-RANcEe7LpiLczkKGOwoXOTuFdPhuubS0i4xaAKOMpcqc55YO0mukgxppV7eygx3DXNjxWT6RYOLPyOy0aIAmwg==}
     hasBin: true
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      zod: ^3.25.0
     peerDependenciesMeta:
       zod:
         optional: true
@@ -978,7 +979,7 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
-      zod: ^3.25 || ^4.0
+      zod: ^3.25.0
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
@@ -3427,21 +3428,21 @@ packages:
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
-      zod: ^3.25.28 || ^4
+      zod: ^3.25.0
 
-  zod@3.22.4:
-    resolution: {integrity: sha512-iC+8Io04lddc+mVqQ9AZ7OQ2MrUKGN+oIQyq1vemgt46jwCwLfhq7/pwnBnNXXXZb8VTVLKwp9EDkx+ryxIWmg==}
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
 
-  '@agocraft/agent-client@file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.22.4)':
+  '@agocraft/agent-client@file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.0.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260529232610.tgz(typescript@5.9.3)
       '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260529121812.tgz(react@18.3.1)(typescript@5.9.3)
-      '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz(typescript@5.9.3)(zod@3.22.4)
+      '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz(typescript@5.9.3)(zod@3.25.76)
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - react
@@ -3552,12 +3553,12 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@anthropic-ai/sdk@0.100.1(zod@3.22.4)':
+  '@anthropic-ai/sdk@0.100.1(zod@3.25.76)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
     optionalDependencies:
-      zod: 3.22.4
+      zod: 3.25.76
 
   '@asamuzakjp/css-color@5.1.11':
     dependencies:
@@ -4152,7 +4153,7 @@ snapshots:
       - encoding
       - supports-color
 
-  '@modelcontextprotocol/sdk@1.29.0(zod@3.22.4)':
+  '@modelcontextprotocol/sdk@1.29.0(zod@3.25.76)':
     dependencies:
       '@hono/node-server': 1.19.14(hono@4.12.23)
       ajv: 8.20.0
@@ -4169,8 +4170,8 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 3.22.4
-      zod-to-json-schema: 3.25.2(zod@3.22.4)
+      zod: 3.25.76
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
     transitivePeerDependencies:
       - supports-color
 
@@ -4700,9 +4701,9 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.60.4':
     optional: true
 
-  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz(typescript@5.9.3)(zod@3.22.4)':
+  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(zod@3.22.4)
+      '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
       valibot: 1.4.0(typescript@5.9.3)
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -4939,7 +4940,7 @@ snapshots:
       js-yaml: 4.1.1
       minimatch: 10.1.1
       smol-toml: 1.5.2
-      zod: 3.22.4
+      zod: 3.25.76
 
   '@vercel/static-config@3.4.0':
     dependencies:
@@ -6831,10 +6832,10 @@ snapshots:
     dependencies:
       lib0: 0.2.117
 
-  zod-to-json-schema@3.25.2(zod@3.22.4):
+  zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
-      zod: 3.22.4
+      zod: 3.25.76
 
-  zod@3.22.4: {}
+  zod@3.25.76: {}
 
   zwitch@2.0.4: {}
