@@ -59,6 +59,11 @@ export interface UseReparentDragControllerDeps {
   /** Whether the controller is enabled. Hosts gate this off in modes
    *  that own the canvas exclusively (peek, present, hand pan). */
   readonly enabled: boolean;
+  /** Live design pixel size — forwarded to `weave.item.reparent` so its
+   *  rotation-aware geometry stays correct across rotated, non-square
+   *  ancestors. Optional; absent → the command assumes a unit square,
+   *  which is exact for every non-(rotated-ancestor) case. */
+  readonly getDesignSize?: () => { readonly width: number; readonly height: number };
 }
 
 const IDLE_STATE: ReparentDragState = {
@@ -107,7 +112,7 @@ export function designPlaneFromTarget(target: EventTarget | null): Element | nul
 }
 
 export function useReparentDragController(deps: UseReparentDragControllerDeps): ReparentDragState {
-  const { editor, getDocument, getSelectedIds, enabled } = deps;
+  const { editor, getDocument, getSelectedIds, enabled, getDesignSize } = deps;
   const [state, setState] = useState<ReparentDragState>(IDLE_STATE);
 
   // Stale-proof the accessor callbacks so the pointerdown effect only
@@ -117,6 +122,8 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
   getDocumentRef.current = getDocument;
   const getSelectedIdsRef = useRef(getSelectedIds);
   getSelectedIdsRef.current = getSelectedIds;
+  const getDesignSizeRef = useRef(getDesignSize);
+  getDesignSizeRef.current = getDesignSize;
 
   // Mutable mirror of state used by the window-level pointermove /
   // pointerup handlers (kept off React state so re-render rate stays
@@ -255,11 +262,15 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
       const candidateId = target?.id ?? null;
       const valid = candidateId !== null && !session.blocked.has(candidateId);
       if (valid && candidateId !== null && editor !== null) {
+        const size = getDesignSizeRef.current?.();
         editor.exec("weave.item.reparent", {
           entries: session.entries.map((x) => ({
             itemId: x.itemId,
             newParentId: candidateId,
           })),
+          ...(size !== undefined
+            ? { designWidth: size.width, designHeight: size.height }
+            : {}),
         });
       }
       endGesture();

@@ -22,7 +22,7 @@
     "@agocraft/editor": "file:vendor/agocraft/agocraft-editor-1.0.0-rc.20260528101821.tgz",
     "@agocraft/input": "file:vendor/agocraft/agocraft-input-1.0.0-rc.20260528101821.tgz",
     "@agocraft/interaction": "file:vendor/agocraft/agocraft-interaction-1.0.0-rc.20260528101821.tgz",
-    "@agocraft/layout": "file:vendor/agocraft/agocraft-layout-1.0.0-rc.20260528101821.tgz",
+    "@agocraft/layout": "file:vendor/agocraft/agocraft-layout-1.0.0-rc.20260529075300.tgz",
     "@agocraft/manipulation": "file:vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260528101821.tgz",
     "@agocraft/renderer-html-canvas": "file:vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260528101821.tgz",
     "@agocraft/spatial": "file:vendor/agocraft/agocraft-spatial-1.0.0-rc.20260528101821.tgz",

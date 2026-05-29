@@ -32,6 +32,10 @@ export interface AlignFrame {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+  /** Radians around the frame's center. Optional — absent = 0 (axis-
+   *  aligned). When present, alignment uses the rotated item's outer
+   *  (axis-aligned) bounding box, not the raw `width × height` slot. */
+  readonly rotation?: number;
 }
 
 export interface AlignInput {
@@ -198,11 +202,34 @@ const HANDLERS: ReadonlyMap<
   ["distribute-vertical", distributeVertical],
 ]);
 
+/** Axis-aligned OUTER bounds of a (possibly rotated) frame, in the same
+ *  parent 0..1 ratio space. A rotated rectangle's visible extent is wider
+ *  and taller than its `width × height`; the bounds are computed about the
+ *  frame center so alignment lines items up by what the user sees rather
+ *  than by the unrotated frame slot. rotation = 0 returns the frame as-is. */
+function outerBounds(f: AlignFrame): AlignFrame {
+  const rot = f.rotation ?? 0;
+  if (rot === 0) return f;
+  const cx = f.x + f.width / 2;
+  const cy = f.y + f.height / 2;
+  const c = Math.abs(Math.cos(rot));
+  const s = Math.abs(Math.sin(rot));
+  const w = f.width * c + f.height * s;
+  const h = f.width * s + f.height * c;
+  return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
+}
+
 /** Apply `op` to `items` and return the new frames in the same order.
  *  Pure — no doc lookup, no patches; the caller wires the result into
  *  the host (typically `editor.exec("weave.items.resizeMulti", ...)`).
  *  Same-parent-only is the caller's invariant; this helper assumes
- *  every input frame is in the same coordinate space. */
+ *  every input frame is in the same coordinate space.
+ *
+ *  Rotated items align by their axis-aligned OUTER bounds: the op runs on
+ *  each item's bounds, then every original frame is shifted by the same
+ *  center delta — so size and rotation are preserved and the visible box
+ *  lands on the alignment target. For unrotated input this is identical to
+ *  running the op on the raw frames. */
 export function computeAlignedFrames(
   items: ReadonlyArray<AlignInput>,
   op: AlignOp,
@@ -214,7 +241,24 @@ export function computeAlignedFrames(
     // sees a no-op batch instead of mangled data.
     return items.map((it) => ({ id: it.id, frame: it.frame }));
   }
-  return handler(items);
+  // Fast path: nothing rotated → a frame IS its own outer bounds, so run
+  // the op directly (bit-for-bit identical to the pre-rotation result, no
+  // float drift from the delta round-trip below).
+  if (items.every((it) => (it.frame.rotation ?? 0) === 0)) return handler(items);
+  const bounds = items.map((it) => ({ id: it.id, frame: outerBounds(it.frame) }));
+  const aligned = handler(bounds);
+  return items.map((it, i) => {
+    const inB = bounds[i]!.frame;
+    const outB = aligned[i]!.frame;
+    return {
+      id: it.id,
+      frame: {
+        ...it.frame,
+        x: it.frame.x + (outB.x - inB.x),
+        y: it.frame.y + (outB.y - inB.y),
+      },
+    };
+  });
 }
 
 /** The full list of ops, ordered for menus / toolbars. Exported so the

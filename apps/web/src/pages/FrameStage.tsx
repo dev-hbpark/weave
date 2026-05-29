@@ -1901,7 +1901,27 @@ export function FrameStage(props: FrameStageProps) {
             const id = wrap?.getAttribute("data-selection-handle-item-id") ?? null;
             return id as ItemId | null;
           },
-          centerViewportOf(_itemId) {
+          centerViewportOf(itemId) {
+            // The rotation pivot MUST be in the same coordinate space as the
+            // pointer events the gesture router feeds in — clientX/clientY
+            // (window-relative). `selectedFrameBoundsViewport` is stage-local
+            // (camera space, relative to the FrameStage outer element via
+            // `canonicalToViewport`), so using it directly put the pivot off
+            // by the stage's on-screen offset (left panel / top bar). With the
+            // pivot shifted away from the true center, dragging the handle
+            // tracked vertical motion instead of the mouse's angle around the
+            // item. Read the rendered element's client-rect center instead: it
+            // is the real on-screen center (= the CSS `rotate()` transform-
+            // origin, invariant under the current rotation) in client coords,
+            // matching `e.position`.
+            const el =
+              typeof document === "undefined"
+                ? null
+                : document.querySelector(`[data-frame-id="${CSS.escape(String(itemId))}"]`);
+            if (el !== null) {
+              const r = el.getBoundingClientRect();
+              return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+            }
             const b = vm.selectedFrameBoundsViewport.get();
             if (b === null) return { x: 0, y: 0 };
             return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
@@ -2217,13 +2237,28 @@ export function FrameStage(props: FrameStageProps) {
                       y: 0,
                       width: 1,
                       height: 1,
+                      rotation: 0,
                     };
+                    // Hit-test against the item's axis-aligned OUTER bounds so
+                    // a rotated frame is marquee-selected by its visible
+                    // extent, not its unrotated slot. rotation 0 → the raw box.
+                    // (Top-level children live in the unrotated root space, so
+                    // the box maps straight to design px.)
+                    const wpx = f.width * designWidth;
+                    const hpx = f.height * designHeight;
+                    const cx = (f.x + f.width / 2) * designWidth;
+                    const cy = (f.y + f.height / 2) * designHeight;
+                    const rot = f.rotation ?? 0;
+                    const co = Math.abs(Math.cos(rot));
+                    const si = Math.abs(Math.sin(rot));
+                    const bw = wpx * co + hpx * si;
+                    const bh = wpx * si + hpx * co;
                     return {
                       id: String(c.id),
-                      x: f.x * designWidth,
-                      y: f.y * designHeight,
-                      width: f.width * designWidth,
-                      height: f.height * designHeight,
+                      x: cx - bw / 2,
+                      y: cy - bh / 2,
+                      width: bw,
+                      height: bh,
                     };
                   })
               }

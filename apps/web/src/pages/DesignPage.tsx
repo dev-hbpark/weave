@@ -1404,6 +1404,7 @@ function DesignPageBody() {
     getDocument: () => docInAgocraftRef.current ?? null,
     getSelectedIds: () => reparentSelectedIdsRef.current,
     enabled: !handMode && !peek.isActive,
+    getDesignSize: () => ({ width: design.width, height: design.height }),
   });
   // WI-043 — layout-child move: plain-dragging the SELECTED layout child
   // repositions it (grid → drop on cell, incl. empty cells; flex → swap
@@ -1913,13 +1914,17 @@ function DesignPageBody() {
       const doc = docInAgocraftRef.current;
       const inputs: ReadonlyArray<{
         readonly id: string;
-        readonly frame: { x: number; y: number; width: number; height: number };
+        readonly frame: { x: number; y: number; width: number; height: number; rotation?: number };
       }> = ids.flatMap((id) => {
         const item = findItemDeep(doc, id);
         if (item === undefined) return [];
         const f = (item.attrs as { frame?: ItemFrame }).frame;
         if (f === undefined) return [];
-        return [{ id, frame: { x: f.x, y: f.y, width: f.width, height: f.height } }];
+        // Pass rotation through so `computeAlignedFrames` aligns rotated
+        // items by their outer (axis-aligned) bounds, not the raw slot.
+        return [
+          { id, frame: { x: f.x, y: f.y, width: f.width, height: f.height, rotation: f.rotation } },
+        ];
       });
       if (inputs.length < 2) return;
       const out = computeAlignedFrames(inputs, op);
@@ -1963,10 +1968,17 @@ function DesignPageBody() {
         if (item === undefined) return [];
         const f = (item.attrs as { frame?: ItemFrame }).frame;
         if (f === undefined) return [];
-        return [{ id, frame: { x: f.x, y: f.y, width: f.width, height: f.height } }];
+        // Pass rotation so rotated items arrange by their outer (AABB)
+        // footprint and shrink to fit the assigned cell.
+        return [
+          { id, frame: { x: f.x, y: f.y, width: f.width, height: f.height, rotation: f.rotation } },
+        ];
       });
       if (inputs.length < 2) return;
-      const out = computeArrangedFrames(inputs, layout);
+      // Pass the design pixel size so square cells are square ON SCREEN and the
+      // rotated item's outer bounds are computed in pixel space (the design is
+      // not 1:1, so ratio-space squares would render as aspect rectangles).
+      const out = computeArrangedFrames(inputs, layout, design.width, design.height);
       const updates = out.flatMap((o, i) => {
         const prev = inputs[i]!.frame;
         const moved =
@@ -2594,6 +2606,10 @@ function DesignPageBody() {
                                         itemId: id,
                                         newParentId,
                                       })),
+                                      // Real design size → rotation-aware reparent
+                                      // stays correct across rotated, non-square ancestors.
+                                      designWidth: design.width,
+                                      designHeight: design.height,
                                     });
                                   };
                                   return (
@@ -3108,6 +3124,8 @@ function DesignPageBody() {
                             layout={arrangePreview}
                             selectedIds={selectedIds}
                             doc={docInAgocraft}
+                            designWidth={design.width}
+                            designHeight={design.height}
                           />
                         </div>
                       </DocumentForResolutionProvider>
@@ -3443,12 +3461,16 @@ interface ArrangePreviewOverlayProps {
   readonly layout: ArrangeLayout | null;
   readonly selectedIds: ReadonlySet<string>;
   readonly doc: AgocraftDocument;
+  readonly designWidth: number;
+  readonly designHeight: number;
 }
 
 function ArrangePreviewOverlay({
   layout,
   selectedIds,
   doc,
+  designWidth,
+  designHeight,
 }: ArrangePreviewOverlayProps): React.ReactElement | null {
   const ghosts = useMemo<
     ReadonlyArray<{ left: number; top: number; width: number; height: number }>
@@ -3459,26 +3481,54 @@ function ArrangePreviewOverlay({
       if (item === undefined) return [];
       const f = (item.attrs as { frame?: ItemFrame }).frame;
       if (f === undefined) return [];
-      return [{ id, frame: { x: f.x, y: f.y, width: f.width, height: f.height } }];
+      return [
+        { id, frame: { x: f.x, y: f.y, width: f.width, height: f.height, rotation: f.rotation } },
+      ];
     });
     if (inputs.length < 2) return [];
-    // Parent on-screen rect from the first child's DOM rect + its ratio frame.
+    // A frame's axis-aligned OUTER bounds in RATIO space, but with the AABB
+    // computed in PIXELS (rotation is isotropic in pixels, not in the
+    // non-square ratio space) and converted back — so the ghost matches the
+    // on-screen bound of a rotated item.
+    const W = designWidth > 0 ? designWidth : 1;
+    const H = designHeight > 0 ? designHeight : 1;
+    const aabbOf = (f: { x: number; y: number; width: number; height: number; rotation?: number }) => {
+      const rot = f.rotation ?? 0;
+      const c = Math.abs(Math.cos(rot));
+      const s = Math.abs(Math.sin(rot));
+      const wPx = f.width * W;
+      const hPx = f.height * H;
+      const w = (wPx * c + hPx * s) / W;
+      const h = (wPx * s + hPx * c) / H;
+      const cx = f.x + f.width / 2;
+      const cy = f.y + f.height / 2;
+      return { left: cx - w / 2, top: cy - h / 2, width: w, height: h };
+    };
+    // Parent on-screen rect from the first child's DOM rect (= that child's
+    // AABB) and its AABB ratio, so the scale is correct even when the first
+    // selected item is rotated.
     const first = inputs[0]!;
     const el = document.querySelector(`[data-frame-id="${CSS.escape(first.id)}"]`);
     if (!(el instanceof HTMLElement)) return [];
     const cr = el.getBoundingClientRect();
-    if (first.frame.width <= 0 || first.frame.height <= 0) return [];
-    const pw = cr.width / first.frame.width;
-    const ph = cr.height / first.frame.height;
-    const pLeft = cr.left - first.frame.x * pw;
-    const pTop = cr.top - first.frame.y * ph;
-    return computeArrangedFrames(inputs, layout).map((o) => ({
-      left: pLeft + o.frame.x * pw,
-      top: pTop + o.frame.y * ph,
-      width: o.frame.width * pw,
-      height: o.frame.height * ph,
-    }));
-  }, [layout, selectedIds, doc]);
+    const firstAabb = aabbOf(first.frame);
+    if (firstAabb.width <= 0 || firstAabb.height <= 0) return [];
+    const pw = cr.width / firstAabb.width;
+    const ph = cr.height / firstAabb.height;
+    const pLeft = cr.left - firstAabb.left * pw;
+    const pTop = cr.top - firstAabb.top * ph;
+    // Each ghost shows the item's resulting OUTER bounds (the square cell it
+    // fills) — for a rotated item that's its AABB, not the smaller raw box.
+    return computeArrangedFrames(inputs, layout, W, H).map((o) => {
+      const ab = aabbOf(o.frame);
+      return {
+        left: pLeft + ab.left * pw,
+        top: pTop + ab.top * ph,
+        width: ab.width * pw,
+        height: ab.height * ph,
+      };
+    });
+  }, [layout, selectedIds, doc, designWidth, designHeight]);
 
   if (ghosts.length === 0) return null;
   if (typeof document === "undefined") return null;

@@ -10,7 +10,13 @@ import type {
 } from "@agocraft/core";
 import { itemId as makeItemId } from "@agocraft/core";
 import { describe, expect, it, vi } from "vitest";
-import { addChild, toAgocraftDocument } from "./agocraft-mirror.js";
+import {
+  absoluteFrameTransform,
+  addChild,
+  applyChangeToDocument,
+  computeReparentFrameRatio,
+  toAgocraftDocument,
+} from "./agocraft-mirror.js";
 import {
   buildWeaveCommands,
   createPendingCreations,
@@ -528,7 +534,7 @@ describe("weave.item.reparent (WI-039)", () => {
   }
   function nestedFrame(
     id: string,
-    frame: { x: number; y: number; width: number; height: number },
+    frame: { x: number; y: number; width: number; height: number; rotation?: number },
   ): AgocraftItem {
     return {
       id: makeItemId(id),
@@ -606,6 +612,113 @@ describe("weave.item.reparent (WI-039)", () => {
     expect(e.newFrameRatio.height).toBeCloseTo(0.4, 5);
     // Old ratio = the item's current attrs.frame
     expect(e.oldFrameRatio).toEqual({ x: 0.1, y: 0.1, width: 0.2, height: 0.2 });
+  });
+
+  it("preserves a rotated item's angle when both parents are unrotated", () => {
+    // Regression: reparent used to drop `frame.rotation`, so a rotated
+    // item snapped back to 0° after moving frames. p1 and p2 are both
+    // unrotated, so the item's own rotation must carry over verbatim.
+    const ctx = makeReparentCtx();
+    let doc = ctx.document;
+    doc = addChild(
+      doc,
+      nestedFrame("cr", { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0.6 }),
+      "p1",
+    );
+    const ctx2: CommandContext = { ...ctx, document: doc };
+    const result = runReparent(ctx2, [{ itemId: "cr", newParentId: "p2" }]);
+    if (!result.ok) throw new Error("expected ok");
+    const patch = result.patches[0]!;
+    if (patch.type !== "item.reparent") throw new Error("wrong type");
+    const e = patch.entries.find((x) => String(x.itemId) === "cr")!;
+    expect(e.newFrameRatio.rotation).toBeCloseTo(0.6, 5);
+  });
+
+  it("compensates rotation so the on-screen angle is fixed when the new parent is rotated", () => {
+    // New parent p3 is rotated 0.5 rad; a child rotated 0.6 rad relative to
+    // the (unrotated) old parent must become 0.6 - 0.5 = 0.1 rad own-rotation
+    // so its absolute on-screen angle (0.6) is unchanged after the move.
+    const ctx = makeReparentCtx();
+    let doc = ctx.document;
+    doc = addChild(
+      doc,
+      nestedFrame("cr", { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0.6 }),
+      "p1",
+    );
+    doc = addChild(
+      doc,
+      nestedFrame("p3", { x: 0.6, y: 0.6, width: 0.3, height: 0.3, rotation: 0.5 }),
+      String(doc.root.id),
+    );
+    const ctx2: CommandContext = { ...ctx, document: doc };
+    const result = runReparent(ctx2, [{ itemId: "cr", newParentId: "p3" }]);
+    if (!result.ok) throw new Error("expected ok");
+    const patch = result.patches[0]!;
+    if (patch.type !== "item.reparent") throw new Error("wrong type");
+    const e = patch.entries.find((x) => String(x.itemId) === "cr")!;
+    expect(e.newFrameRatio.rotation).toBeCloseTo(0.1, 5);
+  });
+
+  it("computeReparentFrameRatio preserves the visual center across a rotated, non-square ancestor", () => {
+    // Design 200×100. Parent P = (0,0,0.5,1) → a 100×100 px box, rotated 90°.
+    // Child C = (0,0,0.5,0.5) inside P → 50×50 px. P's 90° rotation swings C's
+    // visual center to (75,25) px. Reparenting C → root must reproduce exactly
+    // that center (not the axis-aligned (25,25) the old box math would give).
+    const ctx = makeReparentCtx();
+    const rootId = String(ctx.document.root.id);
+    let doc = ctx.document;
+    doc = addChild(
+      doc,
+      nestedFrame("Prot", { x: 0, y: 0, width: 0.5, height: 1, rotation: Math.PI / 2 }),
+      rootId,
+    );
+    doc = addChild(doc, nestedFrame("Crot", { x: 0, y: 0, width: 0.5, height: 0.5 }), "Prot");
+    const r = computeReparentFrameRatio(doc, "Crot", rootId, 200, 100);
+    if (r === null) throw new Error("expected a ratio");
+    // center (75,25) px → ratios of 200×100: cx 0.375, cy 0.25; size 0.25×0.5.
+    expect(r.x).toBeCloseTo(0.25, 5); // 0.375 - 0.25/2
+    expect(r.y).toBeCloseTo(0, 5); // 0.25 - 0.5/2
+    expect(r.width).toBeCloseTo(0.25, 5);
+    expect(r.height).toBeCloseTo(0.5, 5);
+    expect(r.rotation).toBeCloseTo(Math.PI / 2, 5);
+  });
+
+  it("reparenting a rotated item carries its child SUBTREE without moving it on-screen", () => {
+    // A (rotated 30°) holds child C. Reparenting A from root into p2 must leave
+    // C's ABSOLUTE center + angle untouched — the subtree rides along, and the
+    // rotation-aware new frame keeps A's visual box fixed, so C (a ratio of A)
+    // is preserved without any per-child fix-up.
+    const ctx = makeReparentCtx();
+    const rootId = String(ctx.document.root.id);
+    let doc = ctx.document;
+    doc = addChild(
+      doc,
+      nestedFrame("A", { x: 0.5, y: 0.1, width: 0.3, height: 0.3, rotation: Math.PI / 6 }),
+      rootId,
+    );
+    doc = addChild(doc, nestedFrame("C", { x: 0.2, y: 0.2, width: 0.5, height: 0.5 }), "A");
+    const W = 800;
+    const H = 600;
+    const beforeC = absoluteFrameTransform(doc, "C", W, H);
+    if (beforeC === null) throw new Error("C not found");
+
+    const cmds = buildWeaveCommands(spyTargets());
+    const cmd = cmds.find((c) => c.name === "weave.item.reparent");
+    if (cmd === undefined) throw new Error("reparent cmd missing");
+    const result = cmd.run({ ...ctx, document: doc }, {
+      entries: [{ itemId: "A", newParentId: "p2" }],
+      designWidth: W,
+      designHeight: H,
+    } as never);
+    if (!result.ok) throw new Error("expected ok");
+    let next = doc;
+    for (const p of result.patches) next = applyChangeToDocument(next, p as never);
+
+    const afterC = absoluteFrameTransform(next, "C", W, H);
+    if (afterC === null) throw new Error("C gone after reparent");
+    expect(afterC.center.x).toBeCloseTo(beforeC.center.x, 3);
+    expect(afterC.center.y).toBeCloseTo(beforeC.center.y, 3);
+    expect(afterC.rotation).toBeCloseTo(beforeC.rotation, 6);
   });
 
   it("multi entry (2 items, same new parent): single patch with 2 entries", () => {

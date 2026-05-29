@@ -717,6 +717,168 @@ export function absoluteFrameBox(
   return box;
 }
 
+/** Compute an item's new `frame` (ratio of `newParentId`) such that the
+ *  item — and therefore its WHOLE child subtree, which is stored relative
+ *  to the item — keeps the exact same ON-SCREEN position and rotation
+ *  after a reparent. This is rotation-aware end to end:
+ *
+ *    • position: the item's true visual CENTER (with every ancestor's
+ *      rotation applied) is pulled back into the new parent's children
+ *      space via the new parent's inverse transform — so moving into / out
+ *      of a rotated ancestor lands the item where the user sees it, not at
+ *      the axis-aligned `absoluteFrameBox` guess.
+ *    • rotation: new own-rotation = item's absolute angle − new parent's
+ *      absolute angle (CSS rotations compose down the tree).
+ *    • size: width/height are pixel-invariant under rotation, so they are a
+ *      plain ratio of the new parent's box.
+ *
+ *  Children need no per-node fix-up: they are ratios of THIS item's box, so
+ *  preserving the item's center+rotation+size preserves the subtree.
+ *
+ *  `designW`/`designH` set the aspect ratio of the pixel space rotations
+ *  happen in; they only matter when a rotated ancestor is involved AND the
+ *  design is non-square (pass 1×1 otherwise — the result is identical).
+ *  Returns null when either item is missing / lacks a frame, or the new
+ *  parent has zero area. */
+export function computeReparentFrameRatio(
+  doc: AgocraftDocument,
+  itemId: string,
+  newParentId: string,
+  designW: number,
+  designH: number,
+): { x: number; y: number; width: number; height: number; rotation: number } | null {
+  const itemT = absoluteFrameTransform(doc, itemId, designW, designH);
+  const parentT = absoluteFrameTransform(doc, newParentId, designW, designH);
+  if (itemT === null || parentT === null) return null;
+  if (parentT.box.w <= 0 || parentT.box.h <= 0) return null;
+
+  // Pull the item's design-space center into the new parent's children
+  // U-space (childMatrix maps that space → design, incl. the parent's own +
+  // ancestor rotations), then express it as a ratio of the parent's box.
+  const inv = matInverse(parentT.childMatrix);
+  const localCenter = matApply(inv, itemT.center.x, itemT.center.y);
+  const widthRatio = itemT.box.w / parentT.box.w;
+  const heightRatio = itemT.box.h / parentT.box.h;
+  return {
+    x: (localCenter.x - parentT.box.x) / parentT.box.w - widthRatio / 2,
+    y: (localCenter.y - parentT.box.y) / parentT.box.h - heightRatio / 2,
+    width: widthRatio,
+    height: heightRatio,
+    rotation: itemT.rotation - parentT.rotation,
+  };
+}
+
+// ── Rotation-aware absolute transform ────────────────────────────────
+//
+// `absoluteFrameBox` deliberately ignores rotation (axis-aligned hit-test
+// world). But reparenting an item that lives under — or moves into — a
+// ROTATED ancestor must preserve the item's true ON-SCREEN center, and
+// that center depends on every ancestor's rotation (CSS `rotate()` on a
+// parent rotates the whole child subtree around the parent's center).
+//
+// We model the chain as 2D affine matrices in design-pixel space. Frames
+// are laid out axis-aligned within their parent's box (that accumulation
+// is exactly `absoluteFrameBox` — call it "U-space"), and each frame's own
+// rotation is a rigid rotate about its U-center that also applies to all
+// its descendants. So the map U-space → design space is a product of
+// rotate-about-center matrices, one per ancestor.
+
+/** 2x3 affine matrix `[a, b, c, d, e, f]`: x' = a·x + c·y + e, y' = b·x + d·y + f. */
+type Mat = readonly [number, number, number, number, number, number];
+const MAT_IDENTITY: Mat = [1, 0, 0, 1, 0, 0];
+
+/** Compose `m ∘ n` — apply `n` first, then `m`. */
+function matMul(m: Mat, n: Mat): Mat {
+  const [a, b, c, d, e, f] = m;
+  const [a2, b2, c2, d2, e2, f2] = n;
+  return [
+    a * a2 + c * b2,
+    b * a2 + d * b2,
+    a * c2 + c * d2,
+    b * c2 + d * d2,
+    a * e2 + c * f2 + e,
+    b * e2 + d * f2 + f,
+  ];
+}
+
+/** Rotation by `theta` (radians) about the point `(px, py)`. */
+function matRotateAbout(theta: number, px: number, py: number): Mat {
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  return [cos, sin, -sin, cos, px - cos * px + sin * py, py - sin * px - cos * py];
+}
+
+function matApply(m: Mat, x: number, y: number): { x: number; y: number } {
+  return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] };
+}
+
+function matInverse(m: Mat): Mat {
+  const [a, b, c, d, e, f] = m;
+  const det = a * d - b * c;
+  if (det === 0) return MAT_IDENTITY; // degenerate — caller treats as no-op
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+}
+
+export interface AbsoluteFrameTransform {
+  /** The frame's visual center in design pixels (ancestor rotations applied). */
+  readonly center: { readonly x: number; readonly y: number };
+  /** Sum of `frame.rotation` along the chain — the frame's absolute angle. */
+  readonly rotation: number;
+  /** The frame's own box in U-space (axis-aligned accumulation = `absoluteFrameBox`).
+   *  `w`/`h` are the frame's pixel dimensions (invariant under rotation). */
+  readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+  /** Maps this frame's CHILDREN U-space (where children are laid out) to design
+   *  space — includes this frame's own rotation plus every ancestor's. Invert it
+   *  to express a design-space point as a ratio of this frame's box. */
+  readonly childMatrix: Mat;
+}
+
+/** Rotation-aware absolute transform of a frame — see the block comment above.
+ *  Returns null when the item isn't in the tree or an ancestor lacks a frame.
+ *  The document root maps to the full `designW × designH` box, identity matrix. */
+export function absoluteFrameTransform(
+  doc: AgocraftDocument,
+  itemId: string,
+  designW: number,
+  designH: number,
+): AbsoluteFrameTransform | null {
+  if (String(doc.root.id) === itemId) {
+    return {
+      center: { x: designW / 2, y: designH / 2 },
+      rotation: 0,
+      box: { x: 0, y: 0, w: designW, h: designH },
+      childMatrix: MAT_IDENTITY,
+    };
+  }
+  const trail = findTrailDeep(doc, itemId);
+  if (trail === undefined) return null;
+  let m: Mat = MAT_IDENTITY;
+  let box = { x: 0, y: 0, w: designW, h: designH };
+  let rotation = 0;
+  let center = { x: designW / 2, y: designH / 2 };
+  for (const item of trail) {
+    const frame = (
+      item.attrs as { frame?: { x: number; y: number; width: number; height: number; rotation?: number } }
+    ).frame;
+    if (!frame) return null;
+    const b = {
+      x: box.x + frame.x * box.w,
+      y: box.y + frame.y * box.h,
+      w: frame.width * box.w,
+      h: frame.height * box.h,
+    };
+    const centerU = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    // Center BEFORE this frame's own rotation (own rotation is about this very
+    // center, so it doesn't move the center — only ancestors shift it).
+    center = matApply(m, centerU.x, centerU.y);
+    const rot = frame.rotation ?? 0;
+    rotation += rot;
+    if (rot !== 0) m = matMul(m, matRotateAbout(rot, centerU.x, centerU.y));
+    box = b;
+  }
+  return { center, rotation, box, childMatrix: m };
+}
+
 /** WI-039 — collect every descendant id of `itemId` (inclusive of the
  *  item itself). Used by `weave.item.reparent` to decide whether a
  *  candidate `newParentId` would form a cycle: if the candidate is the

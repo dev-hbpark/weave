@@ -43,7 +43,7 @@ import {
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import {
-  absoluteFrameBox,
+  computeReparentFrameRatio,
   findDescendantSet,
   findItemDeep,
   findParentAndIndex,
@@ -819,6 +819,12 @@ export function buildWeaveCommands(
       readonly itemId: string;
       readonly newParentId: string;
     }>;
+    // Design pixel size — sets the aspect ratio of the space rotations are
+    // composed in. Only affects the result when a rotated ANCESTOR is in the
+    // old or new chain AND the design is non-square; omit (→ unit square) is
+    // exact for every other case. Hosts pass the live design.width/height.
+    readonly designWidth?: number;
+    readonly designHeight?: number;
   };
   type ReparentEntry = Extract<Patch, { type: "item.reparent" }>["entries"][number];
 
@@ -853,10 +859,15 @@ export function buildWeaveCommands(
         }
       }
 
-      // Compute oldState + newFrameRatio for every entry. design-size
-      // is taken as 1×1 — the ratios cancel out so the result is in 0..1
-      // of the new parent regardless of the surrounding design pixel size.
-      const DESIGN_UNIT = 1;
+      // Compute oldState + newFrameRatio for every entry. The new frame is
+      // computed by `computeReparentFrameRatio` which preserves the item's
+      // (and therefore its whole subtree's) ON-SCREEN position + rotation —
+      // rotation-aware end to end, so reparenting into / out of a rotated
+      // ancestor lands the item where the user sees it. designWidth/Height
+      // (default unit square) set the rotation aspect ratio; they only
+      // matter for a rotated ancestor under a non-square design.
+      const designW = input.designWidth ?? 1;
+      const designH = input.designHeight ?? 1;
       const patchEntries: ReparentEntry[] = [];
       for (const e of uniqueEntries) {
         const cur = findParentAndIndex(ctx.document, e.itemId);
@@ -866,22 +877,14 @@ export function buildWeaveCommands(
         const newParent = findItemDeep(ctx.document, e.newParentId);
         if (newParent === undefined) continue;
 
-        const newParentAbsBox = absoluteFrameBox(
+        const newFrameRatio = computeReparentFrameRatio(
           ctx.document,
+          e.itemId,
           e.newParentId,
-          DESIGN_UNIT,
-          DESIGN_UNIT,
+          designW,
+          designH,
         );
-        const itemAbsBox = absoluteFrameBox(ctx.document, e.itemId, DESIGN_UNIT, DESIGN_UNIT);
-        if (newParentAbsBox === null || itemAbsBox === null) continue;
-        if (newParentAbsBox.w <= 0 || newParentAbsBox.h <= 0) continue;
-
-        const newFrameRatio = {
-          x: (itemAbsBox.x - newParentAbsBox.x) / newParentAbsBox.w,
-          y: (itemAbsBox.y - newParentAbsBox.y) / newParentAbsBox.h,
-          width: itemAbsBox.w / newParentAbsBox.w,
-          height: itemAbsBox.h / newParentAbsBox.h,
-        };
+        if (newFrameRatio === null) continue;
 
         // oldFrameRatio = the item's current attrs.frame (already old-parent-relative).
         const itemFrame = (item.attrs as { frame?: ReparentEntry["oldFrameRatio"] }).frame;

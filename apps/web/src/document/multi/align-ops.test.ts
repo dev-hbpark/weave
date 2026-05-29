@@ -192,3 +192,43 @@ describe("computeAlignedFrames — degenerate inputs", () => {
     expect(out.map((o) => o.frame.x)).toEqual([0.1, 0.1, 0.1]);
   });
 });
+
+describe("computeAlignedFrames — rotated items align by outer bounds", () => {
+  it("align-left uses the rotated item's outer (AABB) left edge, not its raw x", () => {
+    // A: w0.2×h0.1 rotated 90° → AABB is 0.1×0.2 about center (0.6, 0.15),
+    //    so its visible left edge sits at 0.6 - 0.05 = 0.55.
+    // B: unrotated at x0.1 → its left edge is 0.1 (the leftmost).
+    const A: AlignInput = {
+      id: "A",
+      frame: { x: 0.5, y: 0.1, width: 0.2, height: 0.1, rotation: Math.PI / 2 },
+    };
+    const B: AlignInput = { id: "B", frame: { x: 0.1, y: 0.3, width: 0.2, height: 0.1 } };
+    const out = computeAlignedFrames([A, B], "align-left");
+    const a = out.find((o) => o.id === "A")!.frame;
+    const b = out.find((o) => o.id === "B")!.frame;
+    // A shifts so its AABB left edge reaches 0.1: new center.x = 0.15 →
+    // new raw x = 0.15 - 0.2/2 = 0.05.
+    expect(a.x).toBeCloseTo(0.05, 6);
+    expect((a as { rotation?: number }).rotation).toBeCloseTo(Math.PI / 2, 6); // rotation preserved
+    expect(a.width).toBeCloseTo(0.2, 6); // size preserved (not the AABB size)
+    expect(b.x).toBeCloseTo(0.1, 6); // leftmost item stays put
+  });
+
+  it("a 45°-rotated square aligns by its larger diagonal extent", () => {
+    // A square w0.2×h0.2 rotated 45° has an AABB of side 0.2·√2 ≈ 0.2828.
+    const s = 0.2;
+    const A: AlignInput = {
+      id: "A",
+      frame: { x: 0.6, y: 0.5, width: s, height: s, rotation: Math.PI / 4 },
+    };
+    const B: AlignInput = { id: "B", frame: { x: 0.1, y: 0.0, width: s, height: s } };
+    const out = computeAlignedFrames([A, B], "align-top");
+    const a = out.find((o) => o.id === "A")!.frame;
+    const b = out.find((o) => o.id === "B")!.frame;
+    const diag = s * Math.SQRT2;
+    // B is unrotated at the top (y0). A's AABB top must drop to 0:
+    // A center.y = diag/2 → raw y = center.y - s/2.
+    expect(a.y).toBeCloseTo(diag / 2 - s / 2, 6);
+    expect(b.y).toBeCloseTo(0.0, 6);
+  });
+});
