@@ -62,7 +62,7 @@ This is **not** a classic LCP problem. The governing Core Web Vital is **INP** (
 
 Rendering is **scale-agnostic**: every item renders at its declared design-pixel size and zoom is delegated entirely to an outer CSS transform. The browser then raster-scales the whole content layer (images included) by the zoom factor.
 
-- At high zoom a single image becomes a multi-thousand-pixel GPU texture. Past the platform `max-texture-size` (typically 4096–16384 px per axis) the compositor must tile, fall back, or thrash — memory blows up and frames drop.
+- At high zoom a single image becomes a multi-thousand-pixel GPU texture. Past the platform `max-texture-size` (typically 4096–8192 px per axis) the compositor must tile, fall back, or thrash — memory blows up and frames drop.
 - With **zero culling** (no frustum/quadtree, no virtualization), the entire document stays mounted, styled, laid out, painted, and composited at all zoom levels — even content scrolled or zoomed completely off-screen.
 
 This is primarily a **Paint + Composite** problem (oversized layers, texture-memory pressure), compounded at the **Layout** stage by every item being permanently mounted.

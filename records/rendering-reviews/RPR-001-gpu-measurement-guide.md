@@ -52,7 +52,7 @@ the layer raster demand is large, prints a `GPUPROBE:: {...}` line, then
 - F12 → ⋮ (More tools) → **Layers**. Select the design-plane / image layer.
 - Read **"Memory estimate"** per layer and the layer's pixel **size**. Compare
   the largest layer's edge to the GPU **max texture size** (shown in
-  `chrome://gpu` under "Driver Information" / Limits; commonly 8192 or 16384).
+  `chrome://gpu` under "Driver Information" / Limits; commonly 8192 or 8192).
 - The failure signal: at high zoom a single image layer's edge approaches or
   exceeds max-texture-size (→ tiling/fallback) and/or per-layer memory balloons.
 
