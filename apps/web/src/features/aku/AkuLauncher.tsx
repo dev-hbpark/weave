@@ -18,7 +18,7 @@ export const AkuLauncher = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HT
         type="button"
         aria-label="아쿠 열기"
         data-aku-launcher
-        className={`fixed z-[48] w-16 h-16 rounded-full touch-none cursor-grab active:cursor-grabbing hover:brightness-105 active:brightness-95 focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)] transition-[filter] duration-[var(--motion-fast)] ${className ?? ""}`}
+        className={`fixed z-[48] w-30 h-30 rounded-full touch-none cursor-grab active:cursor-grabbing hover:brightness-105 active:brightness-95 focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)] transition-[filter] duration-[var(--motion-fast)] ${className ?? ""}`}
         {...rest}
       >
         {/* inner wrapper bobs; the button box itself stays put (anchor stability) */}

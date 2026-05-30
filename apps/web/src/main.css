@@ -48,6 +48,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation-duration: 1ms;
@@ -85,6 +86,7 @@ body {
   outline-offset: 2px;
   transition: outline 80ms ease;
 }
+
 [data-reparent-drop-invalid] {
   outline: 3px solid rgba(168, 41, 41, 0.92);
   outline-offset: 2px;
@@ -107,18 +109,22 @@ body {
  * anchoring while the mascot bobs. transform-only (compositor-cheap).
  * Disabled under prefers-reduced-motion. */
 @keyframes aku-bob {
+
   0%,
   100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-7%);
   }
 }
+
 .aku-bob {
-  animation: aku-bob 3.2s ease-in-out infinite;
+  animation: aku-bob 1.2s ease-in-out infinite;
   will-change: transform;
 }
+
 @media (prefers-reduced-motion: reduce) {
   .aku-bob {
     animation: none;
