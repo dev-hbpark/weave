@@ -1386,10 +1386,14 @@ function DesignPageBody() {
   const handleClearFocus = useCallback(() => setFocused(undefined), []);
   // Double-clicking a thumbnail brings its frame full-screen — the same
   // camera fit applied when an item is added into a frame.
+  // Double-clicking a slide's thumbnail fits that frame — but at 70% of the
+  // normal fit size, so it lands centered with breathing room rather than
+  // edge-to-edge (WI-065).
+  const THUMBNAIL_FIT_FILL = 0.7;
   const handleZoomToFrame = useCallback(
     (id: string) => {
       const box = absoluteFrameBox(docInAgocraft, id, design.width, design.height);
-      if (box !== null) cameraFitBox(box);
+      if (box !== null) cameraFitBox(box, THUMBNAIL_FIT_FILL);
     },
     [docInAgocraft, design.width, design.height],
   );

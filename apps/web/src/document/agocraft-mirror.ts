@@ -145,6 +145,41 @@ export function toAgocraftItem(item: WeaveItem, updatedAt: string): AgocraftItem
   };
 }
 
+/** WI-063 — overlay caller-supplied creation units onto a freshly-built agocraft
+ *  Item, so `weave.item.add` can produce a FULLY-STYLED item in one call
+ *  (fill / shadow / stroke / filter / opacity decoration units) instead of the
+ *  agent fragmenting create → setFill → setDecoration → … across tool calls.
+ *
+ *  Each spec `{ kind, attrs }` becomes a Unit whose `attrs` is stored verbatim
+ *  (decoration units hold their spec directly — e.g. `decoration.fill` attrs IS
+ *  a PaintSpec, matching the seed unit). A provided unit REPLACES any seeded /
+ *  earlier unit of the same kind (decorations are single-instance per kind),
+ *  keyed by the stable `${itemId}:${kind}` id; unknown kinds are appended. The
+ *  unit set otherwise (behaviors, seed fill not overridden) is preserved. */
+export function applyCreationUnits(
+  item: AgocraftItem,
+  units: ReadonlyArray<{ readonly kind: string; readonly attrs?: Readonly<Record<string, unknown>> }>,
+): AgocraftItem {
+  if (units.length === 0) return item;
+  const byKey = new Map<string, AgocraftUnit>();
+  const order: string[] = [];
+  const push = (u: AgocraftUnit): void => {
+    const key = String(u.id);
+    if (!byKey.has(key)) order.push(key);
+    byKey.set(key, u);
+  };
+  for (const u of item.units) push(u);
+  for (const spec of units) {
+    push({
+      id: unitId(`${String(item.id)}:${spec.kind}`),
+      kind: spec.kind,
+      attrs: (spec.attrs ?? {}) as Readonly<Record<string, unknown>>,
+      meta: makeUnitMeta(),
+    });
+  }
+  return { ...item, units: order.map((k) => byKey.get(k) as AgocraftUnit) };
+}
+
 /** Convert a weave Document into an agocraft Document. The root Item is
  *  synthetic — kind "weave-doc", children = mapped weave items. */
 export function toAgocraftDocument(doc: WeaveDocument): AgocraftDocument {

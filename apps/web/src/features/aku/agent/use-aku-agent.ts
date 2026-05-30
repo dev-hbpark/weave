@@ -154,11 +154,31 @@ function activityFor(st: AgentRunState): string | undefined {
 /** Commands hidden from the agent (presets are UI-only — see the `commands` memo). */
 const AGENT_HIDDEN_COMMAND_PREFIX = "weave.preset.";
 
-/** A read-through view of the command registry with preset commands filtered out, so
- *  `describeCommands` (which reads `list()`) never advertises them as agent tools. The
- *  underlying registry is untouched — the editor keeps the commands for UI use. */
+/** WI-063 — per-property attribute setters are SUBSUMED by weave.item.add /
+ *  weave.item.update (which now take attrs + units in one call), so the agent
+ *  surface for add + attribute-change is just those two. These redundant setters
+ *  stay registered for the UI (toolbar) but are hidden from the agent tool list
+ *  to force the consolidated path and stop command fragmentation. */
+const AGENT_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
+  // single-item attribute setters → weave.item.add / weave.item.update (attrs + units)
+  "weave.shape.setFill", // → weave.item.update { units:[{ kind:'decoration.fill', attrs }] }
+  "weave.shape.setCornerRadius", // → weave.item.update { attrs:{ subAttrs:{ shape:'rectangle', cornerRadii } } }
+  "weave.shape.setVertices", // → weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }
+  "weave.item.setDecoration", // → weave.item.add/update { units:[{ kind, attrs }] }
+  // multi-selection family → weave.items.update (edit) + weave.items.lifecycle (structural)
+  "weave.items.align", // → weave.items.update { itemIds, op }
+  "weave.items.resizeMulti", // → weave.items.update { updates:[{ itemId, frame }] }
+  "weave.items.remove", // → weave.items.lifecycle { itemIds, op:'remove' }
+  "weave.items.duplicate", // → weave.items.lifecycle { itemIds, op:'duplicate' }
+]);
+
+/** A read-through view of the command registry with preset + subsumed setter
+ *  commands filtered out, so `describeCommands` (which reads `list()`) never
+ *  advertises them as agent tools. The underlying registry is untouched — the
+ *  editor keeps every command for UI use. */
 function withoutPresetCommands(registry: CommandRegistry): CommandRegistry {
-  const hidden = (name: string): boolean => name.startsWith(AGENT_HIDDEN_COMMAND_PREFIX);
+  const hidden = (name: string): boolean =>
+    name.startsWith(AGENT_HIDDEN_COMMAND_PREFIX) || AGENT_HIDDEN_COMMANDS.has(name);
   return {
     ...registry,
     list: () => registry.list().filter((c) => !hidden(c.name)),

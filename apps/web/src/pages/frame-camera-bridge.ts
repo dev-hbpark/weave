@@ -16,10 +16,10 @@ export interface DesignBox {
   readonly h: number;
 }
 
-let fitImpl: ((box: DesignBox) => void) | undefined;
+let fitImpl: ((box: DesignBox, fillFactor?: number) => void) | undefined;
 
 /** FrameStage registers the live fit implementation. Returns a disposer. */
-export function setCameraFitBox(fn: (box: DesignBox) => void): () => void {
+export function setCameraFitBox(fn: (box: DesignBox, fillFactor?: number) => void): () => void {
   fitImpl = fn;
   return () => {
     if (fitImpl === fn) fitImpl = undefined;
@@ -27,7 +27,10 @@ export function setCameraFitBox(fn: (box: DesignBox) => void): () => void {
 }
 
 /** Move + zoom the camera so `box` fills the viewport. No-op until a
- *  FrameStage has registered an implementation (e.g. read-only embeds). */
-export function cameraFitBox(box: DesignBox): void {
-  fitImpl?.(box);
+ *  FrameStage has registered an implementation (e.g. read-only embeds).
+ *
+ *  `fillFactor` (default 1) scales the fit DOWN — e.g. 0.7 fits the box at 70 %
+ *  of the normal fit size, leaving extra breathing room around it. */
+export function cameraFitBox(box: DesignBox, fillFactor?: number): void {
+  fitImpl?.(box, fillFactor);
 }

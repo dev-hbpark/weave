@@ -1169,6 +1169,106 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
   });
 });
 
+describe("weave.item.update — units (WI-063)", () => {
+  function updateCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.update");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+  function shapeCtx(): CommandContext {
+    const shape = {
+      id: "sh-1",
+      kind: "shape",
+      attrs: {
+        frame: { x: 0, y: 0, width: 0.2, height: 0.2, rotation: 0 },
+        shape: "rectangle",
+        subAttrs: { shape: "rectangle", cornerRadii: { tl: 0, tr: 0, br: 0, bl: 0 } },
+      },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const weave: WeaveDocument = {
+      id: "d",
+      title: "",
+      items: [shape],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    return { document: toAgocraftDocument(weave), resolve: () => null as never, skipRelations: false };
+  }
+  // NOTE: the `units` path delegates to the vendored setDecoration command, which
+  // resolves a unit-id generator from the editor container at runtime. The bare
+  // unit-test CommandContext (resolve: () => null) can't host it — the same reason
+  // the WI-056 setFill suite can't run here — so the decoration emit is verified
+  // in the live app (console: `weave.item.setDecoration` → ok), not in this harness.
+  // Here we cover the parts that DON'T hit setDecoration: the attrs path still
+  // works after the computeAttrsPatches refactor, and the empty-input guard.
+
+  it("attrs-only update still emits an item.attrs patch (refactor regression)", () => {
+    const res = updateCmd().run(shapeCtx(), { itemId: "sh-1", attrs: { opacity: 0.5 } });
+    if (!res.ok) throw new Error("unexpected fail");
+    const p = res.patches.find((q) => q.type === "item.attrs");
+    expect(p).toBeDefined();
+    expect((p as unknown as { after: { opacity: number } }).after.opacity).toBe(0.5);
+  });
+
+  it("rejects when neither attrs, patch, nor units are provided", () => {
+    const res = updateCmd().run(shapeCtx(), { itemId: "sh-1" });
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected fail");
+    expect(res.error.code).toBe("invalid-input");
+  });
+});
+
+describe("weave.item.add — creation units (WI-063)", () => {
+  function addCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.add");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+  function createdUnits(
+    res: ReturnType<ReturnType<typeof addCmd>["run"]>,
+  ): Array<{ kind: string; attrs: Record<string, unknown> }> {
+    if (!res.ok) throw new Error("add failed");
+    const create = res.patches.find((p) => p.type === "item.create");
+    if (create === undefined) throw new Error("no item.create patch");
+    return (create as unknown as { item: { units: Array<{ kind: string; attrs: Record<string, unknown> }> } })
+      .item.units;
+  }
+
+  it("attaches fill + shadow at creation in one call (seed fill replaced, not duplicated)", () => {
+    const gradient = {
+      type: "linear-gradient",
+      angle: 90,
+      stops: [
+        { offset: 0, color: "#000000" },
+        { offset: 1, color: "#ffffff" },
+      ],
+    };
+    const shadow = { x: 0, y: 8, blur: 24, spread: 0, color: "#00000088" };
+    const res = addCmd().run(makeCtx(), {
+      kind: "shape",
+      attrsOverride: { shape: "rectangle", subAttrs: { shape: "rectangle" } },
+      units: [
+        { kind: "decoration.fill", attrs: gradient },
+        { kind: "decoration.shadow", attrs: shadow },
+      ],
+    });
+    const units = createdUnits(res);
+    const fills = units.filter((u) => u.kind === "decoration.fill");
+    expect(fills).toHaveLength(1); // the seeded default fill was replaced, not duplicated
+    expect(fills[0]!.attrs).toEqual(gradient);
+    const shadows = units.filter((u) => u.kind === "decoration.shadow");
+    expect(shadows).toHaveLength(1);
+    expect(shadows[0]!.attrs).toEqual(shadow);
+  });
+
+  it("keeps the seeded default fill when no units are provided", () => {
+    const res = addCmd().run(makeCtx(), { kind: "shape" });
+    expect(createdUnits(res).filter((u) => u.kind === "decoration.fill")).toHaveLength(1);
+  });
+});
+
 describe("weave.item.add — shape subAttrs normalization (WI-062)", () => {
   function addCmd() {
     const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.add");
@@ -1290,9 +1390,11 @@ describe("weave.items.update (WI-061)", () => {
   });
 });
 
-describe("weave.items.align (WI-059)", () => {
+// WI-064 — align/distribute is now the `op` of weave.items.update (the former
+// weave.items.align was folded in). These exercise that op path.
+describe("weave.items.update op = align/distribute (WI-059/064)", () => {
   function alignCmd() {
-    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.items.align");
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.items.update");
     if (c === undefined) throw new Error("command not found");
     return c;
   }
@@ -1400,6 +1502,37 @@ describe("weave.items.align (WI-059)", () => {
     expect(res.ok).toBe(false);
     if (res.ok) throw new Error("expected fail");
     expect(res.error.code).toBe("cross-parent-selection");
+  });
+});
+
+describe("weave.items.lifecycle (WI-064)", () => {
+  function lifecycleCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.items.lifecycle");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+
+  it("op:'remove' deletes the items (delegates to the remove kit command)", () => {
+    // makeCtx has root children slide-1 + canvas-1.
+    const res = lifecycleCmd().run(makeCtx(), { itemIds: ["slide-1"], op: "remove" });
+    if (!res.ok) throw new Error("unexpected fail");
+    expect(res.patches.length).toBeGreaterThan(0);
+    expect(res.patches.some((p) => p.type === "item.remove" || p.type === "item.children")).toBe(true);
+  });
+
+  it("rejects an unknown op", () => {
+    const res = lifecycleCmd().run(makeCtx(), {
+      itemIds: ["slide-1"],
+      op: "vaporize" as never,
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected fail");
+    expect(res.error.code).toBe("invalid-input");
+  });
+
+  it("rejects an empty itemIds list", () => {
+    const res = lifecycleCmd().run(makeCtx(), { itemIds: [], op: "remove" });
+    expect(res.ok).toBe(false);
   });
 });
 

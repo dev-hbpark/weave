@@ -1279,11 +1279,13 @@ export function FrameStage(props: FrameStageProps) {
   // small margin. Only meaningful while the infinite canvas (user camera)
   // is active; setPan is a no-op when vm is null.
   const zoomToBox = useCallback(
-    (box: DesignBox) => {
+    (box: DesignBox, fillFactor = 1) => {
       const W = outerSize.width;
       const H = outerSize.height;
       if (W <= 0 || H <= 0 || box.w <= 0 || box.h <= 0 || baseScale <= 0) return;
-      const MARGIN = 0.9;
+      // 0.9 = the normal fit margin; `fillFactor` (default 1) scales it further
+      // down so callers can fit at a fraction of the usual size (e.g. 0.7).
+      const MARGIN = 0.9 * fillFactor;
       const rawScale = Math.min(
         (W * MARGIN) / (box.w * baseScale),
         (H * MARGIN) / (box.h * baseScale),

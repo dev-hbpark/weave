@@ -64,6 +64,7 @@ import {
   createSwapGridCellsCommand,
 } from "@agocraft/layout";
 import {
+  applyCreationUnits,
   computeReparentFrameRatio,
   findItemDeep,
   findParentAndIndex,
@@ -125,6 +126,15 @@ export interface AddItemInput {
    *  pipeline since the new item is only in `PendingCreations` until the
    *  next React tick). */
   readonly attrsOverride?: Readonly<Record<string, unknown>>;
+  /** WI-063 — decoration units to attach AT CREATION so the item is added
+   *  fully-styled in one call (no follow-up setFill / setDecoration). Each
+   *  `{ kind, attrs }` overlays onto the seeded units, replacing any of the same
+   *  kind. Decoration kinds: decoration.fill (attrs = PaintSpec) / .stroke /
+   *  .shadow / .filter / .opacity. */
+  readonly units?: ReadonlyArray<{
+    readonly kind: string;
+    readonly attrs?: Readonly<Record<string, unknown>>;
+  }>;
 }
 export interface RemoveItemInput {
   readonly itemId: string;
@@ -147,9 +157,18 @@ export interface UpdateItemInput {
   readonly patch?: (it: WeaveItem) => WeaveItem;
   /** WI-054 — declarative, JSON-serializable alternative for the agent surface:
    *  shallow-merged over the item's current `attrs`. Provide COMPLETE sub-objects
-   *  (e.g. the full `frame`) — a partial replaces the whole key. Exactly one of
-   *  `patch` / `attrs` must be set. */
+   *  (e.g. the full `frame`) — a partial replaces the whole key. */
   readonly attrs?: Readonly<Record<string, unknown>>;
+  /** WI-063 — decoration units to set/replace/clear in the SAME call as `attrs`,
+   *  so a styled edit is one tool call (no separate setFill / setDecoration). Each
+   *  `{ kind, attrs }` is applied like weave.item.setDecoration: attrs = the spec
+   *  to set (decoration.fill = PaintSpec, .shadow / .stroke / .filter / .opacity),
+   *  or `null` to clear that decoration. At least one of `attrs` / `patch` /
+   *  `units` must be provided. */
+  readonly units?: ReadonlyArray<{
+    readonly kind: string;
+    readonly attrs?: Readonly<Record<string, unknown>> | null;
+  }>;
 }
 
 /** WI-055 — rectangle corner radius. Targets `attrs.subAttrs.cornerRadii`
@@ -356,7 +375,14 @@ export function buildWeaveCommands(
         };
       }
       const ts = new Date().toISOString();
-      const agoItem = toAgocraftItem(weaveItem, ts);
+      // WI-063 — attach caller-supplied decoration units at creation so the item
+      // is added fully-styled in one call (fill / shadow / stroke / …), replacing
+      // the seeded defaults by kind. Applied before layout staging so the staged
+      // + serialized subtree carries them.
+      const agoItem =
+        input.units !== undefined && input.units.length > 0
+          ? applyCreationUnits(toAgocraftItem(weaveItem, ts), input.units)
+          : toAgocraftItem(weaveItem, ts);
 
       // WI-021 — layout-driven placement is owned by agocraft's LayoutEngine.
       // weave just hands it the parent + new child and emits whatever Patches
@@ -415,6 +441,11 @@ export function buildWeaveCommands(
   // None of these call into `targets.X`. The ChangeStream subscriber inside
   // `useDocument` is the SOLE state mutator for these mutations.
 
+  // WI-063 — shared generic decoration command (set/replace/clear a unit). Used
+  // BOTH as the registered `weave.item.setDecoration` command AND inline by
+  // `weave.item.update` so a styled edit (attrs + fill/shadow/…) is one call.
+  const setDecorationCommand = createSetDecorationCommand("weave.item.setDecoration");
+
   const updateItem: Command<UpdateItemInput, void> = {
     name: "weave.item.update",
     run: (ctx, input) => {
@@ -422,20 +453,56 @@ export function buildWeaveCommands(
       if (child === undefined) {
         return fail("item-not-found", `weave.item.update: no item with id "${input.itemId}"`);
       }
-      // Project to weave shape so the caller's patcher works against the
-      // expected type, then compute the attrs diff.
-      const weaveItem: WeaveItem = {
-        id: String(child.id),
-        kind: child.kind as DomainKind,
-        attrs: child.attrs as unknown as WeaveItem["attrs"],
-        behaviors: [],
-        createdAt: child.meta.createdAt,
-      };
-      // WI-054 — `patch` (UI) or `attrs` (declarative, agent). The declarative
-      // form shallow-merges the supplied attrs over the item's current attrs.
-      if (input.patch === undefined && input.attrs === undefined) {
-        return fail("invalid-input", "weave.item.update: provide `patch` or `attrs`");
+      const hasAttrs = input.patch !== undefined || input.attrs !== undefined;
+      const hasUnits = input.units !== undefined && input.units.length > 0;
+      // WI-063 — accept an attrs edit, a units edit, or both (units-only is valid).
+      if (!hasAttrs && !hasUnits) {
+        return fail("invalid-input", "weave.item.update: provide `attrs`, `patch`, or `units`");
       }
+      const patches: Patch[] = [];
+
+      // ── attrs edit (when provided) ──
+      if (hasAttrs) {
+        // Project to weave shape so the caller's patcher works against the
+        // expected type, then compute the attrs diff.
+        const weaveItem: WeaveItem = {
+          id: String(child.id),
+          kind: child.kind as DomainKind,
+          attrs: child.attrs as unknown as WeaveItem["attrs"],
+          behaviors: [],
+          createdAt: child.meta.createdAt,
+        };
+        const attrsPatches = computeAttrsPatches(ctx, child, weaveItem, input);
+        patches.push(...attrsPatches);
+      }
+
+      // ── decoration units edit (WI-063) — reuse setDecoration per unit, all in
+      //    this command's single transaction → one undo step ──
+      if (hasUnits) {
+        for (const u of input.units ?? []) {
+          const r = setDecorationCommand.run(ctx, {
+            itemId: input.itemId,
+            kind: u.kind,
+            // null clears the decoration; an object sets/replaces it.
+            attrs: u.attrs ?? null,
+          });
+          if (!r.ok) return r;
+          patches.push(...r.patches);
+        }
+      }
+      return ok(undefined, patches);
+    },
+  };
+
+  // attrs-diff computation for weave.item.update (extracted so the run body can
+  // also fold in unit patches). Returns the item.attrs patch plus any LayoutEngine
+  // reflow patches a frame change triggers.
+  function computeAttrsPatches(
+    ctx: CommandContext,
+    child: AgocraftItem,
+    weaveItem: WeaveItem,
+    input: UpdateItemInput,
+  ): ReadonlyArray<Patch> {
       const patchFn =
         input.patch ??
         ((it: WeaveItem): WeaveItem => ({
@@ -499,12 +566,8 @@ export function buildWeaveCommands(
               newFrame,
             })
           : [];
-      if (extraPatches.length > 0) {
-        return ok(undefined, [patch, ...extraPatches]);
-      }
-      return ok(undefined, [patch]);
-    },
-  };
+      return extraPatches.length > 0 ? [patch, ...extraPatches] : [patch];
+  }
 
   // WI-055 — rectangle corner radius. A thin, dedicated command over the
   // generic `weave.item.update`: it (a) guards that the target is a rectangle,
@@ -711,116 +774,94 @@ export function buildWeaveCommands(
     run: (ctx, input) => ok(undefined, frameUpdatesToPatches(ctx, input.updates)),
   };
 
-  // WI-059 — multi-selection align / distribute as an AGENT-reachable command.
-  //
-  // The selection-handle / toolbar / Alt+letter UI paths compute aligned frames
-  // with the pure `computeAlignedFrames` registry and dispatch
-  // `weave.items.resizeMulti` (see DesignPage `setMultiAligner`). The agent had
-  // no declarative equivalent — it would have had to do the bounding-box math
-  // itself and send raw frames. This command moves that math server-side: the
-  // caller declares { itemIds, op } and the command resolves the frames, runs
-  // the SAME pure helper, and emits the SAME resize patches as one undo step.
-  //
-  // Same-parent invariant mirrors the UI's `multiSameParent` gate: alignment is
-  // only meaningful when every frame lives in one parent's 0..1 coordinate
-  // space. Cross-parent selections are rejected (v1 contract) rather than
-  // silently producing visually wrong results from mixed coordinate spaces.
-  const alignItemsInput = (input: {
-    readonly itemIds: ReadonlyArray<string>;
-    readonly op: AlignOp;
-  }) => input;
-  type AlignItemsInput = ReturnType<typeof alignItemsInput>;
-
-  const alignItems: Command<AlignItemsInput, void> = {
-    name: "weave.items.align",
-    run: (ctx, input) => {
-      if (!ALIGN_OPS_ORDER.includes(input.op)) {
-        return fail(
-          "invalid-input",
-          `weave.items.align: unknown op "${input.op}" (expected one of ${ALIGN_OPS_ORDER.join(", ")})`,
-        );
+  // WI-064 — shared align/distribute → frame-patch helper. Same-parent invariant
+  // (mirrors the UI's `multiSameParent` gate); used by `weave.items.update`'s
+  // `op`. Returns a discriminated result so the caller maps it to ok()/fail().
+  const alignPatches = (
+    ctx: CommandContext,
+    itemIds: ReadonlyArray<string>,
+    op: AlignOp,
+  ): { readonly ok: true; readonly patches: ReadonlyArray<Patch> } | {
+    readonly ok: false;
+    readonly code: string;
+    readonly message: string;
+  } => {
+    if (!ALIGN_OPS_ORDER.includes(op)) {
+      return {
+        ok: false,
+        code: "invalid-input",
+        message: `unknown op "${op}" (one of ${ALIGN_OPS_ORDER.join(", ")})`,
+      };
+    }
+    const ids = itemIds ?? [];
+    if (ids.length < 2) {
+      return { ok: false, code: "invalid-input", message: "align/distribute needs at least 2 itemIds" };
+    }
+    const rootId = String(ctx.document.root.id);
+    let parentId: string | undefined;
+    const inputs: AlignInput[] = [];
+    for (const id of ids) {
+      const item = findChild(ctx.document, id);
+      if (item === undefined) return { ok: false, code: "item-not-found", message: `no item with id "${id}"` };
+      const pi = findParentAndIndex(ctx.document, id);
+      const pid = pi === undefined ? rootId : String(pi.parent.id);
+      if (parentId === undefined) parentId = pid;
+      else if (parentId !== pid) {
+        return {
+          ok: false,
+          code: "cross-parent-selection",
+          message: "all itemIds must share one parent frame (aligns within a single coordinate space)",
+        };
       }
-      const ids = input.itemIds ?? [];
-      if (ids.length < 2) {
-        return fail("invalid-input", "weave.items.align: need at least 2 itemIds");
-      }
-      const rootId = String(ctx.document.root.id);
-      let parentId: string | undefined;
-      const inputs: AlignInput[] = [];
-      for (const id of ids) {
-        const item = findChild(ctx.document, id);
-        if (item === undefined) {
-          return fail("item-not-found", `weave.items.align: no item with id "${id}"`);
-        }
-        const pi = findParentAndIndex(ctx.document, id);
-        const pid = pi === undefined ? rootId : String(pi.parent.id);
-        if (parentId === undefined) {
-          parentId = pid;
-        } else if (parentId !== pid) {
-          return fail(
-            "cross-parent-selection",
-            "weave.items.align: all itemIds must share one parent frame (v1 aligns within a single coordinate space)",
-          );
-        }
-        const f = (item.attrs as { frame?: ItemFrame }).frame;
-        if (f === undefined) continue; // non-spatial item — nothing to align
-        inputs.push({
-          id,
-          frame: { x: f.x, y: f.y, width: f.width, height: f.height, rotation: f.rotation },
-        });
-      }
-      if (inputs.length < 2) {
-        return fail(
-          "invalid-input",
-          "weave.items.align: fewer than 2 of the itemIds have a frame to align",
-        );
-      }
-      const out = computeAlignedFrames(inputs, input.op);
-      // Emit only items whose frame actually moved — keeps history clean (no
-      // zero-delta entries for already-aligned input). Same approx guard as the
-      // UI dispatcher tolerates FP drift from the bbox-center math.
-      const updates = out.flatMap((o, i) => {
-        const prev = inputs[i]!.frame;
-        const moved =
-          Math.abs(prev.x - o.frame.x) > 1e-9 ||
-          Math.abs(prev.y - o.frame.y) > 1e-9 ||
-          Math.abs(prev.width - o.frame.width) > 1e-9 ||
-          Math.abs(prev.height - o.frame.height) > 1e-9;
-        return moved
-          ? [
-              {
-                itemId: o.id,
-                frame: {
-                  x: o.frame.x,
-                  y: o.frame.y,
-                  width: o.frame.width,
-                  height: o.frame.height,
-                },
-              },
-            ]
-          : [];
-      });
-      return ok(undefined, frameUpdatesToPatches(ctx, updates));
-    },
+      const f = (item.attrs as { frame?: ItemFrame }).frame;
+      if (f === undefined) continue; // non-spatial item — nothing to align
+      inputs.push({ id, frame: { x: f.x, y: f.y, width: f.width, height: f.height, rotation: f.rotation } });
+    }
+    if (inputs.length < 2) {
+      return { ok: false, code: "invalid-input", message: "fewer than 2 of the itemIds have a frame to align" };
+    }
+    const out = computeAlignedFrames(inputs, op);
+    // Emit only items whose frame actually moved (clean history; FP-drift guard).
+    const updates = out.flatMap((o, i) => {
+      const prev = inputs[i]!.frame;
+      const moved =
+        Math.abs(prev.x - o.frame.x) > 1e-9 ||
+        Math.abs(prev.y - o.frame.y) > 1e-9 ||
+        Math.abs(prev.width - o.frame.width) > 1e-9 ||
+        Math.abs(prev.height - o.frame.height) > 1e-9;
+      return moved
+        ? [{ itemId: o.id, frame: { x: o.frame.x, y: o.frame.y, width: o.frame.width, height: o.frame.height } }]
+        : [];
+    });
+    return { ok: true, patches: frameUpdatesToPatches(ctx, updates) };
   };
 
-  // WI-061 — apply the SAME attrs change to many items as ONE undo entry. The
-  // declarative, agent-facing mirror of the UI's multi-selection edit (toolbar
-  // `updateAll` → `batchPerItem` → `editor.runBatch`): the user/agent selects N
-  // items and changes a property once, and it reverts in a single Cmd+Z. Where
-  // the UI groups N separate `weave.item.update` execs inside `runBatch`, this
-  // command emits all the patches from ONE `run`, so the TransactionRunner gives
-  // them one transaction id → the history records one entry (no runBatch needed
-  // on the caller, which matters for the agent path where calls cross an async
-  // network boundary and cannot be wrapped in a synchronous runBatch).
-  //
-  // `attrs` is shallow-merged over EACH item's current attrs — provide COMPLETE
-  // sub-objects (e.g. a full `frame`), exactly like `weave.item.update`. Any
-  // frame change is reported to the LayoutEngine per item (same single entry
-  // point as the singular update / resizeMulti).
+  // WI-061/063/064 — the ONE multi-selection EDIT command. Absorbs the former
+  // weave.items.update + weave.items.align + weave.items.resizeMulti so the agent
+  // has a single "modify these items" verb. Any combination of:
+  //   • attrs   — shared attrs merged over EACH itemId (shape subAttrs normalized)
+  //   • units   — shared decoration units set on EACH itemId (fill/shadow/…/null clears)
+  //   • updates — per-item explicit frames [{ itemId, frame }]
+  //   • op      — align/distribute across itemIds (same-parent, 8 ops)
+  // All emitted from ONE run → one transaction → one Cmd+Z. (The UI keeps using
+  // weave.items.resizeMulti directly; that command stays registered.)
   const itemsUpdateInput = (input: {
-    readonly itemIds: ReadonlyArray<string>;
-    readonly attrs: Readonly<Record<string, unknown>>;
+    readonly itemIds?: ReadonlyArray<string>;
+    readonly attrs?: Readonly<Record<string, unknown>>;
+    readonly units?: ReadonlyArray<{
+      readonly kind: string;
+      readonly attrs?: Readonly<Record<string, unknown>> | null;
+    }>;
+    readonly updates?: ReadonlyArray<{
+      readonly itemId: string;
+      readonly frame: {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+      };
+    }>;
+    readonly op?: AlignOp;
   }) => input;
   type ItemsUpdateInput = ReturnType<typeof itemsUpdateInput>;
 
@@ -828,48 +869,75 @@ export function buildWeaveCommands(
     name: "weave.items.update",
     run: (ctx, input) => {
       const ids = input.itemIds ?? [];
-      if (ids.length === 0) {
-        return fail("invalid-input", "weave.items.update: `itemIds` must be non-empty");
+      const hasAttrs = input.attrs !== undefined;
+      const hasUnits = input.units !== undefined && input.units.length > 0;
+      const hasUpdates = input.updates !== undefined && input.updates.length > 0;
+      const hasOp = input.op !== undefined;
+      if (!hasAttrs && !hasUnits && !hasUpdates && !hasOp) {
+        return fail("invalid-input", "weave.items.update: provide `attrs`, `units`, `updates`, or `op`");
       }
-      if (input.attrs === undefined) {
-        return fail("invalid-input", "weave.items.update: `attrs` is required");
+      if ((hasAttrs || hasUnits) && ids.length === 0) {
+        return fail("invalid-input", "weave.items.update: `itemIds` is required for `attrs` / `units`");
       }
       const patches: Patch[] = [];
-      for (const id of ids) {
-        const child = findChild(ctx.document, id);
-        if (child === undefined) {
-          return fail("item-not-found", `weave.items.update: no item with id "${id}"`);
+
+      // shared attrs → each item (shape subAttrs normalized, like weave.item.update)
+      if (hasAttrs) {
+        for (const id of ids) {
+          const child = findChild(ctx.document, id);
+          if (child === undefined) {
+            return fail("item-not-found", `weave.items.update: no item with id "${id}"`);
+          }
+          const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
+          const mergedRaw: Readonly<Record<string, unknown>> = { ...prevAttrs, ...input.attrs };
+          const after = child.kind === "shape" ? normalizeShapeAttrs(mergedRaw) : mergedRaw;
+          patches.push({ type: "item.attrs", itemId: child.id, before: child.attrs, after });
+          const oldFrame = (prevAttrs as { frame?: AgocraftItemFrame }).frame;
+          const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
+          const frameChanged =
+            oldFrame !== undefined &&
+            newFrame !== undefined &&
+            (oldFrame.x !== newFrame.x ||
+              oldFrame.y !== newFrame.y ||
+              oldFrame.width !== newFrame.width ||
+              oldFrame.height !== newFrame.height ||
+              oldFrame.rotation !== newFrame.rotation);
+          if (LAYOUT_FEATURE_ENABLED && frameChanged && oldFrame !== undefined && newFrame !== undefined) {
+            patches.push(
+              ...getLayoutEngine().onFrameChanged({
+                root: ctx.document.root,
+                itemId: child.id,
+                oldFrame,
+                newFrame,
+              }),
+            );
+          }
         }
-        const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
-        // Shallow-merge over the item's current attrs (same contract as the
-        // singular declarative weave.item.update).
-        const after: Readonly<Record<string, unknown>> = { ...prevAttrs, ...input.attrs };
-        patches.push({ type: "item.attrs", itemId: child.id, before: child.attrs, after });
-        const oldFrame = (prevAttrs as { frame?: AgocraftItemFrame }).frame;
-        const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
-        const frameChanged =
-          oldFrame !== undefined &&
-          newFrame !== undefined &&
-          (oldFrame.x !== newFrame.x ||
-            oldFrame.y !== newFrame.y ||
-            oldFrame.width !== newFrame.width ||
-            oldFrame.height !== newFrame.height ||
-            oldFrame.rotation !== newFrame.rotation);
-        if (
-          LAYOUT_FEATURE_ENABLED &&
-          frameChanged &&
-          oldFrame !== undefined &&
-          newFrame !== undefined
-        ) {
-          patches.push(
-            ...getLayoutEngine().onFrameChanged({
-              root: ctx.document.root,
-              itemId: child.id,
-              oldFrame,
-              newFrame,
-            }),
-          );
+      }
+
+      // shared decoration units → each item (reuse setDecoration; null clears)
+      if (hasUnits) {
+        for (const id of ids) {
+          for (const u of input.units ?? []) {
+            const r = setDecorationCommand.run(ctx, {
+              itemId: id,
+              kind: u.kind,
+              attrs: u.attrs ?? null,
+            });
+            if (!r.ok) return r;
+            patches.push(...r.patches);
+          }
         }
+      }
+
+      // per-item explicit frames (was weave.items.resizeMulti)
+      if (hasUpdates) patches.push(...frameUpdatesToPatches(ctx, input.updates ?? []));
+
+      // align / distribute across the selection (was weave.items.align)
+      if (hasOp && input.op !== undefined) {
+        const r = alignPatches(ctx, ids, input.op);
+        if (!r.ok) return fail(r.code, `weave.items.update: ${r.message}`);
+        patches.push(...r.patches);
       }
       return ok(undefined, patches);
     },
@@ -1454,6 +1522,36 @@ export function buildWeaveCommands(
     maxNodes: MAX_PASTE_NODES,
   });
 
+  // WI-064 — the ONE multi-selection LIFECYCLE command. Absorbs the former
+  // weave.items.remove + weave.items.duplicate behind a single `op`, so the
+  // agent's multi surface is exactly two verbs (items.update = edit, this =
+  // structural). Delegates to the kit commands (which stay registered for the
+  // UI) so the patch semantics / undo are identical.
+  const itemsLifecycleInput = (input: {
+    readonly itemIds: ReadonlyArray<string>;
+    readonly op: "remove" | "duplicate";
+  }) => input;
+  type ItemsLifecycleInput = ReturnType<typeof itemsLifecycleInput>;
+  const itemsLifecycle: Command<ItemsLifecycleInput, void> = {
+    name: "weave.items.lifecycle",
+    run: (ctx, input) => {
+      const ids = input.itemIds ?? [];
+      if (ids.length === 0) {
+        return fail("invalid-input", "weave.items.lifecycle: `itemIds` must be non-empty");
+      }
+      if (input.op !== "remove" && input.op !== "duplicate") {
+        return fail("invalid-input", "weave.items.lifecycle: `op` must be 'remove' | 'duplicate'");
+      }
+      // Delegate to the kit commands (registered for the UI); normalize the
+      // result to void (duplicate returns the new ids, which the agent doesn't need).
+      const r =
+        input.op === "remove"
+          ? removeItems.run(ctx, { itemIds: ids })
+          : duplicateItems.run(ctx, { itemIds: ids });
+      return r.ok ? ok(undefined, r.patches) : r;
+    },
+  };
+
   // ─── WI-020 / WI-043 — explicit layout mutations ──────────────────────
   //
   // `weave.frame.setLayout` and `weave.item.setLayoutChild` directly emit
@@ -1509,8 +1607,8 @@ export function buildWeaveCommands(
     setShapeCornerRadius as Command,
     setShapeFill as Command,
     resizeMulti as Command,
-    alignItems as Command,
     itemsUpdate as Command,
+    itemsLifecycle as Command,
     updateBehavior as Command,
     reset as Command,
     setBackground as Command,
@@ -1538,8 +1636,9 @@ export function buildWeaveCommands(
     swapFlexOrder as Command,
     dropGridCell as Command,
     // DR-028 — decoration as units (shadow/stroke/fill/filter/opacity). The
-    // agocraft kit owns the patch semantics; weave just names + uses it.
-    createSetDecorationCommand("weave.item.setDecoration") as Command,
+    // agocraft kit owns the patch semantics; weave just names + uses it. Same
+    // instance reused inline by weave.item.update for one-call styled edits (WI-063).
+    setDecorationCommand as Command,
   ];
 }
 
