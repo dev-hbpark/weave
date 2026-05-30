@@ -7,7 +7,7 @@
 // starts a native image drag and clicks always hit the button.
 
 const SRC = {
-  mark: "/aku/mascot-mark",
+  mark: "/aku/mascot-full",
   full: "/aku/mascot-full",
 } as const;
 
