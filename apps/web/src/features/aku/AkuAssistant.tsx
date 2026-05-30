@@ -34,6 +34,7 @@ export function AkuAssistant({
   document: agoDocument,
   designId,
   designInfo,
+  onFramesAdded,
 }: {
   readonly editor: Editor;
   readonly document: AgocraftDocument;
@@ -41,6 +42,8 @@ export function AkuAssistant({
   /** Canvas px size + background from the Design view-model — passed to the
    *  agent per task so it can size text against the real canvas. */
   readonly designInfo: { width: number; height: number; background: string };
+  /** WI-065 — fit the camera after the agent adds top-level frame(s). */
+  readonly onFramesAdded?: (() => void) | undefined;
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   // Delay the first-run coachmark until the page has settled — mounting it
@@ -82,6 +85,7 @@ export function AkuAssistant({
     getSelection: () => [...selRef.current],
     getDesignInfo: () => designInfoRef.current,
     designId,
+    ...(onFramesAdded !== undefined ? { onFramesAdded } : {}),
   });
   const { geometry, beginMove, beginResize } = useAkuGeometry();
 

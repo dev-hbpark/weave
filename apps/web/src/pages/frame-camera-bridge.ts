@@ -16,6 +16,12 @@ export interface DesignBox {
   readonly h: number;
 }
 
+/** Default fill factor for EVERY camera fit (WI-065). Fit framed content at this
+ *  fraction of the normal fit size so it always lands centered with breathing
+ *  room — consistently across every entry point (thumbnail double-click,
+ *  add-into-frame full-screen, fit-all). Callers pass no factor → they get this. */
+export const FRAME_FIT_FILL = 0.7;
+
 let fitImpl: ((box: DesignBox, fillFactor?: number) => void) | undefined;
 
 /** FrameStage registers the live fit implementation. Returns a disposer. */
@@ -29,8 +35,8 @@ export function setCameraFitBox(fn: (box: DesignBox, fillFactor?: number) => voi
 /** Move + zoom the camera so `box` fills the viewport. No-op until a
  *  FrameStage has registered an implementation (e.g. read-only embeds).
  *
- *  `fillFactor` (default 1) scales the fit DOWN — e.g. 0.7 fits the box at 70 %
- *  of the normal fit size, leaving extra breathing room around it. */
-export function cameraFitBox(box: DesignBox, fillFactor?: number): void {
+ *  `fillFactor` scales the fit DOWN; it defaults to `FRAME_FIT_FILL` so all fits
+ *  are consistent. Pass an explicit value only to deliberately differ. */
+export function cameraFitBox(box: DesignBox, fillFactor: number = FRAME_FIT_FILL): void {
   fitImpl?.(box, fillFactor);
 }

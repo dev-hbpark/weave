@@ -197,6 +197,11 @@ export function useAkuAgent(deps: {
    *  is absolute design-px) relative to the actual canvas. */
   readonly getDesignInfo?: () => { width: number; height: number; background: string };
   readonly designId: string;
+  /** WI-065 — called after a turn that ADDED top-level frame(s), so the host can
+   *  fit the camera to the new content (agent edits go straight through
+   *  editor.exec and never trigger the UI's add-time fit, so without this an
+   *  agent-built deck stays at the base ~100% view instead of the shared 70%). */
+  readonly onFramesAdded?: () => void;
   readonly url?: string;
   readonly token?: string;
 }): UseAkuAgent {
@@ -413,6 +418,9 @@ export function useAkuAgent(deps: {
       setStatus("streaming");
 
       const depthBefore = editor.history.undoSize();
+      // WI-065 — top-level frame count before the turn; if it grows, the agent
+      // added slide(s) and we fit the camera afterwards (see below).
+      const rootFramesBefore = getDocumentRef.current().root.children.length;
 
       // Attached images serve two roles: (a) VISION — raw bytes go to the model
       // via submit({ images }); (b) ASSET — upload them so the agent can drop the
@@ -522,6 +530,13 @@ export function useAkuAgent(deps: {
           historyDepthAfter: depthAfter,
           undoEntryCount: Math.max(0, depthAfter - depthBefore),
         }));
+        // WI-065 — the agent added top-level frame(s) → fit the camera to the new
+        // content at the shared 70%, so an agent-built deck lands like every other
+        // fit instead of staying at the base ~100% view. Gated on a frame-count
+        // increase so pure edits don't yank the camera.
+        if (succeeded && getDocumentRef.current().root.children.length > rootFramesBefore) {
+          deps.onFramesAdded?.();
+        }
       } catch (err) {
         if (genRef.current !== gen) return;
         const detail = err instanceof Error ? err.message : String(err);

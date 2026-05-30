@@ -1386,20 +1386,19 @@ function DesignPageBody() {
   const handleClearFocus = useCallback(() => setFocused(undefined), []);
   // Double-clicking a thumbnail brings its frame full-screen — the same
   // camera fit applied when an item is added into a frame.
-  // Double-clicking a slide's thumbnail fits that frame — but at 70% of the
-  // normal fit size, so it lands centered with breathing room rather than
-  // edge-to-edge (WI-065).
-  const THUMBNAIL_FIT_FILL = 0.7;
+  // Double-clicking a slide's thumbnail fits that frame. Like every camera fit
+  // it uses cameraFitBox's shared FRAME_FIT_FILL (70%), so all fits land at a
+  // consistent size with breathing room (WI-065).
   const handleZoomToFrame = useCallback(
     (id: string) => {
       const box = absoluteFrameBox(docInAgocraft, id, design.width, design.height);
-      if (box !== null) cameraFitBox(box, THUMBNAIL_FIT_FILL);
+      if (box !== null) cameraFitBox(box);
     },
     [docInAgocraft, design.width, design.height],
   );
   // Double-clicking empty design space fits the camera to the union bounds of
-  // every top-level item, so the whole design comes into view at once. The
-  // fit impl (FrameStage.zoomToBox) already leaves a 0.9 margin.
+  // every top-level item, so the whole design comes into view at once — at the
+  // same FRAME_FIT_FILL size as every other fit (cameraFitBox default).
   const handleFitAll = useCallback(() => {
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
@@ -3052,6 +3051,9 @@ function DesignPageBody() {
                               height: design.height,
                               background: design.background,
                             }}
+                            // WI-065 — after the agent adds slide(s), fit the deck
+                            // at the shared 70% (agent edits skip the UI add-fit).
+                            onFramesAdded={handleFitAll}
                           />
                           <CursorTooltipBridge
                             hover={hoverContext}
