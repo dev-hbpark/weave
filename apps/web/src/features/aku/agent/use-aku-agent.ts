@@ -519,12 +519,15 @@ export function useAkuAgent(deps: {
         patchLastAssistant((prev) => ({
           ...prev,
           // Keep the streamed prose if we got any; else fall back to finalText, or
-          // a confirmation when the turn was pure tool calls with no prose.
+          // a confirmation when the turn was pure tool calls with no prose. `||`
+          // (not `??`) so an EMPTY finalText also yields the confirmation — the
+          // server blanks finalText in commands-only mode, which would otherwise
+          // render a fully empty bubble.
           text:
             (succeeded
               ? prev.text !== ""
                 ? prev.text
-                : (res.finalText ?? "완료했어요.")
+                : (res.finalText || "완료했어요.")
               : (res.error ?? "요청을 처리하지 못했어요.")) + truncatedNote,
           ...(succeeded ? {} : { error: true }),
           historyDepthAfter: depthAfter,
