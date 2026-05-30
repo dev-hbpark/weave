@@ -14,13 +14,35 @@
 2. **semantic** — bg / text / accent / surface / border / focus / aurora-stops / shadows. 정의 위치: `tokens.css` 의 `:root` + `[data-theme="..."]` selectors.
 3. **component** — Button / Card / ThemeSwitcher 의 own utility composition (Tailwind class + CSS var).
 
-## 3 theme variant
+## 10 theme variants (DR-design-026)
+
+레지스트리 SSOT = `packages/design-system/src/themes.ts`. `ThemeName` 은 거기서 파생,
+멤버십은 `isThemeName()` 한 번의 lookup — switcher / storage guard 가 자동 동기화.
+
+**Dark (7)**
 
 | variant | DNA | 사용 의도 |
 |---|---|---|
 | **Aurora** (default) | premium glass + slow drifting gradient + magenta-cyan-violet aurora | 메인 톤. 신규 사용자 첫 진입. B2B 진중함 + 시각적 매력 동시 |
-| **Mono** | Linear-grade sharp, monochrome + 단일 orange accent, aurora 비활성 | 노트 / 전문가 모드. 진중한 컨텍스트 (제안서 / 보고) 에 적합 |
 | **Vivid** | max playful, multi-color aurora (hot pink + cyan + yellow), 강한 glow | 캠페인 / 디자인 / 마케팅 자료. "톡톡 튀는" 의 극값 |
+| **Mono** | Linear-grade sharp, monochrome + 단일 orange accent, aurora 비활성 | 노트 / 전문가 모드. 진중한 컨텍스트 (제안서 / 보고) 에 적합 |
+| **Noir** | ink-comic / manhwa noir — near-black + white high-contrast outlines, 단일 blood-red accent, glow 없음, 낮은 blur | 만화/웹툰 작업의 흑백 잉크 톤, 드라마틱 surface |
+| **Forest** | calm emerald/teal aurora, 자연 톤 | 차분 집중. 장시간 편집 세션 |
+| **Sunset** | warm dusk gradient (orange→magenta→violet), 강한 glow | 따뜻한 무드 / 감성 콘텐츠 |
+| **Ocean** | deep blue + cyan/teal, cool calm | 시원·차분, 데이터/정보 밀집 화면 |
+
+**Light (3)**
+
+| variant | DNA | 사용 의도 |
+|---|---|---|
+| **Daylight** | clean cool-white, sky-blue accent, 아주 옅은 pastel aurora wash | 밝은 환경 / 주간 작업 기본 라이트 |
+| **Paper** | warm cream/sepia editorial, terracotta accent, aurora 없음 (flat) | 문서/읽기 중심, 인쇄물 느낌 |
+| **Webtoon** | bright paper-white, bold ink outlines, tri-color pop accent + pastel pop aurora, 낮은 blur | 웹툰/코믹 톤. 밝고 통통 튀는 인쇄 만화 느낌 |
+
+Light 테마는 text/surface 를 dark-ink ramp 로 뒤집고, accent-as-button-bg 는 white
+`--text-on-accent` 와 ≥ 3:1 (AA-large) 을 유지. 루트 캔버스(`html`)가 `var(--bg-page)`
+로 테마를 따라가야 light 가 실제로 light 로 보임 — 불투명 `body` bg 는 fixed aurora 레이어를
+가리므로 금지 (main.css, DR-design-026 § Light-theme background fix).
 
 전환은 `<html data-theme="...">` 의 attribute swap. View Transitions API 가 cross-fade.
 

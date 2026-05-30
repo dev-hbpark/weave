@@ -53,6 +53,14 @@ export type AkuMessage = AkuUserMessage | AkuAssistantMessage;
 /** Conversation lifecycle. `streaming` = a submit is in flight (caret + Stop). */
 export type AkuStatus = "idle" | "streaming";
 
+/** The reverse-MCP connection surfaced to the panel (small-think DR-010). Orthogonal
+ *  to AkuStatus (which tracks a single turn). `banner` is a Korean caption shown only
+ *  when the connection needs attention (reconnecting / failed), else null when healthy. */
+export interface AkuConnection {
+  readonly state: "idle" | "connecting" | "open" | "reconnecting" | "closed" | "error";
+  readonly banner: string | null;
+}
+
 /** A user turn reloaded into the composer for editing. */
 export interface AkuDraft {
   readonly text: string;

@@ -98,9 +98,6 @@ export function createDefaultItem<K extends DomainKind>(
       alt: "",
       fit: "cover",
       borderRadius: 0,
-      opacity: 1,
-      filter: {},
-      shadow: null,
     },
     video: {
       frame: FULL_FRAME,
@@ -114,16 +111,12 @@ export function createDefaultItem<K extends DomainKind>(
       volume: 1,
       playbackRate: 1,
       borderRadius: 0,
-      opacity: 1,
-      shadow: null,
     },
+    // DR-028 — decoration (fill / stroke / shadow / opacity) is no longer a shape
+    // attr; toAgocraftItem seeds a default `decoration.fill` unit at creation.
     shape: {
       frame: FULL_FRAME,
       shape: "rectangle",
-      fill: { type: "solid", color: "#cbd5f5" },
-      stroke: null,
-      shadow: null,
-      opacity: 1,
       subAttrs: { shape: "rectangle", cornerRadii: { tl: 0, tr: 0, br: 0, bl: 0 } },
     },
     // Phase 15 — text primitive default. Phase 1 (WI-016 / WI-029) adds
@@ -142,8 +135,6 @@ export function createDefaultItem<K extends DomainKind>(
       textAlign: "left",
       lineHeight: 1.4,
       letterSpacing: 0,
-      opacity: 1,
-      shadow: null,
       // ─── Phase 1 (WI-016) additive defaults ─────────────────────────
       // textAutoResize removed in agocraft schema v10 (WI-019 B4 / T3 Modify).
       // Layout intent moves to attrs.layoutChild; render path derives the

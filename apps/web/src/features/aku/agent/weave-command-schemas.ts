@@ -33,6 +33,17 @@ const STR_ARR: Json = { type: "array", items: { type: "string" } };
 /** Open object — the agent supplies a partial attrs/policy bag. */
 const ATTRS: Json = { type: "object", additionalProperties: true };
 
+// Frame coordinate-base note. `weave.item.add` advertises `frame` as a typed
+// schema (the FRAME const, with per-field descriptions), but the attrs-editing
+// commands (`weave.item.update` / `weave.items.update`) take an OPEN attrs bag
+// where `frame` is not a typed field — so the base reaches the agent only via
+// this note folded into the bag's description.
+const FRAME_BASE_NOTE =
+  "attrs.frame = { x, y, width, height, rotation }: x/y/width/height are 0..1 ratios of the " +
+  "PARENT frame's box — a top-level item's parent is the whole DESIGN (canvas). x/y = top-left " +
+  "corner (0 = parent's top-left edge, 1 = parent's bottom-right edge), width/height = size as a " +
+  "fraction of the parent; rotation = radians about the box center. NEVER pixels.";
+
 // Text attrs sizing note, shared by `weave.item.add` (attrsOverride) and
 // `weave.item.update` (attrs). The detailed per-field model (units, defaults,
 // resize modes, role-based fontSize guidance) lives in WEAVE_CAPABILITIES'
@@ -58,23 +69,191 @@ const QR_ATTRS_NOTE =
 /** Open attrs bag carrying the text + qr field notes in its description — used by
  *  the two attrs-editing commands so the hint rides along on `item.add` /
  *  `item.update` without bloating the shared `ATTRS` used elsewhere. */
+// Shape attrs sizing/creation note. The full per-shape param model lives in
+// WEAVE_CAPABILITIES' `shape` itemKind; this is the reminder on item.add/update.
+const SHAPE_ATTRS_NOTE =
+  "For shape items: set attrs.shape to the sub-kind " +
+  "(rectangle|ellipse|line|arrow|triangle|star|polygon|poly|path|speech-bubble|heart). " +
+  "Per-kind geometry lives in attrs.subAttrs (see its schema) and every geometry field is " +
+  "OPTIONAL — anything you omit is auto-filled with a sensible default, so you CANNOT create " +
+  "an invalid shape; include only the subAttrs fields you actually want to set (e.g. " +
+  "star { points, innerRatio }, polygon { sides }, poly { points, closed }, rectangle " +
+  "{ cornerRadii }). If you set subAttrs, set subAttrs.shape to the same sub-kind. Fill is NOT " +
+  "set here — use weave.shape.setFill (solid/gradient/image PaintSpec); shadow/stroke/blur/" +
+  "opacity are decoration units via weave.item.setDecoration.";
+
+// Per-shape valid-field contract advertised to the agent (WI-062). A discriminated
+// union on `shape`: each branch lists exactly the geometry fields that sub-kind
+// accepts (`additionalProperties:false` → other fields are invalid for that kind),
+// and geometry is OPTIONAL (only `shape` is required) because the host fills any
+// missing field with a default. This tells the agent up-front which attributes are
+// usable per shape; the host's normalization guarantees completeness regardless.
+const ARROW_HEAD: Json = { type: "string", enum: ["none", "triangle", "open", "diamond", "circle"] };
+const SHAPE_SUBATTRS_SCHEMA: Json = {
+  type: "object",
+  description:
+    "Shape geometry, discriminated on `shape`. Geometry fields are OPTIONAL (defaults are " +
+    "auto-filled); set only what you want to change. Each sub-kind accepts only the fields shown.",
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        shape: { const: "rectangle" },
+        cornerRadii: {
+          type: "object",
+          properties: { tl: NUM, tr: NUM, br: NUM, bl: NUM },
+          additionalProperties: false,
+        },
+      },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    { type: "object", properties: { shape: { const: "ellipse" } }, required: ["shape"], additionalProperties: false },
+    {
+      type: "object",
+      properties: { shape: { const: "line" }, thickness: NUM },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        shape: { const: "arrow" },
+        heads: {
+          type: "object",
+          properties: { start: ARROW_HEAD, end: ARROW_HEAD },
+          additionalProperties: false,
+        },
+        headSize: NUM,
+      },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        shape: { const: "triangle" },
+        variant: {
+          type: "string",
+          enum: ["equilateral", "isosceles-up", "isosceles-down", "right-angle"],
+        },
+      },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { shape: { const: "star" }, points: NUM, innerRatio: NUM },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { shape: { const: "polygon" }, sides: NUM },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        shape: { const: "poly" },
+        points: { type: "array", items: obj({ x: NUM, y: NUM }, ["x", "y"]) },
+        closed: { type: "boolean" },
+      },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { shape: { const: "path" }, d: STR },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        shape: { const: "speech-bubble" },
+        tail: {
+          type: "object",
+          properties: {
+            anchorX: NUM,
+            anchorY: NUM,
+            direction: { type: "string", enum: ["down", "up", "left", "right", "free"] },
+          },
+          additionalProperties: false,
+        },
+        cornerRadius: NUM,
+      },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { shape: { const: "heart" }, variant: { type: "string", enum: ["classic", "rounded"] } },
+      required: ["shape"],
+      additionalProperties: false,
+    },
+  ],
+};
+
+// Open attrs bag, but with the load-bearing structured properties spelled out so
+// the agent sees valid fields up-front: `shape` (the sub-kind) + `subAttrs` (the
+// per-kind geometry contract above). `additionalProperties: true` keeps the bag
+// open for the other kinds' attrs (text / image / qr fields, frame, etc.).
 const ATTRS_WITH_TEXT_NOTE: Json = {
   type: "object",
   additionalProperties: true,
-  description: `${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE}`,
+  properties: {
+    shape: {
+      type: "string",
+      enum: [
+        "rectangle",
+        "ellipse",
+        "line",
+        "arrow",
+        "triangle",
+        "star",
+        "polygon",
+        "poly",
+        "path",
+        "speech-bubble",
+        "heart",
+      ],
+      description: "Shape sub-kind (shape items only). Geometry goes in subAttrs.",
+    },
+    subAttrs: SHAPE_SUBATTRS_SCHEMA,
+  },
+  description: `${FRAME_BASE_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE}`,
 };
 
 function obj(properties: Readonly<Record<string, Json>>, required: ReadonlyArray<string>): Json {
   return { type: "object", properties, required: [...required], additionalProperties: false };
 }
 
-/** Outer frame box — 0..1 ratios of the container (Figma-frame paradigm). */
-const FRAME: Json = obj({ x: NUM, y: NUM, width: NUM, height: NUM, rotation: NUM }, [
-  "x",
-  "y",
-  "width",
-  "height",
-]);
+/** Outer frame box — 0..1 ratios of the PARENT frame (top-level item = the whole
+ *  design). Figma-frame paradigm. Every field carries its base so the agent never
+ *  guesses what the 0..1 is relative to. */
+const FRAME: Json = {
+  type: "object",
+  description:
+    "Bounding box in 0..1 ratios of the PARENT frame's box — a top-level item's parent is the " +
+    "whole DESIGN (canvas). NEVER pixels.",
+  properties: {
+    x: {
+      type: "number",
+      description: "Left edge, 0..1 of the PARENT frame's width (top-level = the design width). 0 = parent left edge.",
+    },
+    y: {
+      type: "number",
+      description: "Top edge, 0..1 of the PARENT frame's height (top-level = the design height). 0 = parent top edge.",
+    },
+    width: { type: "number", description: "Width as 0..1 of the PARENT frame's width (1 = full parent width)." },
+    height: { type: "number", description: "Height as 0..1 of the PARENT frame's height (1 = full parent height)." },
+    rotation: { type: "number", description: "Rotation in radians about the box center (not a ratio)." },
+  },
+  required: ["x", "y", "width", "height"],
+  additionalProperties: false,
+};
 
 /** The domain item kinds weave can create (`seed.ts`). */
 const ITEM_KIND: Json = {
@@ -91,6 +270,43 @@ const BEHAVIOR: Json = {
   additionalProperties: true,
 };
 
+/** Frame layout policy (LayoutSpec). Open object — the variant is discriminated
+ *  on `kind`, which JSON Schema can't gate cleanly, so the shape rides in the
+ *  description (mirrors @agocraft/layout's AutoFlexSpec / AutoGridSpec). Omit
+ *  `layout` on the command to CLEAR the frame's layout (back to free placement). */
+const LAYOUT_SPEC: Json = {
+  type: "object",
+  additionalProperties: true,
+  description:
+    "A LayoutSpec, discriminated on `kind` (like CSS flexbox / grid). One of:\n" +
+    "• { kind:'absolute-constraints' } — free placement; each child keeps its own frame (default).\n" +
+    "• { kind:'auto-flex', direction:'row'|'column', gap, justify, align, padding } — single-axis flow. " +
+    "gap = child spacing as a 0..1 ratio of the frame's MAIN axis; " +
+    "justify (main-axis) = 'start'|'center'|'end'|'space-between'|'space-around'; " +
+    "align (cross-axis) = 'start'|'center'|'end'|'stretch'; " +
+    "padding = { top, right, bottom, left } each a 0..1 ratio of the frame (top/bottom of its height, left/right of its width).\n" +
+    "• { kind:'auto-grid', columns, rows, columnGap, rowGap, justify, align, padding } — track grid. " +
+    "columns/rows = arrays of TrackSize, each { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the frame's track axis) | { kind:'auto' } (fit children); empty array = one full track. " +
+    "columnGap/rowGap = 0..1 ratios of the frame (columnGap of its width, rowGap of its height); justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch'; padding as above.",
+};
+
+/** Child policy inside a parent's layout (LayoutChildPolicy). `kind` SHOULD
+ *  match the parent frame's layout kind (mismatch falls back to
+ *  absolute-constraints, lossless). Omit `policy` to CLEAR it. */
+const LAYOUT_CHILD_POLICY: Json = {
+  type: "object",
+  additionalProperties: true,
+  description:
+    "A LayoutChildPolicy, discriminated on `kind` (match the parent frame's layout kind). One of:\n" +
+    "• { kind:'absolute-constraints', anchor:{ horizontal, vertical } } — pin within the parent.\n" +
+    "• { kind:'auto-flex', grow, shrink, basis, alignSelf? } — grow/shrink are flex weights (≥0); " +
+    "basis = main-axis base size (a 0..1 ratio of the parent frame's main axis, or 'auto' = use the child's own size); " +
+    "alignSelf overrides the parent's cross-axis align for this child ('start'|'center'|'end'|'stretch').\n" +
+    "• { kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf? } — " +
+    "column/row are 1-based cell indices; columnSpan/rowSpan (≥1) merge cells; " +
+    "alignSelf (row-axis) / justifySelf (column-axis) override the parent align/justify for this child.",
+};
+
 /** Human labels for the transcript edit-chips (command name → Korean verb).
  *  Reused as each spec's `label`, so the two never drift. */
 export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
@@ -102,6 +318,8 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.shape.setFill": "채우기 설정",
   "weave.shape.setVertices": "다각형 정점 편집",
   "weave.items.resizeMulti": "크기 조정",
+  "weave.items.update": "여러 아이템 수정",
+  "weave.items.align": "정렬/분배",
   "weave.behavior.update": "동작 수정",
   "weave.doc.reset": "문서 초기화",
   "weave.design.setBackground": "배경색 변경",
@@ -229,19 +447,37 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
             // solid
             color: STR,
             // linear-gradient
-            angle: NUM,
+            angle: {
+              type: "number",
+              description: "linear-gradient angle in DEGREES (0 = up, 90 = right). Not a ratio.",
+            },
             // radial-gradient
-            cx: NUM,
-            cy: NUM,
+            cx: {
+              type: "number",
+              description: "radial-gradient center X, 0..1 of THIS shape's bbox (0 = left edge, 1 = right edge).",
+            },
+            cy: {
+              type: "number",
+              description: "radial-gradient center Y, 0..1 of THIS shape's bbox (0 = top edge, 1 = bottom edge).",
+            },
             // gradient stops (linear + radial)
             stops: {
               type: "array",
-              items: obj({ offset: NUM, color: STR }, ["offset", "color"]),
+              items: obj(
+                {
+                  offset: {
+                    type: "number",
+                    description: "stop position, 0..1 along the gradient axis (0 = start, 1 = end).",
+                  },
+                  color: STR,
+                },
+                ["offset", "color"],
+              ),
             },
             // image / video
             src: STR,
             fit: STR,
-            opacity: NUM,
+            opacity: { type: "number", description: "paint opacity, 0..1 scalar (1 = opaque, 0 = transparent)." },
             muted: { type: "boolean" },
             loop: { type: "boolean" },
           },
@@ -268,7 +504,8 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         points: {
           type: "array",
           items: obj({ x: NUM, y: NUM }, ["x", "y"]),
-          description: "Vertices, each {x,y} a 0..1 ratio of the shape bbox.",
+          description:
+            "Vertices, each {x,y} a 0..1 ratio of THIS shape's OWN bbox (NOT the parent frame / design) — so they ride the shape's resize & rotate.",
         },
         closed: { type: "boolean" },
       },
@@ -284,18 +521,72 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
           items: obj(
             {
               itemId: STR,
-              frame: obj({ x: NUM, y: NUM, width: NUM, height: NUM }, [
-                "x",
-                "y",
-                "width",
-                "height",
-              ]),
+              frame: {
+                type: "object",
+                description:
+                  "New box in 0..1 ratios of the item's PARENT frame (top-level item = the whole design). NEVER pixels.",
+                properties: {
+                  x: { type: "number", description: "Left edge, 0..1 of the PARENT frame's width (top-level = design width)." },
+                  y: { type: "number", description: "Top edge, 0..1 of the PARENT frame's height (top-level = design height)." },
+                  width: { type: "number", description: "Width as 0..1 of the PARENT frame's width." },
+                  height: { type: "number", description: "Height as 0..1 of the PARENT frame's height." },
+                },
+                required: ["x", "y", "width", "height"],
+                additionalProperties: false,
+              },
             },
             ["itemId", "frame"],
           ),
         },
       },
       ["updates"],
+    ),
+  },
+  // ── multi-item attribute edit as ONE undo step (WI-061) ──
+  // Apply the SAME `attrs` change to every id in `itemIds` — the agent-facing
+  // equivalent of "select N items, change a property once". Lands as a SINGLE
+  // undoable step (one Cmd+Z), unlike calling weave.item.update N times (which
+  // is N separate undo entries). `attrs` is shallow-merged over EACH item's
+  // current attrs — provide COMPLETE sub-objects (same rules as weave.item.update;
+  // text/shape sizing notes below apply per item). Prefer this for any "make all
+  // of these …" edit. For differing per-item frames use weave.items.resizeMulti;
+  // for alignment use weave.items.align.
+  "weave.items.update": {
+    label: label("weave.items.update"),
+    inputSchema: obj({ itemIds: STR_ARR, attrs: ATTRS_WITH_TEXT_NOTE }, ["itemIds", "attrs"]),
+  },
+  // ── multi-selection align / distribute (WI-059) ──
+  // The declarative form of the selection-handle / toolbar multi-align UI: pass
+  // ≥2 itemIds and an op; the command resolves each item's frame, runs the same
+  // bounding-box math the UI uses, and lands ONE undoable resize batch — the
+  // agent does NOT compute coordinates itself. Align ops snap items to a shared
+  // edge/center of the selection's bounding box; distribute ops equalize the
+  // gaps between them (needs ≥3 items; <3 is a no-op). ALL itemIds must share
+  // ONE parent frame (same 0..1 coordinate space) — a cross-parent selection is
+  // rejected with `cross-parent-selection` (v1 contract). Rotated items align by
+  // their axis-aligned OUTER bounds. Reversible (Cmd+Z) as a single step.
+  "weave.items.align": {
+    label: label("weave.items.align"),
+    inputSchema: obj(
+      {
+        itemIds: STR_ARR,
+        op: {
+          type: "string",
+          enum: [
+            "align-left",
+            "align-horizontal-center",
+            "align-right",
+            "align-top",
+            "align-vertical-center",
+            "align-bottom",
+            "distribute-horizontal",
+            "distribute-vertical",
+          ],
+          description:
+            "align-* snaps every item to that edge/center of the selection bbox; distribute-* equalizes spacing along the axis (≥3 items).",
+        },
+      },
+      ["itemIds", "op"],
     ),
   },
   "weave.behavior.update": {
@@ -410,16 +701,17 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   },
 
   // ── layout (WI-020 / WI-043) ──
+  // Make the frame `itemId` auto-arrange its children like CSS flex/grid. Omit
+  // `layout` to clear back to free (absolute-constraints) placement.
   "weave.frame.setLayout": {
     label: label("weave.frame.setLayout"),
-    // `layout` is a LayoutSpec object ({ kind: "auto-flex" | "auto-grid" | … });
-    // omit it to clear the frame's layout policy.
-    inputSchema: obj({ itemId: STR, layout: ATTRS }, ["itemId"]),
+    inputSchema: obj({ itemId: STR, layout: LAYOUT_SPEC }, ["itemId"]),
   },
+  // Set how `itemId` behaves inside its parent frame's layout. Omit `policy` to
+  // clear. The `kind` should match the parent frame's layout kind.
   "weave.item.setLayoutChild": {
     label: label("weave.item.setLayoutChild"),
-    // `policy` is a LayoutChildPolicy object; omit to clear.
-    inputSchema: obj({ itemId: STR, policy: ATTRS }, ["itemId"]),
+    inputSchema: obj({ itemId: STR, policy: LAYOUT_CHILD_POLICY }, ["itemId"]),
   },
   "weave.item.swapGridCells": {
     label: label("weave.item.swapGridCells"),
@@ -431,7 +723,14 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   },
   "weave.item.dropGridCell": {
     label: label("weave.item.dropGridCell"),
-    inputSchema: obj({ itemId: STR, x: NUM, y: NUM }, ["itemId", "x", "y"]),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        x: { type: "number", description: "Target COLUMN — a 1-based grid cell index (NOT a ratio or px)." },
+        y: { type: "number", description: "Target ROW — a 1-based grid cell index (NOT a ratio or px)." },
+      },
+      ["itemId", "x", "y"],
+    ),
   },
   // DR-028 — decorations are units. One command sets/replaces/clears a decoration
   // unit; `attrs` IS the spec for that kind (null clears). Shadow:

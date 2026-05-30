@@ -15,12 +15,19 @@
 // items, the user can only set the WIDTH manually (edge or corner) and
 // the height always follows the wrapped content.
 
-import type { Item as AgocraftItem, TextRun } from "@agocraft/core";
+import {
+  type Item as AgocraftItem,
+  findUnitInItem,
+  OPACITY_UNIT_KIND,
+  resolveFontSize,
+  type TextRun,
+} from "@agocraft/core";
 import {
   type CSSProperties,
   lazy,
   type ReactNode,
   Suspense,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -29,6 +36,7 @@ import { useSelection } from "../interactions/selection-context.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import type { AgoItem, ItemFrame, TextAttrs } from "../types.js";
 import { deriveTextAutoResize } from "./derive-text-auto-resize.js";
+import { ParentFrameHeightContext } from "./parent-frame-context.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -46,6 +54,13 @@ interface TextBlockProps {
 export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const a = item.attrs;
   const editable = onUpdate !== undefined;
+
+  // Phase 2 (fontSizeSpec) — resolve the font size to design-px. A `ratio`
+  // spec scales with the parent frame's height (provided via context by the
+  // enclosing NestedFrame; root = design height). px / legacy-number ignore it.
+  // The Stage's `transform: scale` then maps design-px → screen-px as usual.
+  const parentHeightPx = useContext(ParentFrameHeightContext);
+  const resolvedFontSizePx = resolveFontSize(a.fontSizeSpec, a.fontSize, parentHeightPx);
 
   // WI-040 — color / background may be a `StyleRef` (theme token) written
   // by the text-section picker when the user picked a theme swatch.
@@ -173,7 +188,10 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
           : "stretch",
     padding: 4,
     ...(resolvedBg !== undefined ? { background: resolvedBg } : {}),
-    opacity: a.opacity,
+    // DR-028 — opacity is a decoration UNIT (no legacy attr fallback).
+    opacity:
+      (findUnitInItem(itemRef, OPACITY_UNIT_KIND)?.attrs as { value: number } | undefined)?.value ??
+      1,
   };
   const decoration = (() => {
     switch (a.textDecoration) {
@@ -211,7 +229,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const textStyle: CSSProperties = {
     width: "100%",
     fontFamily: a.fontFamily,
-    fontSize: `${a.fontSize}px`,
+    fontSize: `${resolvedFontSizePx}px`,
     fontWeight: a.fontWeight,
     fontStyle: a.fontStyle,
     color: resolvedColor,

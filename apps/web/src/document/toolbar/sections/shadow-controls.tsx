@@ -163,8 +163,7 @@ export function OpacityControl({
     (item) =>
       item === undefined
         ? undefined
-        : ((findUnitInItem(item, OPACITY_UNIT_KIND)?.attrs as { value: number } | undefined)
-            ?.value ?? (item.attrs as { opacity?: number }).opacity),
+        : (findUnitInItem(item, OPACITY_UNIT_KIND)?.attrs as { value: number } | undefined)?.value,
     1,
   );
   const [draft, setDraft] = useState(value);
@@ -207,8 +206,7 @@ export function FilterControl({
     (item) =>
       item === undefined
         ? undefined
-        : ((findUnitInItem(item, FILTER_UNIT_KIND)?.attrs as FilterSpec | undefined) ??
-          (item.attrs as { filter?: FilterSpec }).filter),
+        : (findUnitInItem(item, FILTER_UNIT_KIND)?.attrs as FilterSpec | undefined),
     {},
   );
   const [draft, setDraft] = useState(spec.blur ?? 0);
@@ -270,8 +268,7 @@ export function FillControl({
     (item) =>
       item === undefined
         ? undefined
-        : ((findUnitInItem(item, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined) ??
-          (item.attrs as { fill?: PaintSpec }).fill),
+        : (findUnitInItem(item, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined),
     { type: "solid", color: "#cccccc" },
   );
   const raw = fill.type === "solid" ? (fill as { color?: string }).color : undefined;
@@ -308,9 +305,7 @@ export function StrokeControl({
     (item) =>
       item === undefined
         ? undefined
-        : ((findUnitInItem(item, STROKE_UNIT_KIND)?.attrs as StrokeSpec | undefined) ??
-          (item.attrs as { stroke?: StrokeSpec | null }).stroke ??
-          undefined),
+        : (findUnitInItem(item, STROKE_UNIT_KIND)?.attrs as StrokeSpec | undefined),
     { paint: { type: "solid", color: "#000000" }, width: 0 },
   );
   const raw =

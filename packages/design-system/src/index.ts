@@ -4,4 +4,11 @@ export {
   type UseDismissOnOutsidePointerArgs,
   useDismissOnOutsidePointer,
 } from "./lib/use-dismiss-on-outside-pointer.js";
-export { type ThemeName, useTheme } from "./use-theme.js";
+export {
+  DEFAULT_THEME,
+  isThemeName,
+  THEMES,
+  type ThemeMeta,
+  type ThemeName,
+} from "./themes.js";
+export { useTheme } from "./use-theme.js";

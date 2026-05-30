@@ -4,6 +4,7 @@ import {
   createAutoFlexSpec,
   createAutoGridSpec,
   defaultShapeSubAttrs,
+  FILL_UNIT_KIND,
   type LayoutSpec,
   type ShapeSubKind,
   trackFr,
@@ -3094,27 +3095,24 @@ function DesignPageBody() {
                               setPendingMedia(null);
                               if (!pending) return;
                               if (pending.action === "fill") {
-                                // Replace the shape's fill with image/video paint. Default
-                                // fit "cover" matches Figma. Video defaults muted+loop so
-                                // the browser autoplay policy is satisfied.
-                                editor.exec("weave.item.update", {
+                                // DR-028 — a shape's fill is the decoration.fill UNIT, so
+                                // set the image/video paint via weave.item.setDecoration (not
+                                // attrs.fill). Default fit "cover" matches Figma; video
+                                // defaults muted+loop so the autoplay policy is satisfied.
+                                editor.exec("weave.item.setDecoration", {
                                   itemId: pending.itemId,
-                                  patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-                                    attrs: {
-                                      ...prev.attrs,
-                                      fill:
-                                        pending.kind === "image"
-                                          ? { type: "image", src, fit: "cover", opacity: 1 }
-                                          : {
-                                              type: "video",
-                                              src,
-                                              fit: "cover",
-                                              muted: true,
-                                              loop: true,
-                                              opacity: 1,
-                                            },
-                                    } as unknown as Readonly<Record<string, unknown>>,
-                                  }),
+                                  kind: FILL_UNIT_KIND,
+                                  attrs:
+                                    pending.kind === "image"
+                                      ? { type: "image", src, fit: "cover", opacity: 1 }
+                                      : {
+                                          type: "video",
+                                          src,
+                                          fit: "cover",
+                                          muted: true,
+                                          loop: true,
+                                          opacity: 1,
+                                        },
                                 });
                                 return;
                               }

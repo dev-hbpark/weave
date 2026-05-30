@@ -8,13 +8,13 @@
 import type { Item as AgocraftItem, PaintSpec, ShadowSpec, StrokeSpec } from "@agocraft/core";
 import {
   type ArrowHeadStyle,
+  DEFAULT_SHAPE_FILL_PAINT,
   FILL_UNIT_KIND,
   findUnitInItem,
   OPACITY_UNIT_KIND,
   paintToSvgFill,
   SHADOW_UNIT_KIND,
   STROKE_UNIT_KIND,
-  shadowToCss,
   shapeToSvgGeometry,
   strokeToSvgAttrs,
 } from "@agocraft/core";
@@ -172,12 +172,15 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
   // type-erased value), and the substitution only touches the `.color`
   // field when present.
   const itemRef = item as unknown as AgocraftItem;
-  // DR-028 — prefer the decoration.fill / decoration.stroke UNITS; fall back to
-  // the legacy attrs.fill / attrs.stroke until those attrs are migrated away.
+  // DR-028 — fill / stroke are decoration UNITS (no legacy attr fallback). A
+  // shape with no fill unit renders the default paint (shapes are seeded with a
+  // decoration.fill unit at create-time + via the v12→v13 migration).
   const effectiveFill: PaintSpec =
-    (findUnitInItem(itemRef, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined) ?? a.fill;
-  const effectiveStroke =
-    (findUnitInItem(itemRef, STROKE_UNIT_KIND)?.attrs as StrokeSpec | undefined) ?? a.stroke;
+    (findUnitInItem(itemRef, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined) ??
+    DEFAULT_SHAPE_FILL_PAINT;
+  const effectiveStroke = findUnitInItem(itemRef, STROKE_UNIT_KIND)?.attrs as
+    | StrokeSpec
+    | undefined;
   const fillColorRaw =
     effectiveFill.type === "solid" ? (effectiveFill as { color?: unknown }).color : undefined;
   const resolvedFillColor = useResolveColor(fillColorRaw, itemRef, undefined);
@@ -207,17 +210,20 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
     ? (strokeAttrs as unknown as SVGAttributes<SVGElement>)
     : {};
 
-  // DR-028 — prefer the decoration.shadow UNIT; fall back to the legacy
-  // attrs.shadow until that attr is migrated away.
-  const shadowSpec =
-    (findUnitInItem(itemRef, SHADOW_UNIT_KIND)?.attrs as ShadowSpec | undefined) ??
-    a.shadow ??
-    undefined;
-  const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
-  // DR-028 — prefer the decoration.opacity UNIT; fall back to legacy attrs.opacity.
+  // DR-028 — shadow / opacity are decoration UNITS (no legacy attr fallback).
+  // Shapes use CSS `filter: drop-shadow()` (so the shadow follows the SVG
+  // silhouette — a star/triangle casts a star/triangle shadow, not a box).
+  // `drop-shadow()` takes `<x> <y> <blur> <color>` and does NOT support the
+  // `spread`/`inset` of box-shadow — so we build the string directly from the
+  // spec rather than `shadowToCss` (which emits box-shadow syntax and would be
+  // an invalid drop-shadow value, silently dropping the shadow entirely).
+  const shadowSpec = findUnitInItem(itemRef, SHADOW_UNIT_KIND)?.attrs as ShadowSpec | undefined;
+  const shadow = shadowSpec
+    ? `${shadowSpec.x}px ${shadowSpec.y}px ${Math.max(0, shadowSpec.blur)}px ${shadowSpec.color}`
+    : undefined;
   const opacity =
     (findUnitInItem(itemRef, OPACITY_UNIT_KIND)?.attrs as { value: number } | undefined)?.value ??
-    a.opacity;
+    1;
 
   return (
     <div

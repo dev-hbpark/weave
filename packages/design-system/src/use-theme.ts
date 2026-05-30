@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
+import { DEFAULT_THEME, isThemeName, type ThemeName } from "./themes.js";
 
-export type ThemeName = "aurora" | "mono" | "vivid";
+export type { ThemeName };
 
 const STORAGE_KEY = "weave.theme";
-const DEFAULT_THEME: ThemeName = "aurora";
 
 function readStored(): ThemeName {
   if (typeof window === "undefined") return DEFAULT_THEME;
   const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (raw === "aurora" || raw === "mono" || raw === "vivid") return raw;
-  return DEFAULT_THEME;
+  return isThemeName(raw) ? raw : DEFAULT_THEME;
 }
 
 function applyToDocument(theme: ThemeName): void {

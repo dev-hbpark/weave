@@ -19,7 +19,7 @@ import {
   Card,
   CardEyebrow,
   CardTitle,
-  ThemeSwitcher,
+  ThemePicker,
   // utility
   cn,
   // theme
@@ -44,7 +44,7 @@ or piecemeal:
 ## Design constraints encoded here
 
 - **3-layer token system** — base / semantic / component. Add layers only when measured pain.
-- **3 theme variants** — Aurora (default) / Mono / Vivid. Switched via `[data-theme="…"]` on `<html>`.
+- **10 theme variants** (DR-design-026) — registry SSOT in `src/themes.ts`. Dark: Aurora (default) / Vivid / Mono / Noir / Forest / Sunset / Ocean. Light: Daylight / Paper / Webtoon. Switched via `[data-theme="…"]` on `<html>`.
 - **Motion contract** — all motion respects `prefers-reduced-motion`. Uses `motion` lib's spring defaults via `useReducedMotion`.
 - **a11y** — Radix primitive 위에 token 입힘. WCAG AA contrast 의무. focus-visible ring 박제.
 - **Tree-shaking** — `"sideEffects": ["**/*.css"]` (JS는 free for tree-shake, CSS는 import side-effect 보존).
@@ -60,9 +60,22 @@ or piecemeal:
 
 ## Adding a new theme variant
 
-1. Add a `[data-theme="<name>"]` rule block in `src/tokens.css`, override the semantic layer.
-2. Add to `THEMES` in `src/components/ThemeSwitcher.tsx` and to the `ThemeName` union in `src/use-theme.ts`.
-3. Verify color contrast against every text/bg pair (axe-core or manual).
+The theme list is a single registry — `src/themes.ts`. `ThemeName` is *derived*
+from it and membership is one `isThemeName()` lookup, so the switcher + storage
+guard update themselves. Two edits per theme:
+
+1. Add one entry to the `THEMES` array in `src/themes.ts` (`{ name, label, hint }`).
+2. Add the matching `[data-theme="<name>"]` block in `src/tokens.css`, overriding
+   the same semantic set as the `aurora` block (page / aurora-stops / surface /
+   text / accent / border / focus / shadow / domain-accents / focus-stages). You
+   do **not** redeclare `--hover-affordance-*` / `--arrange-preview-*` — they hold
+   `var(--accent)` / fixed cyan and re-resolve per theme at use-time.
+3. Verify color contrast against every text/bg pair (axe-core or manual). For a
+   LIGHT theme, flip text/surface to a dark-ink ramp and keep accent-as-button-bg
+   at ≥ 3:1 (AA-large) with white `--text-on-accent`.
+
+Governance: the registry is gated — see `features/design-system/RULE.md` #5
+(Design Review + `seo-ai-visibility-agent` sign-off). Current set: DR-design-026.
 
 ## Why source-direct (no build step)
 

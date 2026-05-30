@@ -38,7 +38,11 @@ import {
   createReparentCommand,
   createSetDecorationCommand,
   createSetPolyPointsCommand,
+  defaultShapeSubAttrs,
+  FILL_UNIT_KIND,
   fail,
+  SHAPE_SUB_KINDS,
+  type ShapeSubKind,
   itemId as makeItemId,
   unitId as makeUnitId,
   moveAboveCommand,
@@ -75,6 +79,12 @@ import {
 } from "./clipboard/clipboard-types.js";
 import { type PasteCoordInput, resolvePasteFrame } from "./clipboard/paste-coord.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
+import {
+  type AlignInput,
+  type AlignOp,
+  ALIGN_OPS_ORDER,
+  computeAlignedFrames,
+} from "./multi/align-ops.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
@@ -228,6 +238,47 @@ function findChild(doc: CommandContext["document"], itemId: string) {
   return findItemDeep(doc, itemId);
 }
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** WI-062 — keep a shape item's `subAttrs` complete + self-consistent.
+ *
+ *  `weave.item.add` shallow-merges `attrsOverride` over the seeded attrs, so a
+ *  PARTIAL `subAttrs` from a caller (e.g. the agent sending { shape:"rectangle" }
+ *  with no `cornerRadii`) REPLACES the seed's complete one wholesale — and the
+ *  renderer then dereferences the missing geometry (`cornerRadii.tl`) and throws,
+ *  taking down the whole canvas. This makes the "geometry is optional; defaults
+ *  are filled in" contract TRUE: rebuild `subAttrs` from `defaultShapeSubAttrs`
+ *  for the resolved sub-kind and overlay the caller's provided fields on top
+ *  (deep-merging plain-object geometry like `cornerRadii` so a partial `{ tl }`
+ *  doesn't drop the other corners; extra/forward-compat fields are preserved).
+ *  The sub-kind is taken from `subAttrs.shape` (authoritative), else the
+ *  top-level `attrs.shape`, else "rectangle"; an unknown string falls back to
+ *  "rectangle". `attrs.shape` is synced to match. Idempotent on complete input. */
+function normalizeShapeAttrs(
+  attrs: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const provided = isPlainObject(attrs.subAttrs) ? attrs.subAttrs : {};
+  const candidate =
+    typeof provided.shape === "string"
+      ? provided.shape
+      : typeof attrs.shape === "string"
+        ? attrs.shape
+        : "rectangle";
+  const kind: ShapeSubKind = (SHAPE_SUB_KINDS as ReadonlyArray<string>).includes(candidate)
+    ? (candidate as ShapeSubKind)
+    : "rectangle";
+  const defaults = defaultShapeSubAttrs(kind) as Record<string, unknown>;
+  const merged: Record<string, unknown> = { ...defaults };
+  for (const [k, v] of Object.entries(provided)) {
+    if (k === "shape") continue; // the resolved `kind` is authoritative
+    const dv = defaults[k];
+    merged[k] = isPlainObject(dv) && isPlainObject(v) ? { ...dv, ...v } : v;
+  }
+  merged.shape = kind;
+  return { ...attrs, shape: kind, subAttrs: merged };
+}
+
 export function buildWeaveCommands(
   targets: WeaveCommandTargets,
   presetRegistry: PresetRegistry = defaultPresetRegistry(),
@@ -291,6 +342,17 @@ export function buildWeaveCommands(
         weaveItem = {
           ...weaveItem,
           attrs: { ...weaveItem.attrs, ...input.attrsOverride } as typeof weaveItem.attrs,
+        };
+      }
+      // WI-062 — a shape's attrsOverride may carry a PARTIAL subAttrs that the
+      // shallow merge above let replace the seed's complete one; normalize so the
+      // geometry (e.g. rectangle cornerRadii) is never missing → no render crash.
+      if (weaveItem.kind === "shape") {
+        weaveItem = {
+          ...weaveItem,
+          attrs: normalizeShapeAttrs(
+            weaveItem.attrs as unknown as Readonly<Record<string, unknown>>,
+          ) as unknown as typeof weaveItem.attrs,
         };
       }
       const ts = new Date().toISOString();
@@ -383,7 +445,11 @@ export function buildWeaveCommands(
             ...(input.attrs ?? {}),
           } as unknown as WeaveItem["attrs"],
         }));
-      const after = patchFn(weaveItem).attrs as unknown as Readonly<Record<string, unknown>>;
+      const afterRaw = patchFn(weaveItem).attrs as unknown as Readonly<Record<string, unknown>>;
+      // WI-062 — same shape-subAttrs completeness guard as weave.item.add: a
+      // declarative `attrs` partial that touched subAttrs must not leave the
+      // geometry incomplete (→ render crash). Idempotent for non-shape / complete.
+      const after = child.kind === "shape" ? normalizeShapeAttrs(afterRaw) : afterRaw;
       // DR-017 ADR-D — drag auto-merge.
       //   agocraft's `mergeKeyOf` derives the merge key from the patch's
       //   target identity (e.g. `item.attrs#${itemId}`) and the editor's
@@ -520,11 +586,11 @@ export function buildWeaveCommands(
     },
   };
 
-  // WI-056 — set a shape's fill (PaintSpec). Dedicated over the generic
-  // `weave.item.update` so the agent has a typed, discoverable surface for
-  // gradient fills (the UI gradient picker writes the same `attrs.fill`). The
-  // fill object is validated structurally (known `type` + gradient stops) and
-  // replaces `attrs.fill` wholesale.
+  // WI-056 → DR-028 — set a shape's fill (PaintSpec). Fill is now the
+  // `decoration.fill` UNIT, not `attrs.fill`, so this command keeps its typed,
+  // agent-discoverable surface but VALIDATES the paint then DELEGATES the patch
+  // emission to the agocraft `createSetDecorationCommand` kit (kind = fill). One
+  // source of truth for the unit.remove + unit.create patches.
   const SHAPE_FILL_TYPES = new Set([
     "none",
     "solid",
@@ -533,6 +599,7 @@ export function buildWeaveCommands(
     "image",
     "video",
   ]);
+  const fillDecorationCommand = createSetDecorationCommand("weave.shape.setFill");
   const setShapeFill: Command<SetShapeFillInput, void> = {
     name: "weave.shape.setFill",
     run: (ctx, input) => {
@@ -559,17 +626,12 @@ export function buildWeaveCommands(
           "weave.shape.setFill: a gradient fill needs `stops` with at least 2 entries",
         );
       }
-      const after: Readonly<Record<string, unknown>> = {
-        ...(child.attrs as unknown as Record<string, unknown>),
-        fill: input.fill,
-      };
-      const patch: Patch = {
-        type: "item.attrs",
-        itemId: child.id,
-        before: child.attrs,
-        after,
-      };
-      return ok(undefined, [patch]);
+      // DR-028 — emit the decoration.fill unit patch via the kit command.
+      return fillDecorationCommand.run(ctx, {
+        itemId: input.itemId,
+        kind: FILL_UNIT_KIND,
+        attrs: input.fill as unknown as Readonly<Record<string, unknown>>,
+      });
     },
   };
 
@@ -597,37 +659,214 @@ export function buildWeaveCommands(
   }) => input;
   type ResizeMultiInput = ReturnType<typeof resizeMultiInput>;
 
+  // Shared: turn a list of resolved { itemId, frame } into the item.attrs +
+  // LayoutEngine patches. Reused by `weave.items.resizeMulti` (frames supplied
+  // by the caller) and `weave.items.align` (frames computed server-side from
+  // the alignment op) so both land as ONE undoable Change with identical
+  // layout-aware semantics.
+  const frameUpdatesToPatches = (
+    ctx: CommandContext,
+    updates: ReadonlyArray<{
+      readonly itemId: string;
+      readonly frame: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+    }>,
+  ): Patch[] => {
+    const patches: Patch[] = [];
+    for (const u of updates) {
+      const child = findChild(ctx.document, u.itemId);
+      if (child === undefined) continue;
+      const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
+      const prevFrameRaw = prevAttrs.frame as AgocraftItemFrame | undefined;
+      const nextFrame = { ...(prevFrameRaw ?? {}), ...u.frame } as AgocraftItemFrame;
+      const nextAttrs: Readonly<Record<string, unknown>> = {
+        ...prevAttrs,
+        frame: nextFrame,
+      };
+      patches.push({
+        type: "item.attrs",
+        itemId: child.id,
+        before: child.attrs,
+        after: nextAttrs,
+      });
+      // WI-021 — same single LayoutEngine entry point as item.update: the
+      // resize of ANY item (including a child inside a flex/grid frame) is
+      // reported by frame change; the engine delegates position management
+      // to the parent frame's layout. No host-side parent/child branching.
+      if (LAYOUT_FEATURE_ENABLED && prevFrameRaw !== undefined) {
+        patches.push(
+          ...getLayoutEngine().onFrameChanged({
+            root: ctx.document.root,
+            itemId: child.id,
+            oldFrame: prevFrameRaw,
+            newFrame: nextFrame,
+          }),
+        );
+      }
+    }
+    return patches;
+  };
+
   const resizeMulti: Command<ResizeMultiInput, void> = {
     name: "weave.items.resizeMulti",
+    run: (ctx, input) => ok(undefined, frameUpdatesToPatches(ctx, input.updates)),
+  };
+
+  // WI-059 — multi-selection align / distribute as an AGENT-reachable command.
+  //
+  // The selection-handle / toolbar / Alt+letter UI paths compute aligned frames
+  // with the pure `computeAlignedFrames` registry and dispatch
+  // `weave.items.resizeMulti` (see DesignPage `setMultiAligner`). The agent had
+  // no declarative equivalent — it would have had to do the bounding-box math
+  // itself and send raw frames. This command moves that math server-side: the
+  // caller declares { itemIds, op } and the command resolves the frames, runs
+  // the SAME pure helper, and emits the SAME resize patches as one undo step.
+  //
+  // Same-parent invariant mirrors the UI's `multiSameParent` gate: alignment is
+  // only meaningful when every frame lives in one parent's 0..1 coordinate
+  // space. Cross-parent selections are rejected (v1 contract) rather than
+  // silently producing visually wrong results from mixed coordinate spaces.
+  const alignItemsInput = (input: {
+    readonly itemIds: ReadonlyArray<string>;
+    readonly op: AlignOp;
+  }) => input;
+  type AlignItemsInput = ReturnType<typeof alignItemsInput>;
+
+  const alignItems: Command<AlignItemsInput, void> = {
+    name: "weave.items.align",
     run: (ctx, input) => {
-      const patches: Patch[] = [];
-      for (const u of input.updates) {
-        const child = findChild(ctx.document, u.itemId);
-        if (child === undefined) continue;
-        const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
-        const prevFrameRaw = prevAttrs.frame as AgocraftItemFrame | undefined;
-        const nextFrame = { ...(prevFrameRaw ?? {}), ...u.frame } as AgocraftItemFrame;
-        const nextAttrs: Readonly<Record<string, unknown>> = {
-          ...prevAttrs,
-          frame: nextFrame,
-        };
-        patches.push({
-          type: "item.attrs",
-          itemId: child.id,
-          before: child.attrs,
-          after: nextAttrs,
+      if (!ALIGN_OPS_ORDER.includes(input.op)) {
+        return fail(
+          "invalid-input",
+          `weave.items.align: unknown op "${input.op}" (expected one of ${ALIGN_OPS_ORDER.join(", ")})`,
+        );
+      }
+      const ids = input.itemIds ?? [];
+      if (ids.length < 2) {
+        return fail("invalid-input", "weave.items.align: need at least 2 itemIds");
+      }
+      const rootId = String(ctx.document.root.id);
+      let parentId: string | undefined;
+      const inputs: AlignInput[] = [];
+      for (const id of ids) {
+        const item = findChild(ctx.document, id);
+        if (item === undefined) {
+          return fail("item-not-found", `weave.items.align: no item with id "${id}"`);
+        }
+        const pi = findParentAndIndex(ctx.document, id);
+        const pid = pi === undefined ? rootId : String(pi.parent.id);
+        if (parentId === undefined) {
+          parentId = pid;
+        } else if (parentId !== pid) {
+          return fail(
+            "cross-parent-selection",
+            "weave.items.align: all itemIds must share one parent frame (v1 aligns within a single coordinate space)",
+          );
+        }
+        const f = (item.attrs as { frame?: ItemFrame }).frame;
+        if (f === undefined) continue; // non-spatial item — nothing to align
+        inputs.push({
+          id,
+          frame: { x: f.x, y: f.y, width: f.width, height: f.height, rotation: f.rotation },
         });
-        // WI-021 — same single LayoutEngine entry point as item.update: the
-        // resize of ANY item (including a child inside a flex/grid frame) is
-        // reported by frame change; the engine delegates position management
-        // to the parent frame's layout. No host-side parent/child branching.
-        if (LAYOUT_FEATURE_ENABLED && prevFrameRaw !== undefined) {
+      }
+      if (inputs.length < 2) {
+        return fail(
+          "invalid-input",
+          "weave.items.align: fewer than 2 of the itemIds have a frame to align",
+        );
+      }
+      const out = computeAlignedFrames(inputs, input.op);
+      // Emit only items whose frame actually moved — keeps history clean (no
+      // zero-delta entries for already-aligned input). Same approx guard as the
+      // UI dispatcher tolerates FP drift from the bbox-center math.
+      const updates = out.flatMap((o, i) => {
+        const prev = inputs[i]!.frame;
+        const moved =
+          Math.abs(prev.x - o.frame.x) > 1e-9 ||
+          Math.abs(prev.y - o.frame.y) > 1e-9 ||
+          Math.abs(prev.width - o.frame.width) > 1e-9 ||
+          Math.abs(prev.height - o.frame.height) > 1e-9;
+        return moved
+          ? [
+              {
+                itemId: o.id,
+                frame: {
+                  x: o.frame.x,
+                  y: o.frame.y,
+                  width: o.frame.width,
+                  height: o.frame.height,
+                },
+              },
+            ]
+          : [];
+      });
+      return ok(undefined, frameUpdatesToPatches(ctx, updates));
+    },
+  };
+
+  // WI-061 — apply the SAME attrs change to many items as ONE undo entry. The
+  // declarative, agent-facing mirror of the UI's multi-selection edit (toolbar
+  // `updateAll` → `batchPerItem` → `editor.runBatch`): the user/agent selects N
+  // items and changes a property once, and it reverts in a single Cmd+Z. Where
+  // the UI groups N separate `weave.item.update` execs inside `runBatch`, this
+  // command emits all the patches from ONE `run`, so the TransactionRunner gives
+  // them one transaction id → the history records one entry (no runBatch needed
+  // on the caller, which matters for the agent path where calls cross an async
+  // network boundary and cannot be wrapped in a synchronous runBatch).
+  //
+  // `attrs` is shallow-merged over EACH item's current attrs — provide COMPLETE
+  // sub-objects (e.g. a full `frame`), exactly like `weave.item.update`. Any
+  // frame change is reported to the LayoutEngine per item (same single entry
+  // point as the singular update / resizeMulti).
+  const itemsUpdateInput = (input: {
+    readonly itemIds: ReadonlyArray<string>;
+    readonly attrs: Readonly<Record<string, unknown>>;
+  }) => input;
+  type ItemsUpdateInput = ReturnType<typeof itemsUpdateInput>;
+
+  const itemsUpdate: Command<ItemsUpdateInput, void> = {
+    name: "weave.items.update",
+    run: (ctx, input) => {
+      const ids = input.itemIds ?? [];
+      if (ids.length === 0) {
+        return fail("invalid-input", "weave.items.update: `itemIds` must be non-empty");
+      }
+      if (input.attrs === undefined) {
+        return fail("invalid-input", "weave.items.update: `attrs` is required");
+      }
+      const patches: Patch[] = [];
+      for (const id of ids) {
+        const child = findChild(ctx.document, id);
+        if (child === undefined) {
+          return fail("item-not-found", `weave.items.update: no item with id "${id}"`);
+        }
+        const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
+        // Shallow-merge over the item's current attrs (same contract as the
+        // singular declarative weave.item.update).
+        const after: Readonly<Record<string, unknown>> = { ...prevAttrs, ...input.attrs };
+        patches.push({ type: "item.attrs", itemId: child.id, before: child.attrs, after });
+        const oldFrame = (prevAttrs as { frame?: AgocraftItemFrame }).frame;
+        const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
+        const frameChanged =
+          oldFrame !== undefined &&
+          newFrame !== undefined &&
+          (oldFrame.x !== newFrame.x ||
+            oldFrame.y !== newFrame.y ||
+            oldFrame.width !== newFrame.width ||
+            oldFrame.height !== newFrame.height ||
+            oldFrame.rotation !== newFrame.rotation);
+        if (
+          LAYOUT_FEATURE_ENABLED &&
+          frameChanged &&
+          oldFrame !== undefined &&
+          newFrame !== undefined
+        ) {
           patches.push(
             ...getLayoutEngine().onFrameChanged({
               root: ctx.document.root,
               itemId: child.id,
-              oldFrame: prevFrameRaw,
-              newFrame: nextFrame,
+              oldFrame,
+              newFrame,
             }),
           );
         }
@@ -1270,6 +1509,8 @@ export function buildWeaveCommands(
     setShapeCornerRadius as Command,
     setShapeFill as Command,
     resizeMulti as Command,
+    alignItems as Command,
+    itemsUpdate as Command,
     updateBehavior as Command,
     reset as Command,
     setBackground as Command,

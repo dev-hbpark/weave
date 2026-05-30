@@ -48,10 +48,14 @@ async function readRadii(page: Page, itemId: string): Promise<Radii | undefined>
   return page.evaluate((cid) => {
     type N = {
       id: unknown;
-      attrs?: { subAttrs?: { shape?: string; cornerRadii?: Radii } };
+      attrs?: {
+        subAttrs?: {
+          shape?: string;
+          cornerRadii?: { tl: number; tr: number; br: number; bl: number };
+        };
+      };
       children?: ReadonlyArray<N>;
     };
-    type Radii = { tl: number; tr: number; br: number; bl: number };
     const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<N> } } };
     const find = (nodes: ReadonlyArray<N>): N | undefined => {
       for (const n of nodes) {

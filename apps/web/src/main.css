@@ -6,20 +6,30 @@
 
 @import "@weave/design-system/styles.css";
 
-html,
+html {
+  /* Theme-aware root canvas (DR-design-026 — theme expansion).
+   * Two-declaration pattern: the literal #050715 (default aurora ink,
+   * = --color-ink-950) is the AUDIT-003 fallback axe-core resolves if it
+   * can't trace the var; `var(--bg-page)` wins in every real browser so
+   * the root canvas follows the active theme. This matters for the LIGHT
+   * themes (daylight / paper / webtoon): the root must go light, otherwise
+   * dark ink bleeds through anywhere the fixed `.weave-aurora-bg` layer is
+   * absent. Painted at the very back (root box) — never masks the aurora
+   * layer the way an opaque `body` bg did. */
+  background-color: #050715;
+  background-color: var(--bg-page);
+}
+
 body {
   margin: 0;
   padding: 0;
-  /* AUDIT-003 V1 — literal hex (not var) so axe-core 4.x can resolve
-   * the effective background for contrast computation. The value
-   * matches the default aurora theme's `--bg-page` (= --color-ink-950).
-   * Visual theming is owned by the `.weave-aurora-bg` element (position:
-   * fixed, inset:0, z-index:-10, background-color: var(--bg-page)),
-   * which covers the viewport and carries theme-aware paint — so the
-   * literal body bg below shows only where AuroraBg is absent (e.g.,
-   * pages that opt out), in which case the user is in the default
-   * theme anyway. */
-  background: #050715;
+  /* transparent ON PURPOSE — the fixed `.weave-aurora-bg` element
+   * (z-index:-10, background var(--bg-page) + drifting aurora blobs) is the
+   * real visual background. `body` is an in-flow descendant, so an opaque
+   * bg here paints OVER that negative-z layer; with dark themes it matched
+   * by luck, but it masked every LIGHT theme. Keep it transparent so the
+   * aurora layer (and the theme-aware `html` canvas behind it) shows. */
+  background: transparent;
   color: var(--text-default);
   font-family: var(--font-sans);
   line-height: 1.55;

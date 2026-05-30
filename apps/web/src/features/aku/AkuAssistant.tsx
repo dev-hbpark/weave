@@ -33,10 +33,14 @@ export function AkuAssistant({
   editor,
   document: agoDocument,
   designId,
+  designInfo,
 }: {
   readonly editor: Editor;
   readonly document: AgocraftDocument;
   readonly designId: string;
+  /** Canvas px size + background from the Design view-model — passed to the
+   *  agent per task so it can size text against the real canvas. */
+  readonly designInfo: { width: number; height: number; background: string };
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   // Delay the first-run coachmark until the page has settled — mounting it
@@ -55,10 +59,13 @@ export function AkuAssistant({
   docRef.current = agoDocument;
   const selRef = useRef(selectedIds);
   selRef.current = selectedIds;
+  const designInfoRef = useRef(designInfo);
+  designInfoRef.current = designInfo;
 
   const {
     messages,
     status,
+    connection,
     send,
     stop,
     regenerate,
@@ -73,6 +80,7 @@ export function AkuAssistant({
     editor,
     getDocument: () => docRef.current,
     getSelection: () => [...selRef.current],
+    getDesignInfo: () => designInfoRef.current,
     designId,
   });
   const { geometry, beginMove, beginResize } = useAkuGeometry();
@@ -113,6 +121,7 @@ export function AkuAssistant({
         onResizeStart={beginResize}
         messages={messages}
         status={status}
+        connection={connection}
         onSend={send}
         onStop={stop}
         onClose={() => setOpen(false)}

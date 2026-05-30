@@ -1,7 +1,8 @@
 // Aku composer (WI-052 → WI-053) — multiline prompt (design-system `Textarea`,
 // auto-growing) + image attach (file picker / paste / drag-drop) + send/stop +
-// a slash-command menu. Enter sends, Shift+Enter inserts a newline; when the
-// slash menu is open, Enter/↑/↓/Esc drive the menu instead. Images are read to
+// a slash-command menu. ⌘/Ctrl+Enter sends, plain Enter inserts a newline (so a
+// multi-line prompt is the default); when the slash menu is open, Enter/↑/↓/Esc
+// drive the menu instead. Images are read to
 // data URLs (capped) and previewed as removable thumbnails. The native
 // <textarea> is auto-recognized by the editor hotkey registry as a text-editing
 // target, so canvas hotkeys (Cmd+Z, Delete, …) don't fire while composing.
@@ -143,6 +144,14 @@ export function AkuComposer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    // Isolate the composer from the canvas hotkey registry. That registry listens
+    // on `window` (bubble) and preventDefault()s EVERY matching binding (Cmd+V / C /
+    // X, …) BEFORE it checks the focus target — which kills native paste / copy /
+    // cut inside this textarea (so pasting a multi-line prompt did nothing). React's
+    // delegated handler runs at the root (below window), so stopping the NATIVE
+    // event here lets the composer keep its own keys (Enter, Shift+Enter, slash nav)
+    // while the keystroke never reaches the canvas registry → native paste works.
+    e.nativeEvent.stopPropagation();
     if (slashOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -165,7 +174,9 @@ export function AkuComposer({
         return;
       }
     }
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // Cmd/Ctrl+Enter sends; plain Enter (and Shift+Enter) insert a newline so a
+    // multi-line prompt is the default. Composition (IME) is never a send.
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
     }
@@ -283,7 +294,7 @@ export function AkuComposer({
           ref={taRef}
           className="flex-1"
           aria-label="아쿠에게 메시지"
-          placeholder="아쿠에게 메시지…  ( / 명령 · Shift+Enter 줄바꿈)"
+          placeholder="아쿠에게 메시지…  ( / 명령 · Enter 줄바꿈 · ⌘/Ctrl+Enter 전송)"
           rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}

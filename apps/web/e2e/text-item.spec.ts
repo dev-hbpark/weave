@@ -51,7 +51,12 @@ test("Add menu → 텍스트 creates a text item with default attrs", async ({ p
 
   const attrs = await readAttrs(page, id);
   expect(attrs.text).toBe("텍스트");
-  expect(attrs.fontSize).toBe(24);
+  // WI-fontsize-spec — add-geometry fills the drop height with one line of
+  // text, so fontSize is a viewport-derived px (not the seed 24) and the
+  // responsive ratio is stored as fontSizeSpec { kind:"ratio" }.
+  expect(typeof attrs.fontSize).toBe("number");
+  expect(attrs.fontSize as number).toBeGreaterThan(0);
+  expect((attrs.fontSizeSpec as { kind?: string } | undefined)?.kind).toBe("ratio");
   expect(attrs.color).toBe("#1f2933");
   // Frame defaulted to addNewItem's drop coords.
   expect((attrs.frame as { width?: number }).width).toBeCloseTo(0.4, 5);
@@ -139,6 +144,58 @@ test("DR-016 regression — corner-resize keeps fontSize unchanged (Fixed mode)"
   expect((after.frame as { height: number }).height).toBeGreaterThan(0.2);
   // DR-016 guarantee: fontSize NEVER changes from corner resize.
   expect(after.fontSize).toBe(20);
+});
+
+// WI-fontsize-spec (2026-05-30) — fontSizeSpec { kind:"ratio" } makes the
+// rendered font size = value × parent frame height (root = design height). The
+// agent/UI can express responsive sizes; the renderer resolves via
+// resolveFontSize + ParentFrameHeightContext.
+test("fontSizeSpec ratio renders as value × design height; Cmd+Z reverts", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-Ratio" });
+  const id = await addTextViaMenu(page);
+
+  // Root-level text → parent height = design height.
+  const designH = await page.evaluate(() => {
+    const w = window as unknown as { __weaveDesign?: { height?: number } };
+    return w.__weaveDesign?.height ?? 0;
+  });
+  expect(designH).toBeGreaterThan(0);
+
+  // Add-geometry already seeds a responsive ratio spec; capture it so we can
+  // assert the undo restores it.
+  const beforeSpec = (await readAttrs(page, id)).fontSizeSpec as { value?: number } | undefined;
+
+  // Set a 10%-of-parent-height ratio font size via the same command the UI uses.
+  await page.evaluate((fid) => {
+    const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: { ...prev.attrs, fontSizeSpec: { kind: "ratio", value: 0.1 } },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  // Model round-trip.
+  const attrs = await readAttrs(page, id);
+  expect(attrs.fontSizeSpec).toEqual({ kind: "ratio", value: 0.1 });
+
+  // Rendered design-px = 0.1 × designH (getComputedStyle returns the element's
+  // own font-size in design-px; the Stage's transform:scale is separate).
+  const innerFontPx = await page
+    .locator('[data-testid="text-block"] > div')
+    .first()
+    .evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
+  expect(innerFontPx).toBeCloseTo(designH * 0.1, 0);
+
+  // Undo restores the prior (add-time) ratio spec — value differs from 0.1.
+  await page.keyboard.press("ControlOrMeta+z");
+  await page.waitForTimeout(120);
+  const reverted = (await readAttrs(page, id)).fontSizeSpec as { value?: number } | undefined;
+  expect(reverted?.value).not.toBe(0.1);
+  expect(reverted?.value).toBeCloseTo(beforeSpec?.value ?? -1, 5);
 });
 
 test("font-family picker offers presets and applies the selected stack", async ({ page }) => {

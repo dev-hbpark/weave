@@ -1,23 +1,42 @@
 // WI-030 — Shared builders for preset factories. Wrap agocraft's attr
 // factories (`createTextAttrs`, `defaultShapeAttrs`) into Item-level helpers
-// that produce a fully-formed AgocraftItem with `meta`, empty `units`, and
+// that produce a fully-formed AgocraftItem with `meta`, `units`, and
 // pre-set `children`. Keeping these helpers out of individual preset files
 // avoids 24 copy-pasted shells; each preset file stays focused on layout.
 //
 // RISK-002 condition #3 — preset child Items use these helpers (never raw
 // object literals) so agocraft schema bumps absorb automatically.
+//
+// DR-028 — decoration (fill / stroke / shadow / opacity / filter) is no longer
+// a shape attr; it is a set of decoration UNITS. `buildShapeChild` accepts the
+// same `{ fill, opacity, ... }` overrides as before but routes them into units,
+// and always seeds a `decoration.fill` unit (default paint) so a preset shape is
+// never invisible. Preset call-sites are unchanged.
 
 import {
   type Item as AgocraftItem,
   createTextAttrs,
+  DEFAULT_SHAPE_FILL_PAINT,
   defaultShapeAttrs,
   defaultShapeSubAttrs,
+  FILL_UNIT_KIND,
+  FILTER_UNIT_KIND,
+  type FilterSpec,
   type BuiltinItemFrame as ItemFrame,
   type ItemId,
   itemId as makeItemId,
-  type ShapeAttrs,
+  unitId as makeUnitId,
+  OPACITY_UNIT_KIND,
+  type PaintSpec,
+  SHADOW_UNIT_KIND,
+  type ShadowSpec,
+  type ShapeSubAttrs,
   type ShapeSubKind,
+  STROKE_UNIT_KIND,
+  type StrokeSpec,
   type TextAttrs,
+  type Unit,
+  type UnitId,
 } from "@agocraft/core";
 
 /** Keep in sync with `agocraft-mirror.ts:31` `SCHEMA_VERSION`. */
@@ -31,6 +50,22 @@ export interface BuildContext {
 /** A frame inside the slide, 0..1 ratio of the slide's frame. */
 export type SlideChildFrame = ItemFrame;
 
+/** Decoration overrides for a built item — each becomes a decoration UNIT
+ *  (DR-028). Identity values (opacity 1, null stroke/shadow) produce no unit. */
+export interface DecorationOverride {
+  readonly fill?: PaintSpec;
+  readonly stroke?: StrokeSpec | null;
+  readonly shadow?: ShadowSpec | null;
+  readonly opacity?: number;
+  readonly filter?: FilterSpec;
+}
+
+/** Intrinsic (non-decoration) shape overrides — these stay on `attrs`. */
+export interface ShapeOverride extends DecorationOverride {
+  readonly subAttrs?: ShapeSubAttrs;
+  readonly rotation?: number;
+}
+
 /** Build a text child Item. Caller provides the geometry + override fields;
  *  the rest come from `defaultTextAttrs` via `createTextAttrs`. */
 export function buildTextChild(
@@ -39,38 +74,67 @@ export function buildTextChild(
   override: Partial<TextAttrs> & { readonly text: string },
 ): AgocraftItem {
   const attrs = createTextAttrs({ frame, ...override });
-  return makeChild(ctx, "text", attrs as unknown as Readonly<Record<string, unknown>>);
+  return makeChild(ctx, "text", attrs as unknown as Readonly<Record<string, unknown>>, []);
 }
 
-/** Build a shape child Item with overrides on top of `defaultShapeAttrs`. */
+/** Build a shape child Item. Intrinsic fields (subAttrs / rotation) land on
+ *  `attrs`; decoration fields (fill / stroke / shadow / opacity / filter) become
+ *  decoration UNITS. A `decoration.fill` unit is always present — `override.fill`
+ *  if given, else the default paint (DR-028). */
 export function buildShapeChild(
   ctx: BuildContext,
   frame: SlideChildFrame,
   shape: ShapeSubKind,
-  override: Partial<ShapeAttrs> = {},
+  override: ShapeOverride = {},
 ): AgocraftItem {
   const base = defaultShapeAttrs(frame, shape);
-  const attrs: ShapeAttrs = {
+  const attrs = {
     ...base,
-    ...override,
     frame,
     shape,
+    ...(override.rotation !== undefined ? { rotation: override.rotation } : {}),
     subAttrs: override.subAttrs ?? base.subAttrs ?? defaultShapeSubAttrs(shape),
-  } as ShapeAttrs;
-  return makeChild(ctx, "shape", attrs as unknown as Readonly<Record<string, unknown>>);
+  } as unknown as Readonly<Record<string, unknown>>;
+  const units = decorationUnits(ctx, {
+    ...override,
+    fill: override.fill ?? DEFAULT_SHAPE_FILL_PAINT,
+  });
+  return makeChild(ctx, "shape", attrs, units);
+}
+
+/** Materialize decoration overrides into decoration UNITS. Order matches
+ *  `DECORATION_UNIT_KINDS` (paint stack bottom→top). */
+function decorationUnits(ctx: BuildContext, deco: DecorationOverride): Unit[] {
+  const units: Unit[] = [];
+  const u = (kind: string, unitAttrs: Readonly<Record<string, unknown>>): void => {
+    const id: UnitId = makeUnitId(ctx.newId("unit"));
+    units.push({ id, kind, attrs: unitAttrs, meta: { schemaVersion: SCHEMA_VERSION } });
+  };
+  if (deco.fill !== undefined)
+    u(FILL_UNIT_KIND, deco.fill as unknown as Readonly<Record<string, unknown>>);
+  if (deco.stroke != null)
+    u(STROKE_UNIT_KIND, deco.stroke as unknown as Readonly<Record<string, unknown>>);
+  if (deco.shadow != null)
+    u(SHADOW_UNIT_KIND, deco.shadow as unknown as Readonly<Record<string, unknown>>);
+  if (deco.opacity !== undefined && deco.opacity !== 1)
+    u(OPACITY_UNIT_KIND, { value: deco.opacity });
+  if (deco.filter !== undefined)
+    u(FILTER_UNIT_KIND, deco.filter as unknown as Readonly<Record<string, unknown>>);
+  return units;
 }
 
 function makeChild(
   ctx: BuildContext,
   kind: "text" | "shape",
   attrs: Readonly<Record<string, unknown>>,
+  units: ReadonlyArray<Unit>,
 ): AgocraftItem {
   const id: ItemId = makeItemId(ctx.newId(kind));
   return {
     id,
     kind,
     attrs,
-    units: [],
+    units,
     children: [],
     meta: {
       createdAt: ctx.now,

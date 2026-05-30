@@ -15,7 +15,7 @@ import {
   CardTitle,
   IconPlay,
   Reveal,
-  ThemeSwitcher,
+  ThemePicker,
 } from "@weave/design-system";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -183,7 +183,7 @@ export function LandingPage() {
             weave
           </span>
         </Link>
-        <ThemeSwitcher />
+        <ThemePicker />
       </header>
 
       <main className="mx-auto max-w-[1100px] px-6 md:px-10 pt-12 md:pt-16 pb-24">

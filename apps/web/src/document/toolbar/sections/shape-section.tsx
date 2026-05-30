@@ -3,7 +3,13 @@
 // Quick: fill swatch + stroke swatch (the two highest-frequency shape
 // edits). More: Shape sub-kind picker, Opacity, image/video fill ops.
 
-import type { ShapeAttrs, ShapeSubKind } from "@agocraft/core";
+import {
+  FILL_UNIT_KIND,
+  findUnitInItem,
+  type PaintSpec,
+  type ShapeAttrs,
+  type ShapeSubKind,
+} from "@agocraft/core";
 import {
   ContextualToolbar as Bar,
   Button,
@@ -25,6 +31,8 @@ import {
   Select,
 } from "@weave/design-system";
 import type { ReactNode } from "react";
+import { findItemDeep } from "../../agocraft-mirror.js";
+import { useDocumentForResolution } from "../../style/resolver-context.js";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
 import { FillControl, OpacityControl, ShadowControls, StrokeControl } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
@@ -91,13 +99,23 @@ function defaultSubAttrsForKind(
 
 export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEditShapeFill }) => {
   const shape = sharedValue<ShapeSubKind>(items, (it) => (it.attrs as unknown as ShapeAttrs).shape);
-  const fillType = sharedValue<string>(
-    items,
-    (it) => (it.attrs as unknown as ShapeAttrs).fill.type,
-  );
-  // WI-056 fill/stroke color editing is now the decoration.fill / decoration.stroke
-  // units (FillControl / StrokeControl), reading from the live doc — no per-attr
-  // sharedValue color reads here (DR-028).
+  // DR-028 — fill is a decoration.fill UNIT (FillControl / StrokeControl edit it
+  // via the live doc). Media-fill (image/video paint) detection reads the unit
+  // from the live document since ItemSnapshot carries no units.
+  const doc = useDocumentForResolution();
+  const fillPaints = ids.map((id) => {
+    const it = doc ? findItemDeep(doc, id) : undefined;
+    return it ? (findUnitInItem(it, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined) : undefined;
+  });
+  const firstFillType = fillPaints[0]?.type;
+  const fillUniform =
+    firstFillType !== undefined && fillPaints.every((p) => p?.type === firstFillType);
+  const fillType = firstFillType ?? "solid";
+  const fillIsMediaUniform =
+    fillUniform && (firstFillType === "image" || firstFillType === "video");
+  const fillMediaSrc = fillIsMediaUniform
+    ? ((fillPaints[0] as { src?: string } | undefined)?.src ?? "")
+    : "";
   // WI-055 — corner radius is rectangle-only. The control renders only when the
   // shared sub-kind is uniformly "rectangle". Read the per-corner radii; compare
   // by component so a 4-tuple match counts as "agree".
@@ -110,11 +128,6 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
     },
     (a, b) => a.tl === b.tl && a.tr === b.tr && a.br === b.br && a.bl === b.bl,
   );
-  const fillIsMediaUniform = !isMixed(fillType) && (fillType === "image" || fillType === "video");
-  const fillMediaSrc = sharedValue<string>(items, (it) => {
-    const f = (it.attrs as unknown as ShapeAttrs).fill;
-    return f.type === "image" || f.type === "video" ? f.src : "";
-  });
 
   return (
     <>
@@ -154,7 +167,7 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
           <MixedBadge visible={isMixed(shape)} />
         </Bar.Field>
         <Bar.Field label="Fill">
-          {fillIsMediaUniform && !isMixed(fillMediaSrc) ? (
+          {fillIsMediaUniform ? (
             <div className="flex items-center gap-1.5 w-full">
               <Button
                 variant="ghost"
@@ -170,14 +183,17 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
               <Button
                 variant="subtle"
                 size="md"
-                onClick={() =>
-                  updateAll(editor, ids, (prev) => ({
-                    attrs: {
-                      ...prev.attrs,
-                      fill: { type: "solid", color: "#cbd5f5" },
-                    } as unknown as Readonly<Record<string, unknown>>,
-                  }))
-                }
+                onClick={() => {
+                  // DR-028 — clear media fill = reset the decoration.fill unit to
+                  // the default solid paint.
+                  for (const id of ids) {
+                    editor.exec("weave.item.setDecoration", {
+                      itemId: id,
+                      kind: FILL_UNIT_KIND,
+                      attrs: { type: "solid", color: "#cbd5f5" },
+                    });
+                  }
+                }}
                 data-testid="shape-fill-clear"
                 aria-label="채우기 비우기"
                 data-tip="채우기 비우기"

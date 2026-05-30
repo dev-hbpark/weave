@@ -15,6 +15,7 @@ import {
   shadowToCss,
 } from "@agocraft/core";
 import type { CSSProperties } from "react";
+import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
 
 interface ImageBlockProps {
@@ -24,6 +25,12 @@ interface ImageBlockProps {
 
 export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
   void onUpdate; // editing happens via ContextualToolbar, not inline
+  // WI-058 Phase 2a — when this frame is culled (off-screen), drop the `<img>`
+  // so its decoded bitmap is released. The styled wrapper (size/shadow/radius)
+  // stays so layout is unchanged; the frame itself is `visibility:hidden`
+  // anyway. Restored when the frame re-enters the one-viewport buffer, so the
+  // re-decode completes before it is actually on-screen.
+  const culled = useIsCulled();
   const a = item.attrs;
   const objectFit: CSSProperties["objectFit"] =
     a.fit === "fill"
@@ -34,26 +41,22 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
           ? "none"
           : "cover";
 
-  // DR-028 — prefer the decoration.shadow UNIT; fall back to legacy attrs.shadow.
-  const shadowSpec =
-    (findUnitInItem(item as unknown as AgocraftItem, SHADOW_UNIT_KIND)?.attrs as
-      | ShadowSpec
-      | undefined) ??
-    a.shadow ??
-    undefined;
+  // DR-028 — shadow / filter / opacity are decoration UNITS (no legacy attr fallback).
+  const shadowSpec = findUnitInItem(item as unknown as AgocraftItem, SHADOW_UNIT_KIND)?.attrs as
+    | ShadowSpec
+    | undefined;
   const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
-  // DR-028 — prefer decoration.filter / decoration.opacity UNITS; legacy attrs fall back.
   const filterSpec =
     (findUnitInItem(item as unknown as AgocraftItem, FILTER_UNIT_KIND)?.attrs as
       | FilterSpec
-      | undefined) ?? a.filter;
+      | undefined) ?? {};
   const filterCss = filterToCss(filterSpec);
   const opacity =
     (
       findUnitInItem(item as unknown as AgocraftItem, OPACITY_UNIT_KIND)?.attrs as
         | { value: number }
         | undefined
-    )?.value ?? a.opacity;
+    )?.value ?? 1;
 
   // Crop region (0..1 ratio) is implemented via `object-position` + an
   // inner wrapper that clips by overflow:hidden + a scaling transform on
@@ -76,7 +79,7 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
         boxShadow: shadow,
       }}
     >
-      {usesCrop ? (
+      {culled ? null : usesCrop ? (
         <div
           className="absolute"
           style={{
@@ -90,6 +93,12 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
             src={a.src}
             alt={a.alt}
             draggable={false}
+            // WI-058 — defer decode for off-screen / not-yet-needed images.
+            // Combined with FrameStage viewport culling this keeps the
+            // decoded-bitmap + raster working set bounded on the infinite
+            // canvas instead of decoding the whole document up front.
+            loading="lazy"
+            decoding="async"
             style={{
               width: "100%",
               height: "100%",
@@ -104,6 +113,9 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
           src={a.src}
           alt={a.alt}
           draggable={false}
+          // WI-058 — see note above.
+          loading="lazy"
+          decoding="async"
           style={{
             position: "absolute",
             inset: 0,

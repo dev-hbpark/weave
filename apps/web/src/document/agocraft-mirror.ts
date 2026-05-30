@@ -32,6 +32,8 @@ import {
   reorderRootChildren as coreReorderRootChildren,
   updateChild as coreUpdateChild,
   createSchema,
+  DEFAULT_SHAPE_FILL_PAINT,
+  FILL_UNIT_KIND,
   itemId,
   STYLE_PROVIDER_UNIT_KIND,
   unitId,
@@ -112,13 +114,32 @@ function behaviorToUnit(behavior: InteractionBehavior): AgocraftUnit {
   };
 }
 
+/** DR-028 — per-kind seed decoration units attached at weave→agocraft creation.
+ *  Registry (not a kind branch) so it stays Rule-6-clean and extensible. A shape
+ *  gets a default `decoration.fill` unit so a freshly-created shape is not
+ *  invisible now that `attrs.fill` is gone; editing fill replaces this unit via
+ *  `weave.item.setDecoration`. */
+const SEED_DECORATION_UNITS: Readonly<
+  Record<string, (itemId: string) => ReadonlyArray<AgocraftUnit>>
+> = {
+  shape: (id) => [
+    {
+      id: unitId(`${id}:${FILL_UNIT_KIND}`),
+      kind: FILL_UNIT_KIND,
+      attrs: DEFAULT_SHAPE_FILL_PAINT as unknown as Readonly<Record<string, unknown>>,
+      meta: makeUnitMeta(),
+    },
+  ],
+};
+
 /** Convert a single weave Item into an agocraft Item. */
 export function toAgocraftItem(item: WeaveItem, updatedAt: string): AgocraftItem {
+  const seedUnits = SEED_DECORATION_UNITS[item.kind]?.(item.id) ?? [];
   return {
     id: itemId(item.id),
     kind: item.kind,
     attrs: item.attrs as unknown as Readonly<Record<string, unknown>>,
-    units: item.behaviors.map(behaviorToUnit),
+    units: [...seedUnits, ...item.behaviors.map(behaviorToUnit)],
     children: [],
     meta: makeItemMeta(item.createdAt, updatedAt),
   };

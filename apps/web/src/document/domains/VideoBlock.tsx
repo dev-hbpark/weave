@@ -57,21 +57,17 @@ export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
           ? "none"
           : "cover";
 
-  // DR-028 — prefer the decoration.shadow UNIT; fall back to legacy attrs.shadow.
-  const shadowSpec =
-    (findUnitInItem(item as unknown as AgocraftItem, SHADOW_UNIT_KIND)?.attrs as
-      | ShadowSpec
-      | undefined) ??
-    a.shadow ??
-    undefined;
+  // DR-028 — shadow / opacity are decoration UNITS (no legacy attr fallback).
+  const shadowSpec = findUnitInItem(item as unknown as AgocraftItem, SHADOW_UNIT_KIND)?.attrs as
+    | ShadowSpec
+    | undefined;
   const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
-  // DR-028 — prefer the decoration.opacity UNIT; fall back to legacy attrs.opacity.
   const opacity =
     (
       findUnitInItem(item as unknown as AgocraftItem, OPACITY_UNIT_KIND)?.attrs as
         | { value: number }
         | undefined
-    )?.value ?? a.opacity;
+    )?.value ?? 1;
 
   return (
     <div

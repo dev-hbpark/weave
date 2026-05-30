@@ -4,13 +4,19 @@
 // a bottom-right grabber resizes. Header = 아쿠 title (drag) + 새 대화 + close;
 // Body = transcript; Footer = composer.
 
-import { IconButton, IconClose, IconPlus, Panel } from "@weave/design-system";
+import { Banner, IconButton, IconClose, IconPlus, Panel } from "@weave/design-system";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { AkuMascot } from "./AkuMascot.js";
 import { AkuTokenSetup } from "./AkuTokenSetup.js";
 import { MessageList } from "./MessageList.js";
-import type { AkuHistoryController, AkuImage, AkuMessage, AkuStatus } from "./types.js";
+import type {
+  AkuConnection,
+  AkuHistoryController,
+  AkuImage,
+  AkuMessage,
+  AkuStatus,
+} from "./types.js";
 import type { AkuGeometry } from "./useAkuGeometry.js";
 
 export function AkuPanel({
@@ -19,6 +25,7 @@ export function AkuPanel({
   onResizeStart,
   messages,
   status,
+  connection,
   onSend,
   onStop,
   onClose,
@@ -37,6 +44,8 @@ export function AkuPanel({
   readonly onResizeStart: (e: ReactPointerEvent) => void;
   readonly messages: ReadonlyArray<AkuMessage>;
   readonly status: AkuStatus;
+  /** Reverse-MCP connection lifecycle — drives the connecting/reconnecting banner. */
+  readonly connection: AkuConnection;
   readonly onSend: (text: string, images: ReadonlyArray<AkuImage>) => void;
   readonly onStop: () => void;
   readonly onClose: () => void;
@@ -94,6 +103,19 @@ export function AkuPanel({
           </IconButton>
         </Panel.Header>
         <Panel.Body>
+          {hasToken && connection.banner !== null ? (
+            <div className="px-3 pt-2">
+              <Banner
+                tone="info"
+                headline={connection.banner}
+                dismissible={false}
+                data-testid="aku-connection-banner"
+                {...(connection.state === "error"
+                  ? { action: { label: "다시 연결", onAction: onRetry } }
+                  : {})}
+              />
+            </div>
+          ) : null}
           {hasToken ? (
             <MessageList
               messages={messages}

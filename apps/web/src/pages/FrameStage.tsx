@@ -54,6 +54,7 @@ import {
 } from "../document";
 import { isDomainItem } from "../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../document/domains/derive-text-auto-resize.js";
+import { ParentFrameHeightContext } from "../document/domains/parent-frame-context.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
 import { useRouterOrNull } from "../document/interactions/router-context.js";
@@ -68,6 +69,12 @@ import {
   HIT_THRESHOLD_PX,
   TotalScaleContext,
 } from "../document/interactions/total-scale-context.js";
+import {
+  CULL_ROOT_MARGIN,
+  FrameCulledContext,
+  ViewportCullContext,
+  type ViewportCullRegistry,
+} from "../document/interactions/viewport-cull-context.js";
 import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index.js";
 // WI-019/WI-021 — layout-driven manipulation constraints. The agocraft
 // LayoutEngine is the single owner: weave only READS
@@ -450,6 +457,28 @@ function NestedFrame({
     applyHitGate(s);
   });
 
+  // WI-058 / DR-021 — viewport culling. Register this frame's wrapper with
+  // the IntersectionObserver published by FrameStage (infinite canvas only;
+  // null in stacked/fit flavors and the read-only present path). When the
+  // frame leaves the viewport + buffer the registry flips it to
+  // `visibility: hidden`, dropping its paint/raster; re-entry restores it.
+  // Direct `style.visibility` ref-mutation keeps this off the React render
+  // path, exactly like `applyHitGate` above.
+  // `culled` (React state) flips only on a viewport-cross transition and is
+  // published to this frame's content via FrameCulledContext so ImageBlock can
+  // drop its decoded bitmap (WI-058 Phase 2a). The `visibility` toggle stays a
+  // direct ref-mutation (immediate, mid-gesture-safe, no re-render).
+  const cull = useContext(ViewportCullContext);
+  const [culled, setCulled] = useState(false);
+  useEffect(() => {
+    const el = selfRef.current;
+    if (cull === null || el === null) return;
+    return cull.observe(el, (visible) => {
+      el.style.visibility = visible ? "" : "hidden";
+      setCulled(!visible);
+    });
+  }, [cull]);
+
   if (frame === undefined) return null;
 
   const leftPx = parentWidthPx * frame.x;
@@ -753,24 +782,31 @@ function NestedFrame({
       }
       style={style as MotionStyle}
     >
-      <FrameContent
-        item={item as unknown as AgoItem}
-        {...(onUpdateItem
-          ? {
-              onUpdate: (patch: Record<string, unknown>) =>
-                onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
-            }
-          : {})}
-        {...(onUpdateShape
-          ? {
-              onUpdateShape: (shapeId: string, patch: object) =>
-                onUpdateShape(itemId, shapeId, patch),
-            }
-          : {})}
-        {...(onRemoveShape
-          ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
-          : {})}
-      />
+      {/* Phase 2 (fontSizeSpec) — expose this item's parent-frame height (px)
+          so a text item's `kind:"ratio"` fontSize resolves against it (root =
+          designHeight, which is what `parentHeightPx` carries at the top). */}
+      <ParentFrameHeightContext.Provider value={parentHeightPx}>
+        <FrameCulledContext.Provider value={culled}>
+          <FrameContent
+            item={item as unknown as AgoItem}
+            {...(onUpdateItem
+              ? {
+                  onUpdate: (patch: Record<string, unknown>) =>
+                    onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
+                }
+              : {})}
+            {...(onUpdateShape
+              ? {
+                  onUpdateShape: (shapeId: string, patch: object) =>
+                    onUpdateShape(itemId, shapeId, patch),
+                }
+              : {})}
+            {...(onRemoveShape
+              ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
+              : {})}
+          />
+        </FrameCulledContext.Provider>
+      </ParentFrameHeightContext.Provider>
       {(() => {
         return childFrames.map((c) => (
           <NestedFrame
@@ -2037,128 +2073,191 @@ export function FrameStage(props: FrameStageProps) {
   // the wheel-recency signal hoisted above the wheel handler.
   const gestureActive = panDragging || recentWheel;
 
+  // WI-058 / DR-021 — viewport culling registry. One IntersectionObserver,
+  // root = the viewport-clipping `outerRef`, with a one-viewport `rootMargin`
+  // buffer so frames are pre-rendered just before they pan into view (no
+  // pop-in). Frames register their wrapper via the context; the observer
+  // callback flips `visibility` directly (ref-mutation, no re-render). Only
+  // armed for the infinite canvas — stacked/fit flavors fit the viewport so
+  // nothing is ever off-screen to cull.
+  const cullCallbacks = useRef(new Map<Element, (visible: boolean) => void>());
+  const cullObserver = useRef<IntersectionObserver | null>(null);
+  // DEV-only A/B escape hatch (WI-058 perf measurement). Setting
+  // `window.__weaveDisableCull = true` before mount turns culling off so a
+  // baseline can be captured at identical geometry. Gated behind DEV per the
+  // `window.__weave*` dev-globals rule (apps/web/CLAUDE.md); production never
+  // reads it.
+  const cullEnabled =
+    infiniteCanvas &&
+    !(
+      import.meta.env.DEV &&
+      (globalThis as { __weaveDisableCull?: boolean }).__weaveDisableCull === true
+    );
+  useEffect(() => {
+    if (!cullEnabled) return;
+    const root = outerRef.current;
+    if (root === null) return;
+    // Pre-render buffer (WI-058 2b). Half a viewport each side keeps the cull
+    // working set tight while still pre-rendering + re-decoding a frame before
+    // it reaches the edge on a normal pan; `__weaveCullMargin` overrides it in
+    // DEV for the margin sweep (production never reads the global).
+    const rootMargin =
+      (import.meta.env.DEV && (globalThis as { __weaveCullMargin?: string }).__weaveCullMargin) ||
+      CULL_ROOT_MARGIN;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          cullCallbacks.current.get(entry.target)?.(entry.isIntersecting);
+        }
+      },
+      { root, rootMargin, threshold: 0 },
+    );
+    cullObserver.current = io;
+    // Pick up any frames that registered before this effect ran (child
+    // effects fire before the parent's on the same commit).
+    for (const el of cullCallbacks.current.keys()) io.observe(el);
+    return () => {
+      io.disconnect();
+      cullObserver.current = null;
+    };
+  }, [cullEnabled]);
+  const cullRegistry = useMemo<ViewportCullRegistry | null>(() => {
+    if (!cullEnabled) return null;
+    return {
+      observe(el, onChange) {
+        cullCallbacks.current.set(el, onChange);
+        cullObserver.current?.observe(el);
+        return () => {
+          cullCallbacks.current.delete(el);
+          cullObserver.current?.unobserve(el);
+        };
+      },
+    };
+  }, [cullEnabled]);
+
   return (
     <TotalScaleContext.Provider value={totalScaleMV}>
-      <div
-        ref={outerRef}
-        className="absolute inset-0 overflow-hidden"
-        // Design canvas background comes from `design.background` (model-
-        // driven). Defaults to white. Documents float on this plane and
-        // provide their own content; the same plane renders in edit and
-        // presentation. `touch-action: none` keeps trackpad / touchscreen
-        // pinch gestures from triggering browser-level page zoom (which
-        // would slide the header / thumbnail panel out of the viewport).
-        // Wheel preventDefault for the same reason lives on a native non-
-        // passive listener — see the `useEffect` above. `data-canvas` +
-        // `data-bg-tone` scope the document-context CSS tokens so that
-        // text/surface variables stay readable against this background no
-        // matter which UI theme the editor chrome uses.
-        style={{
-          background,
-          touchAction: "none",
-          // Disable native text-range selection across the design surface.
-          // Without this, dragging that starts on a text label (frame
-          // titles, slide headings, bullet text) becomes a browser text
-          // selection — the rubber-band gesture never fires because the
-          // browser is busy highlighting characters. Only elements that
-          // have actively entered edit mode (`contenteditable="true"`,
-          // explicit inputs/textarea) opt back into text selection — see
-          // the corresponding rule in `apps/web/src/styles.css`.
-          userSelect: "none",
-          WebkitUserSelect: "none",
-          ...(panCursor ? { cursor: panCursor } : {}),
-        }}
-        data-canvas="document"
-        data-bg-tone={bgTone}
-        onClick={handleBackgroundClick}
-        // Double-click empty canvas → fit camera to all items (restored).
-        // DR-017 Phase 2 — pan gesture now lives on the GestureRouter
-        // (capture phase); legacy React onPointer handlers removed.
-        onDoubleClick={handleBackgroundDoubleClick}
-        onDragOver={onDragOver}
-        onDrop={onDropAdd ? (e) => onDropAdd(e, rootId) : undefined}
-        data-testid="frame-stage"
-        data-design-root-id={rootId}
-        data-pan-active={panActive ? "true" : undefined}
-      >
-        {(() => {
-          // WI-033 P2 — Phase 13e drill dim flags retired. No frame is
-          // dimmed under selection-only navigation.
-          // WI-036 follow-up — `multiSelectionUnion` computation removed
-          // along with its chrome (legacy 2px solid outline + 4 round
-          // corner dots + count badge). The host-level
-          // MultiSelectionOverlay (DesignPage, viewport-fixed) owns the
-          // multi-selection visual now.
-          const planeChildren = frames.map((c, _i) => (
-            <NestedFrame
-              key={String(c.id)}
-              item={c}
-              parentWidthPx={designWidth}
-              parentHeightPx={designHeight}
-              editing={editing}
-              selectedId={props.selectedId}
-              {...(props.selectedIds !== undefined ? { selectedIds: props.selectedIds } : {})}
-              {...(props.dimmedFrameIds !== undefined
-                ? { dimmedFrameIds: props.dimmedFrameIds }
-                : {})}
-              {...(props.isolatedFrameIds !== undefined
-                ? { isolatedFrameIds: props.isolatedFrameIds }
-                : {})}
-              {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
-              onSelect={onSelect}
-              doc={props.document}
-              onContextMenuRequest={handleFrameContextMenu}
-              onUpdateItem={props.onUpdateItem}
-              onUpdateShape={props.onUpdateShape}
-              onRemoveShape={props.onRemoveShape}
-              onDropAdd={onDropAdd}
-              onDragOver={onDragOver}
-              renderFrameMenu={wrappedRenderFrameMenu}
-              onCommitFrame={props.onCommitFrame}
-              selectedHotspotId={props.selectedHotspotId}
-              onSelectHotspot={props.onSelectHotspot}
-              onCommitHotspotRegion={props.onCommitHotspotRegion}
-            />
-          ));
-          // The design-plane subtree — pan layer (user offset/zoom) wrapping
-          // the design plane motion.div (drill spring transform). Frames
-          // live inside the design plane so their positions interpret as
-          // design-pixel coords; everything outside is just transform chrome.
-          const planeSubtree = (
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                ...(infiniteCanvas
-                  ? {
-                      transform: `translate(${pan.tx}px, ${pan.ty}px) scale(${pan.scale})`,
-                      transformOrigin: "center center",
-                    }
-                  : {}),
-              }}
-            >
-              <motion.div
-                ref={designPlaneRef}
-                data-design-plane="true"
+      <ViewportCullContext.Provider value={cullRegistry}>
+        <div
+          ref={outerRef}
+          className="absolute inset-0 overflow-hidden"
+          // Design canvas background comes from `design.background` (model-
+          // driven). Defaults to white. Documents float on this plane and
+          // provide their own content; the same plane renders in edit and
+          // presentation. `touch-action: none` keeps trackpad / touchscreen
+          // pinch gestures from triggering browser-level page zoom (which
+          // would slide the header / thumbnail panel out of the viewport).
+          // Wheel preventDefault for the same reason lives on a native non-
+          // passive listener — see the `useEffect` above. `data-canvas` +
+          // `data-bg-tone` scope the document-context CSS tokens so that
+          // text/surface variables stay readable against this background no
+          // matter which UI theme the editor chrome uses.
+          style={{
+            background,
+            touchAction: "none",
+            // Disable native text-range selection across the design surface.
+            // Without this, dragging that starts on a text label (frame
+            // titles, slide headings, bullet text) becomes a browser text
+            // selection — the rubber-band gesture never fires because the
+            // browser is busy highlighting characters. Only elements that
+            // have actively entered edit mode (`contenteditable="true"`,
+            // explicit inputs/textarea) opt back into text selection — see
+            // the corresponding rule in `apps/web/src/styles.css`.
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            ...(panCursor ? { cursor: panCursor } : {}),
+          }}
+          data-canvas="document"
+          data-bg-tone={bgTone}
+          onClick={handleBackgroundClick}
+          // Double-click empty canvas → fit camera to all items (restored).
+          // DR-017 Phase 2 — pan gesture now lives on the GestureRouter
+          // (capture phase); legacy React onPointer handlers removed.
+          onDoubleClick={handleBackgroundDoubleClick}
+          onDragOver={onDragOver}
+          onDrop={onDropAdd ? (e) => onDropAdd(e, rootId) : undefined}
+          data-testid="frame-stage"
+          data-design-root-id={rootId}
+          data-pan-active={panActive ? "true" : undefined}
+        >
+          {(() => {
+            // WI-033 P2 — Phase 13e drill dim flags retired. No frame is
+            // dimmed under selection-only navigation.
+            // WI-036 follow-up — `multiSelectionUnion` computation removed
+            // along with its chrome (legacy 2px solid outline + 4 round
+            // corner dots + count badge). The host-level
+            // MultiSelectionOverlay (DesignPage, viewport-fixed) owns the
+            // multi-selection visual now.
+            const planeChildren = frames.map((c, _i) => (
+              <NestedFrame
+                key={String(c.id)}
+                item={c}
+                parentWidthPx={designWidth}
+                parentHeightPx={designHeight}
+                editing={editing}
+                selectedId={props.selectedId}
+                {...(props.selectedIds !== undefined ? { selectedIds: props.selectedIds } : {})}
+                {...(props.dimmedFrameIds !== undefined
+                  ? { dimmedFrameIds: props.dimmedFrameIds }
+                  : {})}
+                {...(props.isolatedFrameIds !== undefined
+                  ? { isolatedFrameIds: props.isolatedFrameIds }
+                  : {})}
+                {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
+                onSelect={onSelect}
+                doc={props.document}
+                onContextMenuRequest={handleFrameContextMenu}
+                onUpdateItem={props.onUpdateItem}
+                onUpdateShape={props.onUpdateShape}
+                onRemoveShape={props.onRemoveShape}
+                onDropAdd={onDropAdd}
+                onDragOver={onDragOver}
+                renderFrameMenu={wrappedRenderFrameMenu}
+                onCommitFrame={props.onCommitFrame}
+                selectedHotspotId={props.selectedHotspotId}
+                onSelectHotspot={props.onSelectHotspot}
+                onCommitHotspotRegion={props.onCommitHotspotRegion}
+              />
+            ));
+            // The design-plane subtree — pan layer (user offset/zoom) wrapping
+            // the design plane motion.div (drill spring transform). Frames
+            // live inside the design plane so their positions interpret as
+            // design-pixel coords; everything outside is just transform chrome.
+            const planeSubtree = (
+              <div
                 style={{
                   position: "absolute",
-                  left: 0,
-                  top: 0,
-                  width: `${designWidth}px`,
-                  height: `${designHeight}px`,
-                  transformOrigin: "top left",
-                  x: planeTxMV,
-                  y: planeTyMV,
-                  scale: planeScaleMV,
-                  // WI-037 / DR-018 — only hint will-change while a
-                  // zoom/pan gesture is active. See the comment on
-                  // `gestureActive` (top of the FrameStage body) for the
-                  // tile-drop failure mode this guards against.
-                  willChange: gestureActive ? "transform" : undefined,
+                  inset: 0,
+                  ...(infiniteCanvas
+                    ? {
+                        transform: `translate(${pan.tx}px, ${pan.ty}px) scale(${pan.scale})`,
+                        transformOrigin: "center center",
+                      }
+                    : {}),
                 }}
               >
-                {planeChildren}
-                {/* WI-040 Phase 3 — host-supplied hover overlay
+                <motion.div
+                  ref={designPlaneRef}
+                  data-design-plane="true"
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    width: `${designWidth}px`,
+                    height: `${designHeight}px`,
+                    transformOrigin: "top left",
+                    x: planeTxMV,
+                    y: planeTyMV,
+                    scale: planeScaleMV,
+                    // WI-037 / DR-018 — only hint will-change while a
+                    // zoom/pan gesture is active. See the comment on
+                    // `gestureActive` (top of the FrameStage body) for the
+                    // tile-drop failure mode this guards against.
+                    willChange: gestureActive ? "transform" : undefined,
+                  }}
+                >
+                  {planeChildren}
+                  {/* WI-040 Phase 3 — host-supplied hover overlay
                   (`HoverAffordanceLayer` in DesignPage). Lives inside
                   the camera-transformed subtree so the projector's
                   design-space px line up exactly with the rendered
@@ -2166,141 +2265,142 @@ export function FrameStage(props: FrameStageProps) {
                   multi-selection placeholder; the SelectionLayer +
                   multi-selection chrome (mounted via portal to body)
                   naturally paint on top. */}
-                {renderHoverOverlay?.()}
-                {/* WI-036 follow-up — legacy multi-selection-chrome
+                  {renderHoverOverlay?.()}
+                  {/* WI-036 follow-up — legacy multi-selection-chrome
                   (solid 2px outline + 4 round dot corners + count
                   badge) removed. The host-level MultiSelectionOverlay
                   (in DesignPage, viewport-fixed) now owns the multi
                   affordance as a dashed marquee + square handles. */}
-              </motion.div>
-            </div>
-          );
-          // RubberBandLayer hosts pointer events on its outermost wrapper —
-          // by sitting *outside* the pan + drill transforms, that wrapper
-          // is always viewport-sized and the user can start a drag-to-add
-          // anywhere on screen regardless of how far the canvas has been
-          // panned or zoomed. The visual rect is portalled back into the
-          // design plane so its design-pixel coords get the same transform
-          // chain as the frames they create.
-          // Empty-region acceptance — same filter for both layers. The
-          // marquee starts on truly empty design-plane background only;
-          // pressing on a frame/shape/handle defers to inner bindings.
-          const emptyRegionAccept = (target: Element) => {
-            // Idle-only gate. Hand / panning / rubber-band / frame-manipulating
-            // / text-editing / context-menu all need to keep ownership of the
-            // pointer flow; the marquee (and the alt-rubber-band downstream)
-            // must not start under any of those modes.
-            if (!selectionAllowedOuter) return false;
-            if (!(target instanceof HTMLElement)) return true;
-            // WI-034 — frame body 의 빈 영역도 OK. RubberBand 의
-            // commit adapter (`adaptWeaveCapabilityToAgocraft`) 가
-            // drag rect 의 center 좌표로 hit-test → deepest frame 을
-            // containerId 로 사용. 즉 frame 안 Alt+drag → 그 frame
-            // 의 child 로 추가. 단 frame 의 child element (shape /
-            // handle / contenteditable / hotspot) 는 여전히 reject
-            // — 그쪽 element 의 own pointer flow 가 우선.
-            return (
-              target.closest("[data-shape-id]") === null &&
-              target.closest("[data-selection-layer]") === null &&
-              target.closest("[data-selection-handle-item-id]") === null &&
-              target.closest("[data-handle-kind]") === null &&
-              target.closest("[data-hotspot-id]") === null &&
-              target.closest('[contenteditable="true"]') === null &&
-              target.closest("input, textarea, button, a") === null
+                </motion.div>
+              </div>
             );
-          };
-          return editor !== undefined ? (
-            // Marquee is the OUTER layer: plain drag (alt forbidden) hits it
-            // first. When Alt is held, the modifier predicate fails and the
-            // event falls through to RubberBandLayer (alt required).
-            <MarqueeSelectionLayer
-              containerSize={{ width: designWidth, height: designHeight }}
-              clientToLocal={clientToDesignLocal}
-              getFrames={() =>
-                root.children
-                  .filter(isDomainItem)
-                  // WI-039 — focus-gate parity with single-click. A dimmed
-                  // (stage 1) or isolated (stage 2) frame carries
-                  // pointer-events:none, so a click never lands on it; the
-                  // marquee hit-tests document geometry directly and would
-                  // otherwise still scoop it into a drag selection. Exclude
-                  // the same id sets the per-frame hit gate consults so both
-                  // selection paths agree on what is interactive.
-                  .filter((c) => {
-                    const id = String(c.id);
-                    return (
-                      !(props.dimmedFrameIds?.has(id) ?? false) &&
-                      !(props.isolatedFrameIds?.has(id) ?? false)
-                    );
-                  })
-                  .map((c) => {
-                    const f = (c.attrs as { frame?: ItemFrame }).frame ?? {
-                      x: 0,
-                      y: 0,
-                      width: 1,
-                      height: 1,
-                      rotation: 0,
-                    };
-                    // Hit-test against the item's axis-aligned OUTER bounds so
-                    // a rotated frame is marquee-selected by its visible
-                    // extent, not its unrotated slot. rotation 0 → the raw box.
-                    // (Top-level children live in the unrotated root space, so
-                    // the box maps straight to design px.)
-                    const wpx = f.width * designWidth;
-                    const hpx = f.height * designHeight;
-                    const cx = (f.x + f.width / 2) * designWidth;
-                    const cy = (f.y + f.height / 2) * designHeight;
-                    const rot = f.rotation ?? 0;
-                    const co = Math.abs(Math.cos(rot));
-                    const si = Math.abs(Math.sin(rot));
-                    const bw = wpx * co + hpx * si;
-                    const bh = wpx * si + hpx * co;
-                    return {
-                      id: String(c.id),
-                      x: cx - bw / 2,
-                      y: cy - bh / 2,
-                      width: bw,
-                      height: bh,
-                    };
-                  })
-              }
-              acceptTarget={emptyRegionAccept}
-              onSelectIntent={(intent, ids) => {
-                onMarqueeSelect?.(intent, ids);
-              }}
-              visualHost={designPlaneRef}
-              style={{ position: "absolute", inset: 0 }}
-            >
-              <RubberBandLayer
-                containerKind="design"
-                containerId={String(root.id)}
+            // RubberBandLayer hosts pointer events on its outermost wrapper —
+            // by sitting *outside* the pan + drill transforms, that wrapper
+            // is always viewport-sized and the user can start a drag-to-add
+            // anywhere on screen regardless of how far the canvas has been
+            // panned or zoomed. The visual rect is portalled back into the
+            // design plane so its design-pixel coords get the same transform
+            // chain as the frames they create.
+            // Empty-region acceptance — same filter for both layers. The
+            // marquee starts on truly empty design-plane background only;
+            // pressing on a frame/shape/handle defers to inner bindings.
+            const emptyRegionAccept = (target: Element) => {
+              // Idle-only gate. Hand / panning / rubber-band / frame-manipulating
+              // / text-editing / context-menu all need to keep ownership of the
+              // pointer flow; the marquee (and the alt-rubber-band downstream)
+              // must not start under any of those modes.
+              if (!selectionAllowedOuter) return false;
+              if (!(target instanceof HTMLElement)) return true;
+              // WI-034 — frame body 의 빈 영역도 OK. RubberBand 의
+              // commit adapter (`adaptWeaveCapabilityToAgocraft`) 가
+              // drag rect 의 center 좌표로 hit-test → deepest frame 을
+              // containerId 로 사용. 즉 frame 안 Alt+drag → 그 frame
+              // 의 child 로 추가. 단 frame 의 child element (shape /
+              // handle / contenteditable / hotspot) 는 여전히 reject
+              // — 그쪽 element 의 own pointer flow 가 우선.
+              return (
+                target.closest("[data-shape-id]") === null &&
+                target.closest("[data-selection-layer]") === null &&
+                target.closest("[data-selection-handle-item-id]") === null &&
+                target.closest("[data-handle-kind]") === null &&
+                target.closest("[data-hotspot-id]") === null &&
+                target.closest('[contenteditable="true"]') === null &&
+                target.closest("input, textarea, button, a") === null
+              );
+            };
+            return editor !== undefined ? (
+              // Marquee is the OUTER layer: plain drag (alt forbidden) hits it
+              // first. When Alt is held, the modifier predicate fails and the
+              // event falls through to RubberBandLayer (alt required).
+              <MarqueeSelectionLayer
                 containerSize={{ width: designWidth, height: designHeight }}
-                editor={editor}
-                // WI-034 — adapter 의 deepest-frame hit-test 가 live
-                // doc snapshot read. docRef 의 mutation 은 docInAgocraft
-                // 의 매 render assignment.
-                getDocument={() => docRef.current}
-                snapSize={20}
                 clientToLocal={clientToDesignLocal}
-                visualHost={designPlaneRef}
-                // Single source of truth: alt-gating reads from the
-                // InsertableCapability registry.  Same field the cursor
-                // tooltip describer consults, so any future container
-                // (a frame-as-container, a group, …) only has to set
-                // `requireAltKey` once in its capability and BOTH the
-                // gesture gate AND the hover hint update together.
-                requireAltKey={designCapability?.requireAltKey === true}
+                getFrames={() =>
+                  root.children
+                    .filter(isDomainItem)
+                    // WI-039 — focus-gate parity with single-click. A dimmed
+                    // (stage 1) or isolated (stage 2) frame carries
+                    // pointer-events:none, so a click never lands on it; the
+                    // marquee hit-tests document geometry directly and would
+                    // otherwise still scoop it into a drag selection. Exclude
+                    // the same id sets the per-frame hit gate consults so both
+                    // selection paths agree on what is interactive.
+                    .filter((c) => {
+                      const id = String(c.id);
+                      return (
+                        !(props.dimmedFrameIds?.has(id) ?? false) &&
+                        !(props.isolatedFrameIds?.has(id) ?? false)
+                      );
+                    })
+                    .map((c) => {
+                      const f = (c.attrs as { frame?: ItemFrame }).frame ?? {
+                        x: 0,
+                        y: 0,
+                        width: 1,
+                        height: 1,
+                        rotation: 0,
+                      };
+                      // Hit-test against the item's axis-aligned OUTER bounds so
+                      // a rotated frame is marquee-selected by its visible
+                      // extent, not its unrotated slot. rotation 0 → the raw box.
+                      // (Top-level children live in the unrotated root space, so
+                      // the box maps straight to design px.)
+                      const wpx = f.width * designWidth;
+                      const hpx = f.height * designHeight;
+                      const cx = (f.x + f.width / 2) * designWidth;
+                      const cy = (f.y + f.height / 2) * designHeight;
+                      const rot = f.rotation ?? 0;
+                      const co = Math.abs(Math.cos(rot));
+                      const si = Math.abs(Math.sin(rot));
+                      const bw = wpx * co + hpx * si;
+                      const bh = wpx * si + hpx * co;
+                      return {
+                        id: String(c.id),
+                        x: cx - bw / 2,
+                        y: cy - bh / 2,
+                        width: bw,
+                        height: bh,
+                      };
+                    })
+                }
                 acceptTarget={emptyRegionAccept}
+                onSelectIntent={(intent, ids) => {
+                  onMarqueeSelect?.(intent, ids);
+                }}
+                visualHost={designPlaneRef}
                 style={{ position: "absolute", inset: 0 }}
               >
-                {planeSubtree}
-              </RubberBandLayer>
-            </MarqueeSelectionLayer>
-          ) : (
-            planeSubtree
-          );
-        })()}
-      </div>
+                <RubberBandLayer
+                  containerKind="design"
+                  containerId={String(root.id)}
+                  containerSize={{ width: designWidth, height: designHeight }}
+                  editor={editor}
+                  // WI-034 — adapter 의 deepest-frame hit-test 가 live
+                  // doc snapshot read. docRef 의 mutation 은 docInAgocraft
+                  // 의 매 render assignment.
+                  getDocument={() => docRef.current}
+                  snapSize={20}
+                  clientToLocal={clientToDesignLocal}
+                  visualHost={designPlaneRef}
+                  // Single source of truth: alt-gating reads from the
+                  // InsertableCapability registry.  Same field the cursor
+                  // tooltip describer consults, so any future container
+                  // (a frame-as-container, a group, …) only has to set
+                  // `requireAltKey` once in its capability and BOTH the
+                  // gesture gate AND the hover hint update together.
+                  requireAltKey={designCapability?.requireAltKey === true}
+                  acceptTarget={emptyRegionAccept}
+                  style={{ position: "absolute", inset: 0 }}
+                >
+                  {planeSubtree}
+                </RubberBandLayer>
+              </MarqueeSelectionLayer>
+            ) : (
+              planeSubtree
+            );
+          })()}
+        </div>
+      </ViewportCullContext.Provider>
     </TotalScaleContext.Provider>
   );
 }

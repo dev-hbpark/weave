@@ -54,6 +54,7 @@ import {
   updateAll,
   useResolveSharedColor,
 } from "../multi-edit.js";
+import { OpacityControl } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 /** Curated font-family presets. */
@@ -97,6 +98,18 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     (it) => (it.attrs as unknown as TextAttrs).fontFamily,
   );
   const fontSize = sharedValue<number>(items, (it) => (it.attrs as unknown as TextAttrs).fontSize);
+  // Phase 2 (fontSizeSpec) — px/% unit toggle. Read the DERIVED kind (a string)
+  // and the ratio-as-percent (a number) via sharedValue so equality compares
+  // primitives, not object refs (Object.is would flag equal specs as Mixed).
+  const fontSizeKind = sharedValue<"px" | "ratio">(
+    items,
+    (it) => (it.attrs as unknown as TextAttrs).fontSizeSpec?.kind ?? "px",
+  );
+  const sizeMode: "px" | "ratio" = isMixed(fontSizeKind) ? "px" : fontSizeKind;
+  const ratioPct = sharedValue<number>(items, (it) => {
+    const s = (it.attrs as unknown as TextAttrs).fontSizeSpec;
+    return s?.kind === "ratio" ? Math.round(s.value * 1000) / 10 : 5;
+  });
   const fontWeight = sharedValue<TextWeight>(
     items,
     (it) => (it.attrs as unknown as TextAttrs).fontWeight,
@@ -114,7 +127,6 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     items,
     (it) => (it.attrs as unknown as TextAttrs).textAlign,
   );
-  const opacity = sharedValue<number>(items, (it) => (it.attrs as unknown as TextAttrs).opacity);
   // WI-019 B4 / T3 Modify — the legacy `textAutoResize` field is gone in
   // agocraft v10. The 3-mode SegmentedControl below stays in v1 (familiar
   // UX) but reads / writes through `attrs.layoutChild` via the canonical
@@ -278,26 +290,84 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 const tip = fontSizeTooltipCopy();
                 return (
                   <Tooltip content={tip.content} disabled={tip.disabled} side="bottom">
-                    <div data-testid="text-size-section" className="w-full">
-                      <NumberSlider
-                        value={isMixed(fontSize) ? 24 : fontSize}
-                        onValueChange={(v) =>
-                          updateAll(editor, ids, (prev) => ({
-                            attrs: { ...prev.attrs, fontSize: v },
-                          }))
+                    <div data-testid="text-size-section" className="flex w-full flex-col gap-2">
+                      {/* px / % unit toggle. % = ratio of the parent frame
+                          height (root = design height); the renderer resolves
+                          it via resolveFontSize. */}
+                      <SegmentedControl<"px" | "ratio">
+                        value={sizeMode}
+                        onValueChange={(mode) =>
+                          updateAll(editor, ids, (prev) => {
+                            const prevAttrs = prev.attrs as unknown as TextAttrs;
+                            if (mode === "px") {
+                              const px = prevAttrs.fontSize ?? 24;
+                              return {
+                                attrs: {
+                                  ...prev.attrs,
+                                  fontSize: px,
+                                  fontSizeSpec: { kind: "px", value: px },
+                                },
+                              };
+                            }
+                            // → ratio: keep an existing ratio, else seed 5%.
+                            const value =
+                              prevAttrs.fontSizeSpec?.kind === "ratio"
+                                ? prevAttrs.fontSizeSpec.value
+                                : 0.05;
+                            return {
+                              attrs: { ...prev.attrs, fontSizeSpec: { kind: "ratio", value } },
+                            };
+                          })
                         }
-                        min={8}
-                        max={200}
-                        step={1}
-                        format={(v) => `${Math.round(v)}px`}
-                        aria-label="Font size"
-                        className="w-full"
+                        options={[
+                          { value: "px", label: "px" },
+                          { value: "ratio", label: "%" },
+                        ]}
+                        aria-label="Font size unit"
                       />
+                      {sizeMode === "px" ? (
+                        <NumberSlider
+                          value={isMixed(fontSize) ? 24 : fontSize}
+                          onValueChange={(v) =>
+                            updateAll(editor, ids, (prev) => ({
+                              attrs: {
+                                ...prev.attrs,
+                                fontSize: v,
+                                fontSizeSpec: { kind: "px", value: v },
+                              },
+                            }))
+                          }
+                          min={8}
+                          max={200}
+                          step={1}
+                          format={(v) => `${Math.round(v)}px`}
+                          aria-label="Font size"
+                          className="w-full"
+                        />
+                      ) : (
+                        <NumberSlider
+                          value={isMixed(ratioPct) ? 5 : ratioPct}
+                          onValueChange={(pct) =>
+                            updateAll(editor, ids, (prev) => ({
+                              attrs: {
+                                ...prev.attrs,
+                                fontSizeSpec: { kind: "ratio", value: pct / 100 },
+                              },
+                            }))
+                          }
+                          min={1}
+                          max={40}
+                          step={0.5}
+                          format={(v) => `${v}%`}
+                          aria-label="Font size (% of parent height)"
+                          className="w-full"
+                        />
+                      )}
                     </div>
                   </Tooltip>
                 );
               })()}
-              <MixedBadge visible={isMixed(fontSize)} />
+              <MixedBadge visible={isMixed(fontSize) || isMixed(fontSizeKind)} />
             </Bar.Field>
           </AccordionItem>
           <AccordionItem label="정렬" data-testid="text-align-group">
@@ -570,22 +640,9 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 <MixedBadge visible={isMixed(hyperlink)} />
               </div>
             </Bar.Field>
+            {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
             <Bar.Field label="Opacity">
-              <NumberSlider
-                value={isMixed(opacity) ? 1 : opacity}
-                onValueChange={(v) =>
-                  updateAll(editor, ids, (prev) => ({
-                    attrs: { ...prev.attrs, opacity: v },
-                  }))
-                }
-                min={0}
-                max={1}
-                step={0.01}
-                format={(v) => `${Math.round(v * 100)}%`}
-                aria-label="Text opacity"
-                className="w-full"
-              />
-              <MixedBadge visible={isMixed(opacity)} />
+              <OpacityControl editor={editor} ids={ids} />
             </Bar.Field>
           </AccordionItem>
         </Accordion>

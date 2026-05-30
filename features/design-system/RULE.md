@@ -8,7 +8,7 @@
 2. **No hard-coded visual values in app code.** Color, spacing, radius, shadow, motion duration, motion easing, typography size — all read from CSS variables defined in `packages/design-system/src/tokens.css`. Hard-coded values in `apps/<surface>/src/**` count as DEBT and require an entry in `PRODUCTION_BACKLOG.md`.
 3. **`prefers-reduced-motion: reduce` always wins.** Every motion path must short-circuit to a fade-only fallback via `useReducedMotion()` (motion lib) or `@media (prefers-reduced-motion)` (CSS).
 4. **Variant ceiling: 5 per component.** A 6th variant requires `design-system-agent` review and a written justification ("why none of the existing 5 fit + why this isn't just a one-off use case").
-5. **Theme registry is closed.** The current closed set is `{ aurora, mono, vivid }`. Adding a 4th requires a Design Review (DR-design-NNN), `seo-ai-visibility-agent` sign-off, and an updated `ThemeName` union.
+5. **Theme registry is closed.** SSOT = `packages/design-system/src/themes.ts` (`THEMES` array → `ThemeName` derived → `isThemeName` guard). The current closed set is `{ aurora, mono, vivid, daylight, paper, webtoon, noir, forest, sunset, ocean }` (10; DR-design-026). Adding the next requires a Design Review (DR-design-NNN), `seo-ai-visibility-agent` sign-off, and a new `THEMES` entry. Never patch `data-theme` outside the registry; never re-introduce a parallel hardcoded theme list in the switcher / storage guard.
 6. **No inline `style={{…}}` with literal color/size/motion.** Allowed exceptions: dynamic computed values (animation `delay={index * 0.05}`), demo-only sandboxes (mark with `// SANDBOX:` comment).
 
 ## Soft rules (reviewer-enforceable)
@@ -46,7 +46,7 @@ Outcomes that do **not** need a Design Review (still record the triage outcome i
 
 - Tokens: `packages/design-system/src/tokens.css`
 - Components: `packages/design-system/src/components/`
-- Theme switcher: `packages/design-system/src/components/ThemeSwitcher.tsx`
+- Theme picker: `packages/design-system/src/components/ThemePicker.tsx` (DR-design-027 — popover swatch grid; replaced the inline `ThemeSwitcher` pill row)
 - Public guide: `packages/design-system/README.md`
 - Feature guide (this folder): `README.md`
 

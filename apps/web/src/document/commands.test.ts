@@ -1169,6 +1169,240 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
   });
 });
 
+describe("weave.item.add — shape subAttrs normalization (WI-062)", () => {
+  function addCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.add");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+  // The add command emits an `item.create` patch carrying the serialized item.
+  function createdAttrs(res: ReturnType<ReturnType<typeof addCmd>["run"]>): Record<string, unknown> {
+    if (!res.ok) throw new Error("add failed");
+    const create = res.patches.find((p) => p.type === "item.create");
+    if (create === undefined) throw new Error("no item.create patch");
+    return (create as unknown as { item: { attrs: Record<string, unknown> } }).item.attrs;
+  }
+  const sub = (a: Record<string, unknown>) => a.subAttrs as Record<string, unknown>;
+
+  it("fills missing cornerRadii when a partial rectangle subAttrs is sent (crash repro)", () => {
+    // Exactly the shape that crashed shapeToSvgGeometry: rectangle, no cornerRadii.
+    const res = addCmd().run(makeCtx(), {
+      kind: "shape",
+      attrsOverride: { shape: "rectangle", subAttrs: { shape: "rectangle" } },
+    });
+    const attrs = createdAttrs(res);
+    expect(sub(attrs).shape).toBe("rectangle");
+    expect(sub(attrs).cornerRadii).toEqual({ tl: 0, tr: 0, br: 0, bl: 0 });
+  });
+
+  it("deep-merges a partial cornerRadii so the other corners keep their default", () => {
+    const res = addCmd().run(makeCtx(), {
+      kind: "shape",
+      attrsOverride: { shape: "rectangle", subAttrs: { shape: "rectangle", cornerRadii: { tl: 12 } } },
+    });
+    expect(sub(createdAttrs(res)).cornerRadii).toEqual({ tl: 12, tr: 0, br: 0, bl: 0 });
+  });
+
+  it("fills geometry for a non-rectangle kind (star) from defaults", () => {
+    const res = addCmd().run(makeCtx(), {
+      kind: "shape",
+      attrsOverride: { shape: "star", subAttrs: { shape: "star" } },
+    });
+    const s = sub(createdAttrs(res));
+    expect(s.shape).toBe("star");
+    expect(typeof s.points).toBe("number");
+    expect(typeof s.innerRatio).toBe("number");
+  });
+
+  it("falls back to rectangle for an unknown shape string", () => {
+    const res = addCmd().run(makeCtx(), {
+      kind: "shape",
+      attrsOverride: { shape: "blob", subAttrs: { shape: "blob" } },
+    });
+    const s = sub(createdAttrs(res));
+    expect(s.shape).toBe("rectangle");
+    expect(s.cornerRadii).toBeDefined();
+  });
+
+  it("syncs the top-level attrs.shape to subAttrs.shape", () => {
+    const res = addCmd().run(makeCtx(), {
+      kind: "shape",
+      attrsOverride: { subAttrs: { shape: "ellipse" } },
+    });
+    const attrs = createdAttrs(res);
+    expect(attrs.shape).toBe("ellipse");
+    expect(sub(attrs).shape).toBe("ellipse");
+  });
+});
+
+describe("weave.items.update (WI-061)", () => {
+  function updateCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.items.update");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+  function frameItem(id: string, x: number, extra?: Record<string, unknown>): Item {
+    return {
+      id,
+      kind: "shape",
+      attrs: { frame: { x, y: 0, width: 0.2, height: 0.2, rotation: 0 }, opacity: 1, ...extra },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+  }
+  function ctxWith(items: ReadonlyArray<Item>): CommandContext {
+    const weave: WeaveDocument = {
+      id: "doc-items-update",
+      title: "U",
+      items: [...items],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    return { document: toAgocraftDocument(weave), resolve: () => null as never, skipRelations: false };
+  }
+
+  it("applies the same attrs to every id as ONE batch of item.attrs patches", () => {
+    const ctx = ctxWith([frameItem("a", 0.1), frameItem("b", 0.5), frameItem("c", 0.3)]);
+    const res = updateCmd().run(ctx, { itemIds: ["a", "b", "c"], attrs: { opacity: 0.5 } });
+    if (!res.ok) throw new Error("unexpected fail");
+    const attrsPatches = res.patches.filter((p) => p.type === "item.attrs");
+    expect(attrsPatches).toHaveLength(3);
+    // Every emitted patch carries the merged opacity AND preserves the frame.
+    for (const p of attrsPatches) {
+      const after = (p as unknown as { after: { opacity: number; frame: unknown } }).after;
+      expect(after.opacity).toBe(0.5);
+      expect(after.frame).toBeDefined(); // shallow-merge kept the existing frame
+    }
+  });
+
+  it("rejects an empty itemIds list", () => {
+    const ctx = ctxWith([frameItem("a", 0.1)]);
+    const res = updateCmd().run(ctx, { itemIds: [], attrs: { opacity: 0.5 } });
+    expect(res.ok).toBe(false);
+  });
+
+  it("fails if any id is missing", () => {
+    const ctx = ctxWith([frameItem("a", 0.1)]);
+    const res = updateCmd().run(ctx, { itemIds: ["a", "ghost"], attrs: { opacity: 0.5 } });
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected fail");
+    expect(res.error.code).toBe("item-not-found");
+  });
+});
+
+describe("weave.items.align (WI-059)", () => {
+  function alignCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.items.align");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+  function frameItem(id: string, x: number, y: number, w: number, h: number): Item {
+    return {
+      id,
+      kind: "frame",
+      attrs: { frame: { x, y, width: w, height: h, rotation: 0 } },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+  }
+  function ctxWith(items: ReadonlyArray<Item>): CommandContext {
+    const weave: WeaveDocument = {
+      id: "doc-align",
+      title: "Align",
+      items: [...items],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    return { document: toAgocraftDocument(weave), resolve: () => null as never, skipRelations: false };
+  }
+  // Extract { itemId → after.frame.x } for the emitted item.attrs patches.
+  function movedX(patches: ReadonlyArray<{ type: string }>): Map<string, number> {
+    return new Map(
+      patches
+        .filter((p) => p.type === "item.attrs")
+        .map((p) => {
+          const q = p as unknown as { itemId: unknown; after: { frame: { x: number } } };
+          return [String(q.itemId), q.after.frame.x] as const;
+        }),
+    );
+  }
+
+  it("align-left snaps every sibling's x to the selection min (already-aligned items emit no patch)", () => {
+    const ctx = ctxWith([
+      frameItem("a", 0.1, 0, 0.2, 0.2),
+      frameItem("b", 0.5, 0, 0.2, 0.2),
+      frameItem("c", 0.3, 0, 0.2, 0.2),
+    ]);
+    const res = alignCmd().run(ctx, { itemIds: ["a", "b", "c"], op: "align-left" });
+    if (!res.ok) throw new Error("unexpected fail");
+    const xs = movedX(res.patches);
+    expect(xs.get("b")).toBeCloseTo(0.1);
+    expect(xs.get("c")).toBeCloseTo(0.1);
+    expect(xs.has("a")).toBe(false); // a was already the min → zero-delta, no patch
+  });
+
+  it("distribute-horizontal equalizes gaps between three siblings", () => {
+    const ctx = ctxWith([
+      frameItem("a", 0.0, 0, 0.1, 0.2),
+      frameItem("b", 0.15, 0, 0.1, 0.2),
+      frameItem("c", 0.8, 0, 0.1, 0.2),
+    ]);
+    const res = alignCmd().run(ctx, { itemIds: ["a", "b", "c"], op: "distribute-horizontal" });
+    if (!res.ok) throw new Error("unexpected fail");
+    // span 0.0..0.9 (=0.9), total width 0.3, two gaps → each gap 0.3; b sits at 0.0+0.1+0.3=0.4.
+    expect(movedX(res.patches).get("b")).toBeCloseTo(0.4);
+  });
+
+  it("rejects fewer than 2 itemIds", () => {
+    const ctx = ctxWith([frameItem("a", 0.1, 0, 0.2, 0.2)]);
+    const res = alignCmd().run(ctx, { itemIds: ["a"], op: "align-left" });
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects an unknown op", () => {
+    const ctx = ctxWith([frameItem("a", 0.1, 0, 0.2, 0.2), frameItem("b", 0.5, 0, 0.2, 0.2)]);
+    const res = alignCmd().run(ctx, {
+      itemIds: ["a", "b"],
+      op: "align-diagonal" as never,
+    });
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects a cross-parent selection (v1 same-parent invariant)", () => {
+    // parent-1 (root) contains child-1; sibling-2 sits at root → different parents.
+    const parent: Item = {
+      id: "parent-1",
+      kind: "frame",
+      attrs: { frame: { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 } },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const sibling: Item = frameItem("sibling-2", 0.6, 0, 0.2, 0.2);
+    const weave: WeaveDocument = {
+      id: "doc-xparent",
+      title: "X",
+      items: [parent, sibling],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    const root = toAgocraftDocument(weave);
+    const childAgocraft = {
+      id: makeItemId("child-1"),
+      kind: "frame",
+      attrs: { frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 } } as unknown as AgocraftItem["attrs"],
+      units: [],
+      children: [] as ReadonlyArray<AgocraftItem>,
+      meta: { createdAt: META_DATE, updatedAt: META_DATE, schemaVersion: 9 },
+    } as unknown as AgocraftItem;
+    const doc = addChild(root, childAgocraft, "parent-1");
+    const ctx: CommandContext = { document: doc, resolve: () => null as never, skipRelations: false };
+    const res = alignCmd().run(ctx, { itemIds: ["child-1", "sibling-2"], op: "align-left" });
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected fail");
+    expect(res.error.code).toBe("cross-parent-selection");
+  });
+});
+
 /** Local deep find used by the WI-050 tests (the production helper lives in
  *  agocraft-mirror but isn't exported under this name). */
 function findItemDeepById(doc: AgocraftDocument, id: string): AgocraftItem | undefined {

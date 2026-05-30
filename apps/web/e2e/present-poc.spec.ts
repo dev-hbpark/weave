@@ -315,6 +315,9 @@ test("zoom and pan stay synchronized through a camera transition", async ({ page
 
 test("theme switch persists across navigations", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed" });
+  // DR-design-027 — the theme list moved from an inline pill row into a
+  // Popover behind a compact trigger; open it before selecting a swatch.
+  await page.getByTestId("theme-picker").click();
   await page.getByRole("radio", { name: "Vivid" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "vivid");
   await page.reload();

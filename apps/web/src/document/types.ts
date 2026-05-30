@@ -194,6 +194,7 @@ import type {
   ShapeAttrs as AgocraftShapeAttrs,
   TextAttrs as AgocraftTextAttrs,
   VideoAttrs as AgocraftVideoAttrs,
+  PaintSpec,
 } from "@agocraft/core";
 export type ImageAttrs = AgocraftImageAttrs;
 export type VideoAttrs = AgocraftVideoAttrs;
@@ -210,9 +211,9 @@ export interface QrAttrs {
   /** Error-correction level (default "M"). Higher = more redundancy. */
   readonly ecLevel?: "L" | "M" | "Q" | "H";
   /** Dark-module paint (solid / linear / radial gradient). Default solid #000. */
-  readonly foreground?: ShapeAttrs["fill"];
+  readonly foreground?: PaintSpec;
   /** Light-module / background paint. `null` = transparent. Default solid #fff. */
-  readonly background?: ShapeAttrs["fill"] | null;
+  readonly background?: PaintSpec | null;
   /** Quiet-zone width in modules (default 4 per the QR spec). */
   readonly margin?: number;
   /** Module glyph shape (default "square"). */

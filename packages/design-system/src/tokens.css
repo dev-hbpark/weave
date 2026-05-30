@@ -5,10 +5,21 @@
  *                   Overridden per [data-theme].
  *   3. component  — defined in each component's CSS (or Tailwind utility composition).
  *
- * Theme variants: "aurora" (default, dark glass), "mono" (Linear-grade), "vivid" (max playful).
+ * Theme variants (registry SSOT: packages/design-system/src/themes.ts; governance:
+ *   features/design-system/RULE.md #5 + DR-design-026):
+ *     dark   — "aurora" (default glass) · "vivid" (playful) · "mono" (Linear-grade)
+ *              · "noir" (ink-comic) · "forest" · "sunset" · "ocean"
+ *     light  — "daylight" (clean) · "paper" (warm editorial) · "webtoon" (comic pop)
+ *
+ * Each [data-theme] block overrides the SAME semantic set as the aurora block
+ * below (page / aurora-stops / surface / text / accent / border / focus / shadow
+ * / domain-accents / focus-stages). It does NOT re-declare --hover-affordance-* or
+ * --arrange-preview-* — those hold `var(--accent)` / fixed cyan and re-resolve per
+ * theme at use-time, so overriding --accent is enough.
  *
  * a11y:
- *   - Color contrast ≥ WCAG AA in every variant.
+ *   - Color contrast ≥ WCAG AA in every variant. Light themes flip text/surface to
+ *     a dark-ink ramp; accent-as-button-bg meets AA-large (≥3:1) with white text.
  *   - All motion respects prefers-reduced-motion (handled in component CSS / motion lib config).
  */
 
@@ -261,6 +272,332 @@
   --focus-peer-saturate: 0.5;
 }
 
+/* === SEMANTIC — Daylight (clean LIGHT, sky accent) ===
+ * First light variant. Text/surface flip to a dark-ink ramp on a cool-white
+ * page; aurora kept very soft + pastel so the light surface stays calm. */
+[data-theme="daylight"] {
+  --bg-page: #f7f9fc;
+  --bg-page-soft: #eef2f8;
+
+  /* soft pastel aurora — low alpha so it reads as a faint wash on white */
+  --aurora-1: rgba(120, 170, 255, 0.22); /* sky */
+  --aurora-2: rgba(150, 210, 255, 0.18); /* light cyan */
+  --aurora-3: rgba(190, 170, 255, 0.18); /* lavender */
+  --aurora-4: rgba(255, 210, 150, 0.12); /* warm */
+  --aurora-strength: 0.35;
+
+  --surface-1: rgba(15, 23, 42, 0.035);
+  --surface-1-border: rgba(15, 23, 42, 0.1);
+  --surface-2: rgba(15, 23, 42, 0.06);
+  --surface-2-border: rgba(15, 23, 42, 0.14);
+  --surface-blur: 16px;
+
+  --text-strong: rgba(15, 23, 42, 0.96);
+  --text-default: rgba(15, 23, 42, 0.84);
+  --text-soft: rgba(15, 23, 42, 0.6);
+  --text-muted: rgba(15, 23, 42, 0.42);
+  --text-on-accent: #ffffff;
+
+  --accent: #2f6bff; /* sky blue */
+  --accent-soft: rgba(47, 107, 255, 0.12);
+  --accent-strong: #5b8aff;
+  --accent-gradient: linear-gradient(135deg, #2f6bff, #7b5bff);
+
+  --border-default: rgba(15, 23, 42, 0.1);
+  --border-strong: rgba(15, 23, 42, 0.18);
+  --focus-ring: 0 0 0 2px #f7f9fc, 0 0 0 4px #5b8aff;
+
+  --shadow-glass: 0 18px 44px -22px rgba(15, 23, 42, 0.2), 0 4px 14px -6px rgba(15, 23, 42, 0.12);
+  --shadow-glow: 0 0 24px -6px rgba(47, 107, 255, 0.35);
+
+  /* domain accents — mid-dark tones tuned for legibility on light surfaces */
+  --domain-slide-accent: #0e8fc1;
+  --domain-canvas-accent: #d61f7a;
+  --domain-block-accent: #6d3bd1;
+  --domain-media-accent: #d97706;
+
+  --focus-dim-opacity: 0.32;
+  --focus-isolate-opacity: 0;
+  --focus-peer-saturate: 0.55;
+}
+
+/* === SEMANTIC — Paper (warm editorial LIGHT, sepia) ===
+ * Flat, no aurora. Warm cream page + warm-ink text; terracotta accent. */
+[data-theme="paper"] {
+  --bg-page: #f4efe6;
+  --bg-page-soft: #ebe3d4;
+  --aurora-strength: 0;
+  --aurora-1: transparent;
+  --aurora-2: transparent;
+  --aurora-3: transparent;
+  --aurora-4: transparent;
+
+  --surface-1: rgba(60, 45, 25, 0.05);
+  --surface-1-border: rgba(60, 45, 25, 0.12);
+  --surface-2: rgba(60, 45, 25, 0.08);
+  --surface-2-border: rgba(60, 45, 25, 0.16);
+  --surface-blur: 10px;
+
+  --text-strong: rgba(43, 34, 24, 0.96);
+  --text-default: rgba(43, 34, 24, 0.84);
+  --text-soft: rgba(43, 34, 24, 0.6);
+  --text-muted: rgba(43, 34, 24, 0.44);
+  --text-on-accent: #fff8f0;
+
+  --accent: #b5532a; /* terracotta */
+  --accent-soft: rgba(181, 83, 42, 0.12);
+  --accent-strong: #cf6a3e;
+  --accent-gradient: linear-gradient(135deg, #b5532a, #d98a3d);
+
+  --border-default: rgba(60, 45, 25, 0.14);
+  --border-strong: rgba(60, 45, 25, 0.22);
+  --focus-ring: 0 0 0 2px #f4efe6, 0 0 0 4px #cf6a3e;
+
+  --shadow-glass: 0 14px 36px -20px rgba(60, 45, 25, 0.22), 0 3px 10px -4px rgba(60, 45, 25, 0.14);
+  --shadow-glow: 0 0 0 transparent;
+
+  /* domain accents — earthy, readable on cream */
+  --domain-slide-accent: #2f7d6b;
+  --domain-canvas-accent: #b5532a;
+  --domain-block-accent: #7a5cae;
+  --domain-media-accent: #b87918;
+
+  --focus-dim-opacity: 0.3;
+  --focus-isolate-opacity: 0;
+  --focus-peer-saturate: 0.6;
+}
+
+/* === SEMANTIC — Webtoon (bright comic pop, LIGHT) ===
+ * Clean paper-white, bold ink outlines, tri-color pop accent + pastel aurora.
+ * Lower surface blur for a flatter, more "printed" comic feel. */
+[data-theme="webtoon"] {
+  --bg-page: #fffdf8;
+  --bg-page-soft: #ffeede;
+
+  /* playful pastel pop — visible but light */
+  --aurora-1: rgba(255, 140, 170, 0.3); /* pink */
+  --aurora-2: rgba(120, 200, 255, 0.26); /* sky */
+  --aurora-3: rgba(255, 215, 120, 0.26); /* yellow */
+  --aurora-4: rgba(160, 235, 200, 0.22); /* mint */
+  --aurora-strength: 0.5;
+
+  --surface-1: rgba(20, 20, 30, 0.04);
+  --surface-1-border: rgba(20, 20, 30, 0.16);
+  --surface-2: rgba(20, 20, 30, 0.07);
+  --surface-2-border: rgba(20, 20, 30, 0.22);
+  --surface-blur: 6px;
+
+  --text-strong: rgba(20, 20, 30, 0.98); /* near-black ink */
+  --text-default: rgba(20, 20, 30, 0.88);
+  --text-soft: rgba(20, 20, 30, 0.64);
+  --text-muted: rgba(20, 20, 30, 0.46);
+  --text-on-accent: #ffffff;
+
+  --accent: #f43f5e; /* comic rose pop */
+  --accent-soft: rgba(244, 63, 94, 0.14);
+  --accent-strong: #fb7185;
+  --accent-gradient: linear-gradient(135deg, #f43f5e 0%, #ffb83d 50%, #4dc9ff 100%);
+
+  --border-default: rgba(20, 20, 30, 0.16);
+  --border-strong: rgba(20, 20, 30, 0.3); /* bold ink line */
+  --focus-ring: 0 0 0 2px #fffdf8, 0 0 0 4px #14141e; /* inked outline focus */
+
+  --shadow-glass: 0 6px 0 -1px rgba(20, 20, 30, 0.1), 0 14px 30px -16px rgba(20, 20, 30, 0.22);
+  --shadow-glow: 0 0 24px -8px rgba(244, 63, 94, 0.4);
+
+  /* domain accents — saturated pop, readable on light */
+  --domain-slide-accent: #1aa3e0;
+  --domain-canvas-accent: #f43f5e;
+  --domain-block-accent: #8b5cf6;
+  --domain-media-accent: #f59e0b;
+
+  --focus-dim-opacity: 0.3;
+  --focus-isolate-opacity: 0;
+  --focus-peer-saturate: 0.55;
+}
+
+/* === SEMANTIC — Noir (ink-comic / manhwa noir, DARK) ===
+ * Near-black + white high-contrast outlines, single blood-red accent, no glow.
+ * Flat (low blur) for a hard inked-panel feel. */
+[data-theme="noir"] {
+  --bg-page: #0c0c0e;
+  --bg-page-soft: #141417;
+  --aurora-strength: 0;
+  --aurora-1: transparent;
+  --aurora-2: transparent;
+  --aurora-3: transparent;
+  --aurora-4: transparent;
+
+  --surface-1: rgba(255, 255, 255, 0.05);
+  --surface-1-border: rgba(255, 255, 255, 0.16);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --surface-2-border: rgba(255, 255, 255, 0.26);
+  --surface-blur: 4px;
+
+  --text-strong: #ffffff;
+  --text-default: rgba(255, 255, 255, 0.86);
+  --text-soft: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.4);
+  --text-on-accent: #ffffff;
+
+  --accent: #e5142b; /* blood red */
+  --accent-soft: rgba(229, 20, 43, 0.16);
+  --accent-strong: #ff3b4e;
+  --accent-gradient: linear-gradient(135deg, #e5142b, #7a0a16);
+
+  --border-default: rgba(255, 255, 255, 0.18);
+  --border-strong: rgba(255, 255, 255, 0.34); /* high-contrast ink outline */
+  --focus-ring: 0 0 0 2px #0c0c0e, 0 0 0 4px #ffffff; /* white ink focus */
+
+  --shadow-glass: 0 16px 40px -18px rgba(0, 0, 0, 0.8), 0 2px 6px -2px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 0 transparent;
+
+  /* domain accents — grayscale + red, label-led like Mono */
+  --domain-slide-accent: #d0d0d6;
+  --domain-canvas-accent: #e5142b;
+  --domain-block-accent: #9a9aa2;
+  --domain-media-accent: #ff3b4e;
+
+  --focus-dim-opacity: 0.32;
+  --focus-isolate-opacity: 0;
+  --focus-peer-saturate: 0.5;
+}
+
+/* === SEMANTIC — Forest (calm emerald DARK, nature) === */
+[data-theme="forest"] {
+  --bg-page: #08120d;
+  --bg-page-soft: #0d1c14;
+
+  --aurora-1: rgba(43, 184, 119, 0.42); /* emerald */
+  --aurora-2: rgba(40, 200, 170, 0.36); /* teal */
+  --aurora-3: rgba(120, 160, 90, 0.3); /* moss */
+  --aurora-4: rgba(180, 230, 140, 0.22); /* lime */
+  --aurora-strength: 0.8;
+
+  --surface-1: rgba(220, 255, 235, 0.05);
+  --surface-1-border: rgba(220, 255, 235, 0.12);
+  --surface-2: rgba(220, 255, 235, 0.08);
+  --surface-2-border: rgba(220, 255, 235, 0.18);
+  --surface-blur: 20px;
+
+  --text-strong: rgba(240, 255, 246, 0.96);
+  --text-default: rgba(240, 255, 246, 0.84);
+  --text-soft: rgba(240, 255, 246, 0.6);
+  --text-muted: rgba(240, 255, 246, 0.42);
+  --text-on-accent: #04120b;
+
+  --accent: #2bb877; /* emerald */
+  --accent-soft: rgba(43, 184, 119, 0.16);
+  --accent-strong: #7eedb5;
+  --accent-gradient: linear-gradient(135deg, #2bb877, #1e8fc1);
+
+  --border-default: rgba(220, 255, 235, 0.12);
+  --border-strong: rgba(220, 255, 235, 0.22);
+  --focus-ring: 0 0 0 2px #08120d, 0 0 0 4px #7eedb5;
+
+  --shadow-glass: 0 18px 56px -20px rgba(0, 0, 0, 0.55), 0 4px 16px -4px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 30px -6px rgba(43, 184, 119, 0.5);
+
+  --domain-slide-accent: #28c8aa;
+  --domain-canvas-accent: #2bb877;
+  --domain-block-accent: #7aa55a;
+  --domain-media-accent: #b4e68c;
+
+  --focus-dim-opacity: 0.28;
+  --focus-isolate-opacity: 0;
+  --focus-peer-saturate: 0.55;
+}
+
+/* === SEMANTIC — Sunset (warm dusk gradient, DARK) === */
+[data-theme="sunset"] {
+  --bg-page: #1a0a10;
+  --bg-page-soft: #2a0f16;
+
+  --aurora-1: rgba(255, 107, 53, 0.55); /* orange */
+  --aurora-2: rgba(232, 58, 147, 0.5); /* magenta */
+  --aurora-3: rgba(255, 180, 80, 0.45); /* amber */
+  --aurora-4: rgba(131, 88, 255, 0.4); /* dusk violet */
+  --aurora-strength: 1.1;
+
+  --surface-1: rgba(255, 245, 235, 0.06);
+  --surface-1-border: rgba(255, 245, 235, 0.16);
+  --surface-2: rgba(255, 245, 235, 0.1);
+  --surface-2-border: rgba(255, 245, 235, 0.22);
+  --surface-blur: 24px;
+
+  --text-strong: rgba(255, 248, 244, 0.96);
+  --text-default: rgba(255, 248, 244, 0.86);
+  --text-soft: rgba(255, 248, 244, 0.62);
+  --text-muted: rgba(255, 248, 244, 0.44);
+  --text-on-accent: #ffffff;
+
+  --accent: #ff6b35; /* sunset orange */
+  --accent-soft: rgba(255, 107, 53, 0.16);
+  --accent-strong: #ff9d6b;
+  --accent-gradient: linear-gradient(135deg, #ff6b35 0%, #e83a93 60%, #8358ff 100%);
+
+  --border-default: rgba(255, 245, 235, 0.14);
+  --border-strong: rgba(255, 245, 235, 0.24);
+  --focus-ring: 0 0 0 2px #1a0a10, 0 0 0 4px #ff9d6b;
+
+  --shadow-glass: 0 20px 64px -18px rgba(40, 8, 20, 0.6), 0 5px 18px -5px rgba(255, 107, 53, 0.2);
+  --shadow-glow: 0 0 34px -6px #ff6b35, 0 0 50px -16px #e83a93;
+
+  --domain-slide-accent: #ffb060;
+  --domain-canvas-accent: #ff6b35;
+  --domain-block-accent: #c77dff;
+  --domain-media-accent: #ff5fa2;
+
+  --focus-dim-opacity: 0.28;
+  --focus-isolate-opacity: 0;
+  --focus-peer-saturate: 0.5;
+}
+
+/* === SEMANTIC — Ocean (deep blue calm, DARK) === */
+[data-theme="ocean"] {
+  --bg-page: #04101f;
+  --bg-page-soft: #071a30;
+
+  --aurora-1: rgba(51, 184, 230, 0.45); /* cyan */
+  --aurora-2: rgba(40, 120, 230, 0.42); /* blue */
+  --aurora-3: rgba(43, 184, 170, 0.34); /* teal */
+  --aurora-4: rgba(131, 160, 255, 0.3); /* periwinkle */
+  --aurora-strength: 0.9;
+
+  --surface-1: rgba(225, 240, 255, 0.05);
+  --surface-1-border: rgba(225, 240, 255, 0.12);
+  --surface-2: rgba(225, 240, 255, 0.08);
+  --surface-2-border: rgba(225, 240, 255, 0.18);
+  --surface-blur: 24px;
+
+  --text-strong: rgba(238, 247, 255, 0.96);
+  --text-default: rgba(238, 247, 255, 0.84);
+  --text-soft: rgba(238, 247, 255, 0.6);
+  --text-muted: rgba(238, 247, 255, 0.42);
+  --text-on-accent: #041020;
+
+  --accent: #33b8e6; /* cyan */
+  --accent-soft: rgba(51, 184, 230, 0.16);
+  --accent-strong: #7ce3ff;
+  --accent-gradient: linear-gradient(135deg, #33b8e6, #3a6ff0);
+
+  --border-default: rgba(225, 240, 255, 0.12);
+  --border-strong: rgba(225, 240, 255, 0.22);
+  --focus-ring: 0 0 0 2px #04101f, 0 0 0 4px #7ce3ff;
+
+  --shadow-glass: 0 18px 58px -20px rgba(0, 8, 20, 0.6), 0 4px 16px -4px rgba(0, 8, 20, 0.45);
+  --shadow-glow: 0 0 30px -6px rgba(51, 184, 230, 0.5);
+
+  --domain-slide-accent: #33b8e6;
+  --domain-canvas-accent: #3a6ff0;
+  --domain-block-accent: #7c9cff;
+  --domain-media-accent: #2bb8aa;
+
+  --focus-dim-opacity: 0.28;
+  --focus-isolate-opacity: 0;
+  --focus-peer-saturate: 0.55;
+}
+
 /* === DOCUMENT CONTEXT — readable text/surface tokens on any canvas bg ===
  *
  * `data-canvas="document"` marks the design-plane subtree where the user's
@@ -291,6 +628,72 @@
   --text-overlay-muted: rgba(255, 255, 255, 0.52);
   --shadow-overlay: 0 18px 60px -16px rgba(0, 0, 0, 0.65),
     0 4px 14px -4px rgba(0, 0, 0, 0.5);
+
+  /* === SEMANTIC — status (DR-design-027) ===
+   * Theme-independent on purpose: success / warn / danger carry universal
+   * meaning (saved ✓ / retry / error) and must read consistently in every
+   * theme, the same rationale as the overlay tokens above. Chosen to clear
+   * AA-large on both dark and light surfaces. Replaces the ad-hoc
+   * `var(--text-warn, #d97706)` literal the header save button used. */
+  --status-success: var(--color-emerald-500);
+  --status-warn: #d97706;
+  --status-danger: #e5453a;
+}
+
+/* === OVERLAY SURFACE — light-theme tone split (DR-design-028) ===
+ *
+ * The overlay tokens above are dark glass, defined once on `:root`. That was
+ * correct while every theme was dark — floating chrome (Panel, ContextualToolbar,
+ * all toolbar sections, menus, popovers, dialogs, tooltips) reads on dark and
+ * the chrome felt like one product layer. When the LIGHT themes (daylight /
+ * paper / webtoon — DR-design-026) landed, the page + cards went light but this
+ * dark chrome stayed put, so the new themes appeared to apply to "only some UI".
+ *
+ * These blocks flip the overlay family to a LIGHT glass + dark-ink ramp for the
+ * three light themes only. They MUST sit AFTER the `:root` overlay block above:
+ * `:root` and `[data-theme="…"]` carry equal specificity, so later source order
+ * is what makes these win. Dark themes inherit the `:root` dark overlay untouched.
+ *
+ * Floating chrome still portals over the user's canvas (any color), so each
+ * light overlay stays near-opaque (≥0.97) to guarantee legibility over a dark
+ * canvas, preserving the original "readable over anything" intent. Per-theme tone
+ * tracks each theme's own ink ramp (daylight cool, paper warm, webtoon bright).
+ * Status tokens stay theme-independent on purpose (universal meaning). */
+[data-theme="daylight"] {
+  --surface-overlay: rgba(248, 250, 253, 0.97);
+  --surface-overlay-2: rgba(15, 23, 42, 0.06);
+  --surface-overlay-border: rgba(15, 23, 42, 0.12);
+  --surface-overlay-border-strong: rgba(15, 23, 42, 0.2);
+  --text-overlay: rgba(15, 23, 42, 0.96);
+  --text-overlay-soft: rgba(15, 23, 42, 0.66);
+  --text-overlay-muted: rgba(15, 23, 42, 0.46);
+  --shadow-overlay: 0 18px 60px -16px rgba(15, 23, 42, 0.28),
+    0 4px 14px -4px rgba(15, 23, 42, 0.18);
+}
+
+[data-theme="paper"] {
+  --surface-overlay: rgba(246, 241, 233, 0.97);
+  --surface-overlay-2: rgba(43, 34, 24, 0.06);
+  --surface-overlay-border: rgba(60, 45, 25, 0.14);
+  --surface-overlay-border-strong: rgba(60, 45, 25, 0.22);
+  --text-overlay: rgba(43, 34, 24, 0.96);
+  --text-overlay-soft: rgba(43, 34, 24, 0.66);
+  --text-overlay-muted: rgba(43, 34, 24, 0.46);
+  --shadow-overlay: 0 16px 44px -18px rgba(60, 45, 25, 0.3),
+    0 3px 10px -4px rgba(60, 45, 25, 0.18);
+}
+
+[data-theme="webtoon"] {
+  --surface-overlay: rgba(255, 253, 248, 0.98);
+  --surface-overlay-2: rgba(20, 20, 30, 0.06);
+  --surface-overlay-border: rgba(20, 20, 30, 0.16);
+  --surface-overlay-border-strong: rgba(20, 20, 30, 0.28);
+  --text-overlay: rgba(20, 20, 30, 0.98);
+  --text-overlay-soft: rgba(20, 20, 30, 0.66);
+  --text-overlay-muted: rgba(20, 20, 30, 0.48);
+  /* inked drop + soft cast — matches webtoon's flat "printed" shadow feel */
+  --shadow-overlay: 0 6px 0 -1px rgba(20, 20, 30, 0.08),
+    0 14px 30px -16px rgba(20, 20, 30, 0.22);
 }
 
 [data-canvas="document"][data-bg-tone="light"] {
