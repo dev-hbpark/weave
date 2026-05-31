@@ -58,8 +58,11 @@ test("Add menu → 텍스트 creates a text item with default attrs", async ({ p
   expect(attrs.fontSize as number).toBeGreaterThan(0);
   expect((attrs.fontSizeSpec as { kind?: string } | undefined)?.kind).toBe("ratio");
   expect(attrs.color).toBe("#1f2933");
-  // Frame defaulted to addNewItem's drop coords.
-  expect((attrs.frame as { width?: number }).width).toBeCloseTo(0.4, 5);
+  // New text defaults to Auto-width (TEXT_ITEM_SPEC §4.6): layoutChild anchor
+  // is scale × scale. Width then auto-fits the text (no fixed default width).
+  expect((attrs.layoutChild as { anchor?: { horizontal?: string; vertical?: string } }).anchor).toEqual(
+    { horizontal: "scale", vertical: "scale" },
+  );
 
   // Rendered DOM has the TextBlock with the default text.
   await expect(page.getByTestId("text-block")).toBeVisible();
@@ -251,10 +254,27 @@ test("Enter inserts a newline inside the text box (multiline)", async ({ page })
   expect(String(attrs.text)).toMatch(/Line 1\s*\n+\s*Line 2/);
 });
 
-test("text item does NOT render n/s resize handles", async ({ page }) => {
+test("Auto-H mode does NOT render n/s resize handles (height auto, width manual)", async ({
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-NoNS" });
   const id = await addTextViaMenu(page);
+  // New text defaults to Auto-width; switch to Auto-height (scale × top) which
+  // is the mode this test covers (e/w handles, no n/s, no corners).
+  await page.evaluate((fid) => {
+    const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: {
+          ...prev.attrs,
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
+        },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
   // Item is selected on add → SelectionLayer mounts.
   await expect(page.locator(`[data-selection-handle-item-id="${id}"]`).first()).toBeVisible({
     timeout: 3000,
@@ -311,6 +331,9 @@ test("typing newlines (Enter) grows frame.height automatically", async ({ page }
         attrs: {
           ...prev.attrs,
           frame: { x: 0.3, y: 0.3, width: 0.3, height: 0.4, rotation: 0 },
+          // Auto-height (scale × top) — this test covers height auto-growth;
+          // new text now defaults to Auto-width, so set the mode explicitly.
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
           // Clear the add-geometry ratio spec so the explicit `fontSize`
           // controls the rendered size — otherwise `fontSizeSpec` (ratio ×
           // design height) dominates and makes one line fill ~half the canvas.
@@ -376,6 +399,10 @@ test("narrowing width via the e handle wraps the text — height grows", async (
         attrs: {
           ...prev.attrs,
           frame: { x: 0.1, y: 0.3, width: 0.7, height: 0.1, rotation: 0 },
+          // Auto-height (scale × top) — this test narrows the user-set width
+          // (e handle) and expects wrap → height grows. New text defaults to
+          // Auto-width, so set the mode explicitly.
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
           // Clear the add-geometry ratio spec so `fontSize` (px) controls the
           // rendered size; otherwise the ratio font makes the auto-height box
           // grow many times the canvas height and pushes the e handle off-screen.
@@ -436,6 +463,9 @@ test("cannot narrow width below ≈ one character (min-width clamp)", async ({ p
         attrs: {
           ...prev.attrs,
           frame: { x: 0.4, y: 0.4, width: 0.4, height: 0.1, rotation: 0 },
+          // Auto-height — the e (width) handle this test drags only exists in
+          // Auto-height/Fixed; new text defaults to Auto-width (no e/w).
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
           fontSize: 48,
           text: "M",
         },
@@ -481,6 +511,9 @@ test("edge-resize does NOT change fontSize", async ({ page }) => {
         attrs: {
           ...prev.attrs,
           frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
+          // Auto-height — the e (width) handle this test drags only exists in
+          // Auto-height/Fixed; new text defaults to Auto-width (no e/w).
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
           // Clear the add-geometry ratio spec so `fontSize` (px) controls the
           // rendered size; the ratio font would otherwise auto-height the box
           // many times the canvas height and push the e handle off-screen.
@@ -632,10 +665,11 @@ test("Auto-W mode — dragging the s handle changes height (height is manual)", 
       }),
     });
   }, id);
+  // Fonts must be loaded before measuring — a late web-font swap reflows the
+  // auto-fit width and shifts the bottom-centre handle.
+  await page.evaluate(() => (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts?.ready);
   // Wait for the width auto-fit to settle (0.6 → hug the line) BEFORE grabbing
-  // the s handle — otherwise the box reflows mid-capture and the bottom-centre
-  // handle shifts out from under the recorded pointer. The extra tick lets the
-  // post-settle layout flush.
+  // the s handle — otherwise the box reflows mid-capture and the handle shifts.
   await page.waitForFunction(
     (fid) => {
       type Ch = { id: unknown; attrs: { frame?: { width?: number } } };
@@ -647,19 +681,20 @@ test("Auto-W mode — dragging the s handle changes height (height is manual)", 
     id,
     { timeout: 2000 },
   );
-  await page.waitForTimeout(150);
   const before = (await readAttrs(page, id)).frame as { height: number };
 
   // Drag the south edge handle down — height must grow (the RO does NOT own
-  // height in Auto-width, so the manual change is not reverted).
+  // height in Auto-width, so the manual change is not reverted). `hover()`
+  // auto-waits until the handle stops moving (stable), eliminating the
+  // reflow/font race that made an eagerly-recorded position miss.
   const sHandle = page.locator(
     `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"][data-handle-dir="s"]`,
   );
   await expect(sHandle).toBeVisible({ timeout: 3000 });
-  const r = await sHandle.evaluate((el) => {
-    const rect = el.getBoundingClientRect();
-    return { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
-  });
+  await sHandle.hover();
+  const box = await sHandle.boundingBox();
+  if (box === null) throw new Error("s handle has no bounding box");
+  const r = { cx: box.x + box.width / 2, cy: box.y + box.height / 2 };
   await page.mouse.move(r.cx, r.cy);
   await page.mouse.down({ button: "left" });
   await page.mouse.move(r.cx, r.cy + 120);

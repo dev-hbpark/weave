@@ -111,9 +111,16 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       const frameEl = el.closest("[data-frame-id]");
       const parent = frameEl?.parentElement ?? null;
       if (parent === null) return;
-      const parentRect = parent.getBoundingClientRect();
-      // The +8 on each axis mirrors the container's `padding: 4` (both
-      // sides), so the frame box wraps the inner content plus its padding.
+      // CRITICAL: use the parent's UNSCALED layout size (`offsetWidth`/
+      // `offsetHeight`) as the ratio denominator. `el.scrollWidth`/`scrollHeight`
+      // are layout px (ignore the camera's CSS `transform: scale`), so the
+      // denominator MUST also be unscaled. `getBoundingClientRect()` is post-
+      // transform (scaled), which inflated the ratio by 1/zoom and made the
+      // auto-fit box wrong at any zoom ≠ 100%. The container has no padding, so
+      // the frame box equals the text's rendered bounds exactly (rubber band =
+      // text on the auto axis).
+      const parentW = parent.offsetWidth;
+      const parentH = parent.offsetHeight;
       let nextHeight: number | undefined;
       let nextWidth: number | undefined;
       // 자동너비/자동높이 are symmetric — the ResizeObserver owns exactly ONE
@@ -124,16 +131,16 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       // dispatched one. An earlier dispatch can be overwritten by some other
       // write (e.g. an explicit `weave.item.update` from the host) and the
       // observer would otherwise refuse to re-converge.
-      if (mode === "HEIGHT" && parentRect.height > 0) {
-        const rounded = Math.round(((el.scrollHeight + 8) / parentRect.height) * 10000) / 10000;
+      if (mode === "HEIGHT" && parentH > 0) {
+        const rounded = Math.round((el.scrollHeight / parentH) * 10000) / 10000;
         if (Math.abs(rounded - frameRef.current.height) >= 0.0005) nextHeight = rounded;
       }
       // Auto-width measures `scrollWidth` — the inner div is sized
       // `width: max-content` in this mode (see textStyle), so it reports the
       // natural (un-wrapped) content width instead of echoing the frame width;
       // width exposes no handle, so this is the only way the box tracks content.
-      if (mode === "WIDTH_AND_HEIGHT" && parentRect.width > 0) {
-        const rounded = Math.round(((el.scrollWidth + 8) / parentRect.width) * 10000) / 10000;
+      if (mode === "WIDTH_AND_HEIGHT" && parentW > 0) {
+        const rounded = Math.round((el.scrollWidth / parentW) * 10000) / 10000;
         if (Math.abs(rounded - frameRef.current.width) >= 0.0005) nextWidth = rounded;
       }
       if (nextHeight === undefined && nextWidth === undefined) return;
@@ -240,7 +247,10 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         : horizontalAlign === "right"
           ? "flex-end"
           : "stretch",
-    padding: 4,
+    // No padding — the frame box must equal the rendered text bounds so the
+    // selection rubber band hugs the text exactly on the auto axis (and the
+    // auto-fit ratio = scrollSize / parentOffsetSize needs no padding term).
+    padding: 0,
     ...(resolvedBg !== undefined ? { background: resolvedBg } : {}),
     // DR-028 — opacity is a decoration UNIT (no legacy attr fallback).
     opacity:

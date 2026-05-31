@@ -114,6 +114,11 @@ import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js"
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import { useIsTextEditing } from "../document/clipboard/use-is-text-editing.js";
 import { layoutChildFromTextAutoResize } from "../document/domains/derive-text-auto-resize.js";
+
+// Default text line-height multiplier (mirrors the TextAttrs seed default).
+// Used to seed a freshly-created Auto-width text's height to exactly one line
+// so the box hugs the text vertically until the user drags the n/s handles.
+const DEFAULT_TEXT_LINE_HEIGHT = 1.4;
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import {
   buildFrameTree,
@@ -1096,7 +1101,7 @@ function DesignPageBody() {
       const selIsFrame = selItem?.kind === "frame";
       const containerId = selIsFrame && sel !== undefined ? sel : rootId;
       // Geometry: root → viewport-centred; frame → frame-centred. Text also
-      // gets a filled font + Auto-height resize mode.
+      // gets a filled font + Auto-width resize mode.
       const geo = addGeometryRef.current(containerId, kind === "text");
       if (geo !== null) {
         frame = geo.frame;
@@ -1113,12 +1118,15 @@ function DesignPageBody() {
             attrsOverride.fontSizeSpec = { kind: "ratio", value: geo.fontSizeRatio };
           }
         }
-        // Auto-height (HEIGHT) per TEXT_ITEM_SPEC §4.6 — toolbar/menu text is
-        // created with user-set width and a content-tracking height. The add-
-        // geometry font fills one line of the drop height, so the auto-height
-        // ResizeObserver settles to ≈ that height, then follows the content as
-        // the user types.
-        attrsOverride.layoutChild = layoutChildFromTextAutoResize("HEIGHT");
+        // Auto-width per TEXT_ITEM_SPEC §4.6 — width auto-fits the text
+        // (ResizeObserver), height is the manual axis. Seed height to ONE line
+        // (fontSizeRatio × lineHeight) so the new box hugs the text on BOTH
+        // axes at creation; dragging the n/s handles then sets a fixed height
+        // that persists.
+        attrsOverride.layoutChild = layoutChildFromTextAutoResize("WIDTH_AND_HEIGHT");
+        if (geo?.fontSizeRatio !== undefined) {
+          frame = { ...frame, height: geo.fontSizeRatio * DEFAULT_TEXT_LINE_HEIGHT };
+        }
       }
       const result = editor.exec<unknown, string>("weave.item.add", {
         kind,
@@ -1817,9 +1825,12 @@ function DesignPageBody() {
             attrsOverride.fontSizeSpec = { kind: "ratio", value: geo.fontSizeRatio };
           }
         }
-        // Auto-height (HEIGHT) per TEXT_ITEM_SPEC §4.6 — see the sibling
-        // creation path above for the rationale.
-        attrsOverride.layoutChild = layoutChildFromTextAutoResize("HEIGHT");
+        // Auto-width per TEXT_ITEM_SPEC §4.6 — see the sibling creation path
+        // above for the rationale (height seeded to one line, hugs the text).
+        attrsOverride.layoutChild = layoutChildFromTextAutoResize("WIDTH_AND_HEIGHT");
+        if (geo?.fontSizeRatio !== undefined) {
+          frame = { ...frame, height: geo.fontSizeRatio * DEFAULT_TEXT_LINE_HEIGHT };
+        }
       }
       const result = editor.exec<unknown, string>("weave.item.add", {
         kind: spec.kind,
