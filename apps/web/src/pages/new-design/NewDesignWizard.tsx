@@ -115,14 +115,14 @@ export function NewDesignWizard({ open, onOpenChange }: NewDesignWizardProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Frosted-glass treatment: replace the panel tone's near-transparent
-       *  `--surface-1` (6% alpha) with a moderate dark-slate base (~72% α)
-       *  so the existing `backdrop-blur` reads as a true frosted sheet —
-       *  the aurora behind still tints the surface, but body text stays
-       *  legible. Theme-independent dark base; same idea DropdownMenu /
-       *  Popover already use over varying surfaces. */}
+       *  `--surface-1` (6% alpha) with the THEME-AWARE `--surface-overlay`
+       *  (high-alpha per theme — dark themes ~0.94, light themes ~0.97) so the
+       *  `backdrop-blur` reads as a true frosted sheet AND the surface follows
+       *  the active theme (light themes no longer stay dark). Same overlay token
+       *  DropdownMenu / Popover / SlashCommandMenu use. */}
       <DialogContent
         aria-describedby={undefined}
-        className="bg-[rgba(15,23,42,0.72)] border-[color:var(--surface-overlay-border)]"
+        className="bg-[color:var(--surface-overlay)] border-[color:var(--surface-overlay-border)]"
       >
         <DialogHeader
           headline="Start a new design"

@@ -18,12 +18,11 @@
 //     `@weave/design-system`. No new primitive.
 //
 // Visibility: the panel-tone Dialog default uses `--surface-1` (6% alpha
-// glass) which washes out over the aurora canvas. We replace that with a
-// moderate-alpha dark slate (~72%) so the existing `backdrop-blur` reads
-// as a true frosted-glass surface — the aurora behind still tints the
-// surface slightly, but body text stays comfortably legible. Tuned by eye
-// against the aurora theme; mono/vivid still work because the blur +
-// dark-slate base is theme-independent (same approach as DropdownMenu).
+// glass) which washes out over the aurora canvas. We replace that with the
+// THEME-AWARE `--surface-overlay` token (high alpha per theme — dark themes
+// ~0.94, light themes ~0.97) so the `backdrop-blur` reads as a true
+// frosted-glass surface AND the panel follows the active theme (light themes
+// no longer stay dark). Same overlay token DropdownMenu / Popover use.
 
 import {
   Dialog,
@@ -41,7 +40,8 @@ import {
   resolveLocalizedText,
 } from "../../document/presets/types.js";
 
-const FROSTED_PANEL_CLASS = "bg-[rgba(15,23,42,0.72)] border-[color:var(--surface-overlay-border)]";
+const FROSTED_PANEL_CLASS =
+  "bg-[color:var(--surface-overlay)] border-[color:var(--surface-overlay-border)]";
 
 export interface SlidePresetPickerProps {
   readonly open: boolean;
