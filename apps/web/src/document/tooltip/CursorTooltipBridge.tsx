@@ -26,7 +26,7 @@ import { useEffect, useRef } from "react";
 import { defaultInsertableRegistry } from "../insertable/default-registry.js";
 import type { InsertableRegistry } from "../insertable/types.js";
 import { useInteractionMode } from "../interactions/interaction-mode.js";
-import type { HoverContext } from "../interactions/use-hover-context.js";
+import type { HoverContext, HoverKind } from "../interactions/use-hover-context.js";
 import { describeHover } from "./hover-describer.js";
 
 export interface CursorTooltipBridgeProps {
@@ -53,34 +53,41 @@ const ATTR_TIP_ID = "data-tip-id";
 // the host element declared statically.
 const ATTR_OWN = "data-tip-from-describer";
 
+// V6-2 (AUDIT-007) — kind→target-selector dispatch as a compiler-exhaustive
+// table instead of a `switch (hover.hoveredKind)`. `HoverKind` is a closed,
+// weave-owned union, so omitting a kind is a compile error (Rule 6: the caller
+// declares intent, the table resolves). Each entry returns the CSS selector for
+// the hovered surface, or `null` when there is no stampable element (`none`,
+// `line`, or an id-bearing kind hovered without an id yet). The lookup by the
+// data-* attributes mirrors the probe order `useHoverContext` resolves against.
+type HoverTargetSelector = (hover: HoverContext) => string | null;
+
+// CSS.escape covers ids with special chars in agocraft (uuid hyphens are safe
+// but we stay defensive). `byId` short-circuits to null when the kind is hover-
+// resolved but the id has not landed yet — preserving the old `hoveredId ===
+// undefined → null` guard per id-bearing kind.
+const byId =
+  (template: (safe: string) => string): HoverTargetSelector =>
+  (hover) =>
+    hover.hoveredId === undefined ? null : template(CSS.escape(hover.hoveredId));
+
+const HOVER_TARGET_SELECTOR: Readonly<Record<HoverKind, HoverTargetSelector>> = {
+  none: () => null,
+  // `line` carried no `case` in the old switch → fell through to `null`.
+  line: () => null,
+  background: () => '[data-design-plane="true"]',
+  handle: byId((safe) => `[data-handle-kind][data-frame-id="${safe}"]`),
+  hotspot: byId((safe) => `[data-hotspot-id="${safe}"]`),
+  shape: byId((safe) => `[data-shape-id="${safe}"]`),
+  text: byId((safe) => `[data-textbox-id="${safe}"]`),
+  frame: byId((safe) => `[data-frame-id="${safe}"]`),
+  image: byId((safe) => `[data-frame-id="${safe}"]`),
+  video: byId((safe) => `[data-frame-id="${safe}"]`),
+};
+
 function resolveTargetElement(hover: HoverContext): HTMLElement | null {
-  if (hover.hoveredKind === "none") return null;
-  if (hover.hoveredKind === "background") {
-    return document.querySelector<HTMLElement>('[data-design-plane="true"]');
-  }
-  if (hover.hoveredId === undefined) return null;
-  // Lookup by the same attributes useHoverContext probes against.  Order
-  // mirrors the probe order so the resolved element matches the kind.
-  const id = hover.hoveredId;
-  // CSS.escape covers ids with special chars in agocraft (uuid hyphens are
-  // safe but we stay defensive).
-  const safe = CSS.escape(id);
-  switch (hover.hoveredKind) {
-    case "handle":
-      return document.querySelector<HTMLElement>(`[data-handle-kind][data-frame-id="${safe}"]`);
-    case "hotspot":
-      return document.querySelector<HTMLElement>(`[data-hotspot-id="${safe}"]`);
-    case "shape":
-      return document.querySelector<HTMLElement>(`[data-shape-id="${safe}"]`);
-    case "text":
-      return document.querySelector<HTMLElement>(`[data-textbox-id="${safe}"]`);
-    case "frame":
-    case "image":
-    case "video":
-      return document.querySelector<HTMLElement>(`[data-frame-id="${safe}"]`);
-    default:
-      return null;
-  }
+  const selector = HOVER_TARGET_SELECTOR[hover.hoveredKind](hover);
+  return selector === null ? null : document.querySelector<HTMLElement>(selector);
 }
 
 export function CursorTooltipBridge({

@@ -45,19 +45,23 @@ interface Entry {
 
 const FRAME_KIND_FALLBACK: DocFlavor = "mixed";
 
+// V6-3 (AUDIT-007) — kind→thumbnail-flavor as a frozen lookup table instead of
+// a `switch (kind)` (Rule 6: no in-body branch on a discriminant). The keys are
+// the RETIRED doc-kinds (`slide` / `canvas-design` / `block-doc` / `media`) that
+// `migrate-frame-only.ts` rewrites away on load — the frame-only paradigm no
+// longer produces them, so this map is closed and will never grow. It is kept
+// only as a defensive shim so any not-yet-migrated persisted doc still maps to
+// its historical glyph; every live kind falls through to `FRAME_KIND_FALLBACK`.
+// Remove once the `allowedChildKinds` legacy-kind decommission lands.
+const RETIRED_KIND_FLAVOR: Readonly<Record<string, DocFlavor>> = {
+  slide: "slide-deck",
+  "canvas-design": "canvas-board",
+  "block-doc": "doc-page",
+  media: "mixed",
+};
+
 function flavorIconForKind(kind: string): DocFlavor {
-  switch (kind) {
-    case "slide":
-      return "slide-deck";
-    case "canvas-design":
-      return "canvas-board";
-    case "block-doc":
-      return "doc-page";
-    case "media":
-      return "mixed";
-    default:
-      return FRAME_KIND_FALLBACK;
-  }
+  return RETIRED_KIND_FLAVOR[kind] ?? FRAME_KIND_FALLBACK;
 }
 
 function findEntry(root: AgocraftItem, targetId: string, designTitle: string): Entry | undefined {

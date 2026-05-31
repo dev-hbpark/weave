@@ -8,9 +8,10 @@
 import { ButtonTriggerRow } from "./button-trigger.js";
 import { CameraTargetRow } from "./camera-target.js";
 import { EntranceAnimationRow } from "./entrance-animation.js";
-import { HoverEffectRow } from "./hover-effect.js";
 import { HotspotRow } from "./hotspot.js";
-import { registerInteractionRow } from "./types.js";
+import { HoverEffectRow } from "./hover-effect.js";
+import { revealOnStepSummary } from "./reveal-on-step.js";
+import { registerInteractionRow, registerInteractionSummary } from "./types.js";
 
 registerInteractionRow("camera-target", CameraTargetRow);
 registerInteractionRow("hotspot", HotspotRow);
@@ -18,5 +19,13 @@ registerInteractionRow("hover-effect", HoverEffectRow);
 registerInteractionRow("button-trigger", ButtonTriggerRow);
 registerInteractionRow("entrance-animation", EntranceAnimationRow);
 
-export { getInteractionRow } from "./types.js";
-export type { CommitBehavior, InteractionRowProps, InteractionRowRenderer } from "./types.js";
+// V6-1 (AUDIT-007) — read-only summaries for kinds without an editor row.
+registerInteractionSummary("reveal-on-step", revealOnStepSummary);
+
+export type {
+  CommitBehavior,
+  InteractionRowProps,
+  InteractionRowRenderer,
+  InteractionSummary,
+} from "./types.js";
+export { getInteractionRow, getInteractionSummary } from "./types.js";

@@ -25,7 +25,7 @@ import {
   type InteractionBehavior,
   type ItemFrame,
 } from "../document";
-import { getInteractionRow } from "./interaction-rows/index.js";
+import { getInteractionRow, getInteractionSummary } from "./interaction-rows/index.js";
 
 export interface PropertiesPanelProps {
   readonly item: AgocraftItem;
@@ -354,35 +354,20 @@ function InteractionRow({
         {unit.kind}
       </span>
       <span className="text-[12px] text-[color:var(--text-default)] truncate">
-        {describeInteraction(unit.kind, behavior)}
+        {describeInteraction(behavior)}
       </span>
     </li>
   );
 }
 
-function describeInteraction(
-  kind: string,
-  behavior?: {
-    kind: string;
-    label?: string;
-    order?: number;
-    step?: number;
-    action?: { type?: string };
-  },
-): string {
+// V6-1 (AUDIT-007) — read-only label for a row-less behavior kind. The kind→
+// summary dispatch lives in the interaction-rows summary registry (Rule 6); the
+// camera-target / hotspot arms of the old `switch` were dead (those kinds own
+// editor rows and never reach this read-only path) and are removed per the
+// Decommission Sweep.
+function describeInteraction(behavior?: InteractionBehavior): string {
   if (behavior === undefined) return "—";
-  switch (kind) {
-    case "camera-target":
-      return `step ${(behavior.order ?? 0) + 1}${behavior.label ? ` · ${behavior.label}` : ""}`;
-    case "hotspot": {
-      const a = (behavior as { action?: { type?: string } }).action;
-      return `${behavior.label ?? "Hotspot"} → ${a?.type ?? "—"}`;
-    }
-    case "reveal-on-step":
-      return `reveal at step ${(behavior.step ?? 0) + 1}`;
-    default:
-      return behavior.label ?? "—";
-  }
+  return getInteractionSummary(behavior.kind)?.(behavior) ?? behavior.label ?? "—";
 }
 
 function clamp(v: number, min: number, max: number): number {

@@ -30,6 +30,7 @@ import { createInputBus } from "@agocraft/input/bus";
 import { createHotkeyRegistry } from "@agocraft/input/hotkey";
 import type { AITooltipHotkeyTable } from "@weave/design-system";
 import { useEffect, useMemo, useRef } from "react";
+import { KNOWN_DOMAIN_KINDS } from "../domain-kinds.js";
 
 interface EditorActionDeps {
   readonly editor: Editor;
@@ -524,12 +525,14 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     label: { en: "Delete", ko: "삭제" },
     hint: { en: "Remove this frame.", ko: "이 프레임을 삭제합니다." },
     category: "frame",
+    // V6-4 (AUDIT-007) — any single domain primitive/frame is deletable. The
+    // old `selectedKind === "frame" || "image" || …` membership chain (Rule 6
+    // violation) hardcoded 5 kinds and silently drifted: `line` / `qr` were
+    // never added, so they showed no Delete action. `KNOWN_DOMAIN_KINDS` is the
+    // single source of truth (domain-kinds.ts registry) — it excludes the
+    // non-item `multi` / `none` selections and auto-includes every future kind.
     visibleWhen: (ctx) =>
-      ctx.selectedKind === "frame" ||
-      ctx.selectedKind === "image" ||
-      ctx.selectedKind === "video" ||
-      ctx.selectedKind === "shape" ||
-      ctx.selectedKind === "text",
+      typeof ctx.selectedKind === "string" && KNOWN_DOMAIN_KINDS.has(ctx.selectedKind),
     enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
       // Dispatched via frameDeleter slot.

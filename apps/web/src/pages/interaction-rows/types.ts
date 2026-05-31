@@ -50,3 +50,30 @@ export function registerInteractionRow<B extends InteractionBehavior>(
 export function getInteractionRow(kind: string): InteractionRowRenderer | undefined {
   return ROWS.get(kind);
 }
+
+// V6-1 (AUDIT-007) — read-only summary registry. Replaces the `switch (kind)`
+// in `PropertiesPanel.describeInteraction`. A behavior kind without a dedicated
+// editor row (today: `reveal-on-step`) registers a one-line summary here; the
+// read-only `<li>` resolves `behavior.kind → summary` instead of branching.
+// Rule 6: the caller declares intent, the registry resolves the adapter.
+export type InteractionSummary<B extends InteractionBehavior = InteractionBehavior> = (
+  behavior: B,
+) => string;
+
+const SUMMARIES = new Map<string, InteractionSummary>();
+
+/** Register a kind-specific read-only summary. The boundary cast is sound for
+ *  the same reason as `registerInteractionRow` — lookup is keyed by the
+ *  discriminant the summary re-narrows on. */
+export function registerInteractionSummary<B extends InteractionBehavior>(
+  kind: B["kind"],
+  summary: InteractionSummary<B>,
+): void {
+  SUMMARIES.set(kind, summary as InteractionSummary);
+}
+
+/** Resolve the read-only summary for a behavior kind, or `undefined` when the
+ *  kind has none (callers fall back to `behavior.label`). */
+export function getInteractionSummary(kind: string): InteractionSummary | undefined {
+  return SUMMARIES.get(kind);
+}
