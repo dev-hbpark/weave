@@ -855,9 +855,12 @@ function NestedFrame({
             // WI-019 B4 / T3 Modify — derives from `attrs.layoutChild`
             // (agocraft v10) via `deriveTextAutoResize`; the legacy
             // `textAutoResize` field is removed.
-            //   WIDTH_AND_HEIGHT (Auto-W) → no handles (auto-shrinks to content)
-            //   HEIGHT (Auto-H)           → e/w only (width manual, height auto)
+            //   WIDTH_AND_HEIGHT (Auto-W) → n/s only (width auto-fits content,
+            //                               height is user-set)
+            //   HEIGHT (Auto-H)           → e/w only (height auto, width user-set)
             //   NONE (Fixed)              → all 8 (width+height locked, no auto-fit)
+            // 자동너비/자동높이 are symmetric: the auto axis exposes no handle
+            // (the ResizeObserver owns it), the manual axis exposes its two edges.
             // The corner-fontSize-scale behaviour (Phase 18) is gone — corners
             // change only the box dimensions, never fontSize. DR-016 박제.
             const textHandleDirs = (() => {
@@ -868,7 +871,7 @@ function NestedFrame({
               const mode = deriveTextAutoResizeForFrameStage(attrs.layoutChild);
               switch (mode) {
                 case "WIDTH_AND_HEIGHT":
-                  return [] as const;
+                  return ["n", "s"] as const;
                 case "NONE":
                   return ["e", "w", "n", "s", "ne", "nw", "se", "sw"] as const;
                 default: // "HEIGHT" or unset (legacy)

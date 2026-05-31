@@ -93,32 +93,82 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const autoResizeMode = deriveTextAutoResize(a.layoutChild);
   const autoResizeRef = useRef(autoResizeMode);
   autoResizeRef.current = autoResizeMode;
+  // Set below once `isEditing` is declared; the ResizeObserver reads it to
+  // decide whether to debounce its frame commit (see the effect).
+  const isEditingRef = useRef(false);
 
   useEffect(() => {
     const el = innerRef.current;
     if (el === null) return;
-    const ro = new ResizeObserver(() => {
+    // Measure the rendered content and commit a frame auto-fit, if it diverges
+    // from the live doc frame. Re-reads `el`/`frameRef` at call time so a
+    // debounced (deferred) invocation uses the LATEST content size, not a
+    // stale snapshot from when the observer fired.
+    const measureAndCommit = (): void => {
+      const mode = autoResizeRef.current;
       // Fixed mode: user controls width + height. Do not auto-update.
-      if (autoResizeRef.current === "NONE") return;
-      const measured = el.scrollHeight + 8;
+      if (mode === "NONE") return;
       const frameEl = el.closest("[data-frame-id]");
       const parent = frameEl?.parentElement ?? null;
       if (parent === null) return;
-      const parentH = parent.getBoundingClientRect().height;
-      if (parentH <= 0) return;
-      const newRatio = measured / parentH;
-      const rounded = Math.round(newRatio * 10000) / 10000;
-      // Compare against the LIVE doc height (`frameRef`) rather than the
-      // last dispatched value. An earlier dispatch can be overwritten by
-      // some other write (e.g. an explicit `weave.item.update` from the
-      // host) and the observer would otherwise refuse to re-converge.
-      if (Math.abs(rounded - frameRef.current.height) < 0.0005) return;
+      const parentRect = parent.getBoundingClientRect();
+      // The +8 on each axis mirrors the container's `padding: 4` (both
+      // sides), so the frame box wraps the inner content plus its padding.
+      let nextHeight: number | undefined;
+      let nextWidth: number | undefined;
+      // 자동너비/자동높이 are symmetric — the ResizeObserver owns exactly ONE
+      // axis (the auto one); the other is user-set via its edge handles.
+      //   "HEIGHT" (Auto-H)           → auto-fit height, width manual
+      //   "WIDTH_AND_HEIGHT" (Auto-W) → auto-fit width, height manual
+      // Compare against the LIVE doc value (`frameRef`) rather than the last
+      // dispatched one. An earlier dispatch can be overwritten by some other
+      // write (e.g. an explicit `weave.item.update` from the host) and the
+      // observer would otherwise refuse to re-converge.
+      if (mode === "HEIGHT" && parentRect.height > 0) {
+        const rounded = Math.round(((el.scrollHeight + 8) / parentRect.height) * 10000) / 10000;
+        if (Math.abs(rounded - frameRef.current.height) >= 0.0005) nextHeight = rounded;
+      }
+      // Auto-width measures `scrollWidth` — the inner div is sized
+      // `width: max-content` in this mode (see textStyle), so it reports the
+      // natural (un-wrapped) content width instead of echoing the frame width;
+      // width exposes no handle, so this is the only way the box tracks content.
+      if (mode === "WIDTH_AND_HEIGHT" && parentRect.width > 0) {
+        const rounded = Math.round(((el.scrollWidth + 8) / parentRect.width) * 10000) / 10000;
+        if (Math.abs(rounded - frameRef.current.width) >= 0.0005) nextWidth = rounded;
+      }
+      if (nextHeight === undefined && nextWidth === undefined) return;
       onUpdateRef.current?.({
-        frame: { ...frameRef.current, height: rounded },
+        frame: {
+          ...frameRef.current,
+          ...(nextHeight !== undefined ? { height: nextHeight } : {}),
+          ...(nextWidth !== undefined ? { width: nextWidth } : {}),
+        },
       });
+    };
+
+    // While the Lexical editor is in edit mode, every keystroke emits a
+    // full-attrs `weave.item.update` (text/textRuns). `weave.item.update`
+    // patches are whole-attrs before/after snapshots, so a text commit that
+    // reads the document a beat before this observer's frame commit lands will
+    // carry the stale (pre-grow) frame and revert the auto-height. Debouncing
+    // the frame commit until typing pauses guarantees it lands on a settled
+    // document with no concurrent text exec to clobber it. Outside edit mode
+    // (direct content set, edge-resize wrap) we commit immediately so the box
+    // settles within a frame.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (!isEditingRef.current) {
+        measureAndCommit();
+        return;
+      }
+      if (debounceTimer !== null) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(measureAndCommit, 120);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (debounceTimer !== null) clearTimeout(debounceTimer);
+    };
   }, []);
 
   // Phase 1 (WI-029) — Figma-equivalent text attrs:
@@ -169,6 +219,10 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const justifyContent =
     verticalAlign === "CENTER" ? "center" : verticalAlign === "BOTTOM" ? "flex-end" : "flex-start";
   const isFixed = autoResizeMode === "NONE";
+  // Auto-width (WIDTH_AND_HEIGHT): the box hugs the content on BOTH axes.
+  // The inner div must size to its content (`max-content`) and never soft-wrap
+  // (`white-space: pre`) so the ResizeObserver can read the natural width.
+  const isAutoWidth = autoResizeMode === "WIDTH_AND_HEIGHT";
   const truncate = isFixed && a.textTruncation === "ENDING";
   const containerStyle: CSSProperties = {
     width: "100%",
@@ -227,7 +281,17 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       }
     : {};
   const textStyle: CSSProperties = {
-    width: "100%",
+    // Auto-width hugs content (`max-content` + `pre`, no soft wrap); the other
+    // modes fill the frame width (`100%` + `pre-wrap`) and wrap to it.
+    width: isAutoWidth ? "max-content" : "100%",
+    // The inner div is the element the auto-height ResizeObserver measures. As
+    // a flex child of a frame-height container it would otherwise be SHRUNK to
+    // the (short) container height — its border-box height would stay pinned
+    // while only `scrollHeight` grew, so the observer never fires when content
+    // grows by typing (a width change resizes the box and does fire it, which
+    // is why edge-resize wrapping works but typing did not). Pin flex-shrink: 0
+    // so the border-box height tracks content and the observer fires on growth.
+    flexShrink: 0,
     fontFamily: a.fontFamily,
     fontSize: `${resolvedFontSizePx}px`,
     fontWeight: a.fontWeight,
@@ -236,7 +300,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     textAlign: horizontalAlign,
     lineHeight: lineHeightValue,
     letterSpacing: `${a.letterSpacing}px`,
-    whiteSpace: "pre-wrap",
+    whiteSpace: isAutoWidth ? "pre" : "pre-wrap",
     wordBreak: "break-word",
     textDecoration: decoration,
     textTransform,
@@ -274,6 +338,9 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // dismissal was too aggressive (Cmd+B menu, range selection +
   // format click were all falsely dismissing).
   const [isEditing, setIsEditing] = useState(false);
+  // Mirror into a ref so the ResizeObserver (mounted once, stable deps) can
+  // read the live edit state without re-subscribing.
+  isEditingRef.current = isEditing;
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const { selection, selectFrame } = useSelection();
   const selfId = String(item.id);

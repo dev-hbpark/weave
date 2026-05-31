@@ -40,11 +40,18 @@
 
 ### 2.1 Resize 3-mode (핵심)
 
-| 모드 | width | height | 컨텐츠가 박스 초과 시 |
+> **2026-05-31 결정 (Figma 대비 의도적 deviation):** `자동너비`/`자동높이`를
+> **대칭 모델**로 재정의한다. 자동인 축은 ResizeObserver 가 소유(핸들 없음),
+> 나머지 한 축은 사용자가 edge 핸들로 조절한다. 따라서 **자동너비 = width 자동 /
+> height 수동(n·s 핸들)**, **자동높이 = height 자동 / width 수동(e·w 핸들)**.
+> (Figma 의 Auto-Width 는 두 축 모두 자동이지만, 라벨 의미·대칭성·사용성 측면에서
+> "자동너비면 높이는 내가 정한다" 가 더 자연스럽다는 사용자 결정.)
+
+| 모드 | width | height | 노출 핸들 |
 |---|---|---|---|
-| **Auto-width** (`WIDTH_AND_HEIGHT`) | 컨텐츠에 맞춰 자동 확장 | 컨텐츠에 맞춤 (1 line 시작) | 발생 불가 |
-| **Auto-height** (`HEIGHT`) | 사용자 지정 (고정) | 컨텐츠에 맞춰 자동 확장 | 발생 불가 |
-| **Fixed** (`NONE`) | 사용자 지정 (고정) | 사용자 지정 (고정) | overflow visible / truncate(`...`) |
+| **Auto-width** (`WIDTH_AND_HEIGHT`) | 컨텐츠에 맞춰 자동 확장 | 사용자 지정 | n, s |
+| **Auto-height** (`HEIGHT`) | 사용자 지정 | 컨텐츠에 맞춰 자동 확장 | e, w |
+| **Fixed** (`NONE`) | 사용자 지정 | 사용자 지정 | 전 8 방향 |
 
 생성 시 default 모드:
 - 더블클릭으로 만들면 → Auto-width
@@ -194,9 +201,11 @@ hyperlink: null
 
 | 모드 | 노출 핸들 | 드래그 결과 |
 |---|---|---|
-| `WIDTH_AND_HEIGHT` (Auto-W) | 없음 (자동) | 사용자는 박스를 리사이즈할 수 없음. 글자 입력으로만 박스 변형. |
+| `WIDTH_AND_HEIGHT` (Auto-W) | n, s 만 | height 만 사용자 지정, width 는 ResizeObserver 가 컨텐츠에 맞춰 자동. |
 | `HEIGHT` (Auto-H) | e, w 만 | width 만 사용자 지정, height 는 ResizeObserver 자동. |
 | `NONE` (Fixed) | e, w, n, s, ne, nw, se, sw (전 8 방향) | width·height 둘 다 사용자 지정. |
+
+(2026-05-31 대칭 모델 — §2.1 의 deviation 주석 참조. 이전 "Auto-W = 핸들 없음" 규칙은 폐기.)
 
 **코너 드래그 시 fontSize 스케일은 모든 모드에서 폐기**. 글자 크기는 PropertiesPanel 의 fontSize 슬라이더로만 변경. (현재의 `apps/web/src/pages/FrameStage.tsx:1300-1367` 로직 제거.)
 

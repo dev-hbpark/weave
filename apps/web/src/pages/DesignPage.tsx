@@ -1096,7 +1096,7 @@ function DesignPageBody() {
       const selIsFrame = selItem?.kind === "frame";
       const containerId = selIsFrame && sel !== undefined ? sel : rootId;
       // Geometry: root → viewport-centred; frame → frame-centred. Text also
-      // gets a filled font + Fixed resize mode.
+      // gets a filled font + Auto-height resize mode.
       const geo = addGeometryRef.current(containerId, kind === "text");
       if (geo !== null) {
         frame = geo.frame;
@@ -1113,9 +1113,12 @@ function DesignPageBody() {
             attrsOverride.fontSizeSpec = { kind: "ratio", value: geo.fontSizeRatio };
           }
         }
-        // Fixed resize mode (NONE) — the box keeps the size we set instead
-        // of auto-growing to content, so the font-filled height sticks.
-        attrsOverride.layoutChild = layoutChildFromTextAutoResize("NONE");
+        // Auto-height (HEIGHT) per TEXT_ITEM_SPEC §4.6 — toolbar/menu text is
+        // created with user-set width and a content-tracking height. The add-
+        // geometry font fills one line of the drop height, so the auto-height
+        // ResizeObserver settles to ≈ that height, then follows the content as
+        // the user types.
+        attrsOverride.layoutChild = layoutChildFromTextAutoResize("HEIGHT");
       }
       const result = editor.exec<unknown, string>("weave.item.add", {
         kind,
@@ -1814,7 +1817,9 @@ function DesignPageBody() {
             attrsOverride.fontSizeSpec = { kind: "ratio", value: geo.fontSizeRatio };
           }
         }
-        attrsOverride.layoutChild = layoutChildFromTextAutoResize("NONE");
+        // Auto-height (HEIGHT) per TEXT_ITEM_SPEC §4.6 — see the sibling
+        // creation path above for the rationale.
+        attrsOverride.layoutChild = layoutChildFromTextAutoResize("HEIGHT");
       }
       const result = editor.exec<unknown, string>("weave.item.add", {
         kind: spec.kind,

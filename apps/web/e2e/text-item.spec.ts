@@ -116,7 +116,10 @@ test("DR-016 regression — corner-resize keeps fontSize unchanged (Fixed mode)"
           ...prev.attrs,
           frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
           fontSize: 20,
-          textAutoResize: "NONE", // Fixed mode → 8 handles
+          // Fixed mode (left × top anchor) → all 8 handles. Derived from
+          // `layoutChild`; the legacy `textAutoResize` field was removed in
+          // agocraft v10.
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
         },
       }),
     });
@@ -203,6 +206,9 @@ test("font-family picker offers presets and applies the selected stack", async (
   await prepareDesign(page, { flavor: "mixed", title: "Text-Font" });
   const id = await addTextViaMenu(page);
 
+  // The font-family picker lives in the "더보기" (More) popover, not in the
+  // always-visible quick-action strip — open it first.
+  await page.getByTestId("toolbar-more-trigger").click();
   const trigger = page.getByTestId("text-font-family-trigger");
   await expect(trigger).toBeVisible();
   await trigger.click();
@@ -219,22 +225,18 @@ test("Enter inserts a newline inside the text box (multiline)", async ({ page })
   await prepareDesign(page, { flavor: "mixed", title: "Text-Multiline" });
   const id = await addTextViaMenu(page);
 
-  // Seed empty so we can type a clean two-line string.
-  await page.evaluate((fid) => {
-    const w = window as unknown as {
-      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
-    };
-    w.__weaveEditor?.exec("weave.item.update", {
-      itemId: fid,
-      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-        attrs: { ...prev.attrs, text: "" },
-      }),
-    });
-  }, id);
-  await page.waitForTimeout(60);
-
+  // Enter edit mode via the text block — the Lexical "Text content" textbox
+  // is only mounted once editing begins, so we can't double-click it directly.
+  // (We edit the freshly-added, non-empty default text rather than seeding an
+  // empty box: an empty box auto-heights to a sliver the design plane covers,
+  // intercepting the double-click.)
+  await page.getByTestId("text-block").dblclick();
   const editable = page.getByRole("textbox", { name: "Text content" });
-  await editable.dblclick();
+  await expect(editable).toBeVisible({ timeout: 3000 });
+  // dblclick selects all on mount; replace the default content with a clean
+  // two-line string.
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Delete");
   await page.keyboard.type("Line 1");
   await page.keyboard.press("Enter");
   await page.keyboard.type("Line 2");
@@ -269,7 +271,8 @@ test("text item does NOT render n/s resize handles", async ({ page }) => {
       `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"][data-handle-dir="s"]`,
     ),
   ).toHaveCount(0);
-  // e/w + corners are still present.
+  // e/w are present (chrome is up); corners are ABSENT — auto-height (HEIGHT)
+  // exposes only the horizontal handles per TEXT_ITEM_SPEC §4.1.
   await expect(
     page.locator(
       `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"][data-handle-dir="e"]`,
@@ -279,9 +282,17 @@ test("text item does NOT render n/s resize handles", async ({ page }) => {
     page.locator(
       `[data-selection-handle-item-id="${id}"] [data-handle-kind="corner"][data-handle-dir="se"]`,
     ),
-  ).toHaveCount(1);
+  ).toHaveCount(0);
 });
 
+// Regression: auto-height must grow the frame as the user types new lines.
+// Each keystroke emits a full-attrs `weave.item.update` (text), and the
+// ResizeObserver emits another (frame.height); because item.attrs patches are
+// whole-snapshot before/after, an interleaved text commit that read the
+// document a beat before the frame commit landed would carry the stale (pre-
+// grow) frame and revert the height. TextBlock debounces the auto-height
+// commit while editing so it lands on a settled document — this test guards
+// that the box ends up taller after typing multiple lines.
 test("typing newlines (Enter) grows frame.height automatically", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-Auto-Enter" });
@@ -300,7 +311,11 @@ test("typing newlines (Enter) grows frame.height automatically", async ({ page }
         attrs: {
           ...prev.attrs,
           frame: { x: 0.3, y: 0.3, width: 0.3, height: 0.4, rotation: 0 },
+          // Clear the add-geometry ratio spec so the explicit `fontSize`
+          // controls the rendered size — otherwise `fontSizeSpec` (ratio ×
+          // design height) dominates and makes one line fill ~half the canvas.
           fontSize: 24,
+          fontSizeSpec: undefined,
           text: "Line 1",
         },
       }),
@@ -323,9 +338,11 @@ test("typing newlines (Enter) grows frame.height automatically", async ({ page }
 
   const before = (await readAttrs(page, id)).frame as { height: number };
 
-  // Enter edit mode and add a couple of newlines via Enter.
+  // Enter edit mode by double-clicking the text block — that mounts the
+  // Lexical editor (the "Text content" textbox only exists once editing).
+  await page.getByTestId("text-block").dblclick({ position: { x: 30, y: 12 } });
   const editable = page.getByRole("textbox", { name: "Text content" });
-  await editable.dblclick({ position: { x: 30, y: 12 } });
+  await expect(editable).toBeVisible({ timeout: 3000 });
   // The selectAll on dblclick puts the caret at the start... actually
   // selects all. Press End to move caret to end, then add lines.
   await page.keyboard.press("End");
@@ -359,7 +376,11 @@ test("narrowing width via the e handle wraps the text — height grows", async (
         attrs: {
           ...prev.attrs,
           frame: { x: 0.1, y: 0.3, width: 0.7, height: 0.1, rotation: 0 },
+          // Clear the add-geometry ratio spec so `fontSize` (px) controls the
+          // rendered size; otherwise the ratio font makes the auto-height box
+          // grow many times the canvas height and pushes the e handle off-screen.
           fontSize: 32,
+          fontSizeSpec: undefined,
           text: "the quick brown fox jumps over the lazy dog and then it jumps again over another lazy dog repeatedly",
         },
       }),
@@ -460,7 +481,11 @@ test("edge-resize does NOT change fontSize", async ({ page }) => {
         attrs: {
           ...prev.attrs,
           frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
+          // Clear the add-geometry ratio spec so `fontSize` (px) controls the
+          // rendered size; the ratio font would otherwise auto-height the box
+          // many times the canvas height and push the e handle off-screen.
           fontSize: 20,
+          fontSizeSpec: undefined,
         },
       }),
     });
@@ -502,7 +527,12 @@ test("WI-029 — Fixed mode exposes all 8 resize handles", async ({ page }) => {
     w.__weaveEditor?.exec("weave.item.update", {
       itemId: fid,
       patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-        attrs: { ...prev.attrs, textAutoResize: "NONE" },
+        // Fixed mode (left × top anchor) → all 8 handles. Derived from
+        // `layoutChild`; the legacy `textAutoResize` field is gone (v10).
+        attrs: {
+          ...prev.attrs,
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+        },
       }),
     });
   }, id);
@@ -525,9 +555,11 @@ test("WI-029 — Fixed mode exposes all 8 resize handles", async ({ page }) => {
   }
 });
 
-test("WI-029 — Auto-W mode hides all resize handles (auto-shrink)", async ({ page }) => {
+test("Auto-W mode exposes only n/s (height) handles — width auto, height manual", async ({
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await prepareDesign(page, { flavor: "mixed", title: "Text-AutoW-NoHandles" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-AutoW-Handles" });
   const id = await addTextViaMenu(page);
 
   await page.evaluate((fid) => {
@@ -537,18 +569,184 @@ test("WI-029 — Auto-W mode hides all resize handles (auto-shrink)", async ({ p
     w.__weaveEditor?.exec("weave.item.update", {
       itemId: fid,
       patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-        attrs: { ...prev.attrs, textAutoResize: "WIDTH_AND_HEIGHT" },
+        // Auto-width is derived from `layoutChild` (scale × scale); the legacy
+        // `textAutoResize` field was removed in agocraft v10 and no longer
+        // drives the mode.
+        attrs: {
+          ...prev.attrs,
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "scale" },
+          },
+        },
       }),
     });
   }, id);
   await page.waitForTimeout(120);
 
-  // No resize handle should be visible. (Rotation handle MAY exist —
-  // selection chrome non-resize chrome is not gated by mode.)
-  const handles = page.locator(
-    `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"], [data-selection-handle-item-id="${id}"] [data-handle-kind="corner"]`,
+  // Auto-width: width auto-fits content (no e/w + no corners), but height is
+  // user-set, so the n and s edge handles ARE exposed for manual height.
+  for (const dir of ["n", "s"]) {
+    await expect(
+      page.locator(
+        `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"][data-handle-dir="${dir}"]`,
+      ),
+    ).toHaveCount(1, { timeout: 3000 });
+  }
+  await expect(
+    page.locator(
+      `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"][data-handle-dir="e"], [data-selection-handle-item-id="${id}"] [data-handle-kind="edge"][data-handle-dir="w"]`,
+    ),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(`[data-selection-handle-item-id="${id}"] [data-handle-kind="corner"]`),
+  ).toHaveCount(0);
+});
+
+test("Auto-W mode — dragging the s handle changes height (height is manual)", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-AutoW-Height" });
+  const id = await addTextViaMenu(page);
+
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: {
+          ...prev.attrs,
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "scale" },
+          },
+          frame: { x: 0.1, y: 0.2, width: 0.6, height: 0.2, rotation: 0 },
+          // px font (clear the ratio spec) so the box stays on-screen. Use a
+          // reasonably wide single line so the auto-fit box keeps a comfortable
+          // width — the bottom-centre s handle then sits over a stable target.
+          fontSize: 24,
+          fontSizeSpec: undefined,
+          text: "Resize this text box vertically",
+        },
+      }),
+    });
+  }, id);
+  // Wait for the width auto-fit to settle (0.6 → hug the line) BEFORE grabbing
+  // the s handle — otherwise the box reflows mid-capture and the bottom-centre
+  // handle shifts out from under the recorded pointer. The extra tick lets the
+  // post-settle layout flush.
+  await page.waitForFunction(
+    (fid) => {
+      type Ch = { id: unknown; attrs: { frame?: { width?: number } } };
+      const w = window as unknown as { __weaveDoc?: { root: { children: ReadonlyArray<Ch> } } };
+      const it = (w.__weaveDoc?.root.children ?? []).find((c) => String(c.id) === fid);
+      const width = it?.attrs.frame?.width ?? 1;
+      return width < 0.59 && width > 0.1;
+    },
+    id,
+    { timeout: 2000 },
   );
-  await expect(handles).toHaveCount(0, { timeout: 3000 });
+  await page.waitForTimeout(150);
+  const before = (await readAttrs(page, id)).frame as { height: number };
+
+  // Drag the south edge handle down — height must grow (the RO does NOT own
+  // height in Auto-width, so the manual change is not reverted).
+  const sHandle = page.locator(
+    `[data-selection-handle-item-id="${id}"] [data-handle-kind="edge"][data-handle-dir="s"]`,
+  );
+  await expect(sHandle).toBeVisible({ timeout: 3000 });
+  const r = await sHandle.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    return { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+  });
+  await page.mouse.move(r.cx, r.cy);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(r.cx, r.cy + 120);
+  await page.mouse.move(r.cx, r.cy + 240);
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(250);
+
+  const after = (await readAttrs(page, id)).frame as { height: number };
+  expect(after.height).toBeGreaterThan(before.height);
+  // fontSize unchanged (edge resize never scales the font — DR-016).
+  expect((await readAttrs(page, id)).fontSize).toBe(24);
+});
+
+test("Auto-W mode grows/shrinks frame.width to fit content", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-AutoW-Width" });
+  const id = await addTextViaMenu(page);
+
+  // Switch to Auto-width (scale × scale) and seed a known wide frame with
+  // short content. Auto-width exposes no WIDTH handle, so the ResizeObserver
+  // is the ONLY thing that can move frame.width — it must shrink the box to
+  // the short text's natural width.
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: {
+          ...prev.attrs,
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "scale" },
+          },
+          frame: { x: 0.1, y: 0.3, width: 0.6, height: 0.2, rotation: 0 },
+          fontSize: 24,
+          text: "Hi",
+        },
+      }),
+    });
+  }, id);
+  // Width settles below the seeded 0.6 to hug "Hi".
+  await page.waitForFunction(
+    (fid) => {
+      type Ch = { id: unknown; attrs: { frame?: { width?: number } } };
+      const w = window as unknown as {
+        __weaveDoc?: { root: { children: ReadonlyArray<Ch> } };
+      };
+      const it = (w.__weaveDoc?.root.children ?? []).find((c) => String(c.id) === fid);
+      return (it?.attrs.frame?.width ?? 1) < 0.3;
+    },
+    id,
+    { timeout: 2000 },
+  );
+
+  const narrow = (await readAttrs(page, id)).frame as { width: number };
+
+  // Replace with a much longer single line — width must GROW to fit it
+  // (no soft-wrap in Auto-width), without the user touching any handle.
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: { ...prev.attrs, text: "A considerably longer single line of text" },
+      }),
+    });
+  }, id);
+  await page.waitForFunction(
+    (args) => {
+      const [fid, prevW] = args as [string, number];
+      type Ch = { id: unknown; attrs: { frame?: { width?: number } } };
+      const w = window as unknown as {
+        __weaveDoc?: { root: { children: ReadonlyArray<Ch> } };
+      };
+      const it = (w.__weaveDoc?.root.children ?? []).find((c) => String(c.id) === fid);
+      return (it?.attrs.frame?.width ?? 0) > prevW + 0.05;
+    },
+    [id, narrow.width] as [string, number],
+    { timeout: 2000 },
+  );
+
+  const wide = (await readAttrs(page, id)).frame as { width: number };
+  expect(wide.width).toBeGreaterThan(narrow.width);
 });
 
 test("WI-029 — V-Align CENTER applies flex justify-content", async ({ page }) => {
@@ -648,7 +846,10 @@ test("WI-029 — Truncate ENDING + maxLines clamps content via -webkit-line-clam
         attrs: {
           ...prev.attrs,
           text: "line1\nline2\nline3\nline4\nline5",
-          textAutoResize: "NONE",
+          // Fixed mode is required for truncation to apply (the `isFixed` gate
+          // in TextBlock). Derived from `layoutChild` (left × top); legacy
+          // `textAutoResize` field removed in agocraft v10.
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
           textTruncation: "ENDING",
           maxLines: 3,
         },
