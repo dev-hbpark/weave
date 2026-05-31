@@ -1,24 +1,15 @@
 import { Hotspot } from "@weave/design-system";
 import type { HotspotBehavior } from "../types.js";
+import { dispatchHotspotAction, openExternalHref } from "./hotspot-action.js";
 import type { InteractionAdapter, PresentContext } from "./types.js";
 
 function dispatchAction(behavior: HotspotBehavior, ctx: PresentContext): void {
-  switch (behavior.action.type) {
-    case "reveal":
-      ctx.reveal(behavior.action.targetId);
-      return;
-    case "next-camera":
-      ctx.goToStep(Math.min(ctx.step + 1, ctx.totalSteps - 1));
-      return;
-    case "jump-camera":
-      ctx.goToCameraId(behavior.action.targetId);
-      return;
-    case "external":
-      if (typeof window !== "undefined") {
-        window.open(behavior.action.href, "_blank", "noopener,noreferrer");
-      }
-      return;
-  }
+  dispatchHotspotAction(behavior.action, {
+    reveal: (id) => ctx.reveal(id),
+    nextStep: () => ctx.goToStep(Math.min(ctx.step + 1, ctx.totalSteps - 1)),
+    jumpToCamera: (id) => ctx.goToCameraId(id),
+    openExternal: openExternalHref,
+  });
 }
 
 export const hotspotAdapter: InteractionAdapter<HotspotBehavior> = {

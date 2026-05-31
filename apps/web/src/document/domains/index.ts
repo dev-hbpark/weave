@@ -7,30 +7,17 @@
 // Capability-style registry — render adapter per DomainKind. Phase 11 —
 // every domain is a Frame: it can have its own children (nested frames)
 // rendered inside its rectangle, regardless of kind.
+//
+// AUDIT-005 (V-4) — the per-kind renderer catalogue moved to the single
+// DomainKind registry (`../domain-kinds.ts`). This barrel keeps the historical
+// `DOMAIN_RENDERERS` / `DomainRendererProps` import paths stable + re-exports
+// the Block components.
 
-import type { ComponentType } from "react";
-import type { AgoItem, DomainKind, ItemAttrsByKind } from "../types.js";
-import { FrameBlock } from "./FrameBlock.js";
-import { ImageBlock } from "./ImageBlock.js";
-import { QrBlock } from "./QrBlock.js";
-import { ShapeBlock } from "./ShapeBlock.js";
-import { TextBlock } from "./TextBlock.js";
-import { VideoBlock } from "./VideoBlock.js";
-
-export type DomainRendererProps<K extends DomainKind> = {
-  readonly item: AgoItem<K>;
-  readonly onUpdate?: (patch: Partial<ItemAttrsByKind[K]>) => void;
-};
-
-export const DOMAIN_RENDERERS: {
-  readonly [K in DomainKind]: ComponentType<DomainRendererProps<K>>;
-} = {
-  frame: FrameBlock,
-  image: ImageBlock,
-  video: VideoBlock,
-  shape: ShapeBlock,
-  text: TextBlock,
-  qr: QrBlock,
-};
-
-export { FrameBlock, ImageBlock, QrBlock, ShapeBlock, TextBlock, VideoBlock };
+export { DOMAIN_RENDERERS, type DomainRendererProps } from "../domain-kinds.js";
+export { FrameBlock } from "./FrameBlock.js";
+export { ImageBlock } from "./ImageBlock.js";
+export { LineBlock } from "./LineBlock.js";
+export { QrBlock } from "./QrBlock.js";
+export { ShapeBlock } from "./ShapeBlock.js";
+export { TextBlock } from "./TextBlock.js";
+export { VideoBlock } from "./VideoBlock.js";

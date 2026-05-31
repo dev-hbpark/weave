@@ -31,6 +31,40 @@ export function DocumentForResolutionProvider({
   );
 }
 
+/** The design plane's intrinsic pixel size (design-space, NOT viewport).
+ *  Toolbar sections that convert between design-px and parent-relative
+ *  ratios (e.g. the text px/% font-size toggle) need this to match the
+ *  renderer, which scales every ratio by the design dimensions down the
+ *  frame tree. The design size is a per-document canvas preset (16:9,
+ *  A4, square, …) — NOT the fixed editor coordSystem — so it must come
+ *  from the live `design` object, not `editor.coordSystem`. */
+export interface DesignDims {
+  readonly width: number;
+  readonly height: number;
+}
+
+const DesignDimsContext = createContext<DesignDims | null>(null);
+
+export function DesignDimsProvider({
+  width,
+  height,
+  children,
+}: {
+  readonly width: number;
+  readonly height: number;
+  readonly children: ReactNode;
+}) {
+  return (
+    <DesignDimsContext.Provider value={{ width, height }}>{children}</DesignDimsContext.Provider>
+  );
+}
+
+/** The live design plane's design-space size, or `null` when mounted
+ *  outside DesignPage (standalone tests / preview hosts). */
+export function useDesignDims(): DesignDims | null {
+  return useContext(DesignDimsContext);
+}
+
 /** Resolve a stored color (CSS string OR `StyleRef`) into a CSS string the
  *  renderer can apply. When `value` is a `StyleRef`, walks the cascade from
  *  `fromItem` upward through ancestor `style.provider` Units; without a

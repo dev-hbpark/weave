@@ -64,7 +64,7 @@ const EMPTY: HoverAffordanceProjection = {
 /** Hover kinds for which the affordance overlay paints. Other kinds
  *  (handle, hotspot, background, none) return EMPTY — the layer is
  *  inactive there. */
-export type ProjectableHoverKind = "frame" | "image" | "video" | "text" | "shape";
+export type ProjectableHoverKind = "frame" | "image" | "video" | "text" | "shape" | "line";
 
 export interface ProjectHoverAffordanceInput {
   readonly doc: AgocraftDocument;
@@ -92,7 +92,13 @@ export function projectHoverAffordance(
 
 function isProjectableKind(kind: string): kind is ProjectableHoverKind {
   return (
-    kind === "frame" || kind === "image" || kind === "video" || kind === "text" || kind === "shape"
+    kind === "frame" ||
+    kind === "image" ||
+    kind === "video" ||
+    kind === "text" ||
+    kind === "shape" ||
+    // DR-025 — a `line` hovers like any frame-boxed primitive (projectFrame).
+    kind === "line"
   );
 }
 

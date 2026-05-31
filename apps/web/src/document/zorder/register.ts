@@ -5,12 +5,11 @@
 // (their z-stacking storage is identical = root.children array index).
 
 import { type CapabilityRegistry, type Document, ZORDER_CAPABILITY } from "@agocraft/core";
+// AUDIT-005 (V-8) — the kind list is no longer a literal here; it derives from
+// the single DomainKind registry (`participatesInZorder` flag). Re-exported
+// below to keep the historical import path stable.
+import { DESIGN_FRAME_KINDS } from "../domain-kinds.js";
 import { createDesignFrameZOrderAdapter } from "./design-frame.zorder.js";
-
-// WI-019 + WI-020 — z-order adapter applies uniformly across every
-// top-level Frame kind (their z = position in doc.root.children).
-// WI-032 Phase 3 — `frame` joins primitive kinds; legacy 4 retired.
-const DESIGN_FRAME_KINDS = ["frame", "image", "video", "shape", "text"] as const;
 
 export interface RegisterZOrderAdaptersDeps {
   readonly capabilityRegistry: CapabilityRegistry;

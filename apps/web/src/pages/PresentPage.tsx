@@ -18,6 +18,7 @@ import {
   useDesign,
 } from "../document";
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
+import { dispatchHotspotAction, openExternalHref } from "../document/interactions/hotspot-action.js";
 import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 
@@ -340,24 +341,17 @@ export function PresentPage() {
   }, []);
 
   // Phase 13d-4 — single action dispatcher reused by hotspot + button-trigger.
+  // Dispatch logic itself lives in `dispatchHotspotAction` (declarative lookup,
+  // AUDIT-005 task #6); this only adapts the PresentPage runtime to the four
+  // intrinsic operations.
   const dispatchAction = useCallback(
     (action: HotspotAction) => {
-      switch (action.type) {
-        case "reveal":
-          reveal(action.targetId);
-          return;
-        case "next-camera":
-          setStep((s) => Math.min(s + 1, totalSteps - 1));
-          return;
-        case "jump-camera":
-          goToCameraId(action.targetId);
-          return;
-        case "external":
-          if (typeof window !== "undefined") {
-            window.open(action.href, "_blank", "noopener,noreferrer");
-          }
-          return;
-      }
+      dispatchHotspotAction(action, {
+        reveal: (id) => reveal(id),
+        nextStep: () => setStep((s) => Math.min(s + 1, totalSteps - 1)),
+        jumpToCamera: (id) => goToCameraId(id),
+        openExternal: openExternalHref,
+      });
     },
     [reveal, goToCameraId, totalSteps],
   );

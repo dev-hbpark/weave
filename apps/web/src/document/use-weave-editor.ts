@@ -183,6 +183,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
         "image",
         "video",
         "shape",
+        "line",
       ],
       ux: {},
     });

@@ -14,9 +14,10 @@ import { DesignPage } from "./pages/DesignPage.js";
 import { LandingPage } from "./pages/LandingPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 
-// AITooltipProvider lives inside DesignPage (Phase C of WI-016) — that's
-// where the editor and its hotkey table live, and DesignPage is the only
-// route with tooltip wiring today. Landing and Present have none.
+// The single UnifiedTooltip surface (725e0ad — unified AITooltip +
+// CursorTooltip + native title into one data-tip surface) is mounted inside
+// DesignPage, where the editor + hotkey table live. DesignPage is the only
+// route with tooltip wiring; Landing and Present have none.
 export function App() {
   // WI-025 — pull cloud designs / resources into localStorage on first
   // mount. The existing sync readers (listAllDesigns / listResources /

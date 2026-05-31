@@ -45,6 +45,7 @@ import {
   computeReparentFrameRatio as coreComputeReparentFrameRatio,
   type FrameRect,
 } from "@agocraft/spatial";
+import { KNOWN_DOMAIN_KINDS } from "./domain-kinds.js";
 import { buildThemeTokenMap } from "./style/theme-tokens.js";
 import type { InteractionBehavior, Document as WeaveDocument, Item as WeaveItem } from "./types.js";
 
@@ -518,7 +519,7 @@ function isDomainKind(kind: string): kind is DomainKind {
 }
 
 /** Project an agocraft Item's units back to weave InteractionBehaviors.
- *  Used by `BehaviorEditor` / `BehaviorChips` so the renderer surface no
+ *  Used by `PropertiesPanel`'s interaction rows so the renderer surface no
  *  longer reads a top-level `item.behaviors` field. Parameter typed
  *  structurally so both `AgocraftItem` and the type-narrowed `AgoItem<K>`
  *  view satisfy it. */
@@ -538,13 +539,11 @@ export function getBehaviors(item: {
  *  WI-020 — image / video / shape are also accepted as domain items so they
  *  render in FrameStage and participate in selection / drill flows. */
 export function isDomainItem(item: AgocraftItem): boolean {
-  const k = item.kind;
-  // WI-032 Phase 3 — frame (container) + primitives. FrameStage filters
-  // root.children by this predicate to skip the synthetic "weave-doc" root +
-  // any unknown kinds. WI-058 — `qr` is a renderable primitive.
-  return (
-    k === "frame" || k === "image" || k === "video" || k === "shape" || k === "text" || k === "qr"
-  );
+  // AUDIT-005 (V-12) — membership test against the single DomainKind registry,
+  // replacing the `k === "frame" || k === "image" || …` chain. FrameStage
+  // filters root.children by this predicate to skip the synthetic "weave-doc"
+  // root + any unknown kinds.
+  return KNOWN_DOMAIN_KINDS.has(item.kind);
 }
 
 /** Project an agocraft Item back to a weave Item. Returns undefined when the

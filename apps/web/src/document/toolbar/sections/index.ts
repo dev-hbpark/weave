@@ -4,6 +4,7 @@
 
 import { FrameBackgroundSection } from "./frame-background-section.js";
 import { ImageSection } from "./image-section.js";
+import { LineSection } from "./line-section.js";
 import { QrSection } from "./qr-section.js";
 import { ShapeSection } from "./shape-section.js";
 import { TextSection } from "./text-section.js";
@@ -15,6 +16,8 @@ export const toolbarSectionRegistry = createToolbarSectionRegistry();
 toolbarSectionRegistry.register("image", { Component: ImageSection });
 toolbarSectionRegistry.register("video", { Component: VideoSection });
 toolbarSectionRegistry.register("shape", { Component: ShapeSection });
+// DR-025 / WI-062 — `line` is its own kind with a stroke-only panel (no fill).
+toolbarSectionRegistry.register("line", { Component: LineSection });
 toolbarSectionRegistry.register("text", { Component: TextSection });
 // WI-058 — data-driven QR kind.
 toolbarSectionRegistry.register("qr", { Component: QrSection });

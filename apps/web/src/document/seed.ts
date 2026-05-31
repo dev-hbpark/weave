@@ -1,3 +1,4 @@
+import { defaultAttrsFor } from "./domain-kinds.js";
 import type {
   CameraTargetBehavior,
   Document,
@@ -5,11 +6,9 @@ import type {
   HotspotBehavior,
   InteractionBehavior,
   Item,
-  ItemAttrsByKind,
   ItemFrame,
   RevealOnStepBehavior,
 } from "./types.js";
-import { FULL_FRAME } from "./types.js";
 
 // Stable id for the demo doc — fixed slug, single record. Multi-doc lands at M2.
 export const DEMO_DOC_ID = "demo";
@@ -84,94 +83,13 @@ export function createDefaultItem<K extends DomainKind>(
 ): Item<K> {
   const now = new Date().toISOString();
   const id = nextId(kind);
-  const attrsByKind: ItemAttrsByKind = {
-    // WI-032 — `frame` is the canvas container of the new paradigm. No
-    // built-in content; primitive children carry every visible element.
-    frame: {
-      frame: FULL_FRAME,
-    },
-    // WI-020 — seeds for image / video / shape kinds. Hosts that need a
-    // specific source override via the `add` command's input.
-    image: {
-      frame: FULL_FRAME,
-      src: "",
-      alt: "",
-      fit: "cover",
-      borderRadius: 0,
-    },
-    video: {
-      frame: FULL_FRAME,
-      src: "",
-      poster: null,
-      autoplay: false,
-      loop: false,
-      muted: true,
-      controls: true,
-      fit: "cover",
-      volume: 1,
-      playbackRate: 1,
-      borderRadius: 0,
-    },
-    // DR-028 — decoration (fill / stroke / shadow / opacity) is no longer a shape
-    // attr; toAgocraftItem seeds a default `decoration.fill` unit at creation.
-    shape: {
-      frame: FULL_FRAME,
-      shape: "rectangle",
-      subAttrs: { shape: "rectangle", cornerRadii: { tl: 0, tr: 0, br: 0, bl: 0 } },
-    },
-    // Phase 15 — text primitive default. Phase 1 (WI-016 / WI-029) adds
-    // Figma-equivalent optional fields with sensible defaults: HEIGHT-mode
-    // resize, no truncation, TOP vertical align, no decoration, ORIGINAL
-    // case, paragraph spacing/indent 0, no hyperlink. Existing fields
-    // unchanged (Phase 1.5 will rename textAlign / lineHeight unit).
-    text: {
-      frame: FULL_FRAME,
-      text: "텍스트",
-      fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-      fontSize: 24,
-      fontWeight: "normal",
-      fontStyle: "normal",
-      color: "#1f2933",
-      textAlign: "left",
-      lineHeight: 1.4,
-      letterSpacing: 0,
-      // ─── Phase 1 (WI-016) additive defaults ─────────────────────────
-      // textAutoResize removed in agocraft schema v10 (WI-019 B4 / T3 Modify).
-      // Layout intent moves to attrs.layoutChild; render path derives the
-      // legacy auto-resize semantic from the anchor pair when layoutChild is
-      // populated. Legacy designs are auto-migrated on first load.
-      textTruncation: "DISABLED",
-      maxLines: null,
-      textAlignVertical: "TOP",
-      textDecoration: "NONE",
-      textCase: "ORIGINAL",
-      paragraphSpacing: 0,
-      paragraphIndent: 0,
-      hyperlink: null,
-      // Phase 1.5 Phase A — UPPERCASE Figma-convention horizontal align
-      // populated alongside legacy `textAlign`. weave readers prefer the
-      // new field; legacy lowercase remains for backward compat.
-      textAlignHorizontal: "LEFT",
-      // Phase 1.5 Phase B — explicit-unit line height alongside legacy
-      // `lineHeight: 1.4` (multiplier). New readers prefer this.
-      lineHeightSpec: { value: 1.4, unit: "multiplier" },
-    },
-    // WI-058 — data-driven QR. Regenerated from `data` on every render.
-    qr: {
-      frame: FULL_FRAME,
-      data: "https://example.com",
-      ecLevel: "M",
-      foreground: { type: "solid", color: "#111827" },
-      background: { type: "solid", color: "#ffffff" },
-      margin: 4,
-      moduleStyle: "square",
-      opacity: 1,
-    },
-  };
+  // AUDIT-005 (V-8) — per-kind seed attrs now live in the single DomainKind
+  // registry (`./domain-kinds.ts`), alongside the renderer + meta + z-order
+  // flag. Adding a kind no longer touches this file.
   return {
     id,
     kind,
-    attrs: attrsByKind[kind],
+    attrs: defaultAttrsFor(kind),
     behaviors: [defaultCameraTarget(order), ...extraBehaviors],
     createdAt: now,
   };

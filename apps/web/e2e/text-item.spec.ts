@@ -96,18 +96,20 @@ test("Toolbar text section appears; changing fontSize updates the item", async (
   expect(attrs.fontSize).toBe(48);
 });
 
-// DR-016 (2026-05-25) — corner resize no longer scales fontSize. This
-// previously-passing test is REVERSED: now we assert fontSize stays unchanged.
-// The Genially-style "corner = both box and glyph" UX is gone; Figma paradigm
-// (corner = box only, fontSize via PropertiesPanel slider) is in.
-test("DR-016 regression — corner-resize keeps fontSize unchanged (Fixed mode)", async ({
+// DR-022 (2026-05-31, supersedes the DR-016 corner clause) — diagonal
+// (corner) resize scales the glyph proportionally to the box HEIGHT ratio
+// (new height / old height). The legacy `fontSize` px mirror and the
+// explicit `fontSizeSpec` are both rewritten so px and % units convert
+// correctly. Edge handles still change box dimensions only.
+test("DR-022 — corner-resize scales fontSize by box height ratio (px spec)", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-C" });
   const id = await addTextViaMenu(page);
 
-  // Seed: known frame + fontSize, switch to Fixed mode so corner handles appear.
+  // Seed: known frame + explicit px fontSize, switch to Fixed mode so corner
+  // handles appear. fontSizeSpec px is pinned so the conversion is deterministic.
   await page.evaluate((fid) => {
     const w = window as unknown as {
       __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
@@ -119,6 +121,7 @@ test("DR-016 regression — corner-resize keeps fontSize unchanged (Fixed mode)"
           ...prev.attrs,
           frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
           fontSize: 20,
+          fontSizeSpec: { kind: "px", value: 20 },
           // Fixed mode (left × top anchor) → all 8 handles. Derived from
           // `layoutChild`; the legacy `textAutoResize` field was removed in
           // agocraft v10.
@@ -138,7 +141,7 @@ test("DR-016 regression — corner-resize keeps fontSize unchanged (Fixed mode)"
     return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
   });
 
-  // Drag SE corner outward. Box grows, fontSize stays exactly 20.
+  // Drag SE corner outward. Box grows AND fontSize grows by the height ratio.
   await page.mouse.move(handleRect.cx, handleRect.cy);
   await page.mouse.down({ button: "left" });
   await page.mouse.move(handleRect.cx + 200, handleRect.cy + 200);
@@ -146,10 +149,68 @@ test("DR-016 regression — corner-resize keeps fontSize unchanged (Fixed mode)"
   await page.waitForTimeout(120);
 
   const after = await readAttrs(page, id);
+  const newHeight = (after.frame as { height: number }).height;
   expect((after.frame as { width: number }).width).toBeGreaterThan(0.2);
-  expect((after.frame as { height: number }).height).toBeGreaterThan(0.2);
-  // DR-016 guarantee: fontSize NEVER changes from corner resize.
-  expect(after.fontSize).toBe(20);
+  expect(newHeight).toBeGreaterThan(0.2);
+  // DR-022: fontSize scales by the box height ratio (new height / 0.2).
+  const heightRatio = newHeight / 0.2;
+  expect(after.fontSize as number).toBeGreaterThan(20);
+  expect((after.fontSize as number) / 20).toBeCloseTo(heightRatio, 2);
+  // px spec mirrors the resolved px exactly.
+  expect(after.fontSizeSpec).toEqual({
+    kind: "px",
+    value: after.fontSize,
+  });
+});
+
+// DR-022 — the ratio unit converts too: corner resize multiplies the
+// `kind:"ratio"` value by the same height factor, so a responsive font stays
+// responsive but grows with the box.
+test("DR-022 — corner-resize scales fontSizeSpec ratio value by height ratio", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-C-ratio" });
+  const id = await addTextViaMenu(page);
+
+  await page.evaluate((fid) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: {
+          ...prev.attrs,
+          frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
+          fontSize: 80,
+          fontSizeSpec: { kind: "ratio", value: 0.05 },
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+        },
+      }),
+    });
+  }, id);
+
+  const seHandle = page.locator(
+    `[data-selection-handle-item-id="${id}"] [data-handle-kind="corner"][data-handle-dir="se"]`,
+  );
+  await expect(seHandle).toBeVisible({ timeout: 3000 });
+  const handleRect = await seHandle.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+
+  await page.mouse.move(handleRect.cx, handleRect.cy);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(handleRect.cx + 200, handleRect.cy + 200);
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(120);
+
+  const after = await readAttrs(page, id);
+  const heightRatio = (after.frame as { height: number }).height / 0.2;
+  const spec = after.fontSizeSpec as { kind: string; value: number };
+  expect(spec.kind).toBe("ratio");
+  expect(spec.value / 0.05).toBeCloseTo(heightRatio, 2);
 });
 
 // WI-fontsize-spec (2026-05-30) — fontSizeSpec { kind:"ratio" } makes the
@@ -202,6 +263,102 @@ test("fontSizeSpec ratio renders as value × design height; Cmd+Z reverts", asyn
   const reverted = (await readAttrs(page, id)).fontSizeSpec as { value?: number } | undefined;
   expect(reverted?.value).not.toBe(0.1);
   expect(reverted?.value).toBeCloseTo(beforeSpec?.value ?? -1, 5);
+});
+
+// WI-fontsize-unit-fix (2026-05-31) — the px/% unit toggle must PRESERVE the
+// on-screen size. Bug was: px→% seeded a fixed 5% (large text shrank). Fix:
+// px→% stores currentPx/parentHeight, %→px stores ratio×parentHeight.
+test("px↔% font-unit toggle preserves rendered size (no shrink)", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-Unit" });
+  const id = await addTextViaMenu(page);
+  const designH = await page.evaluate(
+    () => (window as unknown as { __weaveDesign?: { height?: number } }).__weaveDesign?.height ?? 0,
+  );
+  expect(designH).toBeGreaterThan(0);
+
+  // Seed a large px font (80) in Fixed mode.
+  await page.evaluate((fid) => {
+    const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: {
+          ...prev.attrs,
+          frame: { x: 0.3, y: 0.3, width: 0.3, height: 0.15, rotation: 0 },
+          fontSize: 80,
+          fontSizeSpec: { kind: "px", value: 80 },
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+        },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  const renderPx = () =>
+    page
+      .locator('[data-testid="text-block"] > div')
+      .first()
+      .evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
+  const before = await renderPx();
+
+  const section = page.getByTestId("text-size-section");
+  await page.getByTestId("toolbar-more-trigger").click();
+
+  // px → %: rendered size unchanged, spec becomes ratio = 80/designH.
+  await section.getByText("%", { exact: true }).first().click();
+  await page.waitForTimeout(150);
+  const afterPct = await readAttrs(page, id);
+  expect(await renderPx()).toBeCloseTo(before, 0);
+  const sPct = afterPct.fontSizeSpec as { kind: string; value: number };
+  expect(sPct.kind).toBe("ratio");
+  expect(sPct.value).toBeCloseTo(80 / designH, 3);
+
+  // % → px round-trip: rendered size still unchanged.
+  await section.getByText("px", { exact: true }).first().click();
+  await page.waitForTimeout(150);
+  expect(await renderPx()).toBeCloseTo(before, 0);
+  expect((await readAttrs(page, id)).fontSizeSpec).toMatchObject({ kind: "px" });
+});
+
+// WI-fontsize-unit-fix — a large ratio (as a corner-resize yields) must keep
+// the % slider thumb in sync with the number (the slider max expands to fit).
+test("% slider stays in sync when ratio exceeds the normal editing range", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-Unit2" });
+  const id = await addTextViaMenu(page);
+  const designH = await page.evaluate(
+    () => (window as unknown as { __weaveDesign?: { height?: number } }).__weaveDesign?.height ?? 0,
+  );
+
+  // 52% — past the 40% normal ceiling, as a big corner-resize can produce.
+  await page.evaluate(
+    ({ fid, fs }) => {
+      const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+      w.__weaveEditor?.exec("weave.item.update", {
+        itemId: fid,
+        patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+          attrs: {
+            ...prev.attrs,
+            fontSize: fs,
+            fontSizeSpec: { kind: "ratio", value: 0.52 },
+            layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+          },
+        }),
+      });
+    },
+    { fid: id, fs: 0.52 * designH },
+  );
+  await page.waitForTimeout(120);
+
+  await page.getByTestId("toolbar-more-trigger").click();
+  const slider = page.getByTestId("text-size-section").getByRole("slider").first();
+  const valNow = Number(await slider.getAttribute("aria-valuenow"));
+  const valMax = Number(await slider.getAttribute("aria-valuemax"));
+  // Thumb never exceeds the max (no desync); the scale expanded to include 52%.
+  expect(valNow).toBeLessThanOrEqual(valMax);
+  expect(valMax).toBeGreaterThanOrEqual(52);
+  expect(valNow).toBeCloseTo(52, 0);
 });
 
 test("font-family picker offers presets and applies the selected stack", async ({ page }) => {

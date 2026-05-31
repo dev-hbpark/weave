@@ -28,7 +28,7 @@ interface ShapeBlockProps {
 }
 
 // Marker geometry definitions for arrow heads (DR-024).
-function ArrowMarker({
+export function ArrowMarker({
   id,
   style,
   size,
@@ -112,7 +112,7 @@ function ArrowMarker({
 
 // Convert a SvgGeometry element + props into a JSX node with fill/stroke
 // applied.
-function renderGeometryElement(
+export function renderGeometryElement(
   element: string,
   props: Record<string, string | number>,
   fillProps: SVGAttributes<SVGElement>,
@@ -205,10 +205,20 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
   const strokeAttrs =
     resolvedStroke && strokeFill ? strokeToSvgAttrs(resolvedStroke, strokeFill.value) : null;
 
-  const fillProps: SVGAttributes<SVGElement> = { fill: fill.value };
+  // Stroke-only geometry (`line` / open `polyline` — i.e. 직선 / 자유선 / arrow
+  // shaft) has NO fill region. An open <polyline> with a fill paints the
+  // implicit closing chord, so 자유선 looked like a filled blob; a <line> with
+  // only a fill is invisible (fill is ignored on a line). Render these with
+  // fill:none and paint the outline as a stroke — the shape's fill paint
+  // becomes the line colour when no explicit stroke unit is set.
+  const isStrokeOnly =
+    geom.strokeOnly === true || geom.element === "line" || geom.element === "polyline";
+  const fillProps: SVGAttributes<SVGElement> = { fill: isStrokeOnly ? "none" : fill.value };
   const strokeProps: SVGAttributes<SVGElement> = strokeAttrs
     ? (strokeAttrs as unknown as SVGAttributes<SVGElement>)
-    : {};
+    : isStrokeOnly
+      ? { stroke: fill.value, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }
+      : {};
 
   // DR-028 — shadow / opacity are decoration UNITS (no legacy attr fallback).
   // Shapes use CSS `filter: drop-shadow()` (so the shadow follows the SVG

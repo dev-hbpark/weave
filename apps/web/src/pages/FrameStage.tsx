@@ -85,7 +85,7 @@ import { MarqueeSelectionLayer } from "../document/marquee/MarqueeSelectionLayer
 import { FrameContent } from "../document/render/FrameContent.js";
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
 import { RubberBandLayer } from "../document/rubber-band/RubberBandLayer.js";
-import { createFrameDefaultViewModel } from "../document/selection-chrome/frame-default-view-model.js";
+import { applyLayoutConstraintFilter } from "../document/selection-chrome/layout-constraint-filter.js";
 import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
 
 /** WI-033 A4 — context passed to `renderFrameMenu` so the callback
@@ -881,94 +881,32 @@ function NestedFrame({
               itemKind: kind,
               unitKinds: item.units.map((u) => u.kind),
             };
-            // WI-029 / DR-016 — text item resize handles are mode-gated.
-            // WI-019 B4 / T3 Modify — derives from `attrs.layoutChild`
-            // (agocraft v10) via `deriveTextAutoResize`; the legacy
-            // `textAutoResize` field is removed.
-            //   WIDTH_AND_HEIGHT (Auto-W) → n/s only (width auto-fits content,
-            //                               height is user-set)
-            //   HEIGHT (Auto-H)           → e/w only (height auto, width user-set)
-            //   NONE (Fixed)              → all 8 (width+height locked, no auto-fit)
-            // 자동너비/자동높이 are symmetric: the auto axis exposes no handle
-            // (the ResizeObserver owns it), the manual axis exposes its two edges.
-            // The corner-fontSize-scale behaviour (Phase 18) is gone — corners
-            // change only the box dimensions, never fontSize. DR-016 박제.
-            const textHandleDirs = (() => {
-              if (kind !== "text") return undefined;
-              const attrs = item.attrs as unknown as {
-                layoutChild?: import("@agocraft/core").LayoutChildPolicy;
-              };
-              const mode = deriveTextAutoResizeForFrameStage(attrs.layoutChild);
-              switch (mode) {
-                case "WIDTH_AND_HEIGHT":
-                  return ["n", "s"] as const;
-                case "NONE":
-                  return ["e", "w", "n", "s", "ne", "nw", "se", "sw"] as const;
-                default: // "HEIGHT" or unset (legacy)
-                  return ["e", "w"] as const;
-              }
-            })();
-            // WI-019/WI-021 — the parent frame's layout OWNS this child's
-            // position (delegation model), so it also dictates which
-            // resize handles + the rotate affordance are valid. The
-            // agocraft LayoutEngine.getChildConstraints is the single
-            // source — weave only reads it and removes the disallowed
-            // handle dirs (grid → none; flex → cross-axis removed). No
-            // layout math happens here.
-            //   • canResizeWidth=false  → drop e/w + all 4 corners
-            //   • canResizeHeight=false → drop n/s + all 4 corners
-            // (a corner touches both axes, so it survives only when BOTH
-            //  axes are resizable.) canRotate=false drops the rotate handle
-            //  (Figma auto-layout parity).
-            const layoutConstraints =
+            // DR-023 — handles come from each kind's registered
+            // SelectionViewModel (`resolve` merges the kind VM + cross-cutting
+            // providers like the poly vertex handles, already sorted by
+            // priority/order). FrameStage no longer knows text auto-resize
+            // modes or shape sub-kinds — that policy lives in the per-kind VMs
+            // (text-/shape-/frame-default-selection-view-model). The ONLY
+            // removal here is the parent-layout constraint (grid / flex), which
+            // is cross-cutting (any kind), so it is a single post-resolve filter
+            // rather than a per-kind branch.
+            const constraints =
               LAYOUT_FEATURE_ENABLED && doc !== undefined
                 ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
                 : undefined;
-            const layoutHandleDirs =
-              layoutConstraints === undefined ||
-              (layoutConstraints.canResizeWidth && layoutConstraints.canResizeHeight)
-                ? undefined
-                : (["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const).filter((d) => {
-                    const touchesW = d === "e" || d === "w" || d.length === 2;
-                    const touchesH = d === "n" || d === "s" || d.length === 2;
-                    return (
-                      (!touchesW || layoutConstraints.canResizeWidth) &&
-                      (!touchesH || layoutConstraints.canResizeHeight)
-                    );
-                  });
-            // Compose the text auto-resize restriction with the layout
-            // restriction — a dir survives only if BOTH allow it.
-            const resizeDirs = (() => {
-              if (textHandleDirs === undefined) return layoutHandleDirs;
-              if (layoutHandleDirs === undefined) return textHandleDirs;
-              const allowed = new Set<string>(layoutHandleDirs);
-              return textHandleDirs.filter((d) => allowed.has(d));
-            })();
-            const disableRotate = layoutConstraints !== undefined && !layoutConstraints.canRotate;
-            const defaultVm = createFrameDefaultViewModel({
-              itemKind: kind,
-              ...(resizeDirs !== undefined ? { resizeDirs } : {}),
-              ...(disableRotate ? { disableRotate: true } : {}),
+            return applyLayoutConstraintFilter(
+              selectionChromeRef.current?.resolve(info) ?? [],
+              constraints,
+            ).map((spec) => {
+              const pos = resolveAnchor(spec.anchor, bounds);
+              return {
+                id: spec.id,
+                itemId,
+                x: pos.x,
+                y: pos.y,
+                node: spec.render({ bounds, selection: info }),
+              };
             });
-            // Default specs + extension specs (registry) — extension
-            // wins on id collision (later writes override).
-            const defaultSpecs = defaultVm.handles(info);
-            const extSpecs = selectionChromeRef.current?.resolve(info) ?? [];
-            const byId = new Map<string, (typeof defaultSpecs)[number]>();
-            for (const s of defaultSpecs) byId.set(s.id, s);
-            for (const s of extSpecs) byId.set(s.id, s);
-            return Array.from(byId.values())
-              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-              .map((spec) => {
-                const pos = resolveAnchor(spec.anchor, bounds);
-                return {
-                  id: spec.id,
-                  itemId,
-                  x: pos.x,
-                  y: pos.y,
-                  node: spec.render({ bounds, selection: info }),
-                };
-              });
           }}
         />
       ) : null}
@@ -1651,18 +1589,31 @@ export function FrameStage(props: FrameStageProps) {
         if (frame === undefined) return undefined;
         // Phase 15 — text items carry their fontSize through the resize
         // pipeline as `__origFontSize` on the FrameGeom. computeResize
-        // reads this to compute the proportional scale on corner drags.
-        // The agocraft binding treats FrameGeom as opaque, so the helper
-        // field rides through untouched.
+        // reads this to compute the proportional scale on corner drags
+        // (DR-022 — diagonal resize scales the glyph by the box height
+        // ratio). The agocraft binding treats FrameGeom as opaque, so the
+        // helper fields ride through untouched.
         if (item?.kind === "text") {
-          const fs = (item.attrs as { fontSize?: number }).fontSize ?? 24;
+          const tattrs = item.attrs as {
+            fontSize?: number;
+            fontSizeSpec?: import("@agocraft/core").FontSizeSpec;
+          };
+          const fs = tattrs.fontSize ?? 24;
           // __designWidth is the design's full design-pixel width — used
           // by computeResize below to clamp the minimum frame.width to
           // roughly one character (≈ fontSize × 0.6) for text items.
+          // __origFontSizeSpec preserves the explicit-unit spec so corner
+          // scaling rewrites it losslessly — for `kind:"px"` and `"ratio"`
+          // alike the new `value` is just `value × scaleFactor` (a ratio
+          // is a fraction of the unchanged parent height, so the same
+          // factor that scales the legacy px scales the ratio value).
           return {
             ...frame,
             __origFontSize: fs,
             __designWidth: designWidth,
+            ...(tattrs.fontSizeSpec !== undefined
+              ? { __origFontSizeSpec: tattrs.fontSizeSpec }
+              : {}),
           } as unknown as FrameGeom;
         }
         return frame as unknown as FrameGeom;
@@ -1693,6 +1644,7 @@ export function FrameStage(props: FrameStageProps) {
         }
         const n = next as unknown as ItemFrame & {
           __newFontSize?: number;
+          __newFontSizeSpec?: import("@agocraft/core").FontSizeSpec;
           __origFontSize?: number;
         };
         const cleanFrame: ItemFrame = {
@@ -1703,6 +1655,7 @@ export function FrameStage(props: FrameStageProps) {
           rotation: n.rotation,
         };
         const nextFontSize = n.__newFontSize;
+        const nextFontSizeSpec = n.__newFontSizeSpec;
         // Phase 15 — for text proportional resize we MUST dispatch frame
         // + fontSize in a single `weave.item.update` patch. Splitting them
         // into two consecutive execs loses the first one: each patch
@@ -1710,6 +1663,10 @@ export function FrameStage(props: FrameStageProps) {
         // patcher reads `prev.attrs` from the doc-before-applied state in
         // some commit orderings, so the second `after` clobbers the
         // first's frame change. Combining into one patch keeps both.
+        // DR-022 — when the original font carried an explicit `fontSizeSpec`
+        // we rewrite both the legacy px mirror (`fontSize`) and the spec so
+        // px / ratio units survive the resize. `fontSize` stays the resolved
+        // px for legacy readers; `fontSizeSpec` keeps the unit semantics.
         if (nextFontSize !== undefined) {
           const upd = onUpdateItemRef.current;
           if (upd !== undefined) {
@@ -1717,6 +1674,9 @@ export function FrameStage(props: FrameStageProps) {
               ...prev,
               frame: cleanFrame,
               fontSize: nextFontSize,
+              ...(nextFontSizeSpec !== undefined
+                ? { fontSizeSpec: nextFontSizeSpec }
+                : {}),
             }));
           }
           return;
@@ -1737,16 +1697,17 @@ export function FrameStage(props: FrameStageProps) {
         } as unknown as FrameGeom;
       },
       computeResize(orig, dir: ResizeDir, dx, dy, parent) {
-        // DR-016 (2026-05-25): text item resize follows Figma paradigm —
-        // every direction adjusts only box dimensions, NEVER fontSize. The
-        // pre-DR-016 corner-fontSize-scale behaviour (Phase 18) is gone.
-        // Edge drag clamps to one-character min-width using the existing
-        // fontSize meta. Mode-specific handle exposure is gated upstream
-        // (createFrameDefaultViewModel call site) so this function trusts
-        // the dirs it receives.
+        // DR-022 (2026-05-31, supersedes DR-016 corner clause): text item
+        // DIAGONAL (corner) resize scales the glyph proportionally to the
+        // box HEIGHT ratio (nh / origHeight); pure edge drags (e/w, n/s)
+        // still change box dimensions only. Edge drag clamps to one-
+        // character min-width using the fontSize meta. Mode-specific handle
+        // exposure is gated upstream (createFrameDefaultViewModel call site)
+        // so this function trusts the dirs it receives.
         const o = orig as unknown as ItemFrame & {
           __origFontSize?: number;
           __designWidth?: number;
+          __origFontSizeSpec?: import("@agocraft/core").FontSizeSpec;
         };
         const w = parent.width > 0 ? parent.width : 1;
         const h = parent.height > 0 ? parent.height : 1;
@@ -1778,12 +1739,40 @@ export function FrameStage(props: FrameStageProps) {
             if (dir.includes("w")) nx = o.x + o.width - nw;
           }
         }
+        // DR-022 — diagonal (corner) drag scales the glyph by the box
+        // HEIGHT ratio. A corner is a two-letter dir (ne/nw/se/sw); pure
+        // edge drags (length 1) never touch fontSize. The new px is mirrored
+        // onto the legacy `fontSize`, and any explicit `fontSizeSpec` has its
+        // `value` scaled by the same factor (px → new px, ratio → new
+        // fraction of the unchanged parent height — both correct since the
+        // factor is unit-agnostic). commitFrame dispatches both in one patch.
+        let fontExtra: {
+          __newFontSize?: number;
+          __newFontSizeSpec?: import("@agocraft/core").FontSizeSpec;
+        } = {};
+        const isCorner = dir.length === 2;
+        if (isText && isCorner && o.height > 0) {
+          const scaleFactor = Math.max(0.01, nh) / o.height;
+          const spec = o.__origFontSizeSpec;
+          fontExtra = {
+            __newFontSize: (o.__origFontSize as number) * scaleFactor,
+            ...(spec !== undefined
+              ? {
+                  __newFontSizeSpec:
+                    spec.kind === "ratio"
+                      ? { kind: "ratio", value: spec.value * scaleFactor }
+                      : { kind: "px", value: spec.value * scaleFactor },
+                }
+              : {}),
+          };
+        }
         return {
           ...o,
           x: nx,
           y: ny,
           width: Math.max(0.01, nw),
           height: Math.max(0.01, nh),
+          ...fontExtra,
         } as unknown as FrameGeom;
       },
       computeRotate(orig, center, startVec, cursor) {

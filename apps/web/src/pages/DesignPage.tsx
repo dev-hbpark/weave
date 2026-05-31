@@ -55,6 +55,7 @@ import {
   IconLayoutAbsolute,
   IconLayoutFlex,
   IconLayoutGrid,
+  IconPencil,
   IconPlay,
   IconPlus,
   IconQr,
@@ -65,6 +66,7 @@ import {
   IconShapeEllipse,
   IconShapeHeart,
   IconShapeLine,
+  IconShapePoly,
   IconShapePolygon,
   IconShapeRectangle,
   IconShapeSpeechBubble,
@@ -140,9 +142,15 @@ import { PeekOverlay, PointStackInspector, usePeekMode } from "../document/peek-
 import { PresenceCursors } from "../document/presence/PresenceCursors.js";
 import { usePresenceLocalCursor } from "../document/presence/use-presence-local-cursor.js";
 import { projectHoverAffordance } from "../document/render/hover-affordance-projector.js";
+import { createFrameDefaultViewModel } from "../document/selection-chrome/frame-default-view-model.js";
 import { createPolyVertexHandleViewModel } from "../document/selection-chrome/poly-vertex-handle.js";
+import { createShapeSelectionViewModel } from "../document/selection-chrome/shape-selection-view-model.js";
 import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
-import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
+import { createTextSelectionViewModel } from "../document/selection-chrome/text-selection-view-model.js";
+import {
+  DesignDimsProvider,
+  DocumentForResolutionProvider,
+} from "../document/style/resolver-context.js";
 import { ContextualToolbar } from "../document/toolbar/ContextualToolbar.js";
 import { MediaSrcDialog } from "../document/toolbar/MediaSrcDialog.js";
 import { CursorTooltipBridge } from "../document/tooltip/CursorTooltipBridge.js";
@@ -203,6 +211,53 @@ import { ThumbnailPanel } from "./ThumbnailPanel.js";
  *  wrapper by FrameStage's hit gate, so a parent-only set would let
  *  descendants stay interactive. Including every id in the set lets the
  *  per-frame gate enforce the block uniformly. */
+/** Seed for the "자유선" (freeform line) add — an OPEN `poly` (renders as an
+ *  SVG <polyline>) that the user reshapes via vertex handles. Distinct from
+ *  the closed-by-default "자유 다각형" (`poly`, closed:true → filled polygon). */
+// DR-025 / WI-062 — `line` kind creation seeds (points 0..1 of bbox + smooth).
+// The 선 menu items create a `line` item (NOT a shape/poly). heads default none.
+type LineSeed = {
+  readonly points: ReadonlyArray<{ readonly x: number; readonly y: number }>;
+  readonly smooth?: boolean;
+};
+/** 직선 — 2-point straight line (endpoints freely repositioned). */
+const LINE_STRAIGHT: LineSeed = {
+  points: [
+    { x: 0, y: 0.5 },
+    { x: 1, y: 0.5 },
+  ],
+};
+/** 자유선 — open multi-point polyline (zigzag the user reshapes). */
+const LINE_FREE: LineSeed = {
+  points: [
+    { x: 0, y: 0.7 },
+    { x: 0.34, y: 0.3 },
+    { x: 0.66, y: 0.6 },
+    { x: 1, y: 0.25 },
+  ],
+};
+/** 곡선 — smooth (Catmull-Rom) arc through 3 control points. */
+const LINE_CURVE: LineSeed = {
+  points: [
+    { x: 0, y: 0.75 },
+    { x: 0.5, y: 0.2 },
+    { x: 1, y: 0.75 },
+  ],
+  smooth: true,
+};
+/** 자유곡선 — smooth freehand wave (more control points). */
+const LINE_CURVE_FREE: LineSeed = {
+  points: [
+    { x: 0, y: 0.6 },
+    { x: 0.2, y: 0.32 },
+    { x: 0.4, y: 0.62 },
+    { x: 0.6, y: 0.34 },
+    { x: 0.8, y: 0.64 },
+    { x: 1, y: 0.4 },
+  ],
+  smooth: true,
+};
+
 function collectFocusGateIds(
   doc: AgocraftDocument,
   focusedId: string,
@@ -704,6 +759,46 @@ function DesignPageBody() {
     return selectionChrome.registerItemViewModel(createSlideBulletHandleViewModel({ editor }));
   }, [selectionChrome, editor]);
 
+  // DR-023 — each item kind OWNS its selection chrome via a registered
+  // view-model (no central god-resolver in FrameStage). Plain kinds get the
+  // default 8-resize + rotate set; `text` gates resize dirs by auto-resize mode;
+  // `shape` drops box-resize for line-type sub-kinds. Mode/sub-kind reads go
+  // through docInAgocraftRef so the VM always sees live attrs (the
+  // poly-vertex-handle pattern). Cross-cutting layout limits are a separate
+  // post-resolve filter (see FrameStage). agocraft `SelectionInfo` is unchanged.
+  useEffect(() => {
+    const disposers = [
+      ...(["frame", "image", "video", "qr"] as const).map((k) =>
+        selectionChrome.registerItemViewModel(createFrameDefaultViewModel({ itemKind: k })),
+      ),
+      selectionChrome.registerItemViewModel(
+        createTextSelectionViewModel({
+          getLayoutChild: (itemId) => {
+            const item = findItemDeep(docInAgocraftRef.current, itemId);
+            return (
+              item?.attrs as
+                | { layoutChild?: import("@agocraft/core").LayoutChildPolicy }
+                | undefined
+            )?.layoutChild;
+          },
+        }),
+      ),
+      selectionChrome.registerItemViewModel(
+        createShapeSelectionViewModel({
+          getSubAttrs: (itemId) => {
+            const item = findItemDeep(docInAgocraftRef.current, itemId);
+            return (
+              item?.attrs as { subAttrs?: { shape?: string; closed?: boolean } } | undefined
+            )?.subAttrs;
+          },
+        }),
+      ),
+    ];
+    return () => {
+      for (const dispose of disposers) dispose();
+    };
+  }, [selectionChrome]);
+
   // WI-057 Phase 2 — register draggable vertex handles for freeform `poly`
   // shapes. The view-model reads the live vertices through docInAgocraftRef so
   // it always sees current points; dragging dispatches weave.shape.setVertices.
@@ -713,21 +808,48 @@ function DesignPageBody() {
         editor,
         getPoly: (itemId) => {
           const item = findItemDeep(docInAgocraftRef.current, itemId);
-          const sub = (
-            item?.attrs as
-              | {
-                  subAttrs?: {
-                    shape?: string;
-                    points?: ReadonlyArray<{ x: number; y: number }>;
-                    closed?: boolean;
-                  };
-                }
-              | undefined
-          )?.subAttrs;
-          return sub?.shape === "poly"
-            ? { points: sub.points ?? [], closed: sub.closed ?? true }
-            : null;
+          const attrs = item?.attrs as
+            | {
+                subAttrs?: {
+                  shape?: string;
+                  points?: ReadonlyArray<{ x: number; y: number }>;
+                  closed?: boolean;
+                };
+                frame?: { x: number; y: number; width: number; height: number; rotation?: number };
+              }
+            | undefined;
+          const sub = attrs?.subAttrs;
+          if (sub?.shape !== "poly" || attrs?.frame === undefined) return null;
+          return { points: sub.points ?? [], closed: sub.closed ?? true, frame: attrs.frame };
         },
+      }),
+    );
+  }, [selectionChrome, editor]);
+
+  // DR-025 / WI-062 — same vertex/endpoint editing for the `line` kind, but its
+  // points live on `attrs.points` (not `subAttrs`) and it is always open. No
+  // frame-default VM is registered for "line", so a selected line shows ONLY
+  // these handles (no resize / rotate) + the outline.
+  useEffect(() => {
+    return selectionChrome.registerItemViewModel(
+      createPolyVertexHandleViewModel({
+        editor,
+        itemKind: "line",
+        getPoly: (itemId) => {
+          const item = findItemDeep(docInAgocraftRef.current, itemId);
+          if (item?.kind !== "line") return null;
+          const attrs = item.attrs as {
+            points?: ReadonlyArray<{ x: number; y: number }>;
+            frame?: { x: number; y: number; width: number; height: number; rotation?: number };
+          };
+          if (attrs.frame === undefined) return null;
+          return { points: attrs.points ?? [], closed: false, frame: attrs.frame };
+        },
+        composeAttrs: (prev, frame, points) => ({
+          ...prev,
+          ...(frame !== undefined ? { frame } : {}),
+          points,
+        }),
       }),
     );
   }, [selectionChrome, editor]);
@@ -1068,7 +1190,20 @@ function DesignPageBody() {
   // ref pattern below.
   const setSelectedFrameIdRef = useRef<((id: string | null) => void) | null>(null);
   const addNewItem = useCallback(
-    (kind: DomainKind, shapeSubKind?: ShapeSubKind, srcOverride?: string) => {
+    (
+      kind: DomainKind,
+      shapeSubKind?: ShapeSubKind,
+      srcOverride?: string,
+      // Seed an explicit subAttrs (e.g. an OPEN `poly` for the freeform line)
+      // instead of the kind's closed default. Only consulted for shapes.
+      subAttrsOverride?: ReturnType<typeof defaultShapeSubAttrs>,
+      // Seed `line` kind attrs (points + optional smooth/heads). Only for "line".
+      lineAttrs?: {
+        readonly points: ReadonlyArray<{ readonly x: number; readonly y: number }>;
+        readonly smooth?: boolean;
+        readonly heads?: { readonly start: string; readonly end: string };
+      },
+    ) => {
       // Default frame for adds INTO a frame (frame-relative). Root adds
       // override this with the viewport-centred geometry below.
       let frame: ItemFrame = {
@@ -1086,7 +1221,12 @@ function DesignPageBody() {
       const attrsOverride: Record<string, unknown> = {};
       if (kind === "shape" && shapeSubKind && shapeSubKind !== "rectangle") {
         attrsOverride.shape = shapeSubKind;
-        attrsOverride.subAttrs = defaultShapeSubAttrs(shapeSubKind);
+        attrsOverride.subAttrs = subAttrsOverride ?? defaultShapeSubAttrs(shapeSubKind);
+      }
+      if (kind === "line" && lineAttrs) {
+        attrsOverride.points = lineAttrs.points;
+        if (lineAttrs.smooth !== undefined) attrsOverride.smooth = lineAttrs.smooth;
+        attrsOverride.heads = lineAttrs.heads ?? { start: "none", end: "none" };
       }
       if ((kind === "image" || kind === "video") && srcOverride) {
         attrsOverride.src = srcOverride;
@@ -2206,6 +2346,7 @@ function DesignPageBody() {
                   <ModeAwareTooltipSurface>
                     <EditorProvider editor={editor}>
                       <DocumentForResolutionProvider document={docInAgocraft}>
+                       <DesignDimsProvider width={design.width} height={design.height}>
                         {/* WI-039 — z-stack layout. The design surface (`<main>`)
                         fills the entire viewport so the canvas reaches every
                         edge with no chrome gap. Header, launch banners and
@@ -2424,7 +2565,14 @@ function DesignPageBody() {
                                         텍스트
                                       </DropdownMenuItem>
                                       <DropdownMenuSeparator />
-                                      <DropdownMenuLabel>도형</DropdownMenuLabel>
+                                      <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger
+                                          icon={<IconShapeRectangle size={16} />}
+                                          data-testid="add-shape"
+                                        >
+                                          도형
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent>
                                       <DropdownMenuItem
                                         icon={<IconShapeRectangle size={16} />}
                                         onSelect={() => addNewItem("shape", "rectangle")}
@@ -2446,13 +2594,6 @@ function DesignPageBody() {
                                         data-testid="add-shape-ellipse"
                                       >
                                         원
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapeLine size={16} />}
-                                        onSelect={() => addNewItem("shape", "line")}
-                                        data-testid="add-shape-line"
-                                      >
-                                        선
                                       </DropdownMenuItem>
                                       <DropdownMenuItem
                                         icon={<IconShapeArrow size={16} />}
@@ -2483,6 +2624,13 @@ function DesignPageBody() {
                                         다각형
                                       </DropdownMenuItem>
                                       <DropdownMenuItem
+                                        icon={<IconShapePoly size={16} />}
+                                        onSelect={() => addNewItem("shape", "poly")}
+                                        data-testid="add-shape-poly"
+                                      >
+                                        자유 다각형
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
                                         icon={<IconShapeHeart size={16} />}
                                         onSelect={() => addNewItem("shape", "heart")}
                                         data-testid="add-shape-heart"
@@ -2496,6 +2644,54 @@ function DesignPageBody() {
                                       >
                                         말풍선
                                       </DropdownMenuItem>
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuSub>
+                                      <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger
+                                          icon={<IconShapeLine size={16} />}
+                                          data-testid="add-line"
+                                        >
+                                          선
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent>
+                                          <DropdownMenuItem
+                                            icon={<IconShapeLine size={16} />}
+                                            onSelect={() =>
+                                              addNewItem("line", undefined, undefined, undefined, LINE_STRAIGHT)
+                                            }
+                                            data-testid="add-line-straight"
+                                          >
+                                            직선
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            icon={<IconPencil size={16} />}
+                                            onSelect={() =>
+                                              addNewItem("line", undefined, undefined, undefined, LINE_FREE)
+                                            }
+                                            data-testid="add-line-free"
+                                          >
+                                            자유선
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            icon={<IconShapeLine size={16} />}
+                                            onSelect={() =>
+                                              addNewItem("line", undefined, undefined, undefined, LINE_CURVE)
+                                            }
+                                            data-testid="add-line-curve"
+                                          >
+                                            곡선
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            icon={<IconPencil size={16} />}
+                                            onSelect={() =>
+                                              addNewItem("line", undefined, undefined, undefined, LINE_CURVE_FREE)
+                                            }
+                                            data-testid="add-line-curve-free"
+                                          >
+                                            자유곡선
+                                          </DropdownMenuItem>
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuSub>
                                       <DropdownMenuSeparator />
                                       <DropdownMenuLabel>코드</DropdownMenuLabel>
                                       <DropdownMenuItem
@@ -3264,7 +3460,14 @@ function DesignPageBody() {
                               const sub = options?.shapeSubKind;
                               if (kind === "shape" && sub && sub !== "rectangle") {
                                 attrsOverride.shape = sub;
-                                attrsOverride.subAttrs = defaultShapeSubAttrs(sub);
+                                attrsOverride.subAttrs = options?.subAttrs ?? defaultShapeSubAttrs(sub);
+                              }
+                              if (kind === "line" && options?.lineAttrs) {
+                                attrsOverride.points = options.lineAttrs.points;
+                                if (options.lineAttrs.smooth !== undefined) {
+                                  attrsOverride.smooth = options.lineAttrs.smooth;
+                                }
+                                attrsOverride.heads = { start: "none", end: "none" };
                               }
                               // WI-044 — frame layout paradigm. "absolute" is
                               // the default (no spec); flex/grid attach the spec
@@ -3310,6 +3513,7 @@ function DesignPageBody() {
                             designHeight={design.height}
                           />
                         </div>
+                       </DesignDimsProvider>
                       </DocumentForResolutionProvider>
                     </EditorProvider>
                   </ModeAwareTooltipSurface>
@@ -3630,6 +3834,11 @@ type FrameLayoutChoice = "absolute" | "auto-flex" | "auto-grid";
 interface AddItemOptions {
   readonly shapeSubKind?: ShapeSubKind;
   readonly frameLayout?: FrameLayoutChoice;
+  /** Seed an explicit shape subAttrs (e.g. an OPEN `poly` for the freeform
+   *  line) instead of the kind's closed default. Shapes only. */
+  readonly subAttrs?: ReturnType<typeof defaultShapeSubAttrs>;
+  /** Seed `line` kind attrs (points + optional smooth). `line` kind only. */
+  readonly lineAttrs?: LineSeed;
 }
 
 // WI-048 — ghost preview of the multi-select Flex / Grid arrange. Computes the
@@ -4042,11 +4251,11 @@ const SHAPE_VARIANT_ROWS: ReadonlyArray<{
     icon: <IconShapeEllipse size={16} />,
     testid: "frame-add-shape-ellipse",
   },
-  { subKind: "line", label: "선", icon: <IconShapeLine size={16} /> },
   { subKind: "arrow", label: "화살표", icon: <IconShapeArrow size={16} /> },
   { subKind: "triangle", label: "삼각형", icon: <IconShapeTriangle size={16} /> },
   { subKind: "star", label: "별", icon: <IconShapeStar size={16} /> },
   { subKind: "polygon", label: "다각형", icon: <IconShapePolygon size={16} /> },
+  { subKind: "poly", label: "자유 다각형", icon: <IconShapePoly size={16} /> },
   { subKind: "heart", label: "하트", icon: <IconShapeHeart size={16} /> },
   { subKind: "speech-bubble", label: "말풍선", icon: <IconShapeSpeechBubble size={16} /> },
 ];
@@ -4184,6 +4393,57 @@ function FrameAddSubmenu({ frameId, onInsert }: FrameAddSubmenuProps): React.Rea
                 {row.label}
               </DropdownMenuItem>
             ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        {/* 선 — separate from 도형: 직선 (line) + 자유선 (open poly / polyline). */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger
+            icon={<IconShapeLine size={16} />}
+            data-testid="frame-add-line"
+            onClick={() => insert("line", { lineAttrs: LINE_STRAIGHT })}
+          >
+            선
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent
+            onMouseEnter={handleEnter}
+            onMouseLeave={scheduleClose}
+            data-testid="frame-add-line-submenu"
+          >
+            <DropdownMenuItem
+              icon={<IconShapeLine size={16} />}
+              onSelect={() =>
+                insert("line", { lineAttrs: LINE_STRAIGHT })
+              }
+              data-testid="frame-add-line-straight"
+            >
+              직선
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={<IconPencil size={16} />}
+              onSelect={() =>
+                insert("line", { lineAttrs: LINE_FREE })
+              }
+              data-testid="frame-add-line-free"
+            >
+              자유선
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={<IconShapeLine size={16} />}
+              onSelect={() => insert("line", { lineAttrs: LINE_CURVE })}
+              data-testid="frame-add-line-curve"
+            >
+              곡선
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={<IconPencil size={16} />}
+              onSelect={() =>
+                insert("line", { lineAttrs: LINE_CURVE_FREE })
+              }
+              data-testid="frame-add-line-curve-free"
+            >
+              자유곡선
+            </DropdownMenuItem>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
       </DropdownMenuContent>

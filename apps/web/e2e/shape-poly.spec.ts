@@ -126,6 +126,17 @@ test("WI-057 — open poly (closed:false) renders as <polyline>", async ({ page 
   await expect
     .poll(async () => page.evaluate(() => document.querySelectorAll("svg polyline").length))
     .toBeGreaterThanOrEqual(1);
+  // An open poly (자유선) is a STROKE, not a filled face: the implicit closing
+  // chord must NOT be painted. Assert fill:none + a visible stroke.
+  const paint = await page
+    .locator("svg polyline")
+    .first()
+    .evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { fill: cs.fill, stroke: cs.stroke };
+    });
+  expect(paint.fill).toBe("none");
+  expect(paint.stroke).not.toBe("none");
 });
 
 test("WI-057 — guards: closed poly <3 points rejected, fill unchanged", async ({ page }) => {

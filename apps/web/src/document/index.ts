@@ -1,4 +1,3 @@
-export { BehaviorEditor } from "./BehaviorEditor.js";
 export {
   cameraTargetAdapter,
   createInteractionRegistry,
@@ -74,8 +73,10 @@ export {
   DOC_FLAVORS,
   DOC_SIZE_PRESETS,
   DOMAIN_KINDS,
-  DOMAIN_REGISTRY,
   FLAVOR_REGISTRY,
   FULL_FRAME,
 } from "./types.js";
+// AUDIT-005 — DOMAIN_REGISTRY (per-kind meta) now lives in the single
+// DomainKind registry alongside renderers / defaults / z-order.
+export { DESIGN_FRAME_KINDS, DOMAIN_REGISTRY } from "./domain-kinds.js";
 export { useDesign } from "./use-design.js";

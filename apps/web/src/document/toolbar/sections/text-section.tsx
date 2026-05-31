@@ -48,6 +48,7 @@ import {
   layoutChildFromTextAutoResize,
 } from "../../domains/derive-text-auto-resize.js";
 import {
+  batchPerItem,
   isMixed,
   MixedBadge,
   pickerValueToStored,
@@ -55,8 +56,35 @@ import {
   updateAll,
   useResolveSharedColor,
 } from "../multi-edit.js";
+import { absoluteFrameBox, findItemDeep } from "../../agocraft-mirror.js";
+import {
+  type DesignDims,
+  useDesignDims,
+  useDocumentForResolution,
+} from "../../style/resolver-context.js";
 import { OpacityControl } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
+
+/** A text item's PARENT frame height in design-px — the denominator the
+ *  renderer uses to resolve a `fontSizeSpec { kind:"ratio" }` (rendered px =
+ *  value × parentHeight). Equals `absoluteFrameBox(item).h / item.frame.height`
+ *  (a root child's parent is the design plane → `designHeight`). Falls back to
+ *  the design height (root assumption) when the doc/dims context is absent or
+ *  the item has no resolvable frame. Used by the px↔% toggle and the % slider
+ *  so a unit switch preserves the on-screen size and the legacy `fontSize`
+ *  mirror stays correct. */
+function parentHeightPxOf(
+  doc: ReturnType<typeof useDocumentForResolution>,
+  dims: DesignDims | null,
+  id: string,
+): number {
+  if (doc === null || dims === null) return dims?.height ?? 1080;
+  const box = absoluteFrameBox(doc, id, dims.width, dims.height);
+  const item = findItemDeep(doc, id);
+  const fh = (item?.attrs as { frame?: { height?: number } } | undefined)?.frame?.height;
+  if (box !== null && fh !== undefined && fh > 0) return box.h / fh;
+  return dims.height;
+}
 
 /** Curated font-family presets. */
 const FONT_FAMILY_PRESETS = [
@@ -94,6 +122,9 @@ function fontFamilyLabel(stack: string): string {
 }
 
 export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
+  // px↔% conversion needs the renderer's parent-height denominator (design-px).
+  const doc = useDocumentForResolution();
+  const dims = useDesignDims();
   const fontFamily = sharedValue<string>(
     items,
     (it) => (it.attrs as unknown as TextAttrs).fontFamily,
@@ -307,27 +338,44 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                           it via resolveFontSize. */}
                       <SegmentedControl<"px" | "ratio">
                         value={sizeMode}
+                        // Unit toggle PRESERVES the on-screen size: px→% stores
+                        // `currentPx / parentHeight` (not a fixed 5% seed, which
+                        // resized/large text to the wrong size), and %→px stores
+                        // `ratio × parentHeight`. The legacy `fontSize` px mirror
+                        // is written in both directions so it stays the resolved
+                        // px for legacy readers / round-trips.
                         onValueChange={(mode) =>
-                          updateAll(editor, ids, (prev) => {
-                            const prevAttrs = prev.attrs as unknown as TextAttrs;
-                            if (mode === "px") {
-                              const px = prevAttrs.fontSize ?? 24;
-                              return {
-                                attrs: {
-                                  ...prev.attrs,
-                                  fontSize: px,
-                                  fontSizeSpec: { kind: "px", value: px },
-                                },
-                              };
-                            }
-                            // → ratio: keep an existing ratio, else seed 5%.
-                            const value =
-                              prevAttrs.fontSizeSpec?.kind === "ratio"
-                                ? prevAttrs.fontSizeSpec.value
-                                : 0.05;
-                            return {
-                              attrs: { ...prev.attrs, fontSizeSpec: { kind: "ratio", value } },
-                            };
+                          batchPerItem(editor, ids, (id) => {
+                            const ph = parentHeightPxOf(doc, dims, id);
+                            editor.exec("weave.item.update", {
+                              itemId: id,
+                              patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => {
+                                const a = prev.attrs as unknown as TextAttrs;
+                                if (mode === "px") {
+                                  const px =
+                                    a.fontSizeSpec?.kind === "ratio"
+                                      ? a.fontSizeSpec.value * ph
+                                      : (a.fontSize ?? 24);
+                                  return {
+                                    attrs: {
+                                      ...prev.attrs,
+                                      fontSize: px,
+                                      fontSizeSpec: { kind: "px", value: px },
+                                    },
+                                  };
+                                }
+                                // → ratio: current rendered px ÷ parent height.
+                                const curPx = a.fontSize ?? 24;
+                                const value = ph > 0 ? curPx / ph : 0.05;
+                                return {
+                                  attrs: {
+                                    ...prev.attrs,
+                                    fontSize: curPx,
+                                    fontSizeSpec: { kind: "ratio", value },
+                                  },
+                                };
+                              },
+                            });
                           })
                         }
                         options={[
@@ -349,7 +397,11 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                             }))
                           }
                           min={8}
-                          max={200}
+                          // Expand the scale so a resize-produced size beyond the
+                          // normal editing ceiling keeps the thumb in sync with
+                          // the number (otherwise the thumb pins at max while the
+                          // input shows a larger value, and a nudge snaps it back).
+                          max={Math.max(200, Math.ceil(isMixed(fontSize) ? 24 : fontSize))}
                           step={1}
                           format={(v) => `${Math.round(v)}px`}
                           aria-label="Font size"
@@ -358,18 +410,29 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                       ) : (
                         <NumberSlider
                           value={isMixed(ratioPct) ? 5 : ratioPct}
+                          // Write the legacy `fontSize` px mirror too so px↔%
+                          // round-trips and legacy readers stay correct.
                           onValueChange={(pct) =>
-                            updateAll(editor, ids, (prev) => ({
-                              attrs: {
-                                ...prev.attrs,
-                                fontSizeSpec: { kind: "ratio", value: pct / 100 },
-                              },
-                            }))
+                            batchPerItem(editor, ids, (id) => {
+                              const ph = parentHeightPxOf(doc, dims, id);
+                              editor.exec("weave.item.update", {
+                                itemId: id,
+                                patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+                                  attrs: {
+                                    ...prev.attrs,
+                                    fontSize: (pct / 100) * ph,
+                                    fontSizeSpec: { kind: "ratio", value: pct / 100 },
+                                  },
+                                }),
+                              });
+                            })
                           }
                           min={1}
-                          max={40}
+                          // Same dynamic ceiling as px — a corner-resize can push
+                          // the ratio past the normal 40% editing range.
+                          max={Math.max(40, Math.ceil(isMixed(ratioPct) ? 5 : ratioPct))}
                           step={0.5}
-                          format={(v) => `${v}%`}
+                          format={(v) => `${Math.round(v * 10) / 10}%`}
                           aria-label="Font size (% of parent height)"
                           className="w-full"
                         />

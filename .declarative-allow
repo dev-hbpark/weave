@@ -8,4 +8,21 @@
 # Documentation comment that QUOTES the historical 18-case switch in
 # the file header — explanatory text, not a live branch. Removing the
 # quote would lose the migration history (AUDIT-002 / WI-026).
+# (Now also covered by the gate's comment-line skip; kept as a backstop.)
 ^apps/web/src/document/toolbar/ContextualToolbar\.tsx:11$
+
+# ── AUDIT-005 permitted exceptions ──────────────────────────────────────────
+
+# migrate-shape-to-line — a one-time load migration (DR-025 / WI-062 Phase 6)
+# that rewrites the FROZEN legacy "line-as-shape" sub-kinds (poly / line / arrow)
+# to the `line` kind. Pure transform over a closed, retired input set — no new
+# legacy shapes will ever be added, so this is the "pure transform" permitted
+# exception. Idempotent; deleted once no persisted legacy shapes remain.
+^apps/web/src/document/migrate-shape-to-line\.ts:75$
+^apps/web/src/document/migrate-shape-to-line\.ts:77$
+
+# changeToPatch — single-site invariant sibling: the one place that maps every
+# agocraft Change variant to its Patch shape for the sync mirror (same category
+# as serializer.invertPatch). Documented inline at the call site. The Change
+# union is the (de)serialization boundary, not registrable per-kind behavior.
+^apps/web/src/document/use-weave-editor\.ts:449$

@@ -27,6 +27,7 @@ async function getSelectedShapeFill(
             id: unknown;
             kind: string;
             attrs: Readonly<Record<string, unknown>>;
+            units?: ReadonlyArray<{ kind: string; attrs: Readonly<Record<string, unknown>> }>;
           }>;
         };
       };
@@ -34,7 +35,10 @@ async function getSelectedShapeFill(
     const items = w.__weaveDoc?.root.children ?? [];
     const shape = items.find((c) => c.kind === "shape");
     if (!shape) return null;
-    return (shape.attrs.fill as Readonly<Record<string, unknown>>) ?? null;
+    // DR-028 — a shape's fill is the `decoration.fill` UNIT (a PaintSpec),
+    // not the legacy `attrs.fill`. Read it from the item's units.
+    const fillUnit = (shape.units ?? []).find((u) => u.kind === "decoration.fill");
+    return (fillUnit?.attrs as Readonly<Record<string, unknown>>) ?? null;
   });
 }
 
@@ -43,6 +47,7 @@ test("Shape → 이미지 채우기 sets fill to type:image with src", async ({ 
 
   // Add a rectangle shape.
   await page.getByTestId("toolbar-add").click();
+  await page.getByTestId("add-shape").click();
   await page.getByTestId("add-shape-rectangle").click();
   await expect(page.locator("[data-frame-id]")).toHaveCount(1);
 
@@ -80,6 +85,7 @@ test("Shape → 이미지 채우기 sets fill to type:image with src", async ({ 
 test("Shape → 비디오 채우기 sets fill to type:video and renders <video>", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Fill-B" });
   await page.getByTestId("toolbar-add").click();
+  await page.getByTestId("add-shape").click();
   await page.getByTestId("add-shape-ellipse").click();
   await expect(page.locator("[data-frame-id]")).toHaveCount(1);
 
@@ -112,6 +118,7 @@ test("Shape → 비디오 채우기 sets fill to type:video and renders <video>"
 test("Shape → × clear returns fill to solid color and restores fill buttons", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Fill-C" });
   await page.getByTestId("toolbar-add").click();
+  await page.getByTestId("add-shape").click();
   await page.getByTestId("add-shape-rectangle").click();
   await expect(page.locator("[data-frame-id]")).toHaveCount(1);
 

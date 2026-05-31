@@ -158,6 +158,18 @@ export const WEAVE_CAPABILITIES = {
       ],
     },
     {
+      kind: "line",
+      description: [
+        "A stroke-only LINE / curve — a DISTINCT kind from `shape` (NO fill, no area). Create with weave.item.add { kind:'line', frame, attrsOverride:{ points:[{x,y},…] (≥2, each a 0..1 ratio of the line's OWN bbox), smooth?:boolean, heads?:{ start, end } } }.",
+        "`points` define the polyline; `smooth:true` renders a Catmull-Rom curve through them. The bounding box follows the points (vertex / endpoint editing). A 2-point line = 직선; many points = 자유선; smooth = 곡선/자유곡선.",
+        "ENDPOINT MARKERS: `heads:{ start, end }` — each 'none'|'triangle'|'open'|'diamond'|'circle' (arrow / dot ends).",
+        "COLOUR / WIDTH: the stroke is a `decoration.stroke` UNIT (weave.item.setDecoration { itemId, kind:'decoration.stroke', attrs:{ paint, width, lineCap?, lineJoin?, dashArray? } }). A line has NO fill.",
+        "Use `line` for arrows, connectors, underlines, dividers, freeform strokes, and curves. Use a `shape` for filled / area elements (rectangle, ellipse, polygon, …).",
+      ].join(" "),
+      editableAttrs: ["frame", "points", "smooth", "heads", "layoutChild"],
+      units: ["decoration.stroke", "decoration.shadow", "decoration.opacity"],
+    },
+    {
       kind: "image",
       description:
         "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius a 0..1 ratio of the image's OWN min(width, height) (not the parent). Size/position via attrs.frame.",

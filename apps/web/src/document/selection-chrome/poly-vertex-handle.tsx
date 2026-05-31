@@ -21,15 +21,51 @@ export interface PolyVertex {
   readonly y: number;
 }
 
+export interface PolyFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly rotation?: number;
+}
+
 export interface PolyShapeState {
   readonly points: ReadonlyArray<PolyVertex>;
   readonly closed: boolean;
+  /** The item's frame (0..1 of parent). Vertex drags refit it to the points
+   *  (DR-024 — the rubber-band follows the vertices). */
+  readonly frame: PolyFrame;
 }
 
 export interface PolyVertexHandleDeps {
   readonly editor: Editor;
-  /** Read the live poly state for an item, or null if it is not a poly. */
+  /** Read the live poly state for an item, or null if it is not editable. */
   readonly getPoly: (itemId: string) => PolyShapeState | null;
+  /** Item kind this VM serves. Default "shape" (the freeform `poly` sub-kind);
+   *  the `line` kind registers a second instance with `itemKind:"line"`. */
+  readonly itemKind?: string;
+  /** Merge a refit (frame + normalized points) into the item's attrs. The
+   *  point store differs by kind: `shape`/poly writes `attrs.subAttrs.points`,
+   *  `line` writes `attrs.points` directly. Default = the shape behavior. */
+  readonly composeAttrs?: (
+    prevAttrs: Readonly<Record<string, unknown>>,
+    frame: PolyFrame | undefined,
+    points: ReadonlyArray<PolyVertex>,
+  ) => Readonly<Record<string, unknown>>;
+}
+
+/** Default attrs-merge (shape/poly): points live under `subAttrs`. */
+function defaultComposeAttrs(
+  prevAttrs: Readonly<Record<string, unknown>>,
+  frame: PolyFrame | undefined,
+  points: ReadonlyArray<PolyVertex>,
+): Readonly<Record<string, unknown>> {
+  const pa = prevAttrs as Record<string, unknown> & { subAttrs?: Record<string, unknown> };
+  return {
+    ...pa,
+    ...(frame !== undefined ? { frame } : {}),
+    subAttrs: { ...(pa.subAttrs ?? {}), points },
+  };
 }
 
 const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
@@ -105,23 +141,115 @@ function screenToLocal(g: FrameGeom, sx: number, sy: number): { x: number; y: nu
   return { x: lx / Math.max(1, g.w) + 0.5, y: ly / Math.max(1, g.h) + 0.5 };
 }
 
+/** DR-024 — refit the frame so it tightly contains the dragged local points,
+ *  re-normalizing the points to [0,1] of the NEW frame. All math is OLD-frame-
+ *  relative (no parent/screen dims needed) and assumes an axis-aligned frame.
+ *  A ROTATED frame (θ≠0) can't be refit axis-aligned without baking rotation,
+ *  so it falls back to the legacy clamp-in-place (frame unchanged). A collapsed
+ *  axis (a straight line → zero-thickness box) centers the points on that axis
+ *  and keeps a hairline frame dimension so the rubber-band hugs the line. */
+function refitFrameToPoints(
+  localPts: ReadonlyArray<PolyVertex>,
+  frame: PolyFrame,
+  theta: number,
+): { readonly frame?: PolyFrame; readonly points: ReadonlyArray<PolyVertex> } {
+  if (Math.abs(theta) > 0.01) {
+    return { points: localPts.map((p) => ({ x: clamp01(p.x), y: clamp01(p.y) })) };
+  }
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const p of localPts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const EPS = 1e-3;
+  const rawW = maxX - minX;
+  const rawH = maxY - minY;
+  const collapsedX = rawW < EPS;
+  const collapsedY = rawH < EPS;
+  const spanX = collapsedX ? EPS : rawW;
+  const spanY = collapsedY ? EPS : rawH;
+  const nextFrame: PolyFrame = {
+    x: frame.x + minX * frame.width,
+    y: frame.y + minY * frame.height,
+    width: spanX * frame.width,
+    height: spanY * frame.height,
+    ...(frame.rotation !== undefined ? { rotation: frame.rotation } : {}),
+  };
+  const points = localPts.map((p) => ({
+    x: collapsedX ? 0.5 : (p.x - minX) / spanX,
+    y: collapsedY ? 0.5 : (p.y - minY) / spanY,
+  }));
+  return { frame: nextFrame, points };
+}
+
 export function createPolyVertexHandleViewModel(
   deps: PolyVertexHandleDeps,
 ): ItemSelectionViewModel {
   /** Start a document-level pointer loop that moves `points[idx]` to follow the
    *  cursor (rotation-aware), dispatching weave.shape.setVertices each move. */
+  /** Drag `points[idx]` (rotation-aware) and REFIT the frame to follow (DR-024).
+   *  Two modes by handle role:
+   *    • interior vertex → free move of that one point.
+   *    • OPEN-poly endpoint (first / last) → a uniform similarity (scale +
+   *      rotate) of the WHOLE polyline about the OPPOSITE endpoint, so the line
+   *      stretches keeping its shape (DR-024 §B). A 2-point line has only
+   *      endpoints, so this degenerates to free-moving that end.
+   *  Every move recomputes from the captured base (points / frame / geom) +
+   *  current cursor, then dispatches one `weave.item.update` patch (frame +
+   *  subAttrs.points) — the 60Hz burst folds into a single undo. */
   const beginVertexDrag = (
     itemId: string,
     idx: number,
     basePoints: ReadonlyArray<PolyVertex>,
+    baseFrame: PolyFrame,
     geom: FrameGeom,
+    closed: boolean,
   ): void => {
+    const n = basePoints.length;
+    const isEndpoint = !closed && n >= 2 && (idx === 0 || idx === n - 1);
+    const anchorIdx = idx === 0 ? n - 1 : 0;
+    const baseScreen = basePoints.map((p) => localToScreen(geom, p.x, p.y));
     const move = (ev: PointerEvent) => {
-      const loc = screenToLocal(geom, ev.clientX, ev.clientY);
-      const next = basePoints.map((p, i) =>
-        i === idx ? { x: clamp01(loc.x), y: clamp01(loc.y) } : { x: p.x, y: p.y },
-      );
-      deps.editor.exec("weave.shape.setVertices", { itemId, points: next });
+      let newLocal: ReadonlyArray<PolyVertex>;
+      if (isEndpoint) {
+        const anchor = baseScreen[anchorIdx]!;
+        const old = baseScreen[idx]!;
+        const vOX = old.x - anchor.x;
+        const vOY = old.y - anchor.y;
+        const len2 = vOX * vOX + vOY * vOY;
+        if (len2 < 1e-6) {
+          const loc = screenToLocal(geom, ev.clientX, ev.clientY);
+          newLocal = basePoints.map((p, i) => (i === idx ? loc : { x: p.x, y: p.y }));
+        } else {
+          // Complex-number similarity (vNew / vOld) = scale·e^{iφ}, applied about
+          // the anchor to every point so inter-vertex distances scale uniformly.
+          const vNX = ev.clientX - anchor.x;
+          const vNY = ev.clientY - anchor.y;
+          const a = (vNX * vOX + vNY * vOY) / len2;
+          const b = (vNY * vOX - vNX * vOY) / len2;
+          newLocal = baseScreen.map((q) => {
+            const dx = q.x - anchor.x;
+            const dy = q.y - anchor.y;
+            return screenToLocal(geom, anchor.x + a * dx - b * dy, anchor.y + b * dx + a * dy);
+          });
+        }
+      } else {
+        const loc = screenToLocal(geom, ev.clientX, ev.clientY);
+        newLocal = basePoints.map((p, i) => (i === idx ? loc : { x: p.x, y: p.y }));
+      }
+      const refit = refitFrameToPoints(newLocal, baseFrame, geom.theta);
+      const compose = deps.composeAttrs ?? defaultComposeAttrs;
+      deps.editor.exec("weave.item.update", {
+        itemId,
+        patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+          attrs: compose(prev.attrs, refit.frame, refit.points),
+        }),
+      });
     };
     const up = () => {
       document.removeEventListener("pointermove", move);
@@ -133,8 +261,20 @@ export function createPolyVertexHandleViewModel(
     document.addEventListener("pointercancel", up);
   };
 
+  /** Set the point list (no frame change) via the kind-appropriate attrs path
+   *  — used by midpoint-insert / double-click-remove for shape AND line. */
+  const dispatchPoints = (itemId: string, points: ReadonlyArray<PolyVertex>): void => {
+    const compose = deps.composeAttrs ?? defaultComposeAttrs;
+    deps.editor.exec("weave.item.update", {
+      itemId,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: compose(prev.attrs, undefined, points),
+      }),
+    });
+  };
+
   return {
-    itemKind: "shape",
+    itemKind: deps.itemKind ?? "shape",
     priority: 10,
     applies: (info) => deps.getPoly(info.itemId) !== null,
     handles(info) {
@@ -168,17 +308,14 @@ export function createPolyVertexHandleViewModel(
                   e.stopPropagation();
                   const cur = deps.getPoly(info.itemId);
                   if (cur === null || cur.points[idx] === undefined) return;
-                  beginVertexDrag(info.itemId, idx, cur.points, geom);
+                  beginVertexDrag(info.itemId, idx, cur.points, cur.frame, geom, cur.closed);
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   const cur = deps.getPoly(info.itemId);
                   if (cur === null || cur.points.length <= minPoints) return;
                   const next = cur.points.filter((_, i) => i !== idx);
-                  deps.editor.exec("weave.shape.setVertices", {
-                    itemId: info.itemId,
-                    points: next,
-                  });
+                  dispatchPoints(info.itemId, next);
                 }}
                 style={{
                   width: VERTEX_PX,
@@ -231,11 +368,8 @@ export function createPolyVertexHandleViewModel(
                     ...cur.points.slice(insertAt),
                   ];
                   // Add the vertex, then let the same gesture drag it.
-                  deps.editor.exec("weave.shape.setVertices", {
-                    itemId: info.itemId,
-                    points: inserted,
-                  });
-                  beginVertexDrag(info.itemId, insertAt, inserted, geom);
+                  dispatchPoints(info.itemId, inserted);
+                  beginVertexDrag(info.itemId, insertAt, inserted, cur.frame, geom, cur.closed);
                 }}
                 style={{
                   width: MIDPOINT_PX,

@@ -29,6 +29,7 @@ export type HoverKind =
   | "image"
   | "video"
   | "shape"
+  | "line"
   | "text"
   | "hotspot"
   | "handle"
@@ -95,7 +96,7 @@ function readHoverInfo(target: EventTarget | null): HoverContext {
     let kind: HoverKind = probe.kind;
     if (probe.kind === "frame") {
       const k = value;
-      if (k === "image" || k === "video" || k === "shape" || k === "text") {
+      if (k === "image" || k === "video" || k === "shape" || k === "line" || k === "text") {
         kind = k;
       }
     }

@@ -34,6 +34,9 @@ export type DomainKind =
   | "image"
   | "video"
   | "shape"
+  // DR-025 / WI-062 — `line` is a distinct top-level kind (stroke-only,
+  // points + optional smooth + endpoint markers), NOT a shape sub-kind.
+  | "line"
   // Phase 15 — WI-023 text primitive (agocraft `text` kind).
   | "text"
   // WI-058 — data-driven QR code (weave-local kind; not an agocraft builtin).
@@ -71,44 +74,10 @@ export interface DomainMeta {
   readonly accentVar: string; // CSS var name from DR-design-001
 }
 
-export const DOMAIN_REGISTRY: Readonly<Record<DomainKind, DomainMeta>> = {
-  frame: {
-    kind: "frame",
-    label: "Frame",
-    tagline: "Empty canvas container — drop primitives inside",
-    accentVar: "--accent",
-  },
-  image: {
-    kind: "image",
-    label: "Image",
-    tagline: "Photo, illustration, or other still picture",
-    accentVar: "--domain-media-accent",
-  },
-  video: {
-    kind: "video",
-    label: "Video",
-    tagline: "Video clip with controls + trim",
-    accentVar: "--domain-media-accent",
-  },
-  shape: {
-    kind: "shape",
-    label: "Shape",
-    tagline: "Geometric primitive (rect / ellipse / line / arrow / star / …)",
-    accentVar: "--domain-canvas-accent",
-  },
-  text: {
-    kind: "text",
-    label: "Text",
-    tagline: "Text box with font family / size / color controls",
-    accentVar: "--domain-block-accent",
-  },
-  qr: {
-    kind: "qr",
-    label: "QR Code",
-    tagline: "Data-driven QR — set the data string, error level, colors",
-    accentVar: "--domain-media-accent",
-  },
-};
+// AUDIT-005 (V-4/V-8) — the `DOMAIN_REGISTRY` value (per-kind meta) moved to
+// the single DomainKind registry at `./domain-kinds.ts`; `DomainMeta` (the
+// shape) stays here. Import the value from `../document` (re-exported via the
+// barrel) or directly from `./domain-kinds.js`.
 
 export const DOMAIN_KINDS: ReadonlyArray<DomainKind> = ["frame"];
 
@@ -191,6 +160,7 @@ export interface MediaAttrs {
 // without re-declaring the shapes locally.
 import type {
   ImageAttrs as AgocraftImageAttrs,
+  LineAttrs as AgocraftLineAttrs,
   ShapeAttrs as AgocraftShapeAttrs,
   TextAttrs as AgocraftTextAttrs,
   VideoAttrs as AgocraftVideoAttrs,
@@ -199,6 +169,7 @@ import type {
 export type ImageAttrs = AgocraftImageAttrs;
 export type VideoAttrs = AgocraftVideoAttrs;
 export type ShapeAttrs = AgocraftShapeAttrs;
+export type LineAttrs = AgocraftLineAttrs;
 /** weave-local extension of agocraft's `TextAttrs`.
  *
  *  `textOverflow` lets the user choose, in EVERY resize mode, whether content
@@ -236,6 +207,7 @@ export type ItemAttrsByKind = {
   image: ImageAttrs;
   video: VideoAttrs;
   shape: ShapeAttrs;
+  line: LineAttrs;
   text: TextAttrs;
   qr: QrAttrs;
 };

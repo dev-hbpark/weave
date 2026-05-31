@@ -112,9 +112,12 @@ test("비이미지 파일은 거부된다", async ({ page }) => {
 test("도형 fill 도 파일 업로드로 채울 수 있다", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Up-E" });
   await page.getByTestId("toolbar-add").click();
+  await page.getByTestId("add-shape").click();
   await page.getByTestId("add-shape-rectangle").click();
   await expect(page.locator("[data-frame-id]")).toHaveCount(1);
 
+  // DR-design-015 — the image-fill button lives inside the More popover.
+  await page.getByTestId("toolbar-more-trigger").click();
   await page.getByTestId("shape-fill-image").click();
   await page.getByTestId("media-src-file-input").setInputFiles({
     name: "fill.png",
@@ -130,12 +133,15 @@ test("도형 fill 도 파일 업로드로 채울 수 있다", async ({ page }) =
           children: ReadonlyArray<{
             kind: string;
             attrs: Readonly<Record<string, unknown>>;
+            units?: ReadonlyArray<{ kind: string; attrs: Readonly<Record<string, unknown>> }>;
           }>;
         };
       };
     };
     const shape = w.__weaveDoc?.root.children.find((c) => c.kind === "shape");
-    return (shape?.attrs.fill as Readonly<Record<string, unknown>>) ?? null;
+    // DR-028 — fill is the `decoration.fill` UNIT (PaintSpec), not `attrs.fill`.
+    const fillUnit = (shape?.units ?? []).find((u) => u.kind === "decoration.fill");
+    return (fillUnit?.attrs as Readonly<Record<string, unknown>>) ?? null;
   });
   expect(fill).not.toBeNull();
   expect(fill?.type).toBe("image");

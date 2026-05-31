@@ -1,0 +1,22 @@
+// V-11 (AUDIT-005) — interaction-row registry wiring. This barrel is the single
+// place that maps each editable behavior kind to its row module. Registration
+// is explicit here (not per-module import side-effects) so the row modules stay
+// pure + tree-shakeable, matching the selection-chrome registration idiom
+// (DesignPage registers view-models explicitly). Adding a kind = import its row
+// + one `registerInteractionRow(...)` line below.
+
+import { ButtonTriggerRow } from "./button-trigger.js";
+import { CameraTargetRow } from "./camera-target.js";
+import { EntranceAnimationRow } from "./entrance-animation.js";
+import { HoverEffectRow } from "./hover-effect.js";
+import { HotspotRow } from "./hotspot.js";
+import { registerInteractionRow } from "./types.js";
+
+registerInteractionRow("camera-target", CameraTargetRow);
+registerInteractionRow("hotspot", HotspotRow);
+registerInteractionRow("hover-effect", HoverEffectRow);
+registerInteractionRow("button-trigger", ButtonTriggerRow);
+registerInteractionRow("entrance-animation", EntranceAnimationRow);
+
+export { getInteractionRow } from "./types.js";
+export type { CommitBehavior, InteractionRowProps, InteractionRowRenderer } from "./types.js";

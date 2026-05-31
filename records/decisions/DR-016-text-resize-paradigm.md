@@ -11,7 +11,7 @@
 | Required approvers | hbpark (responsible / accountable) |
 | Consulted | 사용자 (Discovery owner) — AskUserQuestion 2026-05-25 에서 옵션 1 "피그마 100% 동일" 확정 |
 | Informed | `design-system-agent` (PropertiesPanel 모드 토글 UI 의 design review 의무) |
-| Status | **Accepted** (사용자 명시 confirm 박제) |
+| Status | **Accepted, partially superseded** — Decision #2·#3 (코너 = 박스만, fontSize 불변) 은 [DR-022](DR-022-text-corner-resize-scales-font.md) (2026-05-31) 로 reverse (코너 드래그가 박스 높이 비율로 fontSize 스케일). 나머지 (3-mode enum, 모드별 핸들 노출, fontSize 슬라이더) 는 유효. |
 | Decided on | 2026-05-25 |
 | Effective from | WI-029 Build 진입 시 — agocraft HANDOFF-010 응답 후 |
 | Review-by | 2026-09-30 (v1 launch 후 사용성 회고에서 재평가) |

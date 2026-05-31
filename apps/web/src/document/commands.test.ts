@@ -7,11 +7,17 @@ import type {
   Document as AgocraftDocument,
   Item as AgocraftItem,
   CommandContext,
+  CommandResult,
   Token,
 } from "@agocraft/core";
 import {
   CapabilityRegistryToken,
   createCapabilityRegistry,
+  createUuidV7Generator,
+  defaultClock,
+  defaultRandom,
+  FILL_UNIT_KIND,
+  IdGeneratorToken,
   itemId as makeItemId,
 } from "@agocraft/core";
 import { describe, expect, it, vi } from "vitest";
@@ -149,7 +155,10 @@ describe("buildWeaveCommands — direct (Phase 2)", () => {
     if (cmd === undefined) throw new Error("command not found");
     const ctx = makeCtx();
     const rootId = String(ctx.document.root.id);
-    const result = cmd.run(ctx, { kind: "slide" });
+    // AUDIT-005 — was the legacy `"slide"` kind (removed in WI-032 Phase 3).
+    // The add path now seeds via the DomainKind registry, which fails fast on
+    // an unknown kind; use a current kind. The assertions are kind-agnostic.
+    const result = cmd.run(ctx, { kind: "frame" });
     if (!result.ok) throw new Error("unexpected fail");
     expect(result.patches).toHaveLength(1);
     const patch = result.patches[0];
@@ -318,9 +327,14 @@ function makeShapeCtx(): CommandContext {
     updatedAt: META_DATE,
     schemaVersion: 3,
   };
+  // DR-028 — `weave.shape.setFill` now emits a `decoration.fill` UNIT patch via
+  // the agocraft kit, which resolves an IdGenerator for the new unit's id. The
+  // fixture must therefore supply one (the old attrs-Patch path needed nothing).
+  const idGen = createUuidV7Generator(defaultClock, defaultRandom);
   return {
     document: toAgocraftDocument(weave),
-    resolve: () => null as never,
+    resolve: ((token: Token<unknown>) =>
+      token === IdGeneratorToken ? idGen : null) as CommandContext["resolve"],
     skipRelations: false,
   };
 }
@@ -406,7 +420,19 @@ describe("weave.shape.setFill (WI-056)", () => {
     return c;
   }
 
-  it("sets a linear-gradient fill as an item.attrs Patch", () => {
+  // DR-028 — fill is the `decoration.fill` UNIT, not `attrs.fill`. setFill emits
+  // a unit.create (replacing the seeded fill unit) carrying the PaintSpec.
+  function createdFillPaint(result: CommandResult<unknown>): unknown {
+    if (!result.ok) throw new Error("unexpected fail");
+    const create = result.patches.find(
+      (p) => (p as { type?: string }).type === "unit.create",
+    ) as { unit?: { kind?: string; attrs?: unknown } } | undefined;
+    if (create === undefined) throw new Error("expected a unit.create patch");
+    expect(create.unit?.kind).toBe(FILL_UNIT_KIND);
+    return create.unit?.attrs;
+  }
+
+  it("sets a linear-gradient fill as a decoration.fill unit", () => {
     const fill = {
       type: "linear-gradient",
       angle: 90,
@@ -415,12 +441,7 @@ describe("weave.shape.setFill (WI-056)", () => {
         { offset: 1, color: "#0000ff" },
       ],
     };
-    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1", fill });
-    if (!result.ok) throw new Error("unexpected fail");
-    expect(result.patches).toHaveLength(1);
-    const patch = result.patches[0];
-    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
-    expect((patch.after as { fill: unknown }).fill).toEqual(fill);
+    expect(createdFillPaint(cmd().run(makeShapeCtx(), { itemId: "rect-1", fill }))).toEqual(fill);
   });
 
   it("sets a radial-gradient fill", () => {
@@ -433,20 +454,14 @@ describe("weave.shape.setFill (WI-056)", () => {
         { offset: 1, color: "#000000" },
       ],
     };
-    const result = cmd().run(makeShapeCtx(), { itemId: "rect-1", fill });
-    if (!result.ok) throw new Error("unexpected fail");
-    expect((result.patches[0] as { after: { fill: unknown } }).after.fill).toEqual(fill);
+    expect(createdFillPaint(cmd().run(makeShapeCtx(), { itemId: "rect-1", fill }))).toEqual(fill);
   });
 
   it("sets a solid fill", () => {
-    const result = cmd().run(makeShapeCtx(), {
-      itemId: "rect-1",
-      fill: { type: "solid", color: "#00ff00" },
-    });
-    if (!result.ok) throw new Error("unexpected fail");
-    expect((result.patches[0] as { after: { fill: { color: string } } }).after.fill.color).toBe(
-      "#00ff00",
-    );
+    const paint = createdFillPaint(
+      cmd().run(makeShapeCtx(), { itemId: "rect-1", fill: { type: "solid", color: "#00ff00" } }),
+    ) as { color: string };
+    expect(paint.color).toBe("#00ff00");
   });
 
   it("rejects a gradient with fewer than 2 stops", () => {

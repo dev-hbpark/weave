@@ -29,6 +29,7 @@ import {
   IconShapeTriangle,
   IconVideo,
   Select,
+  Switch,
 } from "@weave/design-system";
 import type { ReactNode } from "react";
 import { findItemDeep } from "../../agocraft-mirror.js";
@@ -128,6 +129,14 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
     },
     (a, b) => a.tl === b.tl && a.tr === b.tr && a.br === b.br && a.bl === b.bl,
   );
+  // Freeform-poly only — `smooth` turns the straight polyline/polygon into a
+  // Catmull-Rom curve (곡선 / 자유곡선). The toggle renders only when the shared
+  // sub-kind is uniformly "poly".
+  const isPolyUniform = !isMixed(shape) && shape === "poly";
+  const smooth = sharedValue<boolean>(items, (it) => {
+    const sa = (it.attrs as unknown as ShapeAttrs).subAttrs;
+    return sa.shape === "poly" ? (sa.smooth ?? false) : false;
+  });
 
   return (
     <>
@@ -260,6 +269,30 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
               }
             />
             <MixedBadge visible={isMixed(cornerRadii)} />
+          </Bar.Field>
+        )}
+        {isPolyUniform && (
+          <Bar.Field label="곡선">
+            <Switch
+              checked={isMixed(smooth) ? false : smooth}
+              onCheckedChange={(next) =>
+                updateAll(editor, ids, (prev) => {
+                  const prevAttrs = prev.attrs as unknown as ShapeAttrs;
+                  // Guard non-polys; preserve points + closed, flip only smooth.
+                  if (prevAttrs.subAttrs.shape !== "poly") {
+                    return { attrs: prev.attrs };
+                  }
+                  return {
+                    attrs: {
+                      ...prev.attrs,
+                      subAttrs: { ...prevAttrs.subAttrs, smooth: next },
+                    } as unknown as Readonly<Record<string, unknown>>,
+                  };
+                })
+              }
+              aria-label="곡선 (smooth)"
+            />
+            <MixedBadge visible={isMixed(smooth)} />
           </Bar.Field>
         )}
         {/* DR-028 — shadow is a decoration UNIT, edited via weave.item.setDecoration. */}

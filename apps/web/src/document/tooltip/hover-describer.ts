@@ -137,6 +137,13 @@ const describeShape: Describer = ({ mode, selectedIds, hover, hotkeyTable }) => 
   return { text: "도형 — 클릭으로 선택" };
 };
 
+const describeLine: Describer = ({ mode, selectedIds, hover }) => {
+  if (!isTooltipModeVisible(mode)) return null;
+  const selected = hover.hoveredId !== undefined && selectedIds.has(hover.hoveredId);
+  if (selected) return { text: "선 — 끝점·정점 핸들로 편집" };
+  return { text: "선 — 클릭으로 선택" };
+};
+
 const describeText: Describer = ({ mode, selectedIds, hover }) => {
   if (mode === "text-editing") {
     return { text: "텍스트 편집 중 — Esc 로 종료", kbd: "⌘ B / I / U" };
@@ -168,6 +175,7 @@ const REGISTRY: Readonly<Record<HoverKind, Describer | undefined>> = {
   image: describeImage,
   video: describeVideo,
   shape: describeShape,
+  line: describeLine,
   text: describeText,
   handle: describeHandle,
   hotspot: describeHotspot,

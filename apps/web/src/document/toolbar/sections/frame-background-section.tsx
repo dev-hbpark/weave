@@ -239,17 +239,14 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
    *  both Flex and Grid Bar.More (same 4-side shape, RISK-002 C2.4). */
   const onPaddingSideChange = (side: "top" | "right" | "bottom" | "left", value: number) => {
     if (homogeneousSpec === undefined) return;
-    if (homogeneousSpec.kind === "auto-flex") {
-      patchLayoutSpec({
-        ...homogeneousSpec,
-        padding: { ...homogeneousSpec.padding, [side]: value },
-      });
-    } else if (homogeneousSpec.kind === "auto-grid") {
-      patchLayoutSpec({
-        ...homogeneousSpec,
-        padding: { ...homogeneousSpec.padding, [side]: value },
-      });
-    }
+    // Branch on the *capability* (does this spec carry padding?), not on the
+    // kind — `absolute-constraints` has none; the two padding-bearing kinds
+    // (auto-flex / auto-grid) used identical bodies (AUDIT-005 task #6).
+    if (!("padding" in homogeneousSpec)) return;
+    patchLayoutSpec({
+      ...homogeneousSpec,
+      padding: { ...homogeneousSpec.padding, [side]: value },
+    });
   };
 
   return (
