@@ -373,12 +373,15 @@ test("typing newlines (Enter) grows frame.height automatically", async ({ page }
   await page.keyboard.type("Line 2");
   await page.keyboard.press("Enter");
   await page.keyboard.type("Line 3");
-  await editable.evaluate((el) => (el as HTMLElement).blur());
-  await page.waitForTimeout(150);
+  // The model frame auto-fit is reconciled on edit-EXIT (the observer is muted
+  // while editing so per-keystroke commits don't fight the text commits; the
+  // chrome tracks the live content meanwhile). Escape exits edit → one commit.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
 
   const after = (await readAttrs(page, id)).frame as { height: number };
-  // After Enter the rendered text occupies more lines, ResizeObserver
-  // pushes a larger frame.height.
+  // After the extra lines the read-only render is taller; the edit-exit
+  // auto-fit pushes a larger frame.height.
   expect(after.height).toBeGreaterThan(before.height);
 });
 

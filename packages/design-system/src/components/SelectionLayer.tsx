@@ -26,6 +26,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -96,6 +97,15 @@ interface SelectionLayerProps {
    *  that mode; rendering both would draw a redundant solid line
    *  over the dashed one. Default false. */
   readonly hideOutline?: boolean;
+  /** Optional override for how the tracked bounds are read from `targetRef`.
+   *  Defaults to `el.getBoundingClientRect()`. A host supplies this to compose
+   *  bounds from more than the target box — e.g. an auto-width text item whose
+   *  box is model-sized (lags a debounce behind typing) but whose live content
+   *  element tracks the text every layout pass: the host returns the content's
+   *  dimension on the auto axis and the box's on the manual axis, so the chrome
+   *  hugs the text live without waiting for the model to catch up. Runs every
+   *  rAF tick, so it must be cheap (a couple of `getBoundingClientRect`s). */
+  readonly boundsOf?: (target: HTMLElement) => SelectionLayerBounds;
 }
 
 interface TrackedBox {
@@ -114,8 +124,13 @@ export function SelectionLayer({
   onResizeStart,
   onRotateStart,
   hideOutline,
+  boundsOf,
 }: SelectionLayerProps) {
   const [box, setBox] = useState<TrackedBox | null>(null);
+  // Read through a ref so the rAF effect doesn't re-subscribe when the host
+  // passes a fresh closure each render.
+  const boundsOfRef = useRef(boundsOf);
+  boundsOfRef.current = boundsOf;
 
   useEffect(() => {
     let raf = 0;
@@ -128,7 +143,8 @@ export function SelectionLayer({
           setBox(null);
         }
       } else {
-        const r = el.getBoundingClientRect();
+        const fn = boundsOfRef.current;
+        const r = fn !== undefined ? fn(el) : el.getBoundingClientRect();
         // 0.1px quantisation kills jitter from sub-pixel float math during
         // transform animations without making the chrome visibly lag.
         const key = `${r.left.toFixed(1)}|${r.top.toFixed(1)}|${r.width.toFixed(

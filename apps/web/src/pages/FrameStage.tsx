@@ -561,6 +561,33 @@ function NestedFrame({
     ...(frame.rotation ? { transform: `rotate(${frame.rotation}rad)` } : {}),
   };
 
+  // Auto-width/height text: the selection chrome must hug the LIVE text while
+  // typing, but the box is model-sized and lags a debounce behind. Compose the
+  // tracked bounds from the live content element (`data-text-content`, which
+  // grows every layout pass) on the AUTO axis and the box on the MANUAL axis,
+  // so the rubber band + handles track typing live without a model round-trip.
+  const textAutoMode =
+    kind === "text"
+      ? deriveTextAutoResizeForFrameStage(
+          (attrs as { layoutChild?: import("@agocraft/core").LayoutChildPolicy }).layoutChild,
+        )
+      : undefined;
+  const composeTextBounds =
+    textAutoMode === "WIDTH_AND_HEIGHT" || textAutoMode === "HEIGHT"
+      ? (boxEl: HTMLElement) => {
+          const b = boxEl.getBoundingClientRect();
+          const content = boxEl.querySelector("[data-text-content]");
+          if (content === null) {
+            return { left: b.left, top: b.top, width: b.width, height: b.height };
+          }
+          const c = content.getBoundingClientRect();
+          // Auto axis from the live content; manual axis from the (user-set) box.
+          return textAutoMode === "WIDTH_AND_HEIGHT"
+            ? { left: c.left, top: b.top, width: c.width, height: b.height }
+            : { left: b.left, top: c.top, width: b.width, height: c.height };
+        }
+      : undefined;
+
   const inner = (
     <motion.div
       ref={selfRef}
@@ -839,6 +866,9 @@ function NestedFrame({
       {isPrimarySelection && onCommitFrame !== undefined && chromeVisible ? (
         <SelectionLayer
           targetRef={selfRef}
+          // Auto-width/height text: track the live content on the auto axis so
+          // the chrome hugs typing without the model-frame debounce lag.
+          {...(composeTextBounds !== undefined ? { boundsOf: composeTextBounds } : {})}
           // DR-018 — handle list comes from the item kind's
           // SelectionViewModel (the `createFrameDefaultViewModel` built
           // here) plus any cross-cutting providers registered with the

@@ -94,8 +94,16 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const autoResizeRef = useRef(autoResizeMode);
   autoResizeRef.current = autoResizeMode;
   // Set below once `isEditing` is declared; the ResizeObserver reads it to
-  // decide whether to debounce its frame commit (see the effect).
+  // decide whether to skip its frame commit while editing (see the effect).
   const isEditingRef = useRef(false);
+  // Exposes the effect-local `measureAndCommit` so the edit-exit effect can
+  // run a single auto-fit when the user finishes typing.
+  const measureCommitRef = useRef<(() => void) | null>(null);
+  // WI-029 — edit mode: double-click mounts the Lexical editor in place and the
+  // read-only render is hidden while editing. Declared early so the auto-fit
+  // effects and the container style below can read it.
+  const [isEditing, setIsEditing] = useState(false);
+  isEditingRef.current = isEditing;
 
   useEffect(() => {
     const el = innerRef.current;
@@ -153,30 +161,31 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       });
     };
 
-    // While the Lexical editor is in edit mode, every keystroke emits a
-    // full-attrs `weave.item.update` (text/textRuns). `weave.item.update`
-    // patches are whole-attrs before/after snapshots, so a text commit that
-    // reads the document a beat before this observer's frame commit lands will
-    // carry the stale (pre-grow) frame and revert the auto-height. Debouncing
-    // the frame commit until typing pauses guarantees it lands on a settled
-    // document with no concurrent text exec to clobber it. Outside edit mode
-    // (direct content set, edge-resize wrap) we commit immediately so the box
-    // settles within a frame.
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    measureCommitRef.current = measureAndCommit;
+    // While editing we DON'T commit the auto-fit to the model: every keystroke
+    // emits a full-attrs `weave.item.update` (text), and an interleaved frame
+    // commit would be clobbered by the text commit's stale snapshot (the race
+    // that previously forced a debounce). Instead the editor overflows freely
+    // and the selection chrome tracks the LIVE content element directly (see
+    // FrameStage `boundsOf`), so the box/handles stay glued without a model
+    // round-trip. The model is reconciled once when editing ends. Outside edit
+    // (direct content set, edge-resize wrap) we commit immediately.
     const ro = new ResizeObserver(() => {
-      if (!isEditingRef.current) {
-        measureAndCommit();
-        return;
-      }
-      if (debounceTimer !== null) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(measureAndCommit, 120);
+      if (isEditingRef.current) return;
+      measureAndCommit();
     });
     ro.observe(el);
-    return () => {
-      ro.disconnect();
-      if (debounceTimer !== null) clearTimeout(debounceTimer);
-    };
+    return () => ro.disconnect();
   }, []);
+
+  // On edit-exit, reconcile the model frame to the final content once (the
+  // observer was muted during editing). rAF lets the read-only render settle
+  // first so the measurement reflects the committed text.
+  useEffect(() => {
+    if (isEditing) return;
+    const raf = requestAnimationFrame(() => measureCommitRef.current?.());
+    return () => cancelAnimationFrame(raf);
+  }, [isEditing]);
 
   // Phase 1 (WI-029) — Figma-equivalent text attrs:
   //   textAlignVertical → flex justify-content
@@ -354,10 +363,6 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // selection AND edit mode alive — the old document-pointerdown
   // dismissal was too aggressive (Cmd+B menu, range selection +
   // format click were all falsely dismissing).
-  const [isEditing, setIsEditing] = useState(false);
-  // Mirror into a ref so the ResizeObserver (mounted once, stable deps) can
-  // read the live edit state without re-subscribing.
-  isEditingRef.current = isEditing;
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const { selection, selectFrame } = useSelection();
   const selfId = String(item.id);
@@ -408,7 +413,10 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   return (
     <div
       ref={wrapRef}
-      style={containerStyle}
+      // While editing, always let the editor spill (overflow visible) so the
+      // text the user is typing is never clipped, regardless of the chosen
+      // `textOverflow` — the chrome tracks the live content via FrameStage.
+      style={isEditing ? { ...containerStyle, overflow: "visible" } : containerStyle}
       data-testid="text-block"
       onDoubleClick={(e) => {
         if (!editable) return;
@@ -422,7 +430,10 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         setIsEditing(true);
       }}
     >
-      <div ref={innerRef} style={textStyle}>
+      {/* `data-text-content` marks the live, content-sized element the
+          selection chrome measures on the auto axis (FrameStage `boundsOf`),
+          so the rubber band/handles track typing without the model lag. */}
+      <div ref={innerRef} data-text-content style={textStyle}>
         {linked}
       </div>
     </div>
