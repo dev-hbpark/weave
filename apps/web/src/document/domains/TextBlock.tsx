@@ -230,14 +230,21 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // The inner div must size to its content (`max-content`) and never soft-wrap
   // (`white-space: pre`) so the ResizeObserver can read the natural width.
   const isAutoWidth = autoResizeMode === "WIDTH_AND_HEIGHT";
-  const truncate = isFixed && a.textTruncation === "ENDING";
+  // Overflow is user-selectable in EVERY mode via `textOverflow`. When unset we
+  // fall back to the legacy mode-derived default (Fixed clips, Auto spills).
+  // The auto axis never overflows (the box tracks content); this matters for
+  // the manual axis (e.g. Auto-width with a user-shrunk height, or Fixed).
+  const clipOverflow = a.textOverflow !== undefined ? a.textOverflow === "HIDDEN" : isFixed;
+  // Ellipsis truncation is a refinement of clipping — only meaningful when the
+  // content is clipped. (No longer gated to Fixed mode.)
+  const truncate = clipOverflow && a.textTruncation === "ENDING";
   const containerStyle: CSSProperties = {
     width: "100%",
     height: "100%",
     boxSizing: "border-box",
-    // Fixed-mode + truncate: clip overflow. Auto-W/H: visible (ResizeObserver
-    // catches up within one frame).
-    overflow: isFixed ? "hidden" : "visible",
+    // `HIDDEN` clips overflow; `VISIBLE` lets content spill. Default derives
+    // from the resize mode when `textOverflow` is unset.
+    overflow: clipOverflow ? "hidden" : "visible",
     display: "flex",
     flexDirection: "column",
     justifyContent,

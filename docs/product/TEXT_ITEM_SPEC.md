@@ -212,11 +212,20 @@ hyperlink: null
 선택 시 추가로 노출되는 UI:
 - 좌상단 corner 위에 **모드 토글** (3-icon segment) — Figma 우측 패널의 텍스트 섹션 상단과 동일
 
-### 4.2 Overflow 동작 (Fixed 모드)
+### 4.2 Overflow 동작 (전 모드)
 
-`textTruncation` 에 따라:
-- `DISABLED`: 컨텐츠가 박스를 넘으면 그냥 visible (밖으로 흘러나옴). 부모 frame 의 `clipsContent` 가 true 면 거기서 clip 됨.
-- `ENDING`: 마지막 줄 끝에 ellipsis (`…`) 표시, 이후 글자는 hidden. `maxLines` 가 지정되면 그 줄 수에서 자르고 ellipsis.
+**2026-05-31 결정:** overflow 표시 여부는 **모든 resize 모드에서** 사용자가
+선택한다. weave-local `textOverflow: "VISIBLE" | "HIDDEN"` 필드(agocraft 스키마
+밖, serializer `onUnknown:"preserve"` 로 보존).
+
+- `textOverflow` **미설정** → 모드에서 파생: Fixed → `HIDDEN`(clip), 자동(W/H) → `VISIBLE`(spill). (legacy 호환)
+- `VISIBLE`: 컨텐츠가 박스를 넘으면 밖으로 흘러나옴. 부모 frame clip 이 있으면 거기서 clip.
+- `HIDDEN`: 박스에서 clip. 자동 축은 박스가 컨텐츠를 따라가므로 넘침이 없고, 수동
+  축(예: 자동너비에서 사용자가 줄인 높이, Fixed)에서 의미가 있다.
+
+`HIDDEN` 일 때 추가로 `textTruncation` 으로 ellipsis 를 선택:
+- `DISABLED`: 그냥 clip (말줄임 없음).
+- `ENDING`: 마지막 줄 끝에 ellipsis (`…`). `maxLines` 가 지정되면 그 줄 수에서 자르고 ellipsis.
 
 CSS 매핑:
 ```css

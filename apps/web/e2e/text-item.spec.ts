@@ -901,3 +901,55 @@ test("WI-029 — Truncate ENDING + maxLines clamps content via -webkit-line-clam
   });
   expect(String(clamp).trim()).toBe("3");
 });
+
+test("textOverflow toggles clip vs visible in a non-Fixed mode (all-mode overflow)", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "Text-Overflow" });
+  const id = await addTextViaMenu(page);
+
+  const containerOverflow = async (): Promise<string> =>
+    await page.evaluate(() => {
+      const tb = document.querySelector('[data-testid="text-block"]') as HTMLElement;
+      return window.getComputedStyle(tb).overflowX;
+    });
+
+  const setOverflow = async (value: "VISIBLE" | "HIDDEN"): Promise<void> => {
+    await page.evaluate(
+      (args) => {
+        const [fid, v] = args as [string, string];
+        const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+        w.__weaveEditor?.exec("weave.item.update", {
+          itemId: fid,
+          patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+            attrs: { ...prev.attrs, textOverflow: v },
+          }),
+        });
+      },
+      [id, value] as [string, string],
+    );
+    await page.waitForTimeout(120);
+  };
+
+  // Auto-height (a non-Fixed mode) — overflow used to be hard-coded to
+  // "visible" here. textOverflow must override it in EITHER direction.
+  await page.evaluate((fid) => {
+    const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+    w.__weaveEditor?.exec("weave.item.update", {
+      itemId: fid,
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: {
+          ...prev.attrs,
+          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
+        },
+      }),
+    });
+  }, id);
+  await page.waitForTimeout(120);
+
+  await setOverflow("HIDDEN");
+  expect(await containerOverflow()).toBe("hidden");
+  await setOverflow("VISIBLE");
+  expect(await containerOverflow()).toBe("visible");
+});

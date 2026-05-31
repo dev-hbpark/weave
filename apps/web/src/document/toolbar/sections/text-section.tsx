@@ -9,13 +9,14 @@
 import type {
   TextAlign,
   TextAlignVertical,
-  TextAttrs,
   TextCase,
   TextDecoration,
   TextStyle,
   TextTruncation,
   TextWeight,
 } from "@agocraft/core";
+// weave-extended TextAttrs (adds `textOverflow`) — not the agocraft re-export.
+import type { TextAttrs } from "../../types.js";
 import {
   Accordion,
   AccordionItem,
@@ -167,8 +168,18 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     items,
     (it) => (it.attrs as unknown as TextAttrs).hyperlink?.url ?? "",
   );
-  const isFixedMode = !isMixed(textAutoResize) && textAutoResize === "NONE";
-  const isTruncateEnding = isFixedMode && !isMixed(textTruncation) && textTruncation === "ENDING";
+  // Overflow is user-selectable in every mode. When `textOverflow` is unset we
+  // show the legacy mode-derived default (Fixed clips → HIDDEN, Auto spills →
+  // VISIBLE), so the toggle reflects the effective behaviour.
+  const textOverflow = sharedValue<"VISIBLE" | "HIDDEN">(items, (it) => {
+    const attrs = it.attrs as unknown as TextAttrs;
+    if (attrs.textOverflow !== undefined) return attrs.textOverflow;
+    return deriveTextAutoResize(attrs.layoutChild) === "NONE" ? "HIDDEN" : "VISIBLE";
+  });
+  const isOverflowHidden = !isMixed(textOverflow) && textOverflow === "HIDDEN";
+  // Ellipsis truncation only applies when content is clipped.
+  const isTruncateEnding =
+    isOverflowHidden && !isMixed(textTruncation) && textTruncation === "ENDING";
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
   const linkValue = linkDraft ?? (isMixed(hyperlink) ? "" : hyperlink);
   const bgHasValue = !isMixed(background) && background !== undefined;
@@ -558,8 +569,24 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               <MixedBadge visible={isMixed(letterSpacing)} />
             </Bar.Field>
           </AccordionItem>
-          {isFixedMode ? (
-            <AccordionItem label="줄바꿈" data-testid="text-wrap-group">
+          <AccordionItem label="넘침" data-testid="text-wrap-group">
+            <Bar.Field label="Overflow">
+              <SegmentedControl<"VISIBLE" | "HIDDEN">
+                value={isMixed(textOverflow) ? "VISIBLE" : textOverflow}
+                onValueChange={(v) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: { ...prev.attrs, textOverflow: v },
+                  }))
+                }
+                options={[
+                  { value: "VISIBLE", label: "표시" },
+                  { value: "HIDDEN", label: "숨김" },
+                ]}
+                aria-label="Text overflow"
+              />
+              <MixedBadge visible={isMixed(textOverflow)} />
+            </Bar.Field>
+            {isOverflowHidden ? (
               <Bar.Field label="Truncate">
                 <SegmentedControl<TextTruncation>
                   value={isMixed(textTruncation) ? "DISABLED" : textTruncation}
@@ -576,27 +603,27 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 />
                 <MixedBadge visible={isMixed(textTruncation)} />
               </Bar.Field>
-              {isTruncateEnding ? (
-                <Bar.Field label="Max lines">
-                  <NumberSlider
-                    value={isMixed(maxLines) || maxLines == null ? 3 : maxLines}
-                    onValueChange={(v) =>
-                      updateAll(editor, ids, (prev) => ({
-                        attrs: { ...prev.attrs, maxLines: Math.max(1, Math.round(v)) },
-                      }))
-                    }
-                    min={1}
-                    max={20}
-                    step={1}
-                    format={(v) => `${Math.round(v)} lines`}
-                    aria-label="Max lines"
-                    className="w-full"
-                  />
-                  <MixedBadge visible={isMixed(maxLines)} />
-                </Bar.Field>
-              ) : null}
-            </AccordionItem>
-          ) : null}
+            ) : null}
+            {isTruncateEnding ? (
+              <Bar.Field label="Max lines">
+                <NumberSlider
+                  value={isMixed(maxLines) || maxLines == null ? 3 : maxLines}
+                  onValueChange={(v) =>
+                    updateAll(editor, ids, (prev) => ({
+                      attrs: { ...prev.attrs, maxLines: Math.max(1, Math.round(v)) },
+                    }))
+                  }
+                  min={1}
+                  max={20}
+                  step={1}
+                  format={(v) => `${Math.round(v)} lines`}
+                  aria-label="Max lines"
+                  className="w-full"
+                />
+                <MixedBadge visible={isMixed(maxLines)} />
+              </Bar.Field>
+            ) : null}
+          </AccordionItem>
           <AccordionItem label="링크·기타" data-testid="text-link-group">
             <Bar.Field label="Hyperlink">
               <div className="flex items-center gap-1.5 w-full">

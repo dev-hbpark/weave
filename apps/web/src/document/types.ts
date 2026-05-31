@@ -199,7 +199,17 @@ import type {
 export type ImageAttrs = AgocraftImageAttrs;
 export type VideoAttrs = AgocraftVideoAttrs;
 export type ShapeAttrs = AgocraftShapeAttrs;
-export type TextAttrs = AgocraftTextAttrs;
+/** weave-local extension of agocraft's `TextAttrs`.
+ *
+ *  `textOverflow` lets the user choose, in EVERY resize mode, whether content
+ *  that exceeds the box is clipped (`HIDDEN`) or spills out (`VISIBLE`). The
+ *  agocraft schema couples overflow to the resize mode (Fixed clips, Auto
+ *  shows); this field decouples it. It is an unknown field to agocraft and
+ *  survives serialization via the serializer's `onUnknown: "preserve"` policy.
+ *  When unset, the renderer derives the legacy default from the mode. */
+export type TextAttrs = AgocraftTextAttrs & {
+  readonly textOverflow?: "VISIBLE" | "HIDDEN";
+};
 
 /** WI-058 — data-driven QR code. The module matrix is generated from `data` at
  *  render time (weave-local Nayuki encoder), so editing `data` regenerates it.
