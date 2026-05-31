@@ -102,9 +102,8 @@ function envStr(key: string): string | undefined {
 /** Token saved in this browser (per the no-account shared-workspace model). */
 function loadToken(): string | null {
   try {
-    return "REDACTED-DEV-TOKEN";
-    // const v = window.localStorage.getItem(TOKEN_KEY);
-    // return v !== null && v !== "" ? v : null;
+    const v = window.localStorage.getItem(TOKEN_KEY);
+    return v !== null && v !== "" ? v : null;
   } catch {
     return null;
   }
