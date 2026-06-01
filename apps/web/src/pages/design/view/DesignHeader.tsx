@@ -20,6 +20,7 @@ import {
   IconHand,
   IconImage,
   IconLayers,
+  IconLayoutGrid,
   IconPencil,
   IconPlay,
   IconPlus,
@@ -43,6 +44,7 @@ import {
 } from "@weave/design-system";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
+import { gridSnap, useGridSnap } from "../../../document/selection-chrome/grid-snap.js";
 import type { SaveStatus } from "../hooks/use-design-save.js";
 import type { UseItemAdd } from "../hooks/use-item-add.js";
 import { LINE_CURVE, LINE_CURVE_FREE, LINE_FREE, LINE_STRAIGHT } from "../line-seeds.js";
@@ -122,6 +124,8 @@ export function DesignHeader({
   onSave,
   saveStatus,
 }: DesignHeaderProps): React.ReactNode {
+  // WI-073 — grid-snap toggle state (global store; no prop threading needed).
+  const grid = useGridSnap();
   if (typeof document === "undefined") return null;
   return createPortal(
     <header
@@ -224,6 +228,23 @@ export function DesignHeader({
               }
             >
               <IconLayers />
+            </IconButton>
+            {/* WI-073 — toggle snap-to-grid while dragging frames/items. */}
+            <IconButton
+              aria-label="Snap to grid"
+              aria-pressed={grid.enabled}
+              size="sm"
+              onClick={() => gridSnap.toggle()}
+              data-testid="toolbar-grid-snap"
+              data-active={grid.enabled ? "true" : undefined}
+              data-tip="그리드 스냅"
+              className={
+                grid.enabled
+                  ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                  : undefined
+              }
+            >
+              <IconLayoutGrid />
             </IconButton>
             <span
               aria-hidden

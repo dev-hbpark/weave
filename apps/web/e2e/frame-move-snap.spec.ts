@@ -87,3 +87,52 @@ test("WI-073 — dragging a frame near another snaps it into alignment + shows a
   // The guide overlay clears after release.
   await expect(page.getByTestId("snap-feedback")).toHaveCount(0);
 });
+
+test("WI-073 #1 — grid-snap toggle flips, and a grid guide shows while dragging", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-073-grid" });
+  // One lone frame (no alignment candidates).
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveEditor: { exec: (n: string, i: unknown) => unknown };
+      __weaveDoc: { root: { id: unknown } };
+    };
+    w.__weaveEditor.exec("weave.item.add", {
+      kind: "frame",
+      containerId: String(w.__weaveDoc.root.id),
+      frame: { x: 0.32, y: 0.34, width: 0.18, height: 0.18, rotation: 0 },
+    });
+  });
+  await page.waitForTimeout(180);
+
+  // The grid-snap toggle is off, then flips on (aria-pressed).
+  const toggle = page.getByTestId("toolbar-grid-snap");
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+  // With the grid on, dragging the lone frame surfaces a snap guide (a grid line
+  // is always within tolerance) — proving the grid path is wired through the
+  // move binding. (Off-center interior spot → not a bounds line.)
+  const frame = page.locator("[data-frame-id]").first();
+  const box = await frame.boundingBox();
+  if (box === null) throw new Error("no frame box");
+  const sx = box.x + 6;
+  const sy = box.y + 6;
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(sx + (37 * i) / 6, sy + (29 * i) / 6);
+    await page.waitForTimeout(12);
+  }
+  await expect(page.getByTestId("snap-feedback")).toBeVisible();
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  await expect(page.getByTestId("snap-feedback")).toHaveCount(0);
+
+  // Toggle back off.
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+});

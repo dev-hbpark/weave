@@ -39,12 +39,20 @@ grid-size setting exists; alignment + bounds + equal-spacing are active.
 - 328 weave unit + typecheck + prod build green. agocraft DR-036 unit coverage
   (snap-targets 10 + createMoveSnap 7 + frame-manip 4).
 
-## Follow-up
+## Follow-up — all folded in (2026-06-01)
 
-- Grid snapping: needs a grid-size setting/UI to pass `grid.step`.
-- Multi-select: snaps the primary item; co-moving siblings are currently in the
-  candidate set (minor — single-select is the common case).
-- Equal-spacing is the v1 center-between-two heuristic (DR-036).
+- **Grid** ✅ — `grid-snap.ts` store (`{enabled, step}`, default off / 8px) +
+  `IconLayoutGrid` toggle in `DesignHeader` (reads the store directly, no prop
+  threading). `frame-move-snap` reads it on `begin` and passes a `grid` (range =
+  the design host's viewport rect, origin = its top-left) to `createMoveSnap`.
+- **Multi-select** ✅ — `FrameMoveSnap.begin` now receives `movingItemIds`;
+  `frame-move-snap` excludes ALL of them from candidates so co-moving siblings
+  aren't alignment targets.
+- **Equal-spacing** ✅ — agocraft DR-036 amendment adds gap-matching extend
+  (continue a row's spacing), beyond center-between-two.
+
+e2e additions: `frame-move-snap.spec.ts` #1 — grid toggle flips aria-pressed +
+a grid guide shows while dragging a lone frame.
 
 ## Links
 

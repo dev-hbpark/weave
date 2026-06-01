@@ -11,6 +11,7 @@
 
 import { createMoveSnap, type MoveSnap, type SnapRect } from "@agocraft/core";
 import type { FrameMoveSnap } from "@agocraft/editor";
+import { gridSnap } from "./grid-snap.js";
 import { snapFeedback } from "./snap-feedback.js";
 
 function rectOf(el: Element): SnapRect {
@@ -30,7 +31,7 @@ export function createFrameMoveSnap(deps: FrameMoveSnapDeps): FrameMoveSnap {
   let active: MoveSnap | null = null;
 
   return {
-    begin(primaryItemId): void {
+    begin(primaryItemId, movingItemIds): void {
       active = null;
       if (typeof document === "undefined") return;
       const movingEl = document.querySelector(
@@ -38,11 +39,14 @@ export function createFrameMoveSnap(deps: FrameMoveSnapDeps): FrameMoveSnap {
       );
       if (!(movingEl instanceof HTMLElement)) return;
 
-      // Candidates = every other frame-bearing element that is neither an
-      // ancestor nor a descendant of the moving one (self excluded by both
-      // `contains` checks). `el.contains(el)` is true, so this drops self too.
+      // Candidates = every other frame-bearing element that is NOT part of the
+      // moving set (a multi-selection moves rigidly, so co-moving siblings must
+      // not be alignment targets) and is neither an ancestor nor a descendant of
+      // the primary (the `contains` both-ways check also drops self).
+      const movingSet = new Set(movingItemIds.map(String));
       const candidates: SnapRect[] = [];
       for (const el of document.querySelectorAll<HTMLElement>("[data-frame-id]")) {
+        if (movingSet.has(el.getAttribute("data-frame-id") ?? "")) continue;
         if (el.contains(movingEl) || movingEl.contains(el)) continue;
         candidates.push(rectOf(el));
       }
@@ -53,10 +57,27 @@ export function createFrameMoveSnap(deps: FrameMoveSnapDeps): FrameMoveSnap {
       const containerEl = parentFrame ?? deps.hostEl();
       const container = containerEl !== null ? rectOf(containerEl) : null;
 
+      // Grid (optional): a fixed pixel lattice anchored to the design host's
+      // top-left, spanning its viewport rect. Off unless the user enables it.
+      const grid = gridSnap.get();
+      const hostEl = deps.hostEl();
+      const gridArg =
+        grid.enabled && grid.step > 0 && hostEl !== null
+          ? (() => {
+              const h = hostEl.getBoundingClientRect();
+              return {
+                step: grid.step,
+                range: { minX: h.left, maxX: h.right, minY: h.top, maxY: h.bottom },
+                origin: { x: h.left, y: h.top },
+              };
+            })()
+          : undefined;
+
       active = createMoveSnap({
         movingRectAtStart: rectOf(movingEl),
         candidates,
         container,
+        ...(gridArg !== undefined ? { grid: gridArg } : {}),
         ...(deps.tolerancePx !== undefined
           ? { options: { lineTolerancePx: deps.tolerancePx } }
           : {}),
