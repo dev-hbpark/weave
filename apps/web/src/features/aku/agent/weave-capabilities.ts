@@ -140,6 +140,7 @@ export const WEAVE_CAPABILITIES = {
         "• star — { points (number of points), innerRatio (0..1 inner/outer radius) }.",
         "• polygon — a REGULAR N-gon: { sides } (e.g. 6 = hexagon).",
         "• poly — a FREEFORM polygon from explicit vertices: { points:[{x,y},…] each a 0..1 ratio of THIS shape's OWN bbox (NOT the parent frame / design), closed:boolean (true = filled polygon, false = open polyline) }. Edit the vertices later with weave.shape.setVertices.",
+        "CONVERT shape → line: weave.shape.breakToLine { itemId, vertexIndex? } opens a closed shape at one outline vertex into a stroke-only `line` (works for rectangle/triangle/polygon/star/ellipse/closed poly; the fill becomes the stroke).",
         "• path — opaque raw SVG path: { d:'<svg path data>' }.",
         "• speech-bubble — { tail:{ anchorX, anchorY (0..1 of THIS shape's OWN bbox), direction:'down'|'up'|'left'|'right'|'free' }, cornerRadius (px) }.",
         "• heart — { variant: 'classic'|'rounded' }.",
@@ -165,6 +166,7 @@ export const WEAVE_CAPABILITIES = {
         "ENDPOINT MARKERS: `heads:{ start, end }` — each 'none'|'triangle'|'open'|'diamond'|'circle' (arrow / dot ends).",
         "COLOUR / WIDTH: the stroke is a `decoration.stroke` UNIT (weave.item.setDecoration { itemId, kind:'decoration.stroke', attrs:{ paint, width, lineCap?, lineJoin?, dashArray? } }). A line has NO fill.",
         "Use `line` for arrows, connectors, underlines, dividers, freeform strokes, and curves. Use a `shape` for filled / area elements (rectangle, ellipse, polygon, …).",
+        "CONVERT line → shape: weave.line.closeToShape { itemId } fuses the two endpoints of a free line/curve into ONE vertex and closes it into a filled `poly` shape (needs ≥3 points; the stroke becomes the fill).",
       ].join(" "),
       editableAttrs: ["frame", "points", "smooth", "heads", "layoutChild"],
       units: ["decoration.stroke", "decoration.shadow", "decoration.opacity"],
@@ -227,7 +229,7 @@ export const WEAVE_CAPABILITIES = {
     {
       kind: "hotspot",
       description:
-        'A clickable region that triggers an action (e.g. jump to a camera target). region { x, y, width, height } (0..1 of the ITEM\'s OWN box — item-local, so it rides the item\'s resize; NOT the parent frame or design), trigger ("click"), action.',
+        "A clickable region that triggers an action (e.g. jump to a camera target). region { x, y, width, height } (0..1 of the ITEM's OWN box — item-local, so it rides the item's resize; NOT the parent frame or design), trigger (\"click\"), action.",
       editableAttrs: ["region", "trigger", "action", "label"],
     },
     {

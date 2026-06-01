@@ -11,10 +11,11 @@
 //   • `createFrameDefaultViewModel({ itemKind })` — the plain 8-resize + rotate
 //     set for kinds with no special policy (frame / image / video / qr).
 //
-// DR-017 phase 4: handles are PURE VISUAL specs — gesture lifecycle lives on
-// agocraft's `createFrameResizeBinding` / `createFrameRotateBinding`. The button
-// emits `data-handle-kind` / `data-handle-dir` so the binding's
-// `resolveResizeDir` / `resolveRotateHandle` can dispatch.
+// DR-017 / DR-032: handles are PURE VISUAL specs — the input lifecycle lives in
+// the uniform handle-interaction pipeline. The button emits `data-handle-kind` /
+// `data-handle-dir`; FrameStage's capture-phase dispatcher (WI-067 P3) reads
+// those markers on pointerdown and starts a `frame-resize` / `frame-rotate`
+// gesture (replacing the retired `createFrameResizeBinding`/`…Rotate` bindings).
 //
 // SOLID / GRASP:
 //   • SRP — view-model = declarative spec; gesture is the binding's concern.

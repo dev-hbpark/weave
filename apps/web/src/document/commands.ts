@@ -28,7 +28,9 @@ import {
   type ClipboardTransport,
   type Command,
   type CommandContext,
+  createBreakShapeToLineCommand,
   createClipboardCommands,
+  createCloseLineToShapeCommand,
   createDissolveFrameCommand,
   createDuplicateItemCommand,
   createDuplicateItemsCommand,
@@ -41,8 +43,6 @@ import {
   defaultShapeSubAttrs,
   FILL_UNIT_KIND,
   fail,
-  SHAPE_SUB_KINDS,
-  type ShapeSubKind,
   itemId as makeItemId,
   unitId as makeUnitId,
   moveAboveCommand,
@@ -51,6 +51,8 @@ import {
   moveToTopCommand,
   ok,
   type Patch,
+  SHAPE_SUB_KINDS,
+  type ShapeSubKind,
   serializeItemSubtree,
   serializeUnitSubtree,
   ref as styleRef,
@@ -81,9 +83,9 @@ import {
 import { type PasteCoordInput, resolvePasteFrame } from "./clipboard/paste-coord.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import {
+  ALIGN_OPS_ORDER,
   type AlignInput,
   type AlignOp,
-  ALIGN_OPS_ORDER,
   computeAlignedFrames,
 } from "./multi/align-ops.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
@@ -503,70 +505,70 @@ export function buildWeaveCommands(
     weaveItem: WeaveItem,
     input: UpdateItemInput,
   ): ReadonlyArray<Patch> {
-      const patchFn =
-        input.patch ??
-        ((it: WeaveItem): WeaveItem => ({
-          ...it,
-          attrs: {
-            ...(it.attrs as unknown as Record<string, unknown>),
-            ...(input.attrs ?? {}),
-          } as unknown as WeaveItem["attrs"],
-        }));
-      const afterRaw = patchFn(weaveItem).attrs as unknown as Readonly<Record<string, unknown>>;
-      // WI-062 — same shape-subAttrs completeness guard as weave.item.add: a
-      // declarative `attrs` partial that touched subAttrs must not leave the
-      // geometry incomplete (→ render crash). Idempotent for non-shape / complete.
-      const after = child.kind === "shape" ? normalizeShapeAttrs(afterRaw) : afterRaw;
-      // DR-017 ADR-D — drag auto-merge.
-      //   agocraft's `mergeKeyOf` derives the merge key from the patch's
-      //   target identity (e.g. `item.attrs#${itemId}`) and the editor's
-      //   `historyMergeWindowMs: 500` already folds consecutive same-
-      //   target patches into one undo step. A 60Hz drag on the same
-      //   item.attrs (frame box, shape geometry) therefore collapses to
-      //   a single entry without any per-patch hint here.
-      //   Future enhancement (session-scoped scope so that two drags
-      //   500ms apart on the same target remain separate undo steps)
-      //   would extend agocraft's Patch type with an explicit merge
-      //   namespace; out of scope for this iteration.
-      const patch: Patch = {
-        type: "item.attrs",
-        itemId: child.id,
-        before: child.attrs,
-        after,
-      };
+    const patchFn =
+      input.patch ??
+      ((it: WeaveItem): WeaveItem => ({
+        ...it,
+        attrs: {
+          ...(it.attrs as unknown as Record<string, unknown>),
+          ...(input.attrs ?? {}),
+        } as unknown as WeaveItem["attrs"],
+      }));
+    const afterRaw = patchFn(weaveItem).attrs as unknown as Readonly<Record<string, unknown>>;
+    // WI-062 — same shape-subAttrs completeness guard as weave.item.add: a
+    // declarative `attrs` partial that touched subAttrs must not leave the
+    // geometry incomplete (→ render crash). Idempotent for non-shape / complete.
+    const after = child.kind === "shape" ? normalizeShapeAttrs(afterRaw) : afterRaw;
+    // DR-017 ADR-D — drag auto-merge.
+    //   agocraft's `mergeKeyOf` derives the merge key from the patch's
+    //   target identity (e.g. `item.attrs#${itemId}`) and the editor's
+    //   `historyMergeWindowMs: 500` already folds consecutive same-
+    //   target patches into one undo step. A 60Hz drag on the same
+    //   item.attrs (frame box, shape geometry) therefore collapses to
+    //   a single entry without any per-patch hint here.
+    //   Future enhancement (session-scoped scope so that two drags
+    //   500ms apart on the same target remain separate undo steps)
+    //   would extend agocraft's Patch type with an explicit merge
+    //   namespace; out of scope for this iteration.
+    const patch: Patch = {
+      type: "item.attrs",
+      itemId: child.id,
+      before: child.attrs,
+      after,
+    };
 
-      // ── WI-021 — ANY frame change is reported to the LayoutEngine through a
-      // SINGLE entry point. weave does NOT decide whether this is a parent
-      // resize or a child resize — position management is delegated to the
-      // relevant parent frame's layout. The engine inspects the document and
-      // returns full-attrs reflow Patches (empty for absolute / no-layout).
-      //
-      // WI-047 — gate on an ACTUAL frame change. A non-frame edit (opacity,
-      // fill, text, …) keeps the frame identical; running the relayout anyway
-      // makes the engine emit full-attrs reflow patches computed from the
-      // pre-update document, which get appended AFTER this patch and revert
-      // the edit. Bug surfaced only inside flex/grid frames (absolute parents
-      // return no reflow patches, so the overwrite was invisible there).
-      const oldFrame = (child.attrs as { frame?: AgocraftItemFrame }).frame;
-      const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
-      const frameChanged =
-        oldFrame !== undefined &&
-        newFrame !== undefined &&
-        (oldFrame.x !== newFrame.x ||
-          oldFrame.y !== newFrame.y ||
-          oldFrame.width !== newFrame.width ||
-          oldFrame.height !== newFrame.height ||
-          oldFrame.rotation !== newFrame.rotation);
-      const extraPatches: ReadonlyArray<Patch> =
-        LAYOUT_FEATURE_ENABLED && frameChanged && oldFrame !== undefined && newFrame !== undefined
-          ? getLayoutEngine().onFrameChanged({
-              root: ctx.document.root,
-              itemId: child.id,
-              oldFrame,
-              newFrame,
-            })
-          : [];
-      return extraPatches.length > 0 ? [patch, ...extraPatches] : [patch];
+    // ── WI-021 — ANY frame change is reported to the LayoutEngine through a
+    // SINGLE entry point. weave does NOT decide whether this is a parent
+    // resize or a child resize — position management is delegated to the
+    // relevant parent frame's layout. The engine inspects the document and
+    // returns full-attrs reflow Patches (empty for absolute / no-layout).
+    //
+    // WI-047 — gate on an ACTUAL frame change. A non-frame edit (opacity,
+    // fill, text, …) keeps the frame identical; running the relayout anyway
+    // makes the engine emit full-attrs reflow patches computed from the
+    // pre-update document, which get appended AFTER this patch and revert
+    // the edit. Bug surfaced only inside flex/grid frames (absolute parents
+    // return no reflow patches, so the overwrite was invisible there).
+    const oldFrame = (child.attrs as { frame?: AgocraftItemFrame }).frame;
+    const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
+    const frameChanged =
+      oldFrame !== undefined &&
+      newFrame !== undefined &&
+      (oldFrame.x !== newFrame.x ||
+        oldFrame.y !== newFrame.y ||
+        oldFrame.width !== newFrame.width ||
+        oldFrame.height !== newFrame.height ||
+        oldFrame.rotation !== newFrame.rotation);
+    const extraPatches: ReadonlyArray<Patch> =
+      LAYOUT_FEATURE_ENABLED && frameChanged && oldFrame !== undefined && newFrame !== undefined
+        ? getLayoutEngine().onFrameChanged({
+            root: ctx.document.root,
+            itemId: child.id,
+            oldFrame,
+            newFrame,
+          })
+        : [];
+    return extraPatches.length > 0 ? [patch, ...extraPatches] : [patch];
   }
 
   // WI-055 — rectangle corner radius. A thin, dedicated command over the
@@ -731,7 +733,12 @@ export function buildWeaveCommands(
     ctx: CommandContext,
     updates: ReadonlyArray<{
       readonly itemId: string;
-      readonly frame: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+      readonly frame: {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+      };
     }>,
   ): Patch[] => {
     const patches: Patch[] = [];
@@ -781,11 +788,13 @@ export function buildWeaveCommands(
     ctx: CommandContext,
     itemIds: ReadonlyArray<string>,
     op: AlignOp,
-  ): { readonly ok: true; readonly patches: ReadonlyArray<Patch> } | {
-    readonly ok: false;
-    readonly code: string;
-    readonly message: string;
-  } => {
+  ):
+    | { readonly ok: true; readonly patches: ReadonlyArray<Patch> }
+    | {
+        readonly ok: false;
+        readonly code: string;
+        readonly message: string;
+      } => {
     if (!ALIGN_OPS_ORDER.includes(op)) {
       return {
         ok: false,
@@ -795,14 +804,19 @@ export function buildWeaveCommands(
     }
     const ids = itemIds ?? [];
     if (ids.length < 2) {
-      return { ok: false, code: "invalid-input", message: "align/distribute needs at least 2 itemIds" };
+      return {
+        ok: false,
+        code: "invalid-input",
+        message: "align/distribute needs at least 2 itemIds",
+      };
     }
     const rootId = String(ctx.document.root.id);
     let parentId: string | undefined;
     const inputs: AlignInput[] = [];
     for (const id of ids) {
       const item = findChild(ctx.document, id);
-      if (item === undefined) return { ok: false, code: "item-not-found", message: `no item with id "${id}"` };
+      if (item === undefined)
+        return { ok: false, code: "item-not-found", message: `no item with id "${id}"` };
       const pi = findParentAndIndex(ctx.document, id);
       const pid = pi === undefined ? rootId : String(pi.parent.id);
       if (parentId === undefined) parentId = pid;
@@ -810,15 +824,23 @@ export function buildWeaveCommands(
         return {
           ok: false,
           code: "cross-parent-selection",
-          message: "all itemIds must share one parent frame (aligns within a single coordinate space)",
+          message:
+            "all itemIds must share one parent frame (aligns within a single coordinate space)",
         };
       }
       const f = (item.attrs as { frame?: ItemFrame }).frame;
       if (f === undefined) continue; // non-spatial item — nothing to align
-      inputs.push({ id, frame: { x: f.x, y: f.y, width: f.width, height: f.height, rotation: f.rotation } });
+      inputs.push({
+        id,
+        frame: { x: f.x, y: f.y, width: f.width, height: f.height, rotation: f.rotation },
+      });
     }
     if (inputs.length < 2) {
-      return { ok: false, code: "invalid-input", message: "fewer than 2 of the itemIds have a frame to align" };
+      return {
+        ok: false,
+        code: "invalid-input",
+        message: "fewer than 2 of the itemIds have a frame to align",
+      };
     }
     const out = computeAlignedFrames(inputs, op);
     // Emit only items whose frame actually moved (clean history; FP-drift guard).
@@ -830,7 +852,12 @@ export function buildWeaveCommands(
         Math.abs(prev.width - o.frame.width) > 1e-9 ||
         Math.abs(prev.height - o.frame.height) > 1e-9;
       return moved
-        ? [{ itemId: o.id, frame: { x: o.frame.x, y: o.frame.y, width: o.frame.width, height: o.frame.height } }]
+        ? [
+            {
+              itemId: o.id,
+              frame: { x: o.frame.x, y: o.frame.y, width: o.frame.width, height: o.frame.height },
+            },
+          ]
         : [];
     });
     return { ok: true, patches: frameUpdatesToPatches(ctx, updates) };
@@ -874,10 +901,16 @@ export function buildWeaveCommands(
       const hasUpdates = input.updates !== undefined && input.updates.length > 0;
       const hasOp = input.op !== undefined;
       if (!hasAttrs && !hasUnits && !hasUpdates && !hasOp) {
-        return fail("invalid-input", "weave.items.update: provide `attrs`, `units`, `updates`, or `op`");
+        return fail(
+          "invalid-input",
+          "weave.items.update: provide `attrs`, `units`, `updates`, or `op`",
+        );
       }
       if ((hasAttrs || hasUnits) && ids.length === 0) {
-        return fail("invalid-input", "weave.items.update: `itemIds` is required for `attrs` / `units`");
+        return fail(
+          "invalid-input",
+          "weave.items.update: `itemIds` is required for `attrs` / `units`",
+        );
       }
       const patches: Patch[] = [];
 
@@ -902,7 +935,12 @@ export function buildWeaveCommands(
               oldFrame.width !== newFrame.width ||
               oldFrame.height !== newFrame.height ||
               oldFrame.rotation !== newFrame.rotation);
-          if (LAYOUT_FEATURE_ENABLED && frameChanged && oldFrame !== undefined && newFrame !== undefined) {
+          if (
+            LAYOUT_FEATURE_ENABLED &&
+            frameChanged &&
+            oldFrame !== undefined &&
+            newFrame !== undefined
+          ) {
             patches.push(
               ...getLayoutEngine().onFrameChanged({
                 root: ctx.document.root,
@@ -1210,6 +1248,16 @@ export function buildWeaveCommands(
   // WI-057 — set freeform polygon vertices (agocraft kit command, registered
   // under weave's vocabulary). All item mutation goes through a command.
   const setPolyVertices = createSetPolyPointsCommand("weave.shape.setVertices");
+
+  // WI-065 / DR-031 — shape ↔ line KIND conversion (agocraft kit commands).
+  //   • weave.shape.breakToLine — open a closed shape at a vertex → `line`.
+  //   • weave.line.closeToShape — fuse a free line/curve's endpoints → filled
+  //     `poly` shape.
+  // Both are a single-transaction [item.remove, item.create] with a FRESH id
+  // (the kit owns the patch assembly + paint migration); the surface re-selects
+  // the returned new id.
+  const breakShapeToLine = createBreakShapeToLineCommand("weave.shape.breakToLine");
+  const closeLineToShape = createCloseLineToShapeCommand("weave.line.closeToShape");
 
   // ─── WI-050 — Delete a frame, keep its children ──────────────────────────
   //
@@ -1620,6 +1668,8 @@ export function buildWeaveCommands(
     sendToBack as Command,
     reparentItem as Command,
     setPolyVertices as Command,
+    breakShapeToLine as Command,
+    closeLineToShape as Command,
     removeFrameKeepingChildren as Command,
     addBehavior as Command,
     removeBehavior as Command,

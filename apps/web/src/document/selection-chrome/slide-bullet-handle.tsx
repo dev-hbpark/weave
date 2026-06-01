@@ -18,6 +18,7 @@
 // is selected.
 
 import type { Editor, ItemSelectionViewModel } from "@agocraft/editor";
+import { startHandleGesture, toHandlePointer } from "./handle-gesture-runner.js";
 
 export interface SlideBulletHandleDeps {
   readonly editor: Editor;
@@ -48,25 +49,29 @@ export function createSlideBulletHandleViewModel(
               data-handle-kind="custom"
               data-handle-id="slide.add-bullet"
               onPointerDown={(e) => {
-                // Stop the press from bubbling to the frame body /
-                // GestureRouter. The router's capture-phase listener
-                // already ran (and declined — none of its bindings
-                // claim a `data-handle-kind="custom"` target); React
-                // bubble would otherwise reach the frame's onClick
-                // and toggle selection.
+                // WI-067 P4 / DR-032 — a DISCRETE handle on the uniform
+                // pipeline: the gesture fires the "add bullet" command on
+                // release (sink.fire). stopPropagation keeps the press off the
+                // frame body / selection toggle.
                 e.stopPropagation();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                deps.editor.exec("weave.item.update", {
+                startHandleGesture({
+                  kind: "discrete-action",
+                  handleId: "slide.add-bullet",
                   itemId: info.itemId,
-                  patch: (item: { attrs: { bullets?: ReadonlyArray<string> } }) => ({
-                    ...item,
-                    attrs: {
-                      ...item.attrs,
-                      bullets: [...(item.attrs.bullets ?? []), ""],
-                    },
-                  }),
+                  origin: toHandlePointer(e),
+                  sink: {
+                    fire: () =>
+                      deps.editor.exec("weave.item.update", {
+                        itemId: info.itemId,
+                        patch: (item: { attrs: { bullets?: ReadonlyArray<string> } }) => ({
+                          ...item,
+                          attrs: {
+                            ...item.attrs,
+                            bullets: [...(item.attrs.bullets ?? []), ""],
+                          },
+                        }),
+                      }),
+                  },
                 });
               }}
               style={{

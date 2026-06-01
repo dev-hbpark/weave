@@ -14,11 +14,8 @@
 
 import {
   type Document as AgocraftDocument,
-  FILL_UNIT_KIND,
   type Item as AgocraftItem,
-  type PaintSpec,
-  STROKE_UNIT_KIND,
-  type StrokeSpec,
+  fillUnitsToStrokeUnits,
 } from "@agocraft/core";
 
 type Pt = { readonly x: number; readonly y: number };
@@ -88,23 +85,10 @@ function convertShapeToLine(item: AgocraftItem): AgocraftItem | null {
     id: item.id, // preserve id → undo / sync / refs stay valid
     kind: "line",
     attrs: lineAttrs,
-    units: convertFillToStroke(item.units),
+    // WI-065 / DR-031 — fill→stroke now lives in @agocraft/core
+    // (`fillUnitsToStrokeUnits`), shared with the runtime breakToLine command.
+    units: fillUnitsToStrokeUnits(item.units),
     children: item.children,
     meta: item.meta,
   } as AgocraftItem;
-}
-
-/** Turn a solid `decoration.fill` unit into a `decoration.stroke` (lines are
- *  stroke-only). Drops the fill when a stroke already exists or the fill is
- *  non-solid (the line then renders with the default hairline). */
-function convertFillToStroke(units: AgocraftItem["units"]): AgocraftItem["units"] {
-  const hasStroke = units.some((u) => u.kind === STROKE_UNIT_KIND);
-  return units.flatMap((u) => {
-    if (u.kind !== FILL_UNIT_KIND) return [u];
-    if (hasStroke) return [];
-    const paint = u.attrs as unknown as PaintSpec;
-    if (paint?.type !== "solid") return [];
-    const stroke: StrokeSpec = { paint, width: 2, lineCap: "round", lineJoin: "round" };
-    return [{ ...u, kind: STROKE_UNIT_KIND, attrs: stroke as unknown as typeof u.attrs }];
-  });
 }

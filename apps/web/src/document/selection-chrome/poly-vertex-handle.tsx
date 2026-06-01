@@ -14,9 +14,21 @@
 // rotated basis. This is exact at EVERY angle including 45° (the older AABB-only
 // W,H solve was singular there — cos 2θ = 0 — and fell back to wrong positions).
 
-import type { Editor, ItemSelectionViewModel, SelectionBounds } from "@agocraft/editor";
+import type {
+  Editor,
+  HandleCommandSink,
+  HandlePointer,
+  ItemSelectionViewModel,
+  SelectionBounds,
+} from "@agocraft/editor";
 import {
-  endpointSimilarityScreen,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useState,
+} from "react";
+import { startHandleGesture, toHandlePointer } from "./handle-gesture-runner.js";
+import {
   type FrameGeom,
   localToScreen,
   type PolyFrame,
@@ -24,8 +36,15 @@ import {
   parseRotationFromTransform,
   recoverUnrotatedSize,
   refitFrameToPoints,
-  screenToLocal,
 } from "./poly-vertex-geometry.js";
+import {
+  applyDragStrategy,
+  classifyPointHandle,
+  isModifierSensitive,
+  type PointHandleRole,
+  resolveDragStrategy,
+  resolvePointHandle,
+} from "./vertex-handle-roles.js";
 
 export type { PolyFrame, PolyVertex } from "./poly-vertex-geometry.js";
 
@@ -52,6 +71,11 @@ export interface PolyVertexHandleDeps {
     frame: PolyFrame | undefined,
     points: ReadonlyArray<PolyVertex>,
   ) => Readonly<Record<string, unknown>>;
+  /** WI-065 / DR-031 — right-click a vertex to break the shape into a `line` at
+   *  exactly that vertex ("도형의 특정 꼭지점 연결을 끊어 선으로"). Provided only
+   *  for the closed-`poly` shape VM; omit for the `line` VM (already a line).
+   *  The host owns the command dispatch + re-selecting the new line. */
+  readonly onBreakAtVertex?: (itemId: string, vertexIndex: number) => void;
 }
 
 /** Default attrs-merge (shape/poly): points live under `subAttrs`. */
@@ -93,21 +117,84 @@ function frameGeom(itemId: string, bounds: SelectionBounds): FrameGeom {
   return { cx, cy, w, h, theta };
 }
 
+/** WI-066 — a single point handle. ALL role-specific behavior (shape, label,
+ *  tooltip, modifier sensitivity) is resolved from the `vertex-handle-roles`
+ *  registry by `role` — no inline `isEndpoint ? … : …` branching here (Rule 6).
+ *  When the role is modifier-sensitive (endpoint) it subscribes to the
+ *  Alt/Option key and re-renders ITS OWN shape live (square = stretch, round =
+ *  free-move) so the visual always matches the drag the handle will perform. */
+function VertexHandle({
+  idx,
+  role,
+  onPointerDown,
+  onDoubleClick,
+  onContextMenu,
+}: {
+  readonly idx: number;
+  readonly role: PointHandleRole;
+  readonly onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => void;
+  readonly onDoubleClick: (e: ReactMouseEvent<HTMLButtonElement>) => void;
+  readonly onContextMenu?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
+}) {
+  const adapter = resolvePointHandle(role);
+  const modifierSensitive = isModifierSensitive(adapter);
+  const [modifierActive, setModifierActive] = useState(false);
+  useEffect(() => {
+    if (!modifierSensitive) return undefined;
+    const sync = (e: KeyboardEvent) => setModifierActive(e.altKey);
+    const clear = () => setModifierActive(false); // window blur → can't see keyup
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", clear);
+    };
+  }, [modifierSensitive]);
+  const visual = adapter.visual(modifierActive);
+  return (
+    <button
+      type="button"
+      aria-label={adapter.label(idx)}
+      title={adapter.title}
+      data-handle-kind="custom"
+      data-handle-id={`poly.vertex.${idx}`}
+      data-handle-role={role}
+      data-handle-mode={visual.mode}
+      data-testid={`poly-vertex-${idx}`}
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
+      style={{
+        width: VERTEX_PX,
+        height: VERTEX_PX,
+        borderRadius: visual.borderRadius,
+        background: "var(--surface-1, #fff)",
+        border: "1.5px solid var(--accent, #4f46e5)",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+        cursor: "move",
+        padding: 0,
+        touchAction: "none",
+      }}
+    />
+  );
+}
+
 export function createPolyVertexHandleViewModel(
   deps: PolyVertexHandleDeps,
 ): ItemSelectionViewModel {
   /** Start a document-level pointer loop that moves `points[idx]` to follow the
    *  cursor (rotation-aware), dispatching weave.shape.setVertices each move. */
   /** Drag `points[idx]` (rotation-aware) and REFIT the frame to follow (DR-024).
-   *  Two modes by handle role:
-   *    • interior vertex → free move of that one point.
-   *    • OPEN-poly endpoint (first / last) → a uniform similarity (scale +
-   *      rotate) of the WHOLE polyline about the OPPOSITE endpoint, so the line
-   *      stretches keeping its shape (DR-024 §B). A 2-point line has only
-   *      endpoints, so this degenerates to free-moving that end.
-   *  Every move recomputes from the captured base (points / frame / geom) +
-   *  current cursor, then dispatches one `weave.item.update` patch (frame +
-   *  subAttrs.points) — the 60Hz burst folds into a single undo. */
+   *  DR-032 — interaction runs through the uniform handle pipeline: the handle's
+   *  pointerdown starts a `vertex-drag` gesture (per-handle FSM) and this VM only
+   *  supplies the SINK. The sink's `update` resolves the drag strategy per move
+   *  from the role registry — `resolveDragStrategy(role, p.altKey)` is the single
+   *  gate that picks free-move vs endpoint-stretch (Rule 6) and lets the modifier
+   *  toggle mid-drag. Each update dispatches one `weave.item.update` (frame +
+   *  points); the 60Hz burst folds into a single undo via the merge key. The
+   *  document-pointer loop lives in `startHandleGesture`, not here. */
   const beginVertexDrag = (
     itemId: string,
     idx: number,
@@ -115,40 +202,45 @@ export function createPolyVertexHandleViewModel(
     baseFrame: PolyFrame,
     geom: FrameGeom,
     closed: boolean,
+    origin: HandlePointer,
+    // WI-067 P4 — midpoint passes "vertex-insert" (the vertex was just inserted;
+    // the gesture then drags it). Plain vertices use "vertex-drag". Both share
+    // the drag FSM; the distinct kind keeps the handles individually registered.
+    kind: "vertex-drag" | "vertex-insert" = "vertex-drag",
   ): void => {
     const n = basePoints.length;
-    const isEndpoint = !closed && n >= 2 && (idx === 0 || idx === n - 1);
+    const adapter = resolvePointHandle(classifyPointHandle(idx, n, closed));
     const anchorIdx = idx === 0 ? n - 1 : 0;
     const baseScreen = basePoints.map((p) => localToScreen(geom, p.x, p.y));
-    const move = (ev: PointerEvent) => {
-      let newLocal: ReadonlyArray<PolyVertex>;
-      const similarity = isEndpoint
-        ? endpointSimilarityScreen(baseScreen, anchorIdx, ev.clientX, ev.clientY, idx)
-        : null;
-      if (similarity !== null) {
-        newLocal = similarity.map((s) => screenToLocal(geom, s.x, s.y));
-      } else {
-        // Interior vertex, or a degenerate endpoint vector → free-move that point.
-        const loc = screenToLocal(geom, ev.clientX, ev.clientY);
-        newLocal = basePoints.map((p, i) => (i === idx ? loc : { x: p.x, y: p.y }));
-      }
-      const refit = refitFrameToPoints(newLocal, baseFrame, geom.theta);
-      const compose = deps.composeAttrs ?? defaultComposeAttrs;
-      deps.editor.exec("weave.item.update", {
-        itemId,
-        patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-          attrs: compose(prev.attrs, refit.frame, refit.points),
-        }),
-      });
+    const compose = deps.composeAttrs ?? defaultComposeAttrs;
+    const sink: HandleCommandSink = {
+      update: (p) => {
+        const strategy = resolveDragStrategy(adapter, p.altKey);
+        const newLocal = applyDragStrategy(strategy, {
+          basePoints,
+          baseScreen,
+          idx,
+          anchorIdx,
+          geom,
+          clientX: p.clientX,
+          clientY: p.clientY,
+        });
+        const refit = refitFrameToPoints(newLocal, baseFrame, geom.theta);
+        deps.editor.exec("weave.item.update", {
+          itemId,
+          patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+            attrs: compose(prev.attrs, refit.frame, refit.points),
+          }),
+        });
+      },
     };
-    const up = () => {
-      document.removeEventListener("pointermove", move);
-      document.removeEventListener("pointerup", up);
-      document.removeEventListener("pointercancel", up);
-    };
-    document.addEventListener("pointermove", move);
-    document.addEventListener("pointerup", up);
-    document.addEventListener("pointercancel", up);
+    startHandleGesture({
+      kind,
+      handleId: `poly.vertex.${idx}`,
+      itemId,
+      origin,
+      sink,
+    });
   };
 
   /** Set the point list (no frame change) via the kind-appropriate attrs path
@@ -177,6 +269,9 @@ export function createPolyVertexHandleViewModel(
       // ── vertex handles (move / remove) ──
       for (let idx = 0; idx < points.length; idx++) {
         const pt = points[idx]!;
+        // WI-066 — classify the handle's role once; the registry owns the rest
+        // (shape, label, drag strategy). No inline endpoint branching (Rule 6).
+        const role = classifyPointHandle(idx, points.length, closed);
         specs.push({
           id: `poly-vertex-${idx}`,
           order: 200,
@@ -188,17 +283,22 @@ export function createPolyVertexHandleViewModel(
           render: (ctx: { bounds: SelectionBounds }) => {
             const geom = frameGeom(info.itemId, ctx.bounds);
             return (
-              <button
-                type="button"
-                aria-label={`정점 ${idx + 1}`}
-                data-handle-kind="custom"
-                data-handle-id={`poly.vertex.${idx}`}
-                data-testid={`poly-vertex-${idx}`}
+              <VertexHandle
+                idx={idx}
+                role={role}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   const cur = deps.getPoly(info.itemId);
                   if (cur === null || cur.points[idx] === undefined) return;
-                  beginVertexDrag(info.itemId, idx, cur.points, cur.frame, geom, cur.closed);
+                  beginVertexDrag(
+                    info.itemId,
+                    idx,
+                    cur.points,
+                    cur.frame,
+                    geom,
+                    cur.closed,
+                    toHandlePointer(e),
+                  );
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
@@ -207,17 +307,17 @@ export function createPolyVertexHandleViewModel(
                   const next = cur.points.filter((_, i) => i !== idx);
                   dispatchPoints(info.itemId, next);
                 }}
-                style={{
-                  width: VERTEX_PX,
-                  height: VERTEX_PX,
-                  borderRadius: "50%",
-                  background: "var(--surface-1, #fff)",
-                  border: "1.5px solid var(--accent, #4f46e5)",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-                  cursor: "move",
-                  padding: 0,
-                  touchAction: "none",
-                }}
+                {...(deps.onBreakAtVertex !== undefined
+                  ? {
+                      onContextMenu: (e: ReactMouseEvent<HTMLButtonElement>) => {
+                        // WI-065 / DR-031 — right-click a vertex opens the ring
+                        // here into a `line`. Suppress the browser menu.
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deps.onBreakAtVertex?.(info.itemId, idx);
+                      },
+                    }
+                  : {})}
               />
             );
           },
@@ -257,9 +357,19 @@ export function createPolyVertexHandleViewModel(
                     { x: mid.x, y: mid.y },
                     ...cur.points.slice(insertAt),
                   ];
-                  // Add the vertex, then let the same gesture drag it.
+                  // WI-067 P4 — insert the vertex, then drag it via the
+                  // distinct `vertex-insert` interaction.
                   dispatchPoints(info.itemId, inserted);
-                  beginVertexDrag(info.itemId, insertAt, inserted, cur.frame, geom, cur.closed);
+                  beginVertexDrag(
+                    info.itemId,
+                    insertAt,
+                    inserted,
+                    cur.frame,
+                    geom,
+                    cur.closed,
+                    toHandlePointer(e),
+                    "vertex-insert",
+                  );
                 }}
                 style={{
                   width: MIDPOINT_PX,

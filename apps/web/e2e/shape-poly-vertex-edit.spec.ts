@@ -96,8 +96,17 @@ test("WI-057 — dragging a vertex handle moves the vertex; Cmd+Z reverts", asyn
 
   const moved = await readVertex(page, id, 0);
   if (moved === undefined) throw new Error("vertex gone");
+  // x is an INTERIOR coordinate (v0.x=0.5 sits between v2.x=0 and v1.x=1) so the
+  // rightward drag shows up directly in the stored ratio.
   expect(moved.x).toBeGreaterThan(0.5); // dragged right
-  expect(moved.y).toBeGreaterThan(0); // dragged down
+  // y is NOT assertable on the stored ratio: v0 is the top apex, and dragging it
+  // down keeps it the topmost vertex, so DR-024's frame-follows-vertices refit
+  // renormalizes its y back to 0 (the box hugs the apex). The downward move is
+  // therefore observable on SCREEN — assert the handle itself moved right+down.
+  const movedBox = await h0.boundingBox();
+  if (movedBox === null) throw new Error("handle gone");
+  expect(movedBox.x + movedBox.width / 2).toBeGreaterThan(cx + 20); // moved right
+  expect(movedBox.y + movedBox.height / 2).toBeGreaterThan(cy + 10); // moved down
 
   // One undo reverts the whole drag.
   await page.keyboard.press("ControlOrMeta+z");

@@ -89,7 +89,10 @@ const SHAPE_ATTRS_NOTE =
 // and geometry is OPTIONAL (only `shape` is required) because the host fills any
 // missing field with a default. This tells the agent up-front which attributes are
 // usable per shape; the host's normalization guarantees completeness regardless.
-const ARROW_HEAD: Json = { type: "string", enum: ["none", "triangle", "open", "diamond", "circle"] };
+const ARROW_HEAD: Json = {
+  type: "string",
+  enum: ["none", "triangle", "open", "diamond", "circle"],
+};
 const SHAPE_SUBATTRS_SCHEMA: Json = {
   type: "object",
   description:
@@ -109,7 +112,12 @@ const SHAPE_SUBATTRS_SCHEMA: Json = {
       required: ["shape"],
       additionalProperties: false,
     },
-    { type: "object", properties: { shape: { const: "ellipse" } }, required: ["shape"], additionalProperties: false },
+    {
+      type: "object",
+      properties: { shape: { const: "ellipse" } },
+      required: ["shape"],
+      additionalProperties: false,
+    },
     {
       type: "object",
       properties: { shape: { const: "line" }, thickness: NUM },
@@ -190,7 +198,10 @@ const SHAPE_SUBATTRS_SCHEMA: Json = {
     },
     {
       type: "object",
-      properties: { shape: { const: "heart" }, variant: { type: "string", enum: ["classic", "rounded"] } },
+      properties: {
+        shape: { const: "heart" },
+        variant: { type: "string", enum: ["classic", "rounded"] },
+      },
       required: ["shape"],
       additionalProperties: false,
     },
@@ -282,15 +293,26 @@ const FRAME: Json = {
   properties: {
     x: {
       type: "number",
-      description: "Left edge, 0..1 of the PARENT frame's width (top-level = the design width). 0 = parent left edge.",
+      description:
+        "Left edge, 0..1 of the PARENT frame's width (top-level = the design width). 0 = parent left edge.",
     },
     y: {
       type: "number",
-      description: "Top edge, 0..1 of the PARENT frame's height (top-level = the design height). 0 = parent top edge.",
+      description:
+        "Top edge, 0..1 of the PARENT frame's height (top-level = the design height). 0 = parent top edge.",
     },
-    width: { type: "number", description: "Width as 0..1 of the PARENT frame's width (1 = full parent width)." },
-    height: { type: "number", description: "Height as 0..1 of the PARENT frame's height (1 = full parent height)." },
-    rotation: { type: "number", description: "Rotation in radians about the box center (not a ratio)." },
+    width: {
+      type: "number",
+      description: "Width as 0..1 of the PARENT frame's width (1 = full parent width).",
+    },
+    height: {
+      type: "number",
+      description: "Height as 0..1 of the PARENT frame's height (1 = full parent height).",
+    },
+    rotation: {
+      type: "number",
+      description: "Rotation in radians about the box center (not a ratio).",
+    },
   },
   required: ["x", "y", "width", "height"],
   additionalProperties: false,
@@ -372,6 +394,8 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.bringToFront": "맨 앞으로",
   "weave.item.sendToBack": "맨 뒤로",
   "weave.item.reparent": "부모 변경",
+  "weave.shape.breakToLine": "도형을 선으로 끊기",
+  "weave.line.closeToShape": "선 끝점 이어 도형으로",
   "weave.frame.removeKeepingChildren": "프레임 해제(자식 유지)",
   "weave.item.addBehavior": "동작 추가",
   "weave.item.removeBehavior": "동작 제거",
@@ -630,7 +654,12 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
           items: obj(
             {
               itemId: STR,
-              frame: obj({ x: NUM, y: NUM, width: NUM, height: NUM }, ["x", "y", "width", "height"]),
+              frame: obj({ x: NUM, y: NUM, width: NUM, height: NUM }, [
+                "x",
+                "y",
+                "width",
+                "height",
+              ]),
             },
             ["itemId", "frame"],
           ),
@@ -735,6 +764,35 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     inputSchema: obj({ frameId: STR, designWidth: NUM, designHeight: NUM }, ["frameId"]),
   },
 
+  // ── shape ↔ line conversion (WI-065 / DR-031) ──
+  // breakToLine: open a CLOSED shape into an open `line` at outline-vertex
+  // `vertexIndex` (default 0). Works for every shape with a polygon/ellipse
+  // outline (rectangle / triangle / polygon / star / ellipse / closed poly);
+  // rejects line/arrow/path/heart/speech-bubble (not-convertible). The shape's
+  // fill becomes the line's stroke. Replaces the item with a NEW id.
+  "weave.shape.breakToLine": {
+    label: label("weave.shape.breakToLine"),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        vertexIndex: {
+          type: "number",
+          description:
+            "Outline-vertex index to open the ring at (0 = first/top vertex). Default 0.",
+        },
+      },
+      ["itemId"],
+    ),
+  },
+  // closeToShape: fuse the two endpoints of an open `line` / free-curve (or an
+  // open poly) into ONE vertex and close it into a filled `poly` shape. Needs
+  // ≥3 points (not-convertible otherwise). The line's stroke becomes the
+  // shape's fill. Replaces the item with a NEW id.
+  "weave.line.closeToShape": {
+    label: label("weave.line.closeToShape"),
+    inputSchema: obj({ itemId: STR }, ["itemId"]),
+  },
+
   // ── behaviors (units) ──
   "weave.item.addBehavior": {
     label: label("weave.item.addBehavior"),
@@ -811,8 +869,14 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     inputSchema: obj(
       {
         itemId: STR,
-        x: { type: "number", description: "Target COLUMN — a 1-based grid cell index (NOT a ratio or px)." },
-        y: { type: "number", description: "Target ROW — a 1-based grid cell index (NOT a ratio or px)." },
+        x: {
+          type: "number",
+          description: "Target COLUMN — a 1-based grid cell index (NOT a ratio or px).",
+        },
+        y: {
+          type: "number",
+          description: "Target ROW — a 1-based grid cell index (NOT a ratio or px).",
+        },
       },
       ["itemId", "x", "y"],
     ),

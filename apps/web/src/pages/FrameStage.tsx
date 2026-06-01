@@ -17,15 +17,12 @@ import type { Document as AgocraftDocument, Item as AgocraftItem, ItemId } from 
 import type { Editor } from "@agocraft/editor";
 import {
   createFrameMoveBinding,
-  createFrameResizeBinding,
-  createFrameRotateBinding,
   createModifierOverride,
   createPanBinding,
   createRubberBandBinding,
   type FrameAccess,
   type FrameGeom,
   GESTURE_PRIORITY_ELEMENT_BODY,
-  GESTURE_PRIORITY_ELEMENT_HANDLE,
   GESTURE_PRIORITY_FALLBACK,
   type ResizeDir,
   resolveAnchor,
@@ -84,6 +81,13 @@ import { MarqueeSelectionLayer } from "../document/marquee/MarqueeSelectionLayer
 import { FrameContent } from "../document/render/FrameContent.js";
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
 import { RubberBandLayer } from "../document/rubber-band/RubberBandLayer.js";
+// DR-032 / WI-067 P3 — resize/rotate handles run through the uniform handle
+// interaction pipeline (createFrameResizeBinding/createFrameRotateBinding
+// retired from the GestureRouter).
+import {
+  startHandleGesture,
+  toHandlePointer,
+} from "../document/selection-chrome/handle-gesture-runner.js";
 import { applyLayoutConstraintFilter } from "../document/selection-chrome/layout-constraint-filter.js";
 import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
 
@@ -1649,9 +1653,7 @@ export function FrameStage(props: FrameStageProps) {
               ...prev,
               frame: cleanFrame,
               fontSize: nextFontSize,
-              ...(nextFontSizeSpec !== undefined
-                ? { fontSizeSpec: nextFontSizeSpec }
-                : {}),
+              ...(nextFontSizeSpec !== undefined ? { fontSizeSpec: nextFontSizeSpec } : {}),
             }));
           }
           return;
@@ -1885,92 +1887,120 @@ export function FrameStage(props: FrameStageProps) {
   // hit-testing via `acceptTarget` is not enough on its own — a hand-
   // tool drag that happened to land on a portal'd handle would still
   // claim a resize despite the user's pan intent.
+  // DR-032 / WI-067 P3 — resize + rotate handles now run through the UNIFORM
+  // handle-interaction pipeline, not the GestureRouter. SelectionLayer portals
+  // its handles to `document.body`, so a capture-phase pointerdown listener
+  // there detects a resize / rotate handle via the SAME DOM markers, builds a
+  // sink that REUSES `frameAccess.computeResize/computeRotate + commitFrame`
+  // (full parity — identical math + mergeKey), and starts the per-handle FSM
+  // gesture (`startHandleGesture` owns the document pointer loop). Move / marquee
+  // / pan stay on the GestureRouter — they are not handles.
   useEffect(() => {
-    if (router === null) return undefined;
     if (vm === null) return undefined;
     if (typeof document === "undefined") return undefined;
     if (!frameDragAllowed) return undefined;
-    return router.register({
-      host: document.body,
-      bindings: [
-        createFrameResizeBinding({
-          access: frameAccess,
-          resolveResizeDir(target) {
-            if (!(target instanceof HTMLElement)) return null;
-            const handle = target.closest("[data-handle-kind][data-handle-dir]");
-            if (handle === null) return null;
-            const kind = handle.getAttribute("data-handle-kind");
-            if (kind !== "edge" && kind !== "corner") return null;
-            const dir = handle.getAttribute("data-handle-dir");
-            if (
-              dir !== "n" &&
-              dir !== "ne" &&
-              dir !== "e" &&
-              dir !== "se" &&
-              dir !== "s" &&
-              dir !== "sw" &&
-              dir !== "w" &&
-              dir !== "nw"
-            )
-              return null;
-            return dir;
+    let seq = 0;
+    const RESIZE_DIRS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const;
+    const handleItemId = (el: Element | null): ItemId | null => {
+      const id =
+        el
+          ?.closest("[data-selection-handle-item-id]")
+          ?.getAttribute("data-selection-handle-item-id") ?? null;
+      return id as ItemId | null;
+    };
+    const centerOf = (itemId: ItemId): { x: number; y: number } => {
+      const el = document.querySelector(`[data-frame-id="${CSS.escape(String(itemId))}"]`);
+      if (el !== null) {
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }
+      const b = vm.selectedFrameBoundsViewport.get();
+      return b === null ? { x: 0, y: 0 } : { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+    };
+
+    // Resolve from the PRESS TARGET only (matches the prior GestureRouter's
+    // `e.target` semantics). A point-stack scan is deliberately NOT used: a
+    // closed poly stacks resize handles (shape VM) UNDER its vertex handles
+    // (poly VM), so scanning the point would hijack a vertex press into a
+    // resize. The press target is authoritative — each handle owns its own hit.
+    const handleAt = (e: PointerEvent, selector: string): Element | null => {
+      const t = e.target;
+      return t instanceof HTMLElement ? t.closest(selector) : null;
+    };
+
+    const onDown = (e: PointerEvent): void => {
+      // Rotate handle.
+      const rot = handleAt(e, "[data-handle-kind='rotation']");
+      if (rot !== null) {
+        const itemId = handleItemId(rot);
+        if (itemId === null) return;
+        const orig = frameAccess.readFrame(itemId);
+        if (orig === undefined) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const center = centerOf(itemId);
+        const origin = toHandlePointer(e);
+        const startVec = { x: origin.clientX - center.x, y: origin.clientY - center.y };
+        const sessionId = `${String(itemId)}/rotate/${seq++}`;
+        startHandleGesture({
+          kind: "frame-rotate",
+          handleId: "rotate",
+          itemId: String(itemId),
+          origin,
+          sink: {
+            update: (p) =>
+              frameAccess.commitFrame(
+                itemId,
+                frameAccess.computeRotate(orig, center, startVec, { x: p.clientX, y: p.clientY }),
+                sessionId,
+              ),
           },
-          resolveFrameOfHandle(target) {
-            if (!(target instanceof HTMLElement)) return null;
-            const wrap = target.closest("[data-selection-handle-item-id]");
-            const id = wrap?.getAttribute("data-selection-handle-item-id") ?? null;
-            return id as ItemId | null;
-          },
-          // Body host sees everything — keep this binding inert unless
-          // the press lands inside a portal'd selection handle.
-          acceptTarget: (target) =>
-            target instanceof HTMLElement &&
-            target.closest("[data-handle-kind][data-handle-dir]") !== null,
-          priority: GESTURE_PRIORITY_ELEMENT_HANDLE,
-        }),
-        createFrameRotateBinding({
-          access: frameAccess,
-          resolveRotateHandle(target) {
-            if (!(target instanceof HTMLElement)) return null;
-            const handle = target.closest("[data-handle-kind='rotation']");
-            if (handle === null) return null;
-            const wrap = handle.closest("[data-selection-handle-item-id]");
-            const id = wrap?.getAttribute("data-selection-handle-item-id") ?? null;
-            return id as ItemId | null;
-          },
-          centerViewportOf(itemId) {
-            // The rotation pivot MUST be in the same coordinate space as the
-            // pointer events the gesture router feeds in — clientX/clientY
-            // (window-relative). `selectedFrameBoundsViewport` is stage-local
-            // (camera space, relative to the FrameStage outer element via
-            // `canonicalToViewport`), so using it directly put the pivot off
-            // by the stage's on-screen offset (left panel / top bar). With the
-            // pivot shifted away from the true center, dragging the handle
-            // tracked vertical motion instead of the mouse's angle around the
-            // item. Read the rendered element's client-rect center instead: it
-            // is the real on-screen center (= the CSS `rotate()` transform-
-            // origin, invariant under the current rotation) in client coords,
-            // matching `e.position`.
-            const el =
-              typeof document === "undefined"
-                ? null
-                : document.querySelector(`[data-frame-id="${CSS.escape(String(itemId))}"]`);
-            if (el !== null) {
-              const r = el.getBoundingClientRect();
-              return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-            }
-            const b = vm.selectedFrameBoundsViewport.get();
-            if (b === null) return { x: 0, y: 0 };
-            return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
-          },
-          acceptTarget: (target) =>
-            target instanceof HTMLElement &&
-            target.closest("[data-handle-kind='rotation']") !== null,
-          priority: GESTURE_PRIORITY_ELEMENT_HANDLE,
-        }),
-      ],
-    });
-  }, [router, vm, frameAccess, frameDragAllowed]);
+        });
+        return;
+      }
+
+      // Resize handle (edge / corner + dir).
+      const rsz = handleAt(e, "[data-handle-kind][data-handle-dir]");
+      if (rsz === null) return;
+      const kind = rsz.getAttribute("data-handle-kind");
+      if (kind !== "edge" && kind !== "corner") return;
+      const dirAttr = rsz.getAttribute("data-handle-dir");
+      if (!RESIZE_DIRS.includes(dirAttr as (typeof RESIZE_DIRS)[number])) return;
+      const dir = dirAttr as ResizeDir;
+      const itemId = handleItemId(rsz);
+      if (itemId === null) return;
+      const orig = frameAccess.readFrame(itemId);
+      if (orig === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const parent = frameAccess.parentRectOf(itemId);
+      const origin = toHandlePointer(e);
+      const sessionId = `${String(itemId)}/resize/${seq++}`;
+      startHandleGesture({
+        kind: "frame-resize",
+        handleId: `resize.${dir}`,
+        itemId: String(itemId),
+        origin,
+        sink: {
+          update: (p) =>
+            frameAccess.commitFrame(
+              itemId,
+              frameAccess.computeResize(
+                orig,
+                dir,
+                p.clientX - origin.clientX,
+                p.clientY - origin.clientY,
+                parent,
+              ),
+              sessionId,
+            ),
+        },
+      });
+    };
+
+    document.body.addEventListener("pointerdown", onDown, { capture: true });
+    return () => document.body.removeEventListener("pointerdown", onDown, { capture: true });
+  }, [vm, frameAccess, frameDragAllowed]);
 
   // Single editor-level Esc → `router.cancelActive()` flow. agocraft
   // fans the call out to every attached host (in-flight binding's

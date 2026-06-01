@@ -424,9 +424,9 @@ describe("weave.shape.setFill (WI-056)", () => {
   // a unit.create (replacing the seeded fill unit) carrying the PaintSpec.
   function createdFillPaint(result: CommandResult<unknown>): unknown {
     if (!result.ok) throw new Error("unexpected fail");
-    const create = result.patches.find(
-      (p) => (p as { type?: string }).type === "unit.create",
-    ) as { unit?: { kind?: string; attrs?: unknown } } | undefined;
+    const create = result.patches.find((p) => (p as { type?: string }).type === "unit.create") as
+      | { unit?: { kind?: string; attrs?: unknown } }
+      | undefined;
     if (create === undefined) throw new Error("expected a unit.create patch");
     expect(create.unit?.kind).toBe(FILL_UNIT_KIND);
     return create.unit?.attrs;
@@ -1209,7 +1209,11 @@ describe("weave.item.update — units (WI-063)", () => {
       updatedAt: META_DATE,
       schemaVersion: 3,
     };
-    return { document: toAgocraftDocument(weave), resolve: () => null as never, skipRelations: false };
+    return {
+      document: toAgocraftDocument(weave),
+      resolve: () => null as never,
+      skipRelations: false,
+    };
   }
   // NOTE: the `units` path delegates to the vendored setDecoration command, which
   // resolves a unit-id generator from the editor container at runtime. The bare
@@ -1247,8 +1251,11 @@ describe("weave.item.add — creation units (WI-063)", () => {
     if (!res.ok) throw new Error("add failed");
     const create = res.patches.find((p) => p.type === "item.create");
     if (create === undefined) throw new Error("no item.create patch");
-    return (create as unknown as { item: { units: Array<{ kind: string; attrs: Record<string, unknown> }> } })
-      .item.units;
+    return (
+      create as unknown as {
+        item: { units: Array<{ kind: string; attrs: Record<string, unknown> }> };
+      }
+    ).item.units;
   }
 
   it("attaches fill + shadow at creation in one call (seed fill replaced, not duplicated)", () => {
@@ -1291,7 +1298,9 @@ describe("weave.item.add — shape subAttrs normalization (WI-062)", () => {
     return c;
   }
   // The add command emits an `item.create` patch carrying the serialized item.
-  function createdAttrs(res: ReturnType<ReturnType<typeof addCmd>["run"]>): Record<string, unknown> {
+  function createdAttrs(
+    res: ReturnType<ReturnType<typeof addCmd>["run"]>,
+  ): Record<string, unknown> {
     if (!res.ok) throw new Error("add failed");
     const create = res.patches.find((p) => p.type === "item.create");
     if (create === undefined) throw new Error("no item.create patch");
@@ -1313,7 +1322,10 @@ describe("weave.item.add — shape subAttrs normalization (WI-062)", () => {
   it("deep-merges a partial cornerRadii so the other corners keep their default", () => {
     const res = addCmd().run(makeCtx(), {
       kind: "shape",
-      attrsOverride: { shape: "rectangle", subAttrs: { shape: "rectangle", cornerRadii: { tl: 12 } } },
+      attrsOverride: {
+        shape: "rectangle",
+        subAttrs: { shape: "rectangle", cornerRadii: { tl: 12 } },
+      },
     });
     expect(sub(createdAttrs(res)).cornerRadii).toEqual({ tl: 12, tr: 0, br: 0, bl: 0 });
   });
@@ -1373,7 +1385,11 @@ describe("weave.items.update (WI-061)", () => {
       updatedAt: META_DATE,
       schemaVersion: 3,
     };
-    return { document: toAgocraftDocument(weave), resolve: () => null as never, skipRelations: false };
+    return {
+      document: toAgocraftDocument(weave),
+      resolve: () => null as never,
+      skipRelations: false,
+    };
   }
 
   it("applies the same attrs to every id as ONE batch of item.attrs patches", () => {
@@ -1430,7 +1446,11 @@ describe("weave.items.update op = align/distribute (WI-059/064)", () => {
       updatedAt: META_DATE,
       schemaVersion: 3,
     };
-    return { document: toAgocraftDocument(weave), resolve: () => null as never, skipRelations: false };
+    return {
+      document: toAgocraftDocument(weave),
+      resolve: () => null as never,
+      skipRelations: false,
+    };
   }
   // Extract { itemId → after.frame.x } for the emitted item.attrs patches.
   function movedX(patches: ReadonlyArray<{ type: string }>): Map<string, number> {
@@ -1506,13 +1526,19 @@ describe("weave.items.update op = align/distribute (WI-059/064)", () => {
     const childAgocraft = {
       id: makeItemId("child-1"),
       kind: "frame",
-      attrs: { frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 } } as unknown as AgocraftItem["attrs"],
+      attrs: {
+        frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
+      } as unknown as AgocraftItem["attrs"],
       units: [],
       children: [] as ReadonlyArray<AgocraftItem>,
       meta: { createdAt: META_DATE, updatedAt: META_DATE, schemaVersion: 9 },
     } as unknown as AgocraftItem;
     const doc = addChild(root, childAgocraft, "parent-1");
-    const ctx: CommandContext = { document: doc, resolve: () => null as never, skipRelations: false };
+    const ctx: CommandContext = {
+      document: doc,
+      resolve: () => null as never,
+      skipRelations: false,
+    };
     const res = alignCmd().run(ctx, { itemIds: ["child-1", "sibling-2"], op: "align-left" });
     expect(res.ok).toBe(false);
     if (res.ok) throw new Error("expected fail");
@@ -1532,7 +1558,9 @@ describe("weave.items.lifecycle (WI-064)", () => {
     const res = lifecycleCmd().run(makeCtx(), { itemIds: ["slide-1"], op: "remove" });
     if (!res.ok) throw new Error("unexpected fail");
     expect(res.patches.length).toBeGreaterThan(0);
-    expect(res.patches.some((p) => p.type === "item.remove" || p.type === "item.children")).toBe(true);
+    expect(res.patches.some((p) => p.type === "item.remove" || p.type === "item.children")).toBe(
+      true,
+    );
   });
 
   it("rejects an unknown op", () => {
@@ -1568,3 +1596,82 @@ function findItemDeepById(doc: AgocraftDocument, id: string): AgocraftItem | und
   }
   return undefined;
 }
+
+// ─── WI-065 / DR-031 — shape ↔ line conversion commands ──────────────────────
+
+function makeLineCtx(): CommandContext {
+  const lineItem = {
+    id: "line-1",
+    kind: "line",
+    attrs: {
+      frame: FULL_FRAME,
+      points: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0.1, y: 0.1 },
+      ],
+      smooth: true,
+      heads: { start: "none", end: "none" },
+    },
+    behaviors: [],
+    createdAt: META_DATE,
+  } as unknown as Item;
+  const weave: WeaveDocument = {
+    id: "doc-line",
+    title: "Line",
+    items: [lineItem],
+    updatedAt: META_DATE,
+    schemaVersion: 3,
+  };
+  const idGen = createUuidV7Generator(defaultClock, defaultRandom);
+  return {
+    document: toAgocraftDocument(weave),
+    resolve: ((token: Token<unknown>) =>
+      token === IdGeneratorToken ? idGen : null) as CommandContext["resolve"],
+    skipRelations: false,
+  };
+}
+
+describe("weave.shape.breakToLine + weave.line.closeToShape (WI-065 / DR-031)", () => {
+  it("registers both conversion commands with input schemas", () => {
+    const cmds = buildWeaveCommands(spyTargets());
+    const brk = cmds.find((c) => c.name === "weave.shape.breakToLine");
+    const close = cmds.find((c) => c.name === "weave.line.closeToShape");
+    expect(brk).toBeDefined();
+    expect(close).toBeDefined();
+    expect(brk?.inputSchema).toBeDefined();
+    expect(close?.inputSchema).toBeDefined();
+  });
+
+  it("breakToLine turns a rectangle into a fresh-id line (remove + create)", () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.shape.breakToLine");
+    const r = cmd!.run(makeShapeCtx(), { itemId: "rect-1" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.patches.map((p) => p.type)).toEqual(["item.remove", "item.create"]);
+    const create = r.patches[1] as Extract<(typeof r.patches)[number], { type: "item.create" }>;
+    expect(create.item.kind).toBe("line");
+    expect(create.item.id).not.toBe("rect-1");
+    expect(r.value).toBe(create.item.id);
+  });
+
+  it("breakToLine rejects an out-of-range vertex index", () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.shape.breakToLine");
+    const r = cmd!.run(makeShapeCtx(), { itemId: "rect-1", vertexIndex: 99 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("invalid-vertex-index");
+  });
+
+  it("closeToShape turns a free curve into a fresh-id closed poly shape", () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.line.closeToShape");
+    const r = cmd!.run(makeLineCtx(), { itemId: "line-1" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.patches.map((p) => p.type)).toEqual(["item.remove", "item.create"]);
+    const create = r.patches[1] as Extract<(typeof r.patches)[number], { type: "item.create" }>;
+    expect(create.item.kind).toBe("shape");
+    expect((create.item.attrs as { subAttrs: { closed: boolean } }).subAttrs.closed).toBe(true);
+    expect(create.item.id).not.toBe("line-1");
+  });
+});

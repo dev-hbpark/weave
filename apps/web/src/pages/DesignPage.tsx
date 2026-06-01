@@ -1,11 +1,14 @@
 import {
   type Document as AgocraftDocument,
   type Item as AgocraftItem,
+  canBreakShapeToLine,
+  canCloseLineToShape,
   createAutoFlexSpec,
   createAutoGridSpec,
   defaultShapeSubAttrs,
   FILL_UNIT_KIND,
   type LayoutSpec,
+  type SerializedItem,
   type ShapeSubKind,
   trackFr,
 } from "@agocraft/core";
@@ -104,6 +107,7 @@ import {
   useSelectionChromeVisible,
   useTooltipsAllowed,
 } from "../document";
+import { computeAddFrame } from "../document/add-geometry.js";
 import {
   absoluteFrameBox,
   findItemDeep,
@@ -111,7 +115,6 @@ import {
   findTrailDeep,
   isDomainItem,
 } from "../document/agocraft-mirror.js";
-import { computeAddFrame } from "../document/add-geometry.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
@@ -338,9 +341,17 @@ function FrameContextMenu({
   layers,
   onPickLayer,
   onHoverPreview,
+  onBreakToLine,
+  onCloseToShape,
 }: {
   readonly itemId: string;
   readonly onDelete: () => void;
+  /** WI-065 / DR-031 — present when the right-clicked item is a CLOSED shape
+   *  with a breakable outline → "선으로 끊기" (breaks at the first vertex). */
+  readonly onBreakToLine?: () => void;
+  /** WI-065 / DR-031 — present when the right-clicked item is an open line /
+   *  free-curve → "끝점 이어 도형으로" (fuse endpoints into a closed shape). */
+  readonly onCloseToShape?: () => void;
   /** WI-038 — fires when the user picks one of the four z-order rows.
    *  No-op when the host doesn't supply a handler (e.g., legacy contexts
    *  that haven't been migrated). */
@@ -486,6 +497,21 @@ function FrameContextMenu({
                 ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
+            <ContextMenuSeparator />
+          </>
+        )}
+        {(onBreakToLine !== undefined || onCloseToShape !== undefined) && (
+          <>
+            {onBreakToLine !== undefined && (
+              <ContextMenuItem onSelect={onBreakToLine} data-testid="ctx-break-to-line">
+                선으로 끊기
+              </ContextMenuItem>
+            )}
+            {onCloseToShape !== undefined && (
+              <ContextMenuItem onSelect={onCloseToShape} data-testid="ctx-close-to-shape">
+                끝점 이어 도형으로
+              </ContextMenuItem>
+            )}
             <ContextMenuSeparator />
           </>
         )}
@@ -807,6 +833,11 @@ function DesignPageBody() {
     };
   }, [selectionChrome]);
 
+  // WI-065 / DR-031 — re-select helper held in a ref so the vertex-handle VM
+  // (registered once, deps [selectionChrome, editor]) never closes over a stale
+  // `selectFrame`. Assigned below, once the selection hook is initialised.
+  const selectFrameRef = useRef<(id: string) => void>(() => {});
+
   // WI-057 Phase 2 — register draggable vertex handles for freeform `poly`
   // shapes. The view-model reads the live vertices through docInAgocraftRef so
   // it always sees current points; dragging dispatches weave.shape.setVertices.
@@ -829,6 +860,17 @@ function DesignPageBody() {
           const sub = attrs?.subAttrs;
           if (sub?.shape !== "poly" || attrs?.frame === undefined) return null;
           return { points: sub.points ?? [], closed: sub.closed ?? true, frame: attrs.frame };
+        },
+        // WI-065 / DR-031 — right-click a vertex breaks the poly into a `line`
+        // at exactly that vertex, then re-selects the new line. Re-selection
+        // goes through a ref so the VM (registered once) never closes over a
+        // stale `selectFrame`.
+        onBreakAtVertex: (id, vertexIndex) => {
+          const r = editor.exec<unknown, string>("weave.shape.breakToLine", {
+            itemId: id,
+            vertexIndex,
+          });
+          if (r.ok) selectFrameRef.current(r.value);
         },
       }),
     );
@@ -1412,6 +1454,9 @@ function DesignPageBody() {
   // components rendered below pick up the same vm via context.
   const { selection, selectedIds, selectFrame, selectFrames, addFrames, toggleFrames } =
     useSelection(vm);
+  // WI-065 / DR-031 — keep the ref pointed at the live selectFrame for the
+  // vertex-handle break action (see the poly VM registration above).
+  selectFrameRef.current = selectFrame;
   const selectedFrameId = selection?.kind === "frame" ? selection.id : undefined;
   const _isMultiSelect = selectedIds.size > 1;
   // WI-038 Phase 2 — derive peek container from selection. Selecting any
@@ -2954,6 +2999,15 @@ function DesignPageBody() {
                                         designHeight: design.height,
                                       });
                                     };
+                                    // WI-065 / DR-031 — shape ↔ line conversion. Gate each
+                                    // row on the live item's convertibility (core decides).
+                                    const cvItem = findItemDeep(docInAgocraft, itemId) as
+                                      | SerializedItem
+                                      | undefined;
+                                    const canBreak =
+                                      cvItem !== undefined && canBreakShapeToLine(cvItem);
+                                    const canClose =
+                                      cvItem !== undefined && canCloseLineToShape(cvItem);
                                     return (
                                       <FrameContextMenu
                                         itemId={itemId}
@@ -2961,6 +3015,28 @@ function DesignPageBody() {
                                           removeItem(itemId);
                                           bumpHistoryTick();
                                         }}
+                                        {...(canBreak
+                                          ? {
+                                              onBreakToLine: () => {
+                                                const r = editor.exec<unknown, string>(
+                                                  "weave.shape.breakToLine",
+                                                  { itemId },
+                                                );
+                                                if (r.ok) selectFrame(r.value);
+                                              },
+                                            }
+                                          : {})}
+                                        {...(canClose
+                                          ? {
+                                              onCloseToShape: () => {
+                                                const r = editor.exec<unknown, string>(
+                                                  "weave.line.closeToShape",
+                                                  { itemId },
+                                                );
+                                                if (r.ok) selectFrame(r.value);
+                                              },
+                                            }
+                                          : {})}
                                         onZOrder={(dir) => {
                                           const cmdId = {
                                             bringForward: "weave.item.bringForward",
