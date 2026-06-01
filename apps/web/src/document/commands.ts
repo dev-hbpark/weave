@@ -199,6 +199,24 @@ export interface SetShapeFillInput {
   readonly fill: import("@agocraft/core").PaintSpec;
 }
 
+/** WI-074 / DR-029 — interactive image crop. Targets `attrs.cropRatio`
+ *  (`ImageCrop` = `{ x, y, w, h, rotation? }`, all 0..1 except `rotation` in
+ *  radians). The renderer (`ImageBlock`) applies the window + content rotation.
+ *  Image-only. `crop` defines the visible window in display space; `rotation`
+ *  (DR-029 D6) is the Canva-style content straighten (frame stays fixed).
+ *  No-crop = `{ x:0, y:0, w:1, h:1 }` with `rotation` omitted. */
+export interface SetImageCropInput {
+  readonly itemId: string;
+  readonly crop: {
+    readonly x: number;
+    readonly y: number;
+    readonly w: number;
+    readonly h: number;
+  };
+  /** Content rotation (radians). Omitted = 0. */
+  readonly rotation?: number;
+}
+
 /** WI-020 / WI-043 — explicit layout-spec mutation. Targets `attrs.layout`
  *  via the agocraft `item.layout` Patch variant (self-inverting before/after
  *  swap, mergeKeyOf folds rapid SegmentedControl flips into one undo). */
@@ -640,6 +658,67 @@ export function buildWeaveCommands(
       const after: Readonly<Record<string, unknown>> = {
         ...(child.attrs as unknown as Record<string, unknown>),
         subAttrs: { ...sub, shape: "rectangle", cornerRadii: nextRadii },
+      };
+      const patch: Patch = {
+        type: "item.attrs",
+        itemId: child.id,
+        before: child.attrs,
+        after,
+      };
+      return ok(undefined, [patch]);
+    },
+  };
+
+  // WI-074 / DR-029 — set an image's crop window (+ optional content rotation).
+  // Rebuilds the COMPLETE attrs map with a fresh `cropRatio` (the item.attrs
+  // reducer replaces the whole map; other attrs — fit / borderRadius / frame —
+  // are preserved verbatim). Image-only. `crop` is the 0..1 display-space window;
+  // `rotation` (radians, DR-029 D6) is carried INSIDE `cropRatio` per agocraft
+  // DR-037 (ImageCrop.rotation). No-crop = { 0,0,1,1 } + rotation omitted.
+  const setImageCrop: Command<SetImageCropInput, void> = {
+    name: "weave.image.setCrop",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail("item-not-found", `weave.image.setCrop: no item with id "${input.itemId}"`);
+      }
+      if ((child as { kind?: string }).kind !== "image") {
+        return fail("not-an-image", `weave.image.setCrop: item "${input.itemId}" is not an image`);
+      }
+      const c = input.crop;
+      const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+      const EPS = 1e-6;
+      if (
+        c === undefined ||
+        !finite(c.x) ||
+        !finite(c.y) ||
+        !finite(c.w) ||
+        !finite(c.h) ||
+        c.w <= 0 ||
+        c.h <= 0 ||
+        c.x < 0 ||
+        c.y < 0 ||
+        c.x + c.w > 1 + EPS ||
+        c.y + c.h > 1 + EPS
+      ) {
+        return fail(
+          "invalid-input",
+          "weave.image.setCrop: crop must be 0..1 with w,h>0 and x+w<=1, y+h<=1",
+        );
+      }
+      if (input.rotation !== undefined && !finite(input.rotation)) {
+        return fail("invalid-input", "weave.image.setCrop: rotation must be a finite number");
+      }
+      const cropRatio = {
+        x: c.x,
+        y: c.y,
+        w: c.w,
+        h: c.h,
+        ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
+      };
+      const after: Readonly<Record<string, unknown>> = {
+        ...(child.attrs as unknown as Record<string, unknown>),
+        cropRatio,
       };
       const patch: Patch = {
         type: "item.attrs",
@@ -1653,6 +1732,7 @@ export function buildWeaveCommands(
     removeItems as Command,
     updateItem as Command,
     setShapeCornerRadius as Command,
+    setImageCrop as Command,
     setShapeFill as Command,
     resizeMulti as Command,
     itemsUpdate as Command,

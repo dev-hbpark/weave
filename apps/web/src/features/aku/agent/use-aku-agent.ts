@@ -162,6 +162,7 @@ const AGENT_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   // single-item attribute setters → weave.item.add / weave.item.update (attrs + units)
   "weave.shape.setFill", // → weave.item.update { units:[{ kind:'decoration.fill', attrs }] }
   "weave.shape.setCornerRadius", // → weave.item.update { attrs:{ subAttrs:{ shape:'rectangle', cornerRadii } } }
+  "weave.image.setCrop", // → weave.item.update { attrs:{ cropRatio:{ x,y,w,h, rotation? } } }
   "weave.shape.setVertices", // → weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }
   "weave.item.setDecoration", // → weave.item.add/update { units:[{ kind, attrs }] }
   // multi-selection family → weave.items.update (edit) + weave.items.lifecycle (structural)

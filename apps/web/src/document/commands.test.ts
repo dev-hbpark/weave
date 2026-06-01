@@ -1675,3 +1675,113 @@ describe("weave.shape.breakToLine + weave.line.closeToShape (WI-065 / DR-031)", 
     expect(create.item.id).not.toBe("line-1");
   });
 });
+
+// WI-074 / DR-029 — image crop command (+ DR-029 D6 content rotation in cropRatio).
+describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
+  function makeImageCtx(): CommandContext {
+    const weave: WeaveDocument = {
+      id: "doc-img",
+      title: "Img",
+      items: [
+        {
+          id: "frame-1",
+          kind: "frame",
+          attrs: { frame: FULL_FRAME },
+          behaviors: [],
+          createdAt: META_DATE,
+        } as unknown as Item,
+      ],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    const image = {
+      id: makeItemId("img-1"),
+      kind: "image",
+      attrs: { frame: FULL_FRAME, src: "x", alt: "", fit: "cover", borderRadius: 0 },
+      units: [],
+      children: [] as ReadonlyArray<AgocraftItem>,
+      meta: { createdAt: META_DATE, updatedAt: META_DATE, schemaVersion: 9 },
+    } as unknown as AgocraftItem;
+    return {
+      document: addChild(toAgocraftDocument(weave), image, "frame-1"),
+      resolve: () => null as never,
+      skipRelations: false,
+    };
+  }
+  const cropCmd = () => {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.image.setCrop");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  };
+
+  it("sets cropRatio via an item.attrs patch, preserving other attrs", () => {
+    const result = cropCmd().run(makeImageCtx(), {
+      itemId: "img-1",
+      crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 },
+    });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error?.code ?? "?"}`);
+    expect(result.patches).toHaveLength(1);
+    const patch = result.patches[0];
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect((patch.after as { cropRatio: unknown }).cropRatio).toEqual({
+      x: 0.2,
+      y: 0.2,
+      w: 0.6,
+      h: 0.6,
+    });
+    expect((patch.after as { fit: string }).fit).toBe("cover");
+  });
+
+  it("carries rotation INSIDE cropRatio when provided (DR-029 D6)", () => {
+    const result = cropCmd().run(makeImageCtx(), {
+      itemId: "img-1",
+      crop: { x: 0, y: 0, w: 1, h: 1 },
+      rotation: 0.1745,
+    });
+    if (!result.ok) throw new Error("unexpected fail");
+    const patch = result.patches[0];
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect((patch.after as { cropRatio: { rotation?: number } }).cropRatio.rotation).toBe(0.1745);
+  });
+
+  it("fails not-an-image on a frame target", () => {
+    const result = cropCmd().run(makeImageCtx(), {
+      itemId: "frame-1",
+      crop: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("not-an-image");
+  });
+
+  it("fails item-not-found for an unknown id", () => {
+    const result = cropCmd().run(makeImageCtx(), {
+      itemId: "nope",
+      crop: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("item-not-found");
+  });
+
+  it("rejects out-of-range crop and non-finite rotation with invalid-input", () => {
+    const cmd = cropCmd();
+    const overflow = cmd.run(makeImageCtx(), {
+      itemId: "img-1",
+      crop: { x: 0.6, y: 0, w: 0.6, h: 1 },
+    });
+    expect(overflow.ok).toBe(false);
+    if (!overflow.ok) expect(overflow.error.code).toBe("invalid-input");
+
+    const zeroW = cmd.run(makeImageCtx(), { itemId: "img-1", crop: { x: 0, y: 0, w: 0, h: 1 } });
+    expect(zeroW.ok).toBe(false);
+
+    const badRot = cmd.run(makeImageCtx(), {
+      itemId: "img-1",
+      crop: { x: 0, y: 0, w: 1, h: 1 },
+      rotation: Number.POSITIVE_INFINITY,
+    });
+    expect(badRot.ok).toBe(false);
+    if (!badRot.ok) expect(badRot.error.code).toBe("invalid-input");
+  });
+});

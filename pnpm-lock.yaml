@@ -235,7 +235,7 @@ packages:
     version: 1.0.0-rc.20260601124038
 
   '@agocraft/core@file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260601124038.tgz':
-    resolution: {integrity: sha512-Wct+IHH+iGpl6XWoUvlyYoJSppppxxF9xye5bR2dKEQ9VG3/3aSjIwAGqQbvP28sJAPOe6v7sOfGTS1NQCg2xQ==, tarball: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260601124038.tgz}
+    resolution: {integrity: sha512-7ob7ERM+H+appugXHx6LljrPa1LQzvqigLtmA3dd818sX7iCXNrk2uWA0hmJntLkLhXCOLpHkpxPSDL2kVwC+w==, tarball: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260601124038.tgz}
     version: 1.0.0-rc.20260601124038
 
   '@agocraft/domain-block-doc@file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260601124038.tgz':
