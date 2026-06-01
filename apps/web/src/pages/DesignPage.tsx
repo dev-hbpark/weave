@@ -147,19 +147,14 @@ import { type LayerHit, LayerPickerMenu } from "../document/layer-picker/index.j
 import { MigrationResultBanner } from "../document/MigrationResultBanner.js";
 import { computeAlignedFrames } from "../document/multi/align-ops.js";
 import { type ArrangeLayout, computeArrangedFrames } from "../document/multi/layout-arrange.js";
-import { PeekOverlay, PointStackInspector, usePeekMode } from "../document/peek-mode/index.js";
+import { PeekOverlay, PointStackInspector } from "../document/peek-mode/index.js";
 import { PresenceCursors } from "../document/presence/PresenceCursors.js";
 import { usePresenceLocalCursor } from "../document/presence/use-presence-local-cursor.js";
 import { projectHoverAffordance } from "../document/render/hover-affordance-projector.js";
-import { createFrameDefaultViewModel } from "../document/selection-chrome/frame-default-view-model.js";
-import { createPolyVertexHandleViewModel } from "../document/selection-chrome/poly-vertex-handle.js";
-import { createShapeSelectionViewModel } from "../document/selection-chrome/shape-selection-view-model.js";
-import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
 // WI-070 — import for its registration side effect: registers the endpoint→
 // opposite-endpoint snap provider into SNAP_PROVIDERS (the host wires providers).
 import "../document/selection-chrome/endpoint-snap-provider.js";
 import { SnapFeedbackLayer } from "../document/selection-chrome/SnapFeedbackLayer.js";
-import { createTextSelectionViewModel } from "../document/selection-chrome/text-selection-view-model.js";
 import { removeVertexAndRefit } from "../document/selection-chrome/vertex-ops.js";
 import { vertexSelection } from "../document/selection-chrome/vertex-selection.js";
 import {
@@ -192,14 +187,15 @@ import {
 } from "../document/tooltip/editor-hotkeys.js";
 import { useMigrateInlineMedia } from "../document/use-migrate-inline-media.js";
 import { useWeaveEditor } from "../document/use-weave-editor.js";
-import { registerZOrderAdapters } from "../document/zorder/register.js";
 import { AkuAssistant } from "../features/aku/AkuAssistant.js";
 import { FigmaSelectionLaunchBanner } from "../launch/FigmaSelectionLaunchBanner.js";
 import { TextV1LaunchBanner } from "../launch/TextV1LaunchBanner.js";
 import { useDesignCommandHost } from "./design/hooks/use-command-host.js";
+import { useDesignPeek } from "./design/hooks/use-design-peek.js";
 import { useDesignSave } from "./design/hooks/use-design-save.js";
 import { useFrameFocus } from "./design/hooks/use-frame-focus.js";
 import { useHandTool } from "./design/hooks/use-hand-tool.js";
+import { useSelectionChromeRegistry } from "./design/hooks/use-selection-chrome-registry.js";
 import { FrameStage } from "./FrameStage.js";
 import { cameraFitBox } from "./frame-camera-bridge.js";
 import { SlidePresetPicker } from "./new-design/SlidePresetPicker.js";
@@ -679,232 +675,32 @@ function DesignPageBody() {
     },
     [editor],
   );
-  // WI-038 Phase 2 — peek-driven reorder routes through editor.exec with
-  // the active peek container id. The agocraft PeekModeController fires
-  // `onCommit(orderedAsc)` with the LOCAL lift stack's new order, but
-  // `weave.design.reorderChildren` validates as a full permutation of the
-  // container's children. We merge here: walk the container's children,
-  // replace each lifted slot with the next id from the new local order;
-  // un-lifted children keep their positions. This matches the original
-  // WI-019 `reorderRootChildren` helper semantics, generalized to any
-  // container.
-  //
-  // Reads `docInAgocraft` through a ref so the closure is stable for
-  // `usePeekMode` (which builds the controller once and captures the
-  // callback in `useMemo([index])`).
-  const reorderChildrenInContainerViaEditor = useCallback(
-    (localOrderAsc: ReadonlyArray<string>, containerId: string) => {
-      const doc = docInAgocraftRef.current;
-      if (!doc) return;
-      const container =
-        String(doc.root.id) === containerId
-          ? doc.root
-          : (findItemDeep(doc, containerId) ?? doc.root);
-      const currentIds = container.children.map((c) => String(c.id));
-      const localSet = new Set(localOrderAsc);
-      const liftedPositions: number[] = [];
-      currentIds.forEach((id, i) => {
-        if (localSet.has(id)) liftedPositions.push(i);
-      });
-      if (liftedPositions.length !== localOrderAsc.length) {
-        // One of the lifted ids is no longer a child of `containerId`
-        // (stale lift set after a remove). Skip silently — peek will
-        // refresh on the next cursor probe.
-        return;
-      }
-      const merged = [...currentIds];
-      liftedPositions.forEach((pos, i) => {
-        merged[pos] = localOrderAsc[i]!;
-      });
-      // Guard against no-op commits — the controller already filters those
-      // but a defense-in-depth check costs nothing.
-      const changed = merged.some((id, i) => id !== currentIds[i]);
-      if (!changed) return;
-      editor.exec("weave.design.reorderChildren", {
-        order: merged,
-        containerId,
-      });
-    },
-    [editor],
-  );
-  // WI-038 Phase 2 — the container peek indexes + reorders. Initial value
-  // is undefined → usePeekMode falls back to root. The container is
-  // recomputed once the selection state below is known, via the effect
-  // that watches `selectedFrameId`.
-  const [peekContainerId, setPeekContainerId] = useState<string | undefined>(undefined);
 
-  // DR-018 PoC — register slide-only "add bullet" handle. Demonstrates
-  // the extension story: a domain view-model contributes a kind-
-  // specific handle (only fires when a slide is selected). The default
-  // resize / rotate set continues to render alongside; registry merges.
-  useEffect(() => {
-    return selectionChrome.registerItemViewModel(createSlideBulletHandleViewModel({ editor }));
-  }, [selectionChrome, editor]);
-
-  // DR-023 — each item kind OWNS its selection chrome via a registered
-  // view-model (no central god-resolver in FrameStage). Plain kinds get the
-  // default 8-resize + rotate set; `text` gates resize dirs by auto-resize mode;
-  // `shape` drops box-resize for line-type sub-kinds. Mode/sub-kind reads go
-  // through docInAgocraftRef so the VM always sees live attrs (the
-  // poly-vertex-handle pattern). Cross-cutting layout limits are a separate
-  // post-resolve filter (see FrameStage). agocraft `SelectionInfo` is unchanged.
-  useEffect(() => {
-    const disposers = [
-      ...(["frame", "image", "video", "qr"] as const).map((k) =>
-        selectionChrome.registerItemViewModel(createFrameDefaultViewModel({ itemKind: k })),
-      ),
-      selectionChrome.registerItemViewModel(
-        createTextSelectionViewModel({
-          getLayoutChild: (itemId) => {
-            const item = findItemDeep(docInAgocraftRef.current, itemId);
-            return (
-              item?.attrs as
-                | { layoutChild?: import("@agocraft/core").LayoutChildPolicy }
-                | undefined
-            )?.layoutChild;
-          },
-        }),
-      ),
-      selectionChrome.registerItemViewModel(
-        createShapeSelectionViewModel({
-          getSubAttrs: (itemId) => {
-            const item = findItemDeep(docInAgocraftRef.current, itemId);
-            return (item?.attrs as { subAttrs?: { shape?: string; closed?: boolean } } | undefined)
-              ?.subAttrs;
-          },
-        }),
-      ),
-    ];
-    return () => {
-      for (const dispose of disposers) dispose();
-    };
-  }, [selectionChrome]);
-
-  // WI-065 / DR-031 — re-select helper held in a ref so the vertex-handle VM
-  // (registered once, deps [selectionChrome, editor]) never closes over a stale
-  // `selectFrame`. Assigned below, once the selection hook is initialised.
-  const selectFrameRef = useRef<(id: string) => void>(() => {});
-
-  // WI-057 Phase 2 — register draggable vertex handles for freeform `poly`
-  // shapes. The view-model reads the live vertices through docInAgocraftRef so
-  // it always sees current points; dragging dispatches weave.shape.setVertices.
-  useEffect(() => {
-    return selectionChrome.registerItemViewModel(
-      createPolyVertexHandleViewModel({
-        editor,
-        getPoly: (itemId) => {
-          const item = findItemDeep(docInAgocraftRef.current, itemId);
-          const attrs = item?.attrs as
-            | {
-                subAttrs?: {
-                  shape?: string;
-                  points?: ReadonlyArray<{ x: number; y: number; smooth?: boolean }>;
-                  closed?: boolean;
-                  smooth?: boolean;
-                };
-                frame?: { x: number; y: number; width: number; height: number; rotation?: number };
-              }
-            | undefined;
-          const sub = attrs?.subAttrs;
-          if (sub?.shape !== "poly" || attrs?.frame === undefined) return null;
-          return {
-            points: sub.points ?? [],
-            closed: sub.closed ?? true,
-            frame: attrs.frame,
-            // DR-033 — global fallback for per-vertex type.
-            ...(sub.smooth !== undefined ? { smooth: sub.smooth } : {}),
-          };
-        },
-        // WI-065 / DR-031 — right-click a vertex breaks the poly into a `line`
-        // at exactly that vertex, then re-selects the new line. Re-selection
-        // goes through a ref so the VM (registered once) never closes over a
-        // stale `selectFrame`.
-        onBreakAtVertex: (id, vertexIndex) => {
-          const r = editor.exec<unknown, string>("weave.shape.breakToLine", {
-            itemId: id,
-            vertexIndex,
-          });
-          if (r.ok) selectFrameRef.current(r.value);
-        },
-      }),
-    );
-  }, [selectionChrome, editor]);
-
-  // DR-025 / WI-062 — same vertex/endpoint editing for the `line` kind, but its
-  // points live on `attrs.points` (not `subAttrs`) and it is always open. No
-  // frame-default VM is registered for "line", so a selected line shows ONLY
-  // these handles (no resize / rotate) + the outline.
-  useEffect(() => {
-    return selectionChrome.registerItemViewModel(
-      createPolyVertexHandleViewModel({
-        editor,
-        itemKind: "line",
-        getPoly: (itemId) => {
-          const item = findItemDeep(docInAgocraftRef.current, itemId);
-          if (item?.kind !== "line") return null;
-          const attrs = item.attrs as {
-            points?: ReadonlyArray<{ x: number; y: number; smooth?: boolean }>;
-            smooth?: boolean;
-            frame?: { x: number; y: number; width: number; height: number; rotation?: number };
-          };
-          if (attrs.frame === undefined) return null;
-          return {
-            points: attrs.points ?? [],
-            closed: false,
-            frame: attrs.frame,
-            ...(attrs.smooth !== undefined ? { smooth: attrs.smooth } : {}),
-          };
-        },
-        composeAttrs: (prev, frame, points) => ({
-          ...prev,
-          ...(frame !== undefined ? { frame } : {}),
-          points,
-        }),
-        // WI-070 — an endpoint free-moved (Alt) and SNAPPED onto the opposite
-        // endpoint: fuse the two ends and close the line into a filled shape,
-        // then re-select the fresh shape (same pattern as the menu close + the
-        // breakToLine re-select; the ref keeps the VM from closing over a stale
-        // selectFrame).
-        onCloseBySnap: (id) => {
-          const r = editor.exec<unknown, string>("weave.line.closeToShape", {
-            itemId: id,
-            fuseEndpoints: true,
-          });
-          if (r.ok) selectFrameRef.current(r.value);
-        },
-      }),
-    );
-  }, [selectionChrome, editor]);
-
-  // WI-019 Phase 3 — register design-frame ZOrderCapability adapter for the
-  // 4 top-level Frame kinds. Adapter reads through a ref so it always sees
-  // the latest document mirror without re-registering on every doc change.
+  // Live-document mirror — shared by the selection-chrome VMs, peek, the z-order
+  // adapter, and ~dozen orchestrator closures so they read current attrs without
+  // re-subscribing. Hoisted (DR-027 / WI-071) above the hooks that consume it.
   const docInAgocraftRef = useRef<typeof docInAgocraft>(docInAgocraft);
   docInAgocraftRef.current = docInAgocraft;
-  useEffect(() => {
-    return registerZOrderAdapters({
-      capabilityRegistry: editor.capabilities,
-      getDocument: () => docInAgocraftRef.current,
-    });
-  }, [editor]);
 
-  // WI-019 Phase 3 / WI-038 Phase 2 — Peek mode controller + cursor →
-  // design coord translation. The `containerId` selects which Item's
-  // children peek indexes; defaults to the document root and switches to
-  // the parent of the currently-selected item once selection is wired up
-  // (see effect further down).
-  const peek = usePeekMode({
-    design,
-    subscribeToChanges: (h) => editor.changeStream.subscribe(h),
-    onReorder: reorderChildrenInContainerViaEditor,
-    ...(peekContainerId !== undefined ? { containerId: peekContainerId } : {}),
+  // DR-027 / WI-071 Phase 2 — DR-023 selection-chrome view-model registry (slide
+  // bullet / default / text / shape / poly+line vertex) + WI-019 z-order adapter
+  // extracted to a cooperating hook. selectFrameRef is owned there and assigned
+  // below once useSelection is up.
+  const { selectFrameRef } = useSelectionChromeRegistry({
+    selectionChrome,
+    editor,
+    docRef: docInAgocraftRef,
   });
 
-  // Expose peek controller for e2e diagnostics + dev tools only — never read
-  // in production hot-path (use React Context for that).
-  if (import.meta.env.DEV && typeof window !== "undefined") {
-    (window as unknown as { __weavePeek?: typeof peek }).__weavePeek = peek;
-  }
+  // DR-027 / WI-071 Phase 2 — Peek mode controller + permutation-merge reorder
+  // extracted to a cooperating view-model hook. The container id is driven by
+  // the selection effect further down via the returned `setPeekContainerId`
+  // (selection state doesn't exist yet at this call site).
+  const { peek, setPeekContainerId } = useDesignPeek({
+    design,
+    editor,
+    getDocument: () => docInAgocraftRef.current ?? null,
+  });
 
   // Bounding rect ref for the canvas host — used to translate clientX/Y to
   // design-space coords. The math assumes the design plane is fit-scaled
