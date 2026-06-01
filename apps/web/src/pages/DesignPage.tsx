@@ -182,7 +182,7 @@ import {
 } from "./design/line-seeds.js";
 import { DesignDialogs } from "./design/view/DesignDialogs.js";
 import { DesignHeader } from "./design/view/DesignHeader.js";
-import { FrameStage } from "./FrameStage.js";
+import { FrameStage, type FrameMenuContext } from "./FrameStage.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
 
 /** Mounts the single UnifiedTooltip surface and disables it whenever the
@@ -1712,6 +1712,105 @@ function DesignPageBody() {
     if (result.ok) setSelectedFrameIdRef.current?.(result.value);
   };
 
+  // DR-027 / WI-071 Phase 2 — frame context-menu builder lifted out of the
+  // FrameStage renderFrameMenu slot so the canvas JSX stays declarative.
+  const renderFrameMenu = (itemId: string, children: ReactNodeAlias, ctx?: FrameMenuContext): ReactNodeAlias => {
+                                    // WI-039 — selection-aware reparent. The
+                                    // gesture moves either the right-clicked
+                                    // frame OR the multi-selection it belongs
+                                    // to; cycle-blocked rows are dimmed.
+                                    const movedIds: ReadonlyArray<string> =
+                                      selectedIds.has(itemId) && selectedIds.size > 1
+                                        ? [...selectedIds]
+                                        : [itemId];
+                                    const reparentTree = buildFrameTree(docInAgocraft, movedIds);
+                                    const handleReparent = (targetPickerId: string) => {
+                                      const newParentId = resolvePickerTargetId(
+                                        docInAgocraft,
+                                        targetPickerId,
+                                      );
+                                      editor.exec("weave.item.reparent", {
+                                        entries: movedIds.map((id) => ({
+                                          itemId: id,
+                                          newParentId,
+                                        })),
+                                        // Real design size → rotation-aware reparent
+                                        // stays correct across rotated, non-square ancestors.
+                                        designWidth: design.width,
+                                        designHeight: design.height,
+                                      });
+                                    };
+                                    // WI-065 / DR-031 — shape ↔ line conversion. Gate each
+                                    // row on the live item's convertibility (core decides).
+                                    const cvItem = findItemDeep(docInAgocraft, itemId) as
+                                      | SerializedItem
+                                      | undefined;
+                                    const canBreak =
+                                      cvItem !== undefined && canBreakShapeToLine(cvItem);
+                                    const canClose =
+                                      cvItem !== undefined && canCloseLineToShape(cvItem);
+                                    return (
+                                      <FrameContextMenu
+                                        itemId={itemId}
+                                        onDelete={() => {
+                                          removeItem(itemId);
+                                          bumpHistoryTick();
+                                        }}
+                                        {...(canBreak
+                                          ? {
+                                              onBreakToLine: () => {
+                                                const r = editor.exec<unknown, string>(
+                                                  "weave.shape.breakToLine",
+                                                  { itemId },
+                                                );
+                                                if (r.ok) selectFrame(r.value);
+                                              },
+                                            }
+                                          : {})}
+                                        {...(canClose
+                                          ? {
+                                              onCloseToShape: () => {
+                                                const r = editor.exec<unknown, string>(
+                                                  "weave.line.closeToShape",
+                                                  { itemId },
+                                                );
+                                                if (r.ok) selectFrame(r.value);
+                                              },
+                                            }
+                                          : {})}
+                                        onZOrder={(dir) => {
+                                          const cmdId = {
+                                            bringForward: "weave.item.bringForward",
+                                            sendBackward: "weave.item.sendBackward",
+                                            bringToFront: "weave.item.bringToFront",
+                                            sendToBack: "weave.item.sendToBack",
+                                          }[dir];
+                                          editor.exec(cmdId, { itemId });
+                                        }}
+                                        reparentTree={reparentTree}
+                                        onReparent={handleReparent}
+                                        onClipboard={(verb) =>
+                                          dispatchEditorCommand(
+                                            `weave.clipboard.${
+                                              verb === "pasteSpecial" ? "pasteSpecial" : verb
+                                            }`,
+                                            { editor },
+                                            commandContext,
+                                          )
+                                        }
+                                        clipboardHasItems={clipboardCommands.hasItems}
+                                        {...(ctx !== undefined
+                                          ? {
+                                              layers: ctx.layers,
+                                              onPickLayer: ctx.onPickLayer,
+                                            }
+                                          : {})}
+                                      >
+                                        {children}
+                                      </FrameContextMenu>
+                                    );
+                                  };
+
   return (
     <EditorVMProvider vm={vm}>
       <RouterProvider router={router}>
@@ -1919,102 +2018,7 @@ function DesignPageBody() {
                                       } as typeof prev.attrs,
                                     }))
                                   }
-                                  renderFrameMenu={(itemId, children, ctx) => {
-                                    // WI-039 — selection-aware reparent. The
-                                    // gesture moves either the right-clicked
-                                    // frame OR the multi-selection it belongs
-                                    // to; cycle-blocked rows are dimmed.
-                                    const movedIds: ReadonlyArray<string> =
-                                      selectedIds.has(itemId) && selectedIds.size > 1
-                                        ? [...selectedIds]
-                                        : [itemId];
-                                    const reparentTree = buildFrameTree(docInAgocraft, movedIds);
-                                    const handleReparent = (targetPickerId: string) => {
-                                      const newParentId = resolvePickerTargetId(
-                                        docInAgocraft,
-                                        targetPickerId,
-                                      );
-                                      editor.exec("weave.item.reparent", {
-                                        entries: movedIds.map((id) => ({
-                                          itemId: id,
-                                          newParentId,
-                                        })),
-                                        // Real design size → rotation-aware reparent
-                                        // stays correct across rotated, non-square ancestors.
-                                        designWidth: design.width,
-                                        designHeight: design.height,
-                                      });
-                                    };
-                                    // WI-065 / DR-031 — shape ↔ line conversion. Gate each
-                                    // row on the live item's convertibility (core decides).
-                                    const cvItem = findItemDeep(docInAgocraft, itemId) as
-                                      | SerializedItem
-                                      | undefined;
-                                    const canBreak =
-                                      cvItem !== undefined && canBreakShapeToLine(cvItem);
-                                    const canClose =
-                                      cvItem !== undefined && canCloseLineToShape(cvItem);
-                                    return (
-                                      <FrameContextMenu
-                                        itemId={itemId}
-                                        onDelete={() => {
-                                          removeItem(itemId);
-                                          bumpHistoryTick();
-                                        }}
-                                        {...(canBreak
-                                          ? {
-                                              onBreakToLine: () => {
-                                                const r = editor.exec<unknown, string>(
-                                                  "weave.shape.breakToLine",
-                                                  { itemId },
-                                                );
-                                                if (r.ok) selectFrame(r.value);
-                                              },
-                                            }
-                                          : {})}
-                                        {...(canClose
-                                          ? {
-                                              onCloseToShape: () => {
-                                                const r = editor.exec<unknown, string>(
-                                                  "weave.line.closeToShape",
-                                                  { itemId },
-                                                );
-                                                if (r.ok) selectFrame(r.value);
-                                              },
-                                            }
-                                          : {})}
-                                        onZOrder={(dir) => {
-                                          const cmdId = {
-                                            bringForward: "weave.item.bringForward",
-                                            sendBackward: "weave.item.sendBackward",
-                                            bringToFront: "weave.item.bringToFront",
-                                            sendToBack: "weave.item.sendToBack",
-                                          }[dir];
-                                          editor.exec(cmdId, { itemId });
-                                        }}
-                                        reparentTree={reparentTree}
-                                        onReparent={handleReparent}
-                                        onClipboard={(verb) =>
-                                          dispatchEditorCommand(
-                                            `weave.clipboard.${
-                                              verb === "pasteSpecial" ? "pasteSpecial" : verb
-                                            }`,
-                                            { editor },
-                                            commandContext,
-                                          )
-                                        }
-                                        clipboardHasItems={clipboardCommands.hasItems}
-                                        {...(ctx !== undefined
-                                          ? {
-                                              layers: ctx.layers,
-                                              onPickLayer: ctx.onPickLayer,
-                                            }
-                                          : {})}
-                                      >
-                                        {children}
-                                      </FrameContextMenu>
-                                    );
-                                  }}
+                                  renderFrameMenu={renderFrameMenu}
                                 />
                               </div>
 
