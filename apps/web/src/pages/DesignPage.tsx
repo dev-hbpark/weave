@@ -159,6 +159,7 @@ import { createPolyVertexHandleViewModel } from "../document/selection-chrome/po
 import { createShapeSelectionViewModel } from "../document/selection-chrome/shape-selection-view-model.js";
 import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
 import { createTextSelectionViewModel } from "../document/selection-chrome/text-selection-view-model.js";
+import { removeVertexAndRefit } from "../document/selection-chrome/vertex-ops.js";
 import { vertexSelection } from "../document/selection-chrome/vertex-selection.js";
 import {
   DesignDimsProvider,
@@ -2130,26 +2131,29 @@ function DesignPageBody() {
           const item = findItemDeep(docInAgocraftRef.current, vsel.itemId);
           const a = item?.attrs as
             | {
-                points?: ReadonlyArray<unknown>;
-                subAttrs?: { points?: ReadonlyArray<unknown>; closed?: boolean };
+                frame?: { x: number; y: number; width: number; height: number; rotation?: number };
+                points?: ReadonlyArray<{ x: number; y: number; smooth?: boolean }>;
+                subAttrs?: {
+                  points?: ReadonlyArray<{ x: number; y: number; smooth?: boolean }>;
+                  closed?: boolean;
+                };
               }
             | undefined;
           const isLine = item?.kind === "line";
           const pts = isLine ? a?.points : a?.subAttrs?.points;
-          const min = isLine ? 2 : (a?.subAttrs?.closed ?? true) ? 3 : 2;
-          if (pts !== undefined && pts.length > min && vsel.index < pts.length) {
-            const next = pts.filter((_, i) => i !== vsel.index);
-            editor.exec("weave.item.update", {
-              itemId: vsel.itemId,
-              patch: (prev: { attrs: Record<string, unknown> }) => ({
-                attrs: isLine
-                  ? { ...prev.attrs, points: next }
-                  : {
-                      ...prev.attrs,
-                      subAttrs: { ...(prev.attrs.subAttrs as object), points: next },
-                    },
-              }),
-            });
+          // WI-069 — shared removal refits the frame to the survivors (DR-024).
+          if (pts !== undefined && a?.frame !== undefined) {
+            removeVertexAndRefit(
+              editor,
+              {
+                itemId: vsel.itemId,
+                isLine,
+                points: pts,
+                closed: isLine ? false : (a.subAttrs?.closed ?? true),
+                frame: a.frame,
+              },
+              vsel.index,
+            );
           }
           vertexSelection.clear();
           return;

@@ -8,7 +8,8 @@
 
 - **선택 상태 스토어** `selection-chrome/vertex-selection.ts`: 한 에디터당 선택 꼭지점 `{itemId,index}` 를 구독 가능한 작은 스토어로 보관(React state 아님) — 포털된 SelectionLayer 의 핸들이 **부모 재렌더 없이도** `useSyncExternalStore` 로 즉시 하이라이트되고, DesignPage keydown 도 같은 소스를 읽는다.
 - **선택 + 하이라이트** (`poly-vertex-handle`): 1차 버튼 pointerdown → `vertexSelection.set`. 선택된 핸들은 `useVertexSelected` 로 **accent 채움 + 흰 링 + 약간 확대**(`data-selected="true"`) — 활성 점(삭제 대상)이 한눈에. (드래그/더블클릭/우클릭 메뉴와 공존.)
-- **Delete/Backspace** (DesignPage keydown): 선택 꼭지점이 있으면 **그 점만 삭제**(item 삭제보다 우선) — min 가드(closed≥3 / open≥2), `weave.item.update`(poly subAttrs.points / line points) 1 패치 = 1 undo, 선택 해제. 없으면 기존 item 삭제로 폴백.
+- **Delete/Backspace** (DesignPage keydown): 선택 꼭지점이 있으면 **그 점만 삭제**(item 삭제보다 우선) — min 가드(closed≥3 / open≥2), 선택 해제. 없으면 기존 item 삭제로 폴백.
+- **공유 삭제 + 프레임 refit** (`vertex-ops.ts` `removeVertexAndRefit`): 우클릭 메뉴 삭제 + Delete 키 삭제가 **하나의 함수**를 호출 — 삭제 후 `refitFrameToPoints`로 **프레임(러버밴드)을 남은 점에 다시 맞춤**(DR-024). 초기엔 삭제가 점만 갱신하고 프레임을 refit 안 해 러버밴드가 안 줄던 버그를 정정. 회전 프레임은 점만 클램프(드래그와 동일). 1 패치 = 1 undo.
 - **선택 해제**: 편집 item 이 선택 해제되면(effect) / **Escape(레이어드: 꼭지점 먼저 해제, item 은 유지; 꼭지점 없으면 item 해제)**.
 
 ## Verification

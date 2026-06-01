@@ -54,6 +54,7 @@ import {
   resolveDragStrategy,
   resolvePointHandle,
 } from "./vertex-handle-roles.js";
+import { removeVertexAndRefit } from "./vertex-ops.js";
 import { useVertexSelected, vertexSelection } from "./vertex-selection.js";
 
 export type { PolyFrame, PolyVertex } from "./poly-vertex-geometry.js";
@@ -278,16 +279,21 @@ export function createPolyVertexHandleViewModel(
     );
   };
 
-  /** Remove a vertex (kept ≥ min for closed/open). Now lives in the vertex
-   *  right-click menu (double-click toggles type instead). */
+  /** Remove a vertex (vertex right-click menu). Refits the frame to the
+   *  survivors via the shared `removeVertexAndRefit` (DR-024). */
   const removeVertex = (itemId: string, idx: number): void => {
     const cur = deps.getPoly(itemId);
     if (cur === null) return;
-    const min = cur.closed ? 3 : 2;
-    if (cur.points.length <= min) return;
-    dispatchPoints(
-      itemId,
-      cur.points.filter((_, i) => i !== idx),
+    removeVertexAndRefit(
+      deps.editor,
+      {
+        itemId,
+        isLine: (deps.itemKind ?? "shape") === "line",
+        points: cur.points,
+        closed: cur.closed,
+        frame: cur.frame,
+      },
+      idx,
     );
   };
 
