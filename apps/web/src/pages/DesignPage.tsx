@@ -15,7 +15,6 @@ import { EditorProvider } from "@agocraft/editor/react";
 import {
   CommandHostProvider,
   CommandIconButton,
-  CommandPalette,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -100,7 +99,6 @@ import {
   isDomainItem,
 } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
-import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import {
   basisFromFrameSample,
@@ -123,7 +121,6 @@ import { SelectionChromeProvider } from "../document/interactions/selection-chro
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
-import { LocalDesignConflictDialog } from "../document/LocalDesignConflictDialog.js";
 import { type LayerHit, LayerPickerMenu } from "../document/layer-picker/index.js";
 import { MigrationResultBanner } from "../document/MigrationResultBanner.js";
 import { computeAlignedFrames } from "../document/multi/align-ops.js";
@@ -143,7 +140,6 @@ import {
   DocumentForResolutionProvider,
 } from "../document/style/resolver-context.js";
 import { ContextualToolbar } from "../document/toolbar/ContextualToolbar.js";
-import { MediaSrcDialog } from "../document/toolbar/MediaSrcDialog.js";
 import { CursorTooltipBridge } from "../document/tooltip/CursorTooltipBridge.js";
 import {
   dispatchEditorCommand,
@@ -184,9 +180,9 @@ import {
   LINE_STRAIGHT,
   type LineSeed,
 } from "./design/line-seeds.js";
+import { DesignDialogs } from "./design/view/DesignDialogs.js";
 import { DesignHeader } from "./design/view/DesignHeader.js";
 import { FrameStage } from "./FrameStage.js";
-import { SlidePresetPicker } from "./new-design/SlidePresetPicker.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
 
 /** Mounts the single UnifiedTooltip surface and disables it whenever the
@@ -1657,6 +1653,65 @@ function DesignPageBody() {
     return editor.changeStream.subscribe(() => setHistoryTick((t) => t + 1));
   }, [editor]);
 
+  // DR-027 / WI-071 Phase 2 — dialog handlers lifted out of the inline JSX so
+  // the DesignDialogs view stays pure. Media confirm dispatches the fill / edit
+  // / add mutation; slide-preset insert stages the subtree as one history entry.
+  const mediaInitialSrc = (() => {
+    if (!pendingMedia) return "";
+    if (pendingMedia.action === "fill") return pendingMedia.initialSrc;
+    if (pendingMedia.action === "edit") {
+      if (!selectedFrameId) return "";
+      // WI-072 — deep lookup so a media item INSIDE a frame resolves.
+      const it = findItemDeep(docInAgocraft, selectedFrameId);
+      if (!it || it.kind !== pendingMedia.kind) return "";
+      return (it.attrs as { src?: string }).src ?? "";
+    }
+    return "";
+  })();
+  const handleMediaConfirm = (src: string) => {
+    const pending = pendingMedia;
+    setPendingMedia(null);
+    if (!pending) return;
+    if (pending.action === "fill") {
+      // DR-028 — a shape's fill is the decoration.fill UNIT, set via
+      // weave.item.setDecoration (not attrs.fill). cover fit matches Figma;
+      // video defaults muted+loop to satisfy the autoplay policy.
+      editor.exec("weave.item.setDecoration", {
+        itemId: pending.itemId,
+        kind: FILL_UNIT_KIND,
+        attrs:
+          pending.kind === "image"
+            ? { type: "image", src, fit: "cover", opacity: 1 }
+            : { type: "video", src, fit: "cover", muted: true, loop: true, opacity: 1 },
+      });
+      return;
+    }
+    if (pending.action === "edit") {
+      if (!selectedFrameId) return;
+      // WI-072 — deep lookup; a nested media item updates IN PLACE.
+      const it = findItemDeep(docInAgocraft, selectedFrameId);
+      if (it && it.kind === pending.kind) {
+        editor.exec("weave.item.update", {
+          itemId: selectedFrameId,
+          patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+            attrs: { ...prev.attrs, src } as unknown as Readonly<Record<string, unknown>>,
+          }),
+        });
+        return;
+      }
+      addNewItem(pending.kind, undefined, src);
+      return;
+    }
+    addNewItem(pending.kind, undefined, src);
+  };
+  const handlePickPreset = (presetId: string) => {
+    const result = editor.exec<unknown, string>("weave.preset.insertSlide", {
+      presetId,
+      containerId: String(docInAgocraft.root.id),
+    });
+    if (result.ok) setSelectedFrameIdRef.current?.(result.value);
+  };
+
   return (
     <EditorVMProvider vm={vm}>
       <RouterProvider router={router}>
@@ -2253,121 +2308,27 @@ function DesignPageBody() {
                                 />,
                                 document.body,
                               )}
-                            <MediaSrcDialog
-                              open={pendingMedia !== null}
-                              kind={pendingMedia?.kind ?? "image"}
-                              initialSrc={(() => {
-                                if (!pendingMedia) return "";
-                                if (pendingMedia.action === "fill") return pendingMedia.initialSrc;
-                                if (pendingMedia.action === "edit") {
-                                  if (!selectedFrameId) return "";
-                                  // WI-072 — deep lookup so a media item INSIDE a frame
-                                  // resolves (root-only find missed nested items and the
-                                  // dialog opened empty → replace re-added at root).
-                                  const it = findItemDeep(docInAgocraft, selectedFrameId);
-                                  if (!it || it.kind !== pendingMedia.kind) return "";
-                                  return (it.attrs as { src?: string }).src ?? "";
-                                }
-                                return "";
-                              })()}
-                              onConfirm={(src) => {
-                                const pending = pendingMedia;
-                                setPendingMedia(null);
-                                if (!pending) return;
-                                if (pending.action === "fill") {
-                                  // DR-028 — a shape's fill is the decoration.fill UNIT, so
-                                  // set the image/video paint via weave.item.setDecoration (not
-                                  // attrs.fill). Default fit "cover" matches Figma; video
-                                  // defaults muted+loop so the autoplay policy is satisfied.
-                                  editor.exec("weave.item.setDecoration", {
-                                    itemId: pending.itemId,
-                                    kind: FILL_UNIT_KIND,
-                                    attrs:
-                                      pending.kind === "image"
-                                        ? { type: "image", src, fit: "cover", opacity: 1 }
-                                        : {
-                                            type: "video",
-                                            src,
-                                            fit: "cover",
-                                            muted: true,
-                                            loop: true,
-                                            opacity: 1,
-                                          },
-                                  });
-                                  return;
-                                }
-                                if (pending.action === "edit") {
-                                  if (!selectedFrameId) return;
-                                  // WI-072 — deep lookup; a nested media item updates
-                                  // IN PLACE (stays in its frame) instead of falling
-                                  // through to a root-level re-add.
-                                  const it = findItemDeep(docInAgocraft, selectedFrameId);
-                                  if (it && it.kind === pending.kind) {
-                                    editor.exec("weave.item.update", {
-                                      itemId: selectedFrameId,
-                                      patch: (prev: {
-                                        attrs: Readonly<Record<string, unknown>>;
-                                      }) => ({
-                                        attrs: {
-                                          ...prev.attrs,
-                                          src,
-                                        } as unknown as Readonly<Record<string, unknown>>,
-                                      }),
-                                    });
-                                    return;
-                                  }
-                                  addNewItem(pending.kind, undefined, src);
-                                  return;
-                                }
-                                addNewItem(pending.kind, undefined, src);
-                              }}
-                              onCancel={() => setPendingMedia(null)}
-                            />
-                            {/* WI-041 Phase 6 — Paste Special dialog.
-                              Cmd+Opt+V (or ContextMenu "선택하여
-                              붙여넣기…") opens the dialog; on confirm
-                              the host invokes `weave.clipboard.paste`
-                              with the chosen mode and the current
-                              selection. */}
-                            <PasteSpecialDialog
-                              open={clipboardCommands.pasteSpecialOpen}
-                              onOpenChange={clipboardCommands.setPasteSpecialOpen}
-                              onConfirm={clipboardCommands.handlePasteSpecialConfirm}
+                            <DesignDialogs
+                              mediaOpen={pendingMedia !== null}
+                              mediaKind={pendingMedia?.kind ?? "image"}
+                              mediaInitialSrc={mediaInitialSrc}
+                              onMediaConfirm={handleMediaConfirm}
+                              onMediaCancel={() => setPendingMedia(null)}
+                              pasteSpecialOpen={clipboardCommands.pasteSpecialOpen}
+                              onPasteSpecialOpenChange={clipboardCommands.setPasteSpecialOpen}
+                              onPasteSpecialConfirm={clipboardCommands.handlePasteSpecialConfirm}
                               clipboardHasItems={clipboardCommands.hasItems}
                               hasSelection={selectedIds.size > 0}
+                              conflictOpen={localConflict}
+                              conflictBusy={conflictBusy}
+                              onConflictSave={() => void handleConflictSave()}
+                              onConflictDiscard={() => void handleConflictDiscard()}
+                              slidePickerOpen={slidePickerOpen}
+                              onSlidePickerOpenChange={setSlidePickerOpen}
+                              onPickPreset={handlePickPreset}
+                              paletteOpen={paletteOpen}
+                              onPaletteOpenChange={setPaletteOpen}
                             />
-                            {/* Offline-edit reconcile prompt — opens when the
-                              design has an unsynced offline copy in
-                              localStorage. "저장" uploads it to the server,
-                              "버리기" discards it and loads the server copy. */}
-                            <LocalDesignConflictDialog
-                              open={localConflict}
-                              busy={conflictBusy}
-                              onSave={() => void handleConflictSave()}
-                              onDiscard={() => void handleConflictDiscard()}
-                            />
-                            {/* WI-030 — slide preset picker. Add menu →
-                          "슬라이드…" opens this Dialog. Picking a
-                          preset dispatches a single `weave.preset.insertSlide`
-                          which stages the slide + child Items as one history
-                          entry; Cmd+Z reverts the whole subtree. */}
-                            <SlidePresetPicker
-                              open={slidePickerOpen}
-                              onOpenChange={setSlidePickerOpen}
-                              onPick={(presetId) => {
-                                const result = editor.exec<unknown, string>(
-                                  "weave.preset.insertSlide",
-                                  {
-                                    presetId,
-                                    containerId: String(docInAgocraft.root.id),
-                                  },
-                                );
-                                if (result.ok) {
-                                  setSelectedFrameIdRef.current?.(result.value);
-                                }
-                              }}
-                            />
-                            <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
                             {/* WI-036 — QuickActionBar anchored to the hovered
                           frame's viewport top-left (8px gap above the
                           frame edge). The bar carries
