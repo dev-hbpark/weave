@@ -159,6 +159,7 @@ import { createPolyVertexHandleViewModel } from "../document/selection-chrome/po
 import { createShapeSelectionViewModel } from "../document/selection-chrome/shape-selection-view-model.js";
 import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
 import { createTextSelectionViewModel } from "../document/selection-chrome/text-selection-view-model.js";
+import { vertexSelection } from "../document/selection-chrome/vertex-selection.js";
 import {
   DesignDimsProvider,
   DocumentForResolutionProvider,
@@ -1470,6 +1471,11 @@ function DesignPageBody() {
   // WI-065 / DR-031 — keep the ref pointed at the live selectFrame for the
   // vertex-handle break action (see the poly VM registration above).
   selectFrameRef.current = selectFrame;
+  // WI-069 — drop the selected vertex when its owning item is no longer selected.
+  useEffect(() => {
+    const v = vertexSelection.get();
+    if (v !== null && !selectedIds.has(v.itemId)) vertexSelection.clear();
+  }, [selectedIds]);
   const selectedFrameId = selection?.kind === "frame" ? selection.id : undefined;
   const _isMultiSelect = selectedIds.size > 1;
   // WI-038 Phase 2 — derive peek container from selection. Selecting any
@@ -2114,9 +2120,41 @@ function DesignPageBody() {
       // (undo / redo / copy / cut / paste / save / z-order) or FrameStage's
       // zoom handler (=/-/0). Leave them.
       if (mod) return;
-      // Delete / Backspace — remove every selected item in ONE batch
-      // command so a single undo restores them all, then clear selection.
+      // Delete / Backspace.
       if (e.key === "Delete" || e.key === "Backspace") {
+        // WI-069 — a SELECTED vertex takes priority: remove that vertex (not the
+        // whole item). One weave.item.update → one undo; clear the selection.
+        const vsel = vertexSelection.get();
+        if (vsel !== null) {
+          e.preventDefault();
+          const item = findItemDeep(docInAgocraftRef.current, vsel.itemId);
+          const a = item?.attrs as
+            | {
+                points?: ReadonlyArray<unknown>;
+                subAttrs?: { points?: ReadonlyArray<unknown>; closed?: boolean };
+              }
+            | undefined;
+          const isLine = item?.kind === "line";
+          const pts = isLine ? a?.points : a?.subAttrs?.points;
+          const min = isLine ? 2 : (a?.subAttrs?.closed ?? true) ? 3 : 2;
+          if (pts !== undefined && pts.length > min && vsel.index < pts.length) {
+            const next = pts.filter((_, i) => i !== vsel.index);
+            editor.exec("weave.item.update", {
+              itemId: vsel.itemId,
+              patch: (prev: { attrs: Record<string, unknown> }) => ({
+                attrs: isLine
+                  ? { ...prev.attrs, points: next }
+                  : {
+                      ...prev.attrs,
+                      subAttrs: { ...(prev.attrs.subAttrs as object), points: next },
+                    },
+              }),
+            });
+          }
+          vertexSelection.clear();
+          return;
+        }
+        // Otherwise remove every selected item in ONE batch (single undo).
         const ids = Array.from(selectedIdsRef.current);
         if (ids.length === 0) return;
         e.preventDefault();
@@ -2129,6 +2167,12 @@ function DesignPageBody() {
       // still compose. Bail when there's nothing selected so those
       // handlers see the key untouched.
       if (e.key === "Escape") {
+        // WI-069 — layered Escape: a selected vertex clears FIRST (item stays
+        // selected); only with no vertex selected does Escape deselect the item.
+        if (vertexSelection.get() !== null) {
+          vertexSelection.clear();
+          return;
+        }
         if (selectedIdsRef.current.size === 0) return;
         selectFrame(null);
         return;

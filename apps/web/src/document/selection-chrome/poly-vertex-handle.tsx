@@ -54,6 +54,7 @@ import {
   resolveDragStrategy,
   resolvePointHandle,
 } from "./vertex-handle-roles.js";
+import { useVertexSelected, vertexSelection } from "./vertex-selection.js";
 
 export type { PolyFrame, PolyVertex } from "./poly-vertex-geometry.js";
 
@@ -139,35 +140,48 @@ function frameGeom(itemId: string, bounds: SelectionBounds): FrameGeom {
 const VertexHandle = forwardRef<
   HTMLButtonElement,
   {
+    readonly itemId: string;
     readonly idx: number;
     readonly role: PointHandleRole;
     readonly pointType: PointType;
     readonly onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => void;
     readonly onDoubleClick: (e: ReactMouseEvent<HTMLButtonElement>) => void;
   } & ComponentPropsWithoutRef<"button">
->(function VertexHandle({ idx, role, pointType, onPointerDown, onDoubleClick, ...rest }, ref) {
+>(function VertexHandle(
+  { itemId, idx, role, pointType, onPointerDown, onDoubleClick, ...rest },
+  ref,
+) {
   const adapter = resolvePointHandle(role);
+  const selected = useVertexSelected(itemId, idx); // WI-069 — reactive highlight
+  // WI-069 — a SELECTED vertex is filled with the accent + a white ring and
+  // slightly enlarged, so the active point (the Delete target) is unmistakable.
+  const size = selected ? VERTEX_PX + 3 : VERTEX_PX;
   return (
     <button
       type="button"
       ref={ref}
-      aria-label={adapter.label(idx)}
+      aria-label={`${adapter.label(idx)}${selected ? " (선택됨)" : ""}`}
       title={adapter.title}
       data-handle-kind="custom"
       data-handle-id={`poly.vertex.${idx}`}
       data-handle-role={role}
       data-point-type={pointType}
+      data-selected={selected ? "true" : undefined}
       data-testid={`poly-vertex-${idx}`}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
       {...rest}
       style={{
-        width: VERTEX_PX,
-        height: VERTEX_PX,
+        width: size,
+        height: size,
         borderRadius: handleBorderRadius(pointType), // smooth → circle, corner → square
-        background: "var(--surface-1, #fff)",
-        border: "1.5px solid var(--accent, #4f46e5)",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+        background: selected ? "var(--accent, #4f46e5)" : "var(--surface-1, #fff)",
+        border: selected
+          ? "2px solid var(--surface-1, #fff)"
+          : "1.5px solid var(--accent, #4f46e5)",
+        boxShadow: selected
+          ? "0 0 0 1.5px var(--accent, #4f46e5), 0 1px 3px rgba(0,0,0,0.25)"
+          : "0 1px 3px rgba(0,0,0,0.18)",
         cursor: "move",
         padding: 0,
         touchAction: "none",
@@ -309,11 +323,14 @@ export function createPolyVertexHandleViewModel(
             const geom = frameGeom(info.itemId, ctx.bounds);
             const handle = (
               <VertexHandle
+                itemId={info.itemId}
                 idx={idx}
                 role={role}
                 pointType={pointType}
                 onPointerDown={(e) => {
                   e.stopPropagation();
+                  // WI-069 — primary press selects this vertex (Delete target).
+                  if (e.button === 0) vertexSelection.set({ itemId: info.itemId, index: idx });
                   const cur = deps.getPoly(info.itemId);
                   if (cur === null || cur.points[idx] === undefined) return;
                   beginVertexDrag(
