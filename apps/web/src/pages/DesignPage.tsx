@@ -190,56 +190,16 @@ import { useFrameFocus } from "./design/hooks/use-frame-focus.js";
 import { useHandTool } from "./design/hooks/use-hand-tool.js";
 import { useItemAdd } from "./design/hooks/use-item-add.js";
 import { useSelectionChromeRegistry } from "./design/hooks/use-selection-chrome-registry.js";
+import {
+  LINE_CURVE,
+  LINE_CURVE_FREE,
+  LINE_FREE,
+  LINE_STRAIGHT,
+  type LineSeed,
+} from "./design/line-seeds.js";
 import { FrameStage } from "./FrameStage.js";
 import { SlidePresetPicker } from "./new-design/SlidePresetPicker.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
-
-/** Seed for the "자유선" (freeform line) add — an OPEN `poly` (renders as an
- *  SVG <polyline>) that the user reshapes via vertex handles. Distinct from
- *  the closed-by-default "자유 다각형" (`poly`, closed:true → filled polygon). */
-// DR-025 / WI-062 — `line` kind creation seeds (points 0..1 of bbox + smooth).
-// The 선 menu items create a `line` item (NOT a shape/poly). heads default none.
-type LineSeed = {
-  readonly points: ReadonlyArray<{ readonly x: number; readonly y: number }>;
-  readonly smooth?: boolean;
-};
-/** 직선 — 2-point straight line (endpoints freely repositioned). */
-const LINE_STRAIGHT: LineSeed = {
-  points: [
-    { x: 0, y: 0.5 },
-    { x: 1, y: 0.5 },
-  ],
-};
-/** 자유선 — open multi-point polyline (zigzag the user reshapes). */
-const LINE_FREE: LineSeed = {
-  points: [
-    { x: 0, y: 0.7 },
-    { x: 0.34, y: 0.3 },
-    { x: 0.66, y: 0.6 },
-    { x: 1, y: 0.25 },
-  ],
-};
-/** 곡선 — smooth (Catmull-Rom) arc through 3 control points. */
-const LINE_CURVE: LineSeed = {
-  points: [
-    { x: 0, y: 0.75 },
-    { x: 0.5, y: 0.2 },
-    { x: 1, y: 0.75 },
-  ],
-  smooth: true,
-};
-/** 자유곡선 — smooth freehand wave (more control points). */
-const LINE_CURVE_FREE: LineSeed = {
-  points: [
-    { x: 0, y: 0.6 },
-    { x: 0.2, y: 0.32 },
-    { x: 0.4, y: 0.62 },
-    { x: 0.6, y: 0.34 },
-    { x: 0.8, y: 0.64 },
-    { x: 1, y: 0.4 },
-  ],
-  smooth: true,
-};
 
 /** Mounts the single UnifiedTooltip surface and disables it whenever the
  *  editor's InteractionMode is not in a tooltip-friendly state (rubber-
@@ -1192,6 +1152,21 @@ function DesignPageBody() {
   // canvas host so only that subtree triggers updates.
   const hoverContext = useHoverContext(canvasHostRef);
 
+  // WI-072 — paste target container: paste INTO the selected frame, or (for a
+  // selected non-frame item) into THAT item's parent so the clone lands beside
+  // it in the same frame. Nothing selected / parent is root → undefined (root).
+  // Shared by resolveContainerId + resolveContainerSizePx so both agree.
+  const pasteTargetContainerId = (): string | undefined => {
+    if (selectedFrameId === undefined) return undefined;
+    const sel = findItemDeep(docInAgocraft, selectedFrameId);
+    if (sel === undefined) return undefined;
+    if (sel.kind === "frame") return selectedFrameId;
+    const parent = findParentAndIndex(docInAgocraft, selectedFrameId);
+    if (parent === undefined) return undefined;
+    const pid = String(parent.parent.id);
+    return pid === String(docInAgocraft.root.id) ? undefined : pid;
+  };
+
   // WI-041 Phase 2/3 — register the clipboard command host slot. The
   // hook subscribes to `clipboardStore` so `hasItems` flips reactively
   // on copy/cut/paste, driving the paste button's enabled state.
@@ -1205,12 +1180,10 @@ function DesignPageBody() {
       else if (ids.length > 1) selectFrames(ids);
     },
     resolveContainerId: () => {
-      // v1 — paste into the document root. Future iterations may honour
-      // the hovered frame or the currently-selected frame's container.
-      // WI-033 P2 retired the explicit "entered frame" concept, so the
-      // host falls back to the root container until a follow-up
-      // surfaces a deliberate paste-target picker.
-      return undefined;
+      // WI-072 — paste into the selected frame (or the selected item's parent
+      // frame), not always the root. Earlier this hardcoded `undefined`, so a
+      // copy from inside a frame always re-pasted at the design root.
+      return pasteTargetContainerId();
     },
     resolveSourceContainerId: () => {
       // Cut targets the source item's parent — find it in the live doc.
@@ -1233,6 +1206,20 @@ function DesignPageBody() {
       if (host === null) return null;
       const rect = host.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return null;
+      // WI-072 — when pasting INTO a frame, the container's px size is that
+      // frame's rendered footprint, not the whole design plane — otherwise the
+      // pasted item's 0..1 ratio is mis-scaled. Scale the absolute frame box
+      // (design units) by the host's px-per-design-unit.
+      const cid = pasteTargetContainerId();
+      if (cid !== undefined) {
+        const box = absoluteFrameBox(docInAgocraft, cid, design.width, design.height);
+        if (box !== null && box.w > 0 && box.h > 0) {
+          return {
+            width: (box.w / design.width) * rect.width,
+            height: (box.h / design.height) * rect.height,
+          };
+        }
+      }
       return { width: rect.width, height: rect.height };
     },
     resolvePointerInContainer: () => {
@@ -1338,6 +1325,21 @@ function DesignPageBody() {
     [editor, selectFrame],
   );
   useEffect(() => setFrameDissolver(dissolveFrame), [dissolveFrame]);
+  // WI-072 — toggle a frame's deck membership (slide ↔ group) by setting
+  // `attrs.presentable`. Default (absent/true) = slide; `false` drops it from
+  // the deck into the thumbnail panel's non-slide section. Goes through a
+  // command so Cmd+Z reverts it.
+  const toggleFrameSlide = useCallback(
+    (frameId: string, presentable: boolean) => {
+      editor.exec("weave.item.update", {
+        itemId: frameId,
+        patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+          attrs: { ...prev.attrs, presentable },
+        }),
+      });
+    },
+    [editor],
+  );
   // WI-036 follow-up — multi-selection delete. Iterates the live
   // `selectedIds` (via ref to avoid re-registering on every selection
   // change) and dispatches `weave.item.remove` for each. After the
@@ -2669,6 +2671,7 @@ function DesignPageBody() {
                                     onCycleFocus={handleCycleFocus}
                                     onClearFocus={handleClearFocus}
                                     onZoomToFrame={handleZoomToFrame}
+                                    onToggleSlide={toggleFrameSlide}
                                   />
                                 </div>,
                                 document.body,
@@ -2728,9 +2731,10 @@ function DesignPageBody() {
                                 if (pendingMedia.action === "fill") return pendingMedia.initialSrc;
                                 if (pendingMedia.action === "edit") {
                                   if (!selectedFrameId) return "";
-                                  const it = docInAgocraft.root.children.find(
-                                    (c) => String(c.id) === selectedFrameId,
-                                  );
+                                  // WI-072 — deep lookup so a media item INSIDE a frame
+                                  // resolves (root-only find missed nested items and the
+                                  // dialog opened empty → replace re-added at root).
+                                  const it = findItemDeep(docInAgocraft, selectedFrameId);
                                   if (!it || it.kind !== pendingMedia.kind) return "";
                                   return (it.attrs as { src?: string }).src ?? "";
                                 }
@@ -2764,9 +2768,10 @@ function DesignPageBody() {
                                 }
                                 if (pending.action === "edit") {
                                   if (!selectedFrameId) return;
-                                  const it = docInAgocraft.root.children.find(
-                                    (c) => String(c.id) === selectedFrameId,
-                                  );
+                                  // WI-072 — deep lookup; a nested media item updates
+                                  // IN PLACE (stays in its frame) instead of falling
+                                  // through to a root-level re-add.
+                                  const it = findItemDeep(docInAgocraft, selectedFrameId);
                                   if (it && it.kind === pending.kind) {
                                     editor.exec("weave.item.update", {
                                       itemId: selectedFrameId,
