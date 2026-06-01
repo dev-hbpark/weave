@@ -130,4 +130,18 @@ describe("createDesignFrameZOrderAdapter", () => {
     const adapter = createDesignFrameZOrderAdapter({ getDocument: () => d });
     expect(reorderAfter(adapter.moveToTop("b"))).toEqual(["a", "c", "b"]);
   });
+
+  // WI-072 — readZ (exposed as getZ) is DEPTH-CORRECT: z is the item's index in
+  // its DIRECT parent, not always root.children (which returned -1 for a nested
+  // item before). (listSiblings is fixed the same way but is an internal-only
+  // helper, not surfaced on the public adapter, so it isn't asserted here.)
+  it("getZ resolves a NESTED item against its direct parent", () => {
+    const inner = (id: string): Item => frame(id, "shape");
+    const outer: Item = { ...frame("outer", "frame"), children: [inner("n0"), inner("n1")] };
+    const d = doc([frame("a", "slide"), outer]);
+    const adapter = createDesignFrameZOrderAdapter({ getDocument: () => d });
+    expect(adapter.getZ("outer")).toBe(1); // top-level → index in root
+    expect(adapter.getZ("n0")).toBe(0); // nested → index in `outer`, not root
+    expect(adapter.getZ("n1")).toBe(1);
+  });
 });

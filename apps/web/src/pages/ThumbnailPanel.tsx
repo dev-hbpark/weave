@@ -33,7 +33,11 @@ import type {
   ReactNode,
 } from "react";
 import { useParams } from "react-router-dom";
-import { effectivePresentationOrder, reorder } from "../document/presentation-order.js";
+import {
+  collectNonSlideFrameIds,
+  effectivePresentationOrder,
+  reorder,
+} from "../document/presentation-order.js";
 import type { Design, DocFlavor } from "../document/types.js";
 
 interface Entry {
@@ -124,6 +128,33 @@ export interface ThumbnailPanelProps {
    *  still cycle focus from any tile (otherwise stage 2 would lock the
    *  user out of switching focus to another slide). */
   readonly disabledFrameIds?: ReadonlySet<string> | undefined;
+  /** WI-072 — toggle a frame's deck membership. `presentable=false` removes it
+   *  from the slide deck (it moves to the non-slide section); `true` re-adds it.
+   *  The host dispatches `weave.item.update` setting `attrs.presentable`. */
+  readonly onToggleSlide?: ((id: string, presentable: boolean) => void) | undefined;
+}
+
+/** WI-072 — small "deck membership" glyph (stacked rectangles). Active = the
+ *  frame IS a slide (click removes it); inactive = it is a group (click adds). */
+function DeckGlyph({ active }: { readonly active: boolean }) {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role="img"
+      aria-label={active ? "슬라이드" : "그룹"}
+    >
+      <title>{active ? "슬라이드" : "그룹"}</title>
+      <rect x="3" y="8" width="13" height="13" rx="2" fill={active ? "currentColor" : "none"} />
+      <path d="M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3" />
+    </svg>
+  );
 }
 
 const FLAVOR_GLYPH: Readonly<Record<DocFlavor, ReactNode>> = {
@@ -209,6 +240,7 @@ export function ThumbnailPanel({
   onCycleFocus,
   onClearFocus,
   onZoomToFrame,
+  onToggleSlide,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
   useParams<{ id: string }>();
@@ -217,8 +249,13 @@ export function ThumbnailPanel({
   const entries = order
     .map((id) => findEntry(design.document.root, id, design.title))
     .filter((e): e is Entry => e !== undefined);
+  // WI-072 — frames the user opted OUT of the deck, shown in a separate section.
+  const nonSlideEntries = collectNonSlideFrameIds(design.document.root)
+    .map((id) => findEntry(design.document.root, id, design.title))
+    .filter((e): e is Entry => e !== undefined);
 
-  if (entries.length === 0) return null;
+  // Render nothing only when there are neither slides nor opted-out frames.
+  if (entries.length === 0 && nonSlideEntries.length === 0) return null;
 
   const handleTileActivate = (entry: Entry) => {
     onSelect?.(entry.id);
@@ -644,10 +681,138 @@ export function ThumbnailPanel({
                 >
                   {entry.title}
                 </span>
+                {/* WI-072 — deck-membership toggle. On a slide tile it is
+                    ACTIVE; clicking removes the frame from the deck (it drops to
+                    the non-slide section). Hover-revealed to keep the footer
+                    clean. */}
+                {onToggleSlide !== undefined ? (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleSlide(entry.id, false);
+                    }}
+                    data-testid={`thumbnail-slide-toggle-${idx}`}
+                    aria-label="슬라이드에서 제외 (그룹으로)"
+                    data-tip="슬라이드(덱)에서 제외"
+                    className={
+                      "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
+                      "text-[color:var(--accent-strong)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 " +
+                      "hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
+                    }
+                  >
+                    <DeckGlyph active={true} />
+                  </button>
+                ) : null}
               </div>
             </div>
           );
         })}
+        {/* WI-072 — non-slide section: frames opted out of the deck. Visually
+            separated (divider + label) and rendered as dimmed, dashed, numberless
+            tiles. Still selectable; the deck toggle re-adds them. */}
+        {nonSlideEntries.length > 0 ? (
+          <>
+            <div
+              aria-hidden
+              className="shrink-0 self-stretch my-2 w-px bg-[color:var(--border-default)]"
+            />
+            <div
+              className="shrink-0 flex flex-col justify-end gap-1.5 pr-1 select-none"
+              style={{ width: 56 }}
+              aria-hidden
+            >
+              <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+                그룹
+              </span>
+              <span className="text-[10px] text-[color:var(--text-muted)] tracking-wide">
+                {nonSlideEntries.length}개
+              </span>
+            </div>
+            {nonSlideEntries.map((entry) => {
+              const isSelected = entry.id === selectedId;
+              return (
+                <div
+                  key={entry.id}
+                  role="group"
+                  aria-label={`Group frame: ${entry.title}`}
+                  data-frame-id={entry.id}
+                  data-frame-kind={entry.kind}
+                  data-testid={`thumbnail-nonslide-${entry.id}`}
+                  className={
+                    "group relative flex flex-col w-[132px] h-[112px] p-2 gap-1.5 rounded-[var(--radius-md)] " +
+                    "border border-dashed transition-[border-color,opacity] duration-[var(--motion-quick)] " +
+                    "[filter:saturate(0.7)] opacity-80 hover:opacity-100 " +
+                    (isSelected
+                      ? "border-[color:var(--accent)] "
+                      : "border-[color:var(--border-strong)] ")
+                  }
+                  style={{
+                    background: "linear-gradient(var(--surface-1),var(--surface-1)),var(--bg-page)",
+                  }}
+                  data-tip={`그룹 프레임: ${entry.title}`}
+                >
+                  <button
+                    type="button"
+                    aria-label={`Activate ${entry.title}`}
+                    aria-pressed={isSelected}
+                    data-testid={`thumbnail-nonslide-activate-${entry.id}`}
+                    onClick={() => onSelect?.(entry.id)}
+                    onDoubleClick={() => onZoomToFrame?.(entry.id)}
+                    className={
+                      "absolute inset-0 z-0 rounded-[var(--radius-md)] bg-transparent border-0 cursor-pointer p-0 m-0 " +
+                      "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
+                    }
+                  />
+                  <div
+                    className="relative flex-1 overflow-hidden rounded-[var(--radius-sm)] border border-dashed border-[color:var(--surface-2-border)] flex items-center justify-center pointer-events-none"
+                    style={{ background: design.background ?? "var(--surface-2)" }}
+                    aria-hidden
+                  >
+                    <span
+                      className="text-[22px] leading-none"
+                      style={{
+                        color: DOMAIN_ACCENT_VAR[entry.kind] ?? "var(--accent)",
+                        opacity: 0.5,
+                      }}
+                    >
+                      {FLAVOR_GLYPH[flavorIconForKind(entry.kind)]}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-0.5">
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-[color:var(--text-muted)] shrink-0">
+                      그룹
+                    </span>
+                    <span className="text-[12px] leading-tight truncate flex-1 text-[color:var(--text-default)]">
+                      {entry.title}
+                    </span>
+                    {onToggleSlide !== undefined ? (
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleSlide(entry.id, true);
+                        }}
+                        data-testid={`thumbnail-nonslide-toggle-${entry.id}`}
+                        aria-label="슬라이드로 포함"
+                        data-tip="슬라이드(덱)에 추가"
+                        className={
+                          "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
+                          "text-[color:var(--text-muted)] hover:text-[color:var(--accent-strong)] " +
+                          "hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
+                        }
+                      >
+                        <DeckGlyph active={false} />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        ) : null}
       </div>
     </section>
   );

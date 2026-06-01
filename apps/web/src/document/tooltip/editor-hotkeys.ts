@@ -80,6 +80,16 @@ export function setFrameDissolver(fn: (frameId: string) => void): () => void {
     if (frameDissolver === fn) frameDissolver = undefined;
   };
 }
+/** WI-072 — toggle the selected frame's deck membership (slide ↔ group).
+ *  Selection-scope slot; the QuickActionBar dispatches it via `tryHostSlot`.
+ *  The host impl reads the frame's current `presentable` and flips it. */
+let frameSlideToggler: ((frameId: string) => void) | undefined;
+export function setFrameSlideToggler(fn: (frameId: string) => void): () => void {
+  frameSlideToggler = fn;
+  return () => {
+    if (frameSlideToggler === fn) frameSlideToggler = undefined;
+  };
+}
 export function setMediaSrcOpener(
   fn: (kind: "image" | "video", frameId: string) => void,
 ): () => void {
@@ -561,6 +571,23 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       // Dispatched via frameDissolver slot (bar) / DesignPage keydown (hotkey).
     },
   },
+  // WI-072 — toggle whether this frame is a presentation slide (in the deck)
+  // or a plain group/container. Frame-only. State-aware label/glyph is rendered
+  // by the host's QuickActionBar `renderItem` (reads the live `presentable`).
+  {
+    id: "frame.toggleSlide",
+    label: { en: "Toggle slide", ko: "슬라이드 포함/제외" },
+    hint: {
+      en: "Include this frame in the slide deck, or keep it as a group only.",
+      ko: "이 프레임을 슬라이드 덱에 포함할지 그룹으로 둘지 전환합니다.",
+    },
+    category: "frame",
+    visibleWhen: (ctx) => ctx.selectedKind === "frame",
+    enabledWhen: (ctx) => typeof ctx.selectedId === "string",
+    action: () => {
+      // Dispatched via frameSlideToggler slot.
+    },
+  },
   {
     id: "image.replaceSrc",
     label: { en: "Replace image", ko: "이미지 교체" },
@@ -908,6 +935,15 @@ function tryHostSlot(id: string, ctx: Readonly<Record<string, unknown>> | undefi
   }
   if (id === "frame.addChild" && hoverFrameChildAdder !== undefined && selectedId !== undefined) {
     hoverFrameChildAdder(selectedId);
+    return true;
+  }
+  if (
+    id === "frame.toggleSlide" &&
+    frameSlideToggler !== undefined &&
+    selectedId !== undefined &&
+    selectedKind === "frame"
+  ) {
+    frameSlideToggler(selectedId);
     return true;
   }
   if (id === "multi.delete" && multiDeleter !== undefined) {

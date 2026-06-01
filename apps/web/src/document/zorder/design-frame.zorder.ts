@@ -35,8 +35,11 @@ export function createDesignFrameZOrderAdapter(
   deps: DesignFrameZOrderAdapterDeps,
 ): ZOrderCapability {
   function readZ(itemId: string): number {
-    const root = deps.getDocument().root;
-    return root.children.findIndex((c) => String(c.id) === itemId);
+    // WI-072 — z is the item's index within its DIRECT parent's children
+    // (root for a top-level frame, the enclosing frame for a nested item).
+    // The earlier root-only `findIndex` returned -1 for any nested item.
+    const found = findParentAndIndex(deps.getDocument(), itemId);
+    return found === undefined ? -1 : found.indexInParent;
   }
 
   /** Build a single `item.children.reorder` Patch that moves the child at
@@ -102,10 +105,11 @@ export function createDesignFrameZOrderAdapter(
   }
 
   function listSiblings(itemId: string): ReadonlyArray<string> {
-    const root = deps.getDocument().root;
-    const me = root.children.find((c) => String(c.id) === itemId);
-    if (!me) return [];
-    return root.children.map((c) => String(c.id));
+    // WI-072 — siblings = the item's DIRECT parent's children (depth-correct),
+    // not always root.children.
+    const found = findParentAndIndex(deps.getDocument(), itemId);
+    if (found === undefined) return [];
+    return found.parent.children.map((c) => String(c.id));
   }
 
   return createZOrderAdapter({

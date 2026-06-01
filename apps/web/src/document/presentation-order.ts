@@ -23,15 +23,41 @@ import type { Design } from "./types.js";
  *  WI-032 Phase 3c — `frame` replaces the legacy 4. */
 export const FRAME_KINDS: ReadonlySet<string> = new Set(["frame"]);
 
-/** Depth-first walk that collects every nested frame's id, in document
- *  order. Phase 12d — the *design* itself is not a slide candidate; only
- *  the user-authored frames are. The root document id is intentionally
- *  excluded. */
+/** WI-072 — per-frame deck membership. A frame is a slide UNLESS its
+ *  `attrs.presentable` is explicitly `false`. Default (absent / true) = a slide,
+ *  so existing decks are unchanged; the user opts a frame OUT via the thumbnail
+ *  panel / QuickActionBar toggle. Non-frame items are never slides. */
+export function isPresentableFrame(item: AgocraftItem): boolean {
+  if (!FRAME_KINDS.has(item.kind)) return false;
+  return (item.attrs as { presentable?: boolean }).presentable !== false;
+}
+
+/** Depth-first walk that collects every nested frame's id, in document order —
+ *  EXCLUDING frames the user opted out of the deck (`presentable: false`).
+ *  Phase 12d — the *design* itself is not a slide candidate; only user-authored
+ *  frames are. The root document id is intentionally excluded. The walk still
+ *  descends INTO an opted-out frame, so a slide frame nested inside a non-slide
+ *  group frame still counts. */
 export function collectPresentationIds(root: AgocraftItem): string[] {
   const out: string[] = [];
   function walk(item: AgocraftItem): void {
     for (const c of item.children) {
-      if (FRAME_KINDS.has(c.kind)) out.push(String(c.id));
+      if (isPresentableFrame(c)) out.push(String(c.id));
+      walk(c);
+    }
+  }
+  walk(root);
+  return out;
+}
+
+/** WI-072 — frame ids the user opted OUT of the deck (`presentable: false`), in
+ *  document order. The thumbnail panel renders these in a separate "non-slide"
+ *  section so they stay reachable/selectable without being navigation steps. */
+export function collectNonSlideFrameIds(root: AgocraftItem): string[] {
+  const out: string[] = [];
+  function walk(item: AgocraftItem): void {
+    for (const c of item.children) {
+      if (FRAME_KINDS.has(c.kind) && !isPresentableFrame(c)) out.push(String(c.id));
       walk(c);
     }
   }
