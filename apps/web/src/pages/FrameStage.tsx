@@ -30,7 +30,6 @@ import {
   type ResizeDir,
   resolveAnchor,
 } from "@agocraft/editor";
-import type { SelectionHandleDir as HandleDir } from "@weave/design-system";
 import { SelectionLayer } from "@weave/design-system";
 import { type MotionStyle, motion, useMotionValue, useMotionValueEvent } from "motion/react";
 import type React from "react";
@@ -97,9 +96,6 @@ export interface FrameMenuContext {
   readonly onPickLayer: (id: string) => void;
 }
 
-const _ALL_HANDLES: ReadonlyArray<HandleDir> = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
-const MIN_FRAME = 0.02;
-
 /** WI-037 follow-up — compute the next pan/zoom state for a scale change
  *  that anchors a specific viewport point. The point at `(anchor.x,
  *  anchor.y)` (in outer-container CSS px, top-left origin) stays under
@@ -134,27 +130,6 @@ function nextPanForZoom(
     tx: px - W / 2 - (px - prev.tx - W / 2) * effective,
     ty: py - H / 2 - (py - prev.ty - H / 2) * effective,
   };
-}
-
-function _resizeFrame(orig: ItemFrame, dx: number, dy: number, dir: HandleDir): ItemFrame {
-  let { x, y, width, height } = orig;
-  if (dir.includes("e")) {
-    width = Math.max(MIN_FRAME, orig.width + dx);
-  }
-  if (dir.includes("w")) {
-    const newW = Math.max(MIN_FRAME, orig.width - dx);
-    x = orig.x + (orig.width - newW);
-    width = newW;
-  }
-  if (dir.includes("s")) {
-    height = Math.max(MIN_FRAME, orig.height + dy);
-  }
-  if (dir.includes("n")) {
-    const newH = Math.max(MIN_FRAME, orig.height - dy);
-    y = orig.y + (orig.height - newH);
-    height = newH;
-  }
-  return { x, y, width, height, rotation: orig.rotation };
 }
 
 export interface FrameStageProps {

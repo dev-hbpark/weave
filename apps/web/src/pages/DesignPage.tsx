@@ -111,16 +111,25 @@ import {
   findTrailDeep,
   isDomainItem,
 } from "../document/agocraft-mirror.js";
+import { computeAddFrame } from "../document/add-geometry.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import { useIsTextEditing } from "../document/clipboard/use-is-text-editing.js";
+import {
+  basisFromFrameSample,
+  basisFromLetterbox,
+  clientToDesign,
+  designToHostPx,
+  type RatioFrame,
+} from "../document/coordinate-projection.js";
 import { layoutChildFromTextAutoResize } from "../document/domains/derive-text-auto-resize.js";
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
 // Used to seed a freshly-created Auto-width text's height to exactly one line
 // so the box hugs the text vertically until the user drags the n/s handles.
 const DEFAULT_TEXT_LINE_HEIGHT = 1.4;
+
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import {
   buildFrameTree,
@@ -787,9 +796,8 @@ function DesignPageBody() {
         createShapeSelectionViewModel({
           getSubAttrs: (itemId) => {
             const item = findItemDeep(docInAgocraftRef.current, itemId);
-            return (
-              item?.attrs as { subAttrs?: { shape?: string; closed?: boolean } } | undefined
-            )?.subAttrs;
+            return (item?.attrs as { subAttrs?: { shape?: string; closed?: boolean } } | undefined)
+              ?.subAttrs;
           },
         }),
       ),
@@ -923,44 +931,32 @@ function DesignPageBody() {
    *  naive letterbox math when no frame is rendered yet.
    */
   function screenToDesign(clientX: number, clientY: number): { x: number; y: number } | null {
-    const host = canvasHostRef.current;
-    if (host) {
-      const sample =
-        host.querySelector("[data-frame-id]:not([data-peek-lifted])") ??
-        host.querySelector("[data-frame-id]");
-      if (sample instanceof HTMLElement) {
-        const id = sample.getAttribute("data-frame-id");
-        const item = id ? docInAgocraft.root.children.find((c) => String(c.id) === id) : undefined;
-        const frame = item
-          ? ((item.attrs as { frame?: { x: number; y: number; width: number; height: number } })
-              .frame ?? undefined)
-          : undefined;
-        if (frame) {
-          const rect = sample.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            const scaleX = rect.width / (frame.width * design.width);
-            const scaleY = rect.height / (frame.height * design.height);
-            const originX = rect.left - frame.x * design.width * scaleX;
-            const originY = rect.top - frame.y * design.height * scaleY;
-            return {
-              x: (clientX - originX) / scaleX,
-              y: (clientY - originY) / scaleY,
-            };
-          }
-        }
-      }
-    }
+    // DOM sampling (View concern) stays here; the scale/origin math is
+    // delegated to the pure `coordinate-projection` module (WI-063 F-1a).
+    const frameBasis = sampleFrameBasis();
+    if (frameBasis) return clientToDesign(frameBasis, clientX, clientY);
     // Fallback: naive letterbox math (used only when no frames exist).
-    const rect = hostRect;
-    if (!rect) return null;
-    const baseScale = Math.min(rect.width / design.width, rect.height / design.height);
-    if (baseScale <= 0) return null;
-    const letterboxX = (rect.width - design.width * baseScale) / 2;
-    const letterboxY = (rect.height - design.height * baseScale) / 2;
-    return {
-      x: (clientX - rect.left - letterboxX) / baseScale,
-      y: (clientY - rect.top - letterboxY) / baseScale,
-    };
+    if (!hostRect) return null;
+    const basis = basisFromLetterbox(hostRect, design);
+    return basis ? clientToDesign(basis, clientX, clientY) : null;
+  }
+
+  /** DOM-sampling glue: find a rendered `[data-frame-id]` element, read its
+   *  measured rect + design-space frame, and hand both to the pure
+   *  projection module. Returns null when no frame is rendered yet (caller
+   *  falls back to letterbox). Shared by `screenToDesign` / `designToHost`. */
+  function sampleFrameBasis() {
+    const host = canvasHostRef.current;
+    if (!host) return null;
+    const sample =
+      host.querySelector("[data-frame-id]:not([data-peek-lifted])") ??
+      host.querySelector("[data-frame-id]");
+    if (!(sample instanceof HTMLElement)) return null;
+    const id = sample.getAttribute("data-frame-id");
+    const item = id ? docInAgocraft.root.children.find((c) => String(c.id) === id) : undefined;
+    const frame = item ? (item.attrs as { frame?: RatioFrame }).frame : undefined;
+    if (!frame) return null;
+    return basisFromFrameSample(sample.getBoundingClientRect(), frame, design);
   }
 
   // Item-add placement rule. Returns the new item's frame (ratio of its
@@ -1025,35 +1021,13 @@ function DesignPageBody() {
       parentHeightPx = box.h;
     }
 
-    if (!isText) {
-      return {
-        frame: {
-          x: cxRatio - wRatio / 2,
-          y: cyRatio - hTargetRatio / 2,
-          width: wRatio,
-          height: hTargetRatio,
-          rotation: 0,
-        },
-      };
-    }
-    // Font fills the target height (one line). Round the px, then snap the
-    // box height to that font so height === one line of the font exactly.
-    const targetHeightPx = hTargetRatio * parentHeightPx;
-    const fontSizePx = Math.max(1, Math.round(targetHeightPx / TEXT_LINE_HEIGHT));
-    const boxHeightPx = fontSizePx * TEXT_LINE_HEIGHT;
-    const hRatio = boxHeightPx / parentHeightPx;
-    const fontSizeRatio = fontSizePx / parentHeightPx;
-    return {
-      frame: {
-        x: cxRatio - wRatio / 2,
-        y: cyRatio - hRatio / 2,
-        width: wRatio,
-        height: hRatio,
-        rotation: 0,
-      },
-      fontSizePx,
-      fontSizeRatio,
-    };
+    // Resolved placement → frame + font is pure arithmetic, delegated to
+    // the `add-geometry` module (WI-063 F-1b).
+    return computeAddFrame(
+      { wRatio, hTargetRatio, cxRatio, cyRatio, parentHeightPx },
+      isText,
+      TEXT_LINE_HEIGHT,
+    );
   }
   const addGeometryRef = useRef(computeAddGeometry);
   addGeometryRef.current = computeAddGeometry;
@@ -1069,41 +1043,28 @@ function DesignPageBody() {
       const host = canvasHostRef.current;
       if (!host) return null;
       const hostRectNow = host.getBoundingClientRect();
+      const designSize = { width: design.width, height: design.height };
+      // DOM sampling (View concern) is inlined here rather than reusing
+      // `sampleFrameBasis` so this memoized projector stays stable across
+      // renders (it's the `project` prop of <PresenceCursors>); the math is
+      // delegated to the pure projection module (WI-063 F-1a).
       const sample =
         host.querySelector("[data-frame-id]:not([data-peek-lifted])") ??
         host.querySelector("[data-frame-id]");
       if (sample instanceof HTMLElement) {
         const id = sample.getAttribute("data-frame-id");
         const item = id ? docInAgocraft.root.children.find((c) => String(c.id) === id) : undefined;
-        const frame = item
-          ? ((item.attrs as { frame?: { x: number; y: number; width: number; height: number } })
-              .frame ?? undefined)
-          : undefined;
+        const frame = item ? (item.attrs as { frame?: RatioFrame }).frame : undefined;
         if (frame) {
-          const rect = sample.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            const scaleX = rect.width / (frame.width * design.width);
-            const scaleY = rect.height / (frame.height * design.height);
-            const originX = rect.left - frame.x * design.width * scaleX;
-            const originY = rect.top - frame.y * design.height * scaleY;
-            return {
-              x: originX + designX * scaleX - hostRectNow.left,
-              y: originY + designY * scaleY - hostRectNow.top,
-            };
-          }
+          const basis = basisFromFrameSample(sample.getBoundingClientRect(), frame, designSize);
+          if (basis)
+            return designToHostPx(basis, designX, designY, hostRectNow.left, hostRectNow.top);
         }
       }
-      const baseScale = Math.min(
-        hostRectNow.width / design.width,
-        hostRectNow.height / design.height,
-      );
-      if (baseScale <= 0) return null;
-      const letterboxX = (hostRectNow.width - design.width * baseScale) / 2;
-      const letterboxY = (hostRectNow.height - design.height * baseScale) / 2;
-      return {
-        x: letterboxX + designX * baseScale,
-        y: letterboxY + designY * baseScale,
-      };
+      const basis = basisFromLetterbox(hostRectNow, designSize);
+      return basis
+        ? designToHostPx(basis, designX, designY, hostRectNow.left, hostRectNow.top)
+        : null;
     },
     [design.width, design.height, docInAgocraft],
   );
@@ -2346,8 +2307,8 @@ function DesignPageBody() {
                   <ModeAwareTooltipSurface>
                     <EditorProvider editor={editor}>
                       <DocumentForResolutionProvider document={docInAgocraft}>
-                       <DesignDimsProvider width={design.width} height={design.height}>
-                        {/* WI-039 — z-stack layout. The design surface (`<main>`)
+                        <DesignDimsProvider width={design.width} height={design.height}>
+                          {/* WI-039 — z-stack layout. The design surface (`<main>`)
                         fills the entire viewport so the canvas reaches every
                         edge with no chrome gap. Header, launch banners and
                         ThumbnailPanel are absolutely positioned overlays
@@ -2357,374 +2318,398 @@ function DesignPageBody() {
                         gap above the bottom panel because the panel's new
                         bg (intentionally shorter than the tile) exposed the
                         parent's `--bg-page` color through the flex gap. */}
-                        <div className="fixed inset-0 bg-[color:var(--bg-page)]">
-                          {typeof document !== "undefined" &&
-                            createPortal(
-                              <header
-                                // WI-039 — opaque self-background. The original
-                                // `bg-[color:var(--surface-1)]` is a translucent
-                                // glass token; when the header sat in a flex
-                                // child of `bg-[color:var(--bg-page)]` it
-                                // composited into a dark glass tone. With the
-                                // z-stack the canvas (potentially a light
-                                // design background) now sits behind the header,
-                                // so the glass token looks washed out. Stacking
-                                // `--surface-1` as a flat gradient on top of an
-                                // opaque `--bg-page` base reproduces the exact
-                                // original perceived color but is now fully
-                                // self-contained — no parent bg dependency.
-                                //
-                                // Portal'd to document.body so its z-index
-                                // participates in the root stacking context
-                                // alongside the SelectionLayer / MarqueeSelection
-                                // / RubberBand portal layers (z 35-45). Without
-                                // the portal, the outer `fixed inset-0` wrapper
-                                // creates a stacking context that traps any
-                                // z-index inside — the chrome would always paint
-                                // below the body-portal'd selection chrome.
-                                className="fixed inset-x-0 top-0 z-[46] grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)]"
-                                style={{
-                                  background:
-                                    "linear-gradient(var(--surface-1), var(--surface-1)), var(--bg-page)",
-                                }}
-                                data-testid="design-header"
-                                role="toolbar"
-                                aria-label="Edit tools"
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <Link
-                                    to="/"
-                                    className="flex items-center gap-2 no-underline shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
-                                    aria-label="Home"
-                                  >
+                          <div className="fixed inset-0 bg-[color:var(--bg-page)]">
+                            {typeof document !== "undefined" &&
+                              createPortal(
+                                <header
+                                  // WI-039 — opaque self-background. The original
+                                  // `bg-[color:var(--surface-1)]` is a translucent
+                                  // glass token; when the header sat in a flex
+                                  // child of `bg-[color:var(--bg-page)]` it
+                                  // composited into a dark glass tone. With the
+                                  // z-stack the canvas (potentially a light
+                                  // design background) now sits behind the header,
+                                  // so the glass token looks washed out. Stacking
+                                  // `--surface-1` as a flat gradient on top of an
+                                  // opaque `--bg-page` base reproduces the exact
+                                  // original perceived color but is now fully
+                                  // self-contained — no parent bg dependency.
+                                  //
+                                  // Portal'd to document.body so its z-index
+                                  // participates in the root stacking context
+                                  // alongside the SelectionLayer / MarqueeSelection
+                                  // / RubberBand portal layers (z 35-45). Without
+                                  // the portal, the outer `fixed inset-0` wrapper
+                                  // creates a stacking context that traps any
+                                  // z-index inside — the chrome would always paint
+                                  // below the body-portal'd selection chrome.
+                                  className="fixed inset-x-0 top-0 z-[46] grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)]"
+                                  style={{
+                                    background:
+                                      "linear-gradient(var(--surface-1), var(--surface-1)), var(--bg-page)",
+                                  }}
+                                  data-testid="design-header"
+                                  role="toolbar"
+                                  aria-label="Edit tools"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Link
+                                      to="/"
+                                      className="flex items-center gap-2 no-underline shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+                                      aria-label="Home"
+                                    >
+                                      <span
+                                        aria-hidden
+                                        className="inline-block w-5 h-5 rounded-[var(--radius-sm)] bg-[image:var(--accent-gradient)] shadow-[var(--shadow-glow)]"
+                                      />
+                                      <span className="text-[13px] font-semibold tracking-tight text-[color:var(--text-strong)]">
+                                        weave
+                                      </span>
+                                    </Link>
                                     <span
                                       aria-hidden
-                                      className="inline-block w-5 h-5 rounded-[var(--radius-sm)] bg-[image:var(--accent-gradient)] shadow-[var(--shadow-glow)]"
-                                    />
-                                    <span className="text-[13px] font-semibold tracking-tight text-[color:var(--text-strong)]">
-                                      weave
+                                      className="text-[12px] text-[color:var(--text-muted)] px-1"
+                                    >
+                                      /
                                     </span>
-                                  </Link>
-                                  <span
-                                    aria-hidden
-                                    className="text-[12px] text-[color:var(--text-muted)] px-1"
-                                  >
-                                    /
-                                  </span>
-                                  {/* WI-033 P2 — Breadcrumb (Phase 12 drill-in trail
+                                    {/* WI-033 P2 — Breadcrumb (Phase 12 drill-in trail
                               indicator) removed. Figma-aligned selection
                               navigation has no entered-frame state, so the
                               header only shows the design title. */}
-                                  <nav
-                                    className="flex items-center gap-1 text-[12px] text-[color:var(--text-muted)] min-w-0"
-                                    aria-label="Breadcrumb"
-                                  >
-                                    <span className="text-[color:var(--text-strong)] truncate max-w-[280px]">
-                                      {design.title}
-                                    </span>
-                                  </nav>
-                                </div>
+                                    <nav
+                                      className="flex items-center gap-1 text-[12px] text-[color:var(--text-muted)] min-w-0"
+                                      aria-label="Breadcrumb"
+                                    >
+                                      <span className="text-[color:var(--text-strong)] truncate max-w-[280px]">
+                                        {design.title}
+                                      </span>
+                                    </nav>
+                                  </div>
 
-                                <div
-                                  className="flex items-center gap-0.5"
-                                  role="group"
-                                  aria-label="Edit tools"
-                                >
-                                  {infiniteCanvas ? (
-                                    <>
-                                      {/* Three tool buttons form a mutually-exclusive toggle
+                                  <div
+                                    className="flex items-center gap-0.5"
+                                    role="group"
+                                    aria-label="Edit tools"
+                                  >
+                                    {infiniteCanvas ? (
+                                      <>
+                                        {/* Three tool buttons form a mutually-exclusive toggle
                         group: Select / Hand / Peek. Choosing one
                         deactivates the others (peek's sticky activation
                         included). Peek's hold-mode (L key) remains
                         orthogonal — it engages while held and yields back
                         on release. */}
-                                      <IconButton
-                                        aria-label="Select tool"
-                                        aria-pressed={!handMode && !peek.isActive}
-                                        size="sm"
-                                        onClick={() => {
-                                          setHandMode(false);
-                                          peek.deactivateSticky();
-                                        }}
-                                        data-testid="toolbar-select"
-                                        data-active={
-                                          !handMode && !peek.isActive ? "true" : undefined
-                                        }
-                                        data-tip="선택 도구"
-                                        data-tip-kbd="V"
-                                        className={
-                                          !handMode && !peek.isActive
-                                            ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                            : undefined
-                                        }
-                                      >
-                                        <IconCursor />
-                                      </IconButton>
-                                      <IconButton
-                                        aria-label="Hand tool"
-                                        aria-pressed={handMode && !peek.isActive}
-                                        size="sm"
-                                        onClick={() => {
-                                          setHandMode(true);
-                                          peek.deactivateSticky();
-                                        }}
-                                        data-testid="toolbar-hand"
-                                        data-active={
-                                          handMode && !peek.isActive ? "true" : undefined
-                                        }
-                                        data-tip="이동 도구"
-                                        data-tip-kbd="H / Space"
-                                        className={
-                                          handMode && !peek.isActive
-                                            ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                            : undefined
-                                        }
-                                      >
-                                        <IconHand />
-                                      </IconButton>
-                                      <IconButton
-                                        aria-label="Peek z-order"
-                                        aria-pressed={peek.isActive}
-                                        size="sm"
-                                        onClick={peek.toggle}
-                                        data-testid="toolbar-peek"
-                                        data-active={peek.isActive ? "true" : undefined}
-                                        data-tip="Z-순서 보기"
-                                        data-tip-kbd="L"
-                                        className={
-                                          peek.isActive
-                                            ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                            : undefined
-                                        }
-                                      >
-                                        <IconLayers />
-                                      </IconButton>
-                                      <span
-                                        aria-hidden
-                                        className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
-                                      />
-                                    </>
-                                  ) : null}
-                                  {/* WI-020 — Add menu: image / video / 9 shape sub-kinds */}
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <IconButton
-                                        aria-label="Add new item"
-                                        size="sm"
-                                        data-testid="toolbar-add"
-                                        data-tip="추가"
-                                        data-tip-kbd="이미지 · 비디오 · 도형"
-                                      >
-                                        <IconPlus />
-                                      </IconButton>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="start" sideOffset={6}>
-                                      <DropdownMenuLabel>슬라이드</DropdownMenuLabel>
-                                      <DropdownMenuItem
-                                        icon={<IconFrame size={16} />}
-                                        onSelect={() => setSlidePickerOpen(true)}
-                                        data-testid="add-slide"
-                                      >
-                                        슬라이드…
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuLabel>미디어</DropdownMenuLabel>
-                                      <DropdownMenuItem
-                                        icon={<IconImage size={16} />}
-                                        onSelect={() =>
-                                          setPendingMedia({ action: "add", kind: "image" })
-                                        }
-                                        data-testid="add-image"
-                                      >
-                                        이미지
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconVideo size={16} />}
-                                        onSelect={() =>
-                                          setPendingMedia({ action: "add", kind: "video" })
-                                        }
-                                        data-testid="add-video"
-                                      >
-                                        비디오
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuLabel>텍스트</DropdownMenuLabel>
-                                      <DropdownMenuItem
-                                        icon={<IconText size={16} />}
-                                        onSelect={() => addNewItem("text")}
-                                        data-testid="add-text"
-                                        draggable
-                                        onDragStart={(e) => {
-                                          e.dataTransfer.setData(
-                                            "application/x-weave-add-kind",
-                                            "text",
-                                          );
-                                          e.dataTransfer.effectAllowed = "copy";
-                                        }}
-                                      >
-                                        텍스트
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuSub>
-                                        <DropdownMenuSubTrigger
-                                          icon={<IconShapeRectangle size={16} />}
-                                          data-testid="add-shape"
+                                        <IconButton
+                                          aria-label="Select tool"
+                                          aria-pressed={!handMode && !peek.isActive}
+                                          size="sm"
+                                          onClick={() => {
+                                            setHandMode(false);
+                                            peek.deactivateSticky();
+                                          }}
+                                          data-testid="toolbar-select"
+                                          data-active={
+                                            !handMode && !peek.isActive ? "true" : undefined
+                                          }
+                                          data-tip="선택 도구"
+                                          data-tip-kbd="V"
+                                          className={
+                                            !handMode && !peek.isActive
+                                              ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                              : undefined
+                                          }
                                         >
-                                          도형
-                                        </DropdownMenuSubTrigger>
-                                        <DropdownMenuSubContent>
-                                      <DropdownMenuItem
-                                        icon={<IconShapeRectangle size={16} />}
-                                        onSelect={() => addNewItem("shape", "rectangle")}
-                                        data-testid="add-shape-rectangle"
-                                        draggable
-                                        onDragStart={(e) => {
-                                          e.dataTransfer.setData(
-                                            "application/x-weave-add-kind",
-                                            "shape",
-                                          );
-                                          e.dataTransfer.effectAllowed = "copy";
-                                        }}
-                                      >
-                                        사각형
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapeEllipse size={16} />}
-                                        onSelect={() => addNewItem("shape", "ellipse")}
-                                        data-testid="add-shape-ellipse"
-                                      >
-                                        원
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapeArrow size={16} />}
-                                        onSelect={() => addNewItem("shape", "arrow")}
-                                        data-testid="add-shape-arrow"
-                                      >
-                                        화살표
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapeTriangle size={16} />}
-                                        onSelect={() => addNewItem("shape", "triangle")}
-                                        data-testid="add-shape-triangle"
-                                      >
-                                        삼각형
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapeStar size={16} />}
-                                        onSelect={() => addNewItem("shape", "star")}
-                                        data-testid="add-shape-star"
-                                      >
-                                        별
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapePolygon size={16} />}
-                                        onSelect={() => addNewItem("shape", "polygon")}
-                                        data-testid="add-shape-polygon"
-                                      >
-                                        다각형
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapePoly size={16} />}
-                                        onSelect={() => addNewItem("shape", "poly")}
-                                        data-testid="add-shape-poly"
-                                      >
-                                        자유 다각형
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapeHeart size={16} />}
-                                        onSelect={() => addNewItem("shape", "heart")}
-                                        data-testid="add-shape-heart"
-                                      >
-                                        하트
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        icon={<IconShapeSpeechBubble size={16} />}
-                                        onSelect={() => addNewItem("shape", "speech-bubble")}
-                                        data-testid="add-shape-speech-bubble"
-                                      >
-                                        말풍선
-                                      </DropdownMenuItem>
-                                        </DropdownMenuSubContent>
-                                      </DropdownMenuSub>
-                                      <DropdownMenuSub>
-                                        <DropdownMenuSubTrigger
-                                          icon={<IconShapeLine size={16} />}
-                                          data-testid="add-line"
+                                          <IconCursor />
+                                        </IconButton>
+                                        <IconButton
+                                          aria-label="Hand tool"
+                                          aria-pressed={handMode && !peek.isActive}
+                                          size="sm"
+                                          onClick={() => {
+                                            setHandMode(true);
+                                            peek.deactivateSticky();
+                                          }}
+                                          data-testid="toolbar-hand"
+                                          data-active={
+                                            handMode && !peek.isActive ? "true" : undefined
+                                          }
+                                          data-tip="이동 도구"
+                                          data-tip-kbd="H / Space"
+                                          className={
+                                            handMode && !peek.isActive
+                                              ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                              : undefined
+                                          }
                                         >
-                                          선
-                                        </DropdownMenuSubTrigger>
-                                        <DropdownMenuSubContent>
-                                          <DropdownMenuItem
+                                          <IconHand />
+                                        </IconButton>
+                                        <IconButton
+                                          aria-label="Peek z-order"
+                                          aria-pressed={peek.isActive}
+                                          size="sm"
+                                          onClick={peek.toggle}
+                                          data-testid="toolbar-peek"
+                                          data-active={peek.isActive ? "true" : undefined}
+                                          data-tip="Z-순서 보기"
+                                          data-tip-kbd="L"
+                                          className={
+                                            peek.isActive
+                                              ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
+                                              : undefined
+                                          }
+                                        >
+                                          <IconLayers />
+                                        </IconButton>
+                                        <span
+                                          aria-hidden
+                                          className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
+                                        />
+                                      </>
+                                    ) : null}
+                                    {/* WI-020 — Add menu: image / video / 9 shape sub-kinds */}
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <IconButton
+                                          aria-label="Add new item"
+                                          size="sm"
+                                          data-testid="toolbar-add"
+                                          data-tip="추가"
+                                          data-tip-kbd="이미지 · 비디오 · 도형"
+                                        >
+                                          <IconPlus />
+                                        </IconButton>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="start" sideOffset={6}>
+                                        <DropdownMenuLabel>슬라이드</DropdownMenuLabel>
+                                        <DropdownMenuItem
+                                          icon={<IconFrame size={16} />}
+                                          onSelect={() => setSlidePickerOpen(true)}
+                                          data-testid="add-slide"
+                                        >
+                                          슬라이드…
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuLabel>미디어</DropdownMenuLabel>
+                                        <DropdownMenuItem
+                                          icon={<IconImage size={16} />}
+                                          onSelect={() =>
+                                            setPendingMedia({ action: "add", kind: "image" })
+                                          }
+                                          data-testid="add-image"
+                                        >
+                                          이미지
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          icon={<IconVideo size={16} />}
+                                          onSelect={() =>
+                                            setPendingMedia({ action: "add", kind: "video" })
+                                          }
+                                          data-testid="add-video"
+                                        >
+                                          비디오
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuLabel>텍스트</DropdownMenuLabel>
+                                        <DropdownMenuItem
+                                          icon={<IconText size={16} />}
+                                          onSelect={() => addNewItem("text")}
+                                          data-testid="add-text"
+                                          draggable
+                                          onDragStart={(e) => {
+                                            e.dataTransfer.setData(
+                                              "application/x-weave-add-kind",
+                                              "text",
+                                            );
+                                            e.dataTransfer.effectAllowed = "copy";
+                                          }}
+                                        >
+                                          텍스트
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuSub>
+                                          <DropdownMenuSubTrigger
+                                            icon={<IconShapeRectangle size={16} />}
+                                            data-testid="add-shape"
+                                          >
+                                            도형
+                                          </DropdownMenuSubTrigger>
+                                          <DropdownMenuSubContent>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeRectangle size={16} />}
+                                              onSelect={() => addNewItem("shape", "rectangle")}
+                                              data-testid="add-shape-rectangle"
+                                              draggable
+                                              onDragStart={(e) => {
+                                                e.dataTransfer.setData(
+                                                  "application/x-weave-add-kind",
+                                                  "shape",
+                                                );
+                                                e.dataTransfer.effectAllowed = "copy";
+                                              }}
+                                            >
+                                              사각형
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeEllipse size={16} />}
+                                              onSelect={() => addNewItem("shape", "ellipse")}
+                                              data-testid="add-shape-ellipse"
+                                            >
+                                              원
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeArrow size={16} />}
+                                              onSelect={() => addNewItem("shape", "arrow")}
+                                              data-testid="add-shape-arrow"
+                                            >
+                                              화살표
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeTriangle size={16} />}
+                                              onSelect={() => addNewItem("shape", "triangle")}
+                                              data-testid="add-shape-triangle"
+                                            >
+                                              삼각형
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeStar size={16} />}
+                                              onSelect={() => addNewItem("shape", "star")}
+                                              data-testid="add-shape-star"
+                                            >
+                                              별
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapePolygon size={16} />}
+                                              onSelect={() => addNewItem("shape", "polygon")}
+                                              data-testid="add-shape-polygon"
+                                            >
+                                              다각형
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapePoly size={16} />}
+                                              onSelect={() => addNewItem("shape", "poly")}
+                                              data-testid="add-shape-poly"
+                                            >
+                                              자유 다각형
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeHeart size={16} />}
+                                              onSelect={() => addNewItem("shape", "heart")}
+                                              data-testid="add-shape-heart"
+                                            >
+                                              하트
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeSpeechBubble size={16} />}
+                                              onSelect={() => addNewItem("shape", "speech-bubble")}
+                                              data-testid="add-shape-speech-bubble"
+                                            >
+                                              말풍선
+                                            </DropdownMenuItem>
+                                          </DropdownMenuSubContent>
+                                        </DropdownMenuSub>
+                                        <DropdownMenuSub>
+                                          <DropdownMenuSubTrigger
                                             icon={<IconShapeLine size={16} />}
-                                            onSelect={() =>
-                                              addNewItem("line", undefined, undefined, undefined, LINE_STRAIGHT)
-                                            }
-                                            data-testid="add-line-straight"
+                                            data-testid="add-line"
                                           >
-                                            직선
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            icon={<IconPencil size={16} />}
-                                            onSelect={() =>
-                                              addNewItem("line", undefined, undefined, undefined, LINE_FREE)
-                                            }
-                                            data-testid="add-line-free"
-                                          >
-                                            자유선
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            icon={<IconShapeLine size={16} />}
-                                            onSelect={() =>
-                                              addNewItem("line", undefined, undefined, undefined, LINE_CURVE)
-                                            }
-                                            data-testid="add-line-curve"
-                                          >
-                                            곡선
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            icon={<IconPencil size={16} />}
-                                            onSelect={() =>
-                                              addNewItem("line", undefined, undefined, undefined, LINE_CURVE_FREE)
-                                            }
-                                            data-testid="add-line-curve-free"
-                                          >
-                                            자유곡선
-                                          </DropdownMenuItem>
-                                        </DropdownMenuSubContent>
-                                      </DropdownMenuSub>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuLabel>코드</DropdownMenuLabel>
-                                      <DropdownMenuItem
-                                        icon={<IconQr size={16} />}
-                                        onSelect={() => addNewItem("qr")}
-                                        data-testid="add-qr"
-                                        draggable
-                                        onDragStart={(e) => {
-                                          e.dataTransfer.setData(
-                                            "application/x-weave-add-kind",
-                                            "qr",
-                                          );
-                                          e.dataTransfer.effectAllowed = "copy";
-                                        }}
-                                      >
-                                        QR 코드
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                  <span
-                                    aria-hidden
-                                    className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
-                                  />
-                                  <CommandIconButton commandId="history.undo" size="sm">
-                                    <IconUndo />
-                                  </CommandIconButton>
-                                  <CommandIconButton commandId="history.redo" size="sm">
-                                    <IconRedo />
-                                  </CommandIconButton>
-                                </div>
+                                            선
+                                          </DropdownMenuSubTrigger>
+                                          <DropdownMenuSubContent>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeLine size={16} />}
+                                              onSelect={() =>
+                                                addNewItem(
+                                                  "line",
+                                                  undefined,
+                                                  undefined,
+                                                  undefined,
+                                                  LINE_STRAIGHT,
+                                                )
+                                              }
+                                              data-testid="add-line-straight"
+                                            >
+                                              직선
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconPencil size={16} />}
+                                              onSelect={() =>
+                                                addNewItem(
+                                                  "line",
+                                                  undefined,
+                                                  undefined,
+                                                  undefined,
+                                                  LINE_FREE,
+                                                )
+                                              }
+                                              data-testid="add-line-free"
+                                            >
+                                              자유선
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconShapeLine size={16} />}
+                                              onSelect={() =>
+                                                addNewItem(
+                                                  "line",
+                                                  undefined,
+                                                  undefined,
+                                                  undefined,
+                                                  LINE_CURVE,
+                                                )
+                                              }
+                                              data-testid="add-line-curve"
+                                            >
+                                              곡선
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              icon={<IconPencil size={16} />}
+                                              onSelect={() =>
+                                                addNewItem(
+                                                  "line",
+                                                  undefined,
+                                                  undefined,
+                                                  undefined,
+                                                  LINE_CURVE_FREE,
+                                                )
+                                              }
+                                              data-testid="add-line-curve-free"
+                                            >
+                                              자유곡선
+                                            </DropdownMenuItem>
+                                          </DropdownMenuSubContent>
+                                        </DropdownMenuSub>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuLabel>코드</DropdownMenuLabel>
+                                        <DropdownMenuItem
+                                          icon={<IconQr size={16} />}
+                                          onSelect={() => addNewItem("qr")}
+                                          data-testid="add-qr"
+                                          draggable
+                                          onDragStart={(e) => {
+                                            e.dataTransfer.setData(
+                                              "application/x-weave-add-kind",
+                                              "qr",
+                                            );
+                                            e.dataTransfer.effectAllowed = "copy";
+                                          }}
+                                        >
+                                          QR 코드
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                    <span
+                                      aria-hidden
+                                      className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
+                                    />
+                                    <CommandIconButton commandId="history.undo" size="sm">
+                                      <IconUndo />
+                                    </CommandIconButton>
+                                    <CommandIconButton commandId="history.redo" size="sm">
+                                      <IconRedo />
+                                    </CommandIconButton>
+                                  </div>
 
-                                <div className="flex items-center justify-end gap-2">
-                                  {/* Design 배경색 — file-level 속성이라 selection 과
+                                  <div className="flex items-center justify-end gap-2">
+                                    {/* Design 배경색 — file-level 속성이라 selection 과
                                 무관한 영구 chrome 인 header 의 우 cluster 에
                                 상주. ContextualToolbar 의 selection==0
                                 variant 를 대체. ThemePicker 와 같은
@@ -2735,21 +2720,21 @@ function DesignPageBody() {
                                 data-testid 를 trigger 로 전달하지 않으므로
                                 span wrapper 로 e2e hook 노출 (inline-flex 로
                                 trigger 의 layout 에 영향 X). */}
-                                  <span
-                                    data-testid="header-design-background"
-                                    className="inline-flex"
-                                  >
-                                    <ColorPicker
-                                      value={design.background ?? "#ffffff"}
-                                      onValueCommit={(v) => setDesignBackgroundViaEditor(v)}
-                                      onValueChange={() => {
-                                        /* commit-only */
-                                      }}
-                                      aria-label="Design background"
-                                    />
-                                  </span>
-                                  <ThemePicker />
-                                  {/* DR-design-017 — manual cloud save trigger.
+                                    <span
+                                      data-testid="header-design-background"
+                                      className="inline-flex"
+                                    >
+                                      <ColorPicker
+                                        value={design.background ?? "#ffffff"}
+                                        onValueCommit={(v) => setDesignBackgroundViaEditor(v)}
+                                        onValueChange={() => {
+                                          /* commit-only */
+                                        }}
+                                        aria-label="Design background"
+                                      />
+                                    </span>
+                                    <ThemePicker />
+                                    {/* DR-design-017 — manual cloud save trigger.
                                   Click forces an immediate `persistNow()`
                                   even if the debounced auto-save window
                                   hasn't elapsed. Glyph flashes to a check
@@ -2759,52 +2744,52 @@ function DesignPageBody() {
                                   DR-design-027 — `subtle` circular chip +
                                   status-token tint so it reads as a real
                                   button coherent with the Present CTA. */}
-                                  <IconButton
-                                    aria-label="Save design to server"
-                                    variant="subtle"
-                                    size="md"
-                                    onClick={() => void handleManualSave()}
-                                    disabled={saveStatus === "saving"}
-                                    data-testid="toolbar-save"
-                                    data-state={saveStatus}
-                                    data-tip={SAVE_TOOLTIP_CONTEXT[saveStatus]}
-                                    data-tip-kbd={SAVE_TOOLTIP_ACTION[saveStatus]}
-                                    className={`rounded-[var(--radius-pill)] ${SAVE_TINT_BY_STATUS[saveStatus]}`}
-                                  >
-                                    {SAVE_GLYPH_BY_STATUS[saveStatus]}
-                                  </IconButton>
-                                  <Button size="md" leadingIcon={<IconPlay size={16} />} asChild>
-                                    <Link
-                                      to={`/design/${designId}/present`}
-                                      data-testid="toolbar-present"
-                                      data-tip="프레젠테이션"
-                                      data-tip-kbd="풀스크린"
+                                    <IconButton
+                                      aria-label="Save design to server"
+                                      variant="subtle"
+                                      size="md"
+                                      onClick={() => void handleManualSave()}
+                                      disabled={saveStatus === "saving"}
+                                      data-testid="toolbar-save"
+                                      data-state={saveStatus}
+                                      data-tip={SAVE_TOOLTIP_CONTEXT[saveStatus]}
+                                      data-tip-kbd={SAVE_TOOLTIP_ACTION[saveStatus]}
+                                      className={`rounded-[var(--radius-pill)] ${SAVE_TINT_BY_STATUS[saveStatus]}`}
                                     >
-                                      Present
-                                    </Link>
-                                  </Button>
-                                </div>
-                              </header>,
-                              document.body,
-                            )}
+                                      {SAVE_GLYPH_BY_STATUS[saveStatus]}
+                                    </IconButton>
+                                    <Button size="md" leadingIcon={<IconPlay size={16} />} asChild>
+                                      <Link
+                                        to={`/design/${designId}/present`}
+                                        data-testid="toolbar-present"
+                                        data-tip="프레젠테이션"
+                                        data-tip-kbd="풀스크린"
+                                      >
+                                        Present
+                                      </Link>
+                                    </Button>
+                                  </div>
+                                </header>,
+                                document.body,
+                              )}
 
-                          {/* WI-029 R5 + WI-033 P3 — text item v1 +
+                            {/* WI-029 R5 + WI-033 P3 — text item v1 +
                           Figma frame selection launch announcements
                           (LG-001 / RISK-001 #6 + RISK-005 #5). Both
                           auto-show during the launch week and fall
                           silent on dismiss / outside the window. */}
-                          {/* Launch banners — float just below the header.
+                            {/* Launch banners — float just below the header.
                           `pointer-events-none` on the wrapper lets clicks
                           pass through the empty space to main; each banner
                           re-enables `pointer-events-auto` on its own card
                           so its dismiss control stays clickable. */}
-                          <div className="absolute inset-x-0 top-12 z-30 px-4 pt-2 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
-                            <TextV1LaunchBanner />
-                            <FigmaSelectionLaunchBanner />
-                            <MigrationResultBanner status={migrationStatus} />
-                          </div>
+                            <div className="absolute inset-x-0 top-12 z-30 px-4 pt-2 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
+                              <TextV1LaunchBanner />
+                              <FigmaSelectionLaunchBanner />
+                              <MigrationResultBanner status={migrationStatus} />
+                            </div>
 
-                          {/* LS-miss cloud-fetch spinner. Covers the
+                            {/* LS-miss cloud-fetch spinner. Covers the
                               canvas area (top-12 to skip the header
                               chrome) while `useDesign` is awaiting the
                               server snapshot for an id that wasn't
@@ -2814,413 +2799,416 @@ function DesignPageBody() {
                               below the header (z-30), so the user can
                               still see "weave / title" and bail back
                               via the home link. */}
-                          {isLoading && (
-                            <div
-                              className="absolute inset-x-0 bottom-0 top-12 z-20 flex items-center justify-center bg-[color:var(--bg-page)]/85 backdrop-blur-sm"
-                              data-testid="design-loading"
-                              role="status"
-                              aria-live="polite"
-                            >
-                              <div className="flex flex-col items-center gap-3">
-                                <Spinner size={28} className="text-[color:var(--text-strong)]" />
-                                <span className="text-[13px] text-[color:var(--text-soft)]">
-                                  디자인을 불러오는 중…
-                                </span>
+                            {isLoading && (
+                              <div
+                                className="absolute inset-x-0 bottom-0 top-12 z-20 flex items-center justify-center bg-[color:var(--bg-page)]/85 backdrop-blur-sm"
+                                data-testid="design-loading"
+                                role="status"
+                                aria-live="polite"
+                              >
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner size={28} className="text-[color:var(--text-strong)]" />
+                                  <span className="text-[13px] text-[color:var(--text-soft)]">
+                                    디자인을 불러오는 중…
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          <main
-                            className="absolute inset-0 overflow-hidden"
-                            data-testid="design-canvas-host"
-                            ref={canvasHostCallbackRef}
-                            style={
-                              peek.isActive
-                                ? { perspective: "1800px", perspectiveOrigin: "50% 35%" }
-                                : undefined
-                            }
-                          >
-                            <div
-                              data-peek-tilt-target
-                              style={{
-                                position: "absolute",
-                                inset: 0,
-                                transformStyle: "preserve-3d",
-                                transform: peek.isActive ? "rotateX(12deg)" : "rotateX(0deg)",
-                                transformOrigin: "50% 50%",
-                              }}
+                            <main
+                              className="absolute inset-0 overflow-hidden"
+                              data-testid="design-canvas-host"
+                              ref={canvasHostCallbackRef}
+                              style={
+                                peek.isActive
+                                  ? { perspective: "1800px", perspectiveOrigin: "50% 35%" }
+                                  : undefined
+                              }
                             >
-                              <FrameStage
-                                designWidth={design.width}
-                                designHeight={design.height}
-                                // WI-040 Phase 3 — host-supplied hover
-                                // overlay. Lives inside FrameStage's
-                                // design-plane so its rects share the
-                                // camera transform. The Mount component
-                                // uses the gate hook + projector;
-                                // visibility filters + selection
-                                // exclusion happen there.
-                                renderHoverOverlay={() => (
-                                  <HoverAffordanceMount
-                                    doc={docInAgocraft}
-                                    hoveredKind={hoverContext.hoveredKind}
-                                    hoveredId={hoverContext.hoveredId}
-                                    designWidth={design.width}
-                                    designHeight={design.height}
-                                    selectedIds={selectedIds}
-                                  />
-                                )}
-                                background={design.background}
-                                root={docInAgocraft.root}
-                                document={docInAgocraft}
-                                editor={editor}
-                                editing={true}
-                                infiniteCanvas={infiniteCanvas}
-                                handMode={handMode}
-                                // WI-033 P2 — enteredId / onEnter (drill-in mode,
-                                // Phase 12) removed. onFitAll restored: empty-canvas
-                                // double-click fits the camera to all items.
-                                selectedId={selectedFrameId ?? undefined}
-                                selectedIds={selectedIds}
-                                dimmedFrameIds={dimmedFrameIds}
-                                isolatedFrameIds={isolatedFrameIds}
-                                onSelect={setSelectedFrameId}
-                                onToggleSelect={(id) => toggleFrames([id])}
-                                onMarqueeSelect={onMarqueeSelect}
-                                onFitAll={handleFitAll}
-                                // WI-035 P3 — Toolbar drag-to-add. The
-                                // DropdownMenu add-items set the mime
-                                // `application/x-weave-add-kind` on
-                                // dragstart; FrameStage routes the drop's
-                                // `containerId` (root or hovered frame).
-                                // This handler dispatches the same
-                                // `weave.item.add` SSOT.
-                                onDragOver={(e) => {
-                                  if (
-                                    e.dataTransfer.types.includes("application/x-weave-add-kind")
-                                  ) {
-                                    e.preventDefault();
-                                  }
+                              <div
+                                data-peek-tilt-target
+                                style={{
+                                  position: "absolute",
+                                  inset: 0,
+                                  transformStyle: "preserve-3d",
+                                  transform: peek.isActive ? "rotateX(12deg)" : "rotateX(0deg)",
+                                  transformOrigin: "50% 50%",
                                 }}
-                                onDropAdd={(e, containerId) => {
-                                  const kindRaw = e.dataTransfer.getData(
-                                    "application/x-weave-add-kind",
-                                  );
-                                  if (kindRaw === "") return;
-                                  e.preventDefault();
-                                  const kind = kindRaw as DomainKind;
-                                  const result = editor.exec<unknown, string>("weave.item.add", {
-                                    kind,
-                                    containerId,
-                                    frame: {
-                                      x: 0.3,
-                                      y: 0.3,
-                                      width: 0.4,
-                                      height: 0.4,
-                                      rotation: 0,
-                                    },
-                                  });
-                                  if (result.ok) setSelectedFrameId(result.value);
-                                }}
-                                onUpdateItem={(itemId, patcher) =>
-                                  updateItem(itemId, (prev) => ({
-                                    ...prev,
-                                    attrs: patcher(
-                                      prev.attrs as unknown as Record<string, unknown>,
-                                    ) as never,
-                                  }))
-                                }
-                                // WI-032 Phase 3b — onUpdateShape / onRemoveShape
-                                // edited `canvas-design.attrs.shapes[]`; with that
-                                // kind removed, shape primitives flow through
-                                // `onUpdateItem` instead.
-                                onCommitFrame={(itemId, nextFrame: ItemFrame) =>
-                                  updateItem(itemId, (prev) => ({
-                                    ...prev,
-                                    attrs: { ...prev.attrs, frame: nextFrame } as typeof prev.attrs,
-                                  }))
-                                }
-                                renderFrameMenu={(itemId, children, ctx) => {
-                                  // WI-039 — selection-aware reparent. The
-                                  // gesture moves either the right-clicked
-                                  // frame OR the multi-selection it belongs
-                                  // to; cycle-blocked rows are dimmed.
-                                  const movedIds: ReadonlyArray<string> =
-                                    selectedIds.has(itemId) && selectedIds.size > 1
-                                      ? [...selectedIds]
-                                      : [itemId];
-                                  const reparentTree = buildFrameTree(docInAgocraft, movedIds);
-                                  const handleReparent = (targetPickerId: string) => {
-                                    const newParentId = resolvePickerTargetId(
-                                      docInAgocraft,
-                                      targetPickerId,
+                              >
+                                <FrameStage
+                                  designWidth={design.width}
+                                  designHeight={design.height}
+                                  // WI-040 Phase 3 — host-supplied hover
+                                  // overlay. Lives inside FrameStage's
+                                  // design-plane so its rects share the
+                                  // camera transform. The Mount component
+                                  // uses the gate hook + projector;
+                                  // visibility filters + selection
+                                  // exclusion happen there.
+                                  renderHoverOverlay={() => (
+                                    <HoverAffordanceMount
+                                      doc={docInAgocraft}
+                                      hoveredKind={hoverContext.hoveredKind}
+                                      hoveredId={hoverContext.hoveredId}
+                                      designWidth={design.width}
+                                      designHeight={design.height}
+                                      selectedIds={selectedIds}
+                                    />
+                                  )}
+                                  background={design.background}
+                                  root={docInAgocraft.root}
+                                  document={docInAgocraft}
+                                  editor={editor}
+                                  editing={true}
+                                  infiniteCanvas={infiniteCanvas}
+                                  handMode={handMode}
+                                  // WI-033 P2 — enteredId / onEnter (drill-in mode,
+                                  // Phase 12) removed. onFitAll restored: empty-canvas
+                                  // double-click fits the camera to all items.
+                                  selectedId={selectedFrameId ?? undefined}
+                                  selectedIds={selectedIds}
+                                  dimmedFrameIds={dimmedFrameIds}
+                                  isolatedFrameIds={isolatedFrameIds}
+                                  onSelect={setSelectedFrameId}
+                                  onToggleSelect={(id) => toggleFrames([id])}
+                                  onMarqueeSelect={onMarqueeSelect}
+                                  onFitAll={handleFitAll}
+                                  // WI-035 P3 — Toolbar drag-to-add. The
+                                  // DropdownMenu add-items set the mime
+                                  // `application/x-weave-add-kind` on
+                                  // dragstart; FrameStage routes the drop's
+                                  // `containerId` (root or hovered frame).
+                                  // This handler dispatches the same
+                                  // `weave.item.add` SSOT.
+                                  onDragOver={(e) => {
+                                    if (
+                                      e.dataTransfer.types.includes("application/x-weave-add-kind")
+                                    ) {
+                                      e.preventDefault();
+                                    }
+                                  }}
+                                  onDropAdd={(e, containerId) => {
+                                    const kindRaw = e.dataTransfer.getData(
+                                      "application/x-weave-add-kind",
                                     );
-                                    editor.exec("weave.item.reparent", {
-                                      entries: movedIds.map((id) => ({
-                                        itemId: id,
-                                        newParentId,
-                                      })),
-                                      // Real design size → rotation-aware reparent
-                                      // stays correct across rotated, non-square ancestors.
-                                      designWidth: design.width,
-                                      designHeight: design.height,
+                                    if (kindRaw === "") return;
+                                    e.preventDefault();
+                                    const kind = kindRaw as DomainKind;
+                                    const result = editor.exec<unknown, string>("weave.item.add", {
+                                      kind,
+                                      containerId,
+                                      frame: {
+                                        x: 0.3,
+                                        y: 0.3,
+                                        width: 0.4,
+                                        height: 0.4,
+                                        rotation: 0,
+                                      },
                                     });
-                                  };
-                                  return (
-                                    <FrameContextMenu
-                                      itemId={itemId}
-                                      onDelete={() => {
-                                        removeItem(itemId);
-                                        bumpHistoryTick();
-                                      }}
-                                      onZOrder={(dir) => {
-                                        const cmdId = {
-                                          bringForward: "weave.item.bringForward",
-                                          sendBackward: "weave.item.sendBackward",
-                                          bringToFront: "weave.item.bringToFront",
-                                          sendToBack: "weave.item.sendToBack",
-                                        }[dir];
-                                        editor.exec(cmdId, { itemId });
-                                      }}
-                                      reparentTree={reparentTree}
-                                      onReparent={handleReparent}
-                                      onClipboard={(verb) =>
-                                        dispatchEditorCommand(
-                                          `weave.clipboard.${
-                                            verb === "pasteSpecial" ? "pasteSpecial" : verb
-                                          }`,
-                                          { editor },
-                                          commandContext,
-                                        )
-                                      }
-                                      clipboardHasItems={clipboardCommands.hasItems}
-                                      {...(ctx !== undefined
-                                        ? {
-                                            layers: ctx.layers,
-                                            onPickLayer: ctx.onPickLayer,
-                                          }
-                                        : {})}
-                                    >
-                                      {children}
-                                    </FrameContextMenu>
-                                  );
-                                }}
-                              />
-                            </div>
+                                    if (result.ok) setSelectedFrameId(result.value);
+                                  }}
+                                  onUpdateItem={(itemId, patcher) =>
+                                    updateItem(itemId, (prev) => ({
+                                      ...prev,
+                                      attrs: patcher(
+                                        prev.attrs as unknown as Record<string, unknown>,
+                                      ) as never,
+                                    }))
+                                  }
+                                  // WI-032 Phase 3b — onUpdateShape / onRemoveShape
+                                  // edited `canvas-design.attrs.shapes[]`; with that
+                                  // kind removed, shape primitives flow through
+                                  // `onUpdateItem` instead.
+                                  onCommitFrame={(itemId, nextFrame: ItemFrame) =>
+                                    updateItem(itemId, (prev) => ({
+                                      ...prev,
+                                      attrs: {
+                                        ...prev.attrs,
+                                        frame: nextFrame,
+                                      } as typeof prev.attrs,
+                                    }))
+                                  }
+                                  renderFrameMenu={(itemId, children, ctx) => {
+                                    // WI-039 — selection-aware reparent. The
+                                    // gesture moves either the right-clicked
+                                    // frame OR the multi-selection it belongs
+                                    // to; cycle-blocked rows are dimmed.
+                                    const movedIds: ReadonlyArray<string> =
+                                      selectedIds.has(itemId) && selectedIds.size > 1
+                                        ? [...selectedIds]
+                                        : [itemId];
+                                    const reparentTree = buildFrameTree(docInAgocraft, movedIds);
+                                    const handleReparent = (targetPickerId: string) => {
+                                      const newParentId = resolvePickerTargetId(
+                                        docInAgocraft,
+                                        targetPickerId,
+                                      );
+                                      editor.exec("weave.item.reparent", {
+                                        entries: movedIds.map((id) => ({
+                                          itemId: id,
+                                          newParentId,
+                                        })),
+                                        // Real design size → rotation-aware reparent
+                                        // stays correct across rotated, non-square ancestors.
+                                        designWidth: design.width,
+                                        designHeight: design.height,
+                                      });
+                                    };
+                                    return (
+                                      <FrameContextMenu
+                                        itemId={itemId}
+                                        onDelete={() => {
+                                          removeItem(itemId);
+                                          bumpHistoryTick();
+                                        }}
+                                        onZOrder={(dir) => {
+                                          const cmdId = {
+                                            bringForward: "weave.item.bringForward",
+                                            sendBackward: "weave.item.sendBackward",
+                                            bringToFront: "weave.item.bringToFront",
+                                            sendToBack: "weave.item.sendToBack",
+                                          }[dir];
+                                          editor.exec(cmdId, { itemId });
+                                        }}
+                                        reparentTree={reparentTree}
+                                        onReparent={handleReparent}
+                                        onClipboard={(verb) =>
+                                          dispatchEditorCommand(
+                                            `weave.clipboard.${
+                                              verb === "pasteSpecial" ? "pasteSpecial" : verb
+                                            }`,
+                                            { editor },
+                                            commandContext,
+                                          )
+                                        }
+                                        clipboardHasItems={clipboardCommands.hasItems}
+                                        {...(ctx !== undefined
+                                          ? {
+                                              layers: ctx.layers,
+                                              onPickLayer: ctx.onPickLayer,
+                                            }
+                                          : {})}
+                                      >
+                                        {children}
+                                      </FrameContextMenu>
+                                    );
+                                  }}
+                                />
+                              </div>
 
-                            {/* WI-019 Phase 3 (rev2) — Peek mode capture layer + overlay.
+                              {/* WI-019 Phase 3 (rev2) — Peek mode capture layer + overlay.
                   The capture div sits z-above FrameStage and is mounted
                   ONLY while peek is active, intercepting pointer events
                   to (a) report cursor → controller, (b) handle drag-to-
                   reorder on lifted frames. PeekOverlay is responsible for
                   the CSS lift effect on the *real* frame DOM via data
                   attributes (no transparent placeholder boxes).            */}
-                            {peek.isActive ? (
-                              <div
-                                data-testid="peek-capture"
-                                style={{
-                                  position: "absolute",
-                                  inset: 0,
-                                  zIndex: 30,
-                                  cursor: peekDragRef.current ? "grabbing" : "crosshair",
-                                }}
-                                onPointerDown={(e) => {
-                                  if (e.button !== 0) return;
-                                  const p = screenToDesign(e.clientX, e.clientY);
-                                  if (!p) return;
-                                  const id = hitTestLifted(p.x, p.y);
-                                  if (!id) return;
-                                  const liftSet = peek.controller.liftSet.get();
-                                  if (!liftSet) return;
-                                  const startRank = liftSet.orderedIds.indexOf(id);
-                                  if (startRank < 0) return;
-                                  if (!peek.controller.startDrag(id)) return;
-                                  peekDragRef.current = {
-                                    itemId: id,
-                                    startClientY: e.clientY,
-                                    startRank,
-                                    pointerId: e.pointerId,
-                                  };
-                                  setPeekDraggingId(id);
-                                  // Mark the dragging frame for the stronger lifted style.
-                                  const el = canvasHostRef.current?.querySelector(
-                                    `[data-frame-id="${id}"]`,
-                                  );
-                                  if (el instanceof HTMLElement)
-                                    el.setAttribute("data-peek-dragging", "");
-                                  try {
-                                    e.currentTarget.setPointerCapture(e.pointerId);
-                                  } catch {
-                                    /* setPointerCapture may throw on detached pointers — safe ignore. */
-                                  }
-                                }}
-                                onPointerMove={(e) => {
-                                  const p = screenToDesign(e.clientX, e.clientY);
-                                  if (p) {
-                                    peek.setCursor(p.x, p.y, true);
-                                    setPeekCursor({
-                                      x: e.clientX - (hostRect?.left ?? 0),
-                                      y: e.clientY - (hostRect?.top ?? 0),
-                                    });
-                                  }
-                                  // Drag preview — vertical pointer delta → rank delta.
-                                  const drag = peekDragRef.current;
-                                  if (drag) {
+                              {peek.isActive ? (
+                                <div
+                                  data-testid="peek-capture"
+                                  style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    zIndex: 30,
+                                    cursor: peekDragRef.current ? "grabbing" : "crosshair",
+                                  }}
+                                  onPointerDown={(e) => {
+                                    if (e.button !== 0) return;
+                                    const p = screenToDesign(e.clientX, e.clientY);
+                                    if (!p) return;
+                                    const id = hitTestLifted(p.x, p.y);
+                                    if (!id) return;
                                     const liftSet = peek.controller.liftSet.get();
                                     if (!liftSet) return;
-                                    const dy = drag.startClientY - e.clientY;
-                                    const STEP_PX = 28;
-                                    const deltaRank = Math.round(dy / STEP_PX);
-                                    const max = liftSet.orderedIds.length - 1;
-                                    const newRank = Math.max(
-                                      0,
-                                      Math.min(max, drag.startRank + deltaRank),
-                                    );
-                                    peek.controller.updateDrag(newRank);
-                                  }
-                                }}
-                                onPointerUp={(e) => {
-                                  const drag = peekDragRef.current;
-                                  if (drag) {
-                                    peek.controller.endDrag(true);
+                                    const startRank = liftSet.orderedIds.indexOf(id);
+                                    if (startRank < 0) return;
+                                    if (!peek.controller.startDrag(id)) return;
+                                    peekDragRef.current = {
+                                      itemId: id,
+                                      startClientY: e.clientY,
+                                      startRank,
+                                      pointerId: e.pointerId,
+                                    };
+                                    setPeekDraggingId(id);
+                                    // Mark the dragging frame for the stronger lifted style.
                                     const el = canvasHostRef.current?.querySelector(
-                                      `[data-frame-id="${drag.itemId}"]`,
+                                      `[data-frame-id="${id}"]`,
                                     );
                                     if (el instanceof HTMLElement)
-                                      el.removeAttribute("data-peek-dragging");
-                                    peekDragRef.current = null;
-                                    setPeekDraggingId(null);
+                                      el.setAttribute("data-peek-dragging", "");
                                     try {
-                                      e.currentTarget.releasePointerCapture(e.pointerId);
+                                      e.currentTarget.setPointerCapture(e.pointerId);
                                     } catch {
-                                      /* safe ignore */
+                                      /* setPointerCapture may throw on detached pointers — safe ignore. */
                                     }
-                                  }
-                                }}
-                                onPointerCancel={() => {
-                                  const drag = peekDragRef.current;
-                                  if (drag) {
-                                    peek.controller.endDrag(false);
-                                    const el = canvasHostRef.current?.querySelector(
-                                      `[data-frame-id="${drag.itemId}"]`,
-                                    );
-                                    if (el instanceof HTMLElement)
-                                      el.removeAttribute("data-peek-dragging");
-                                    peekDragRef.current = null;
-                                    setPeekDraggingId(null);
-                                  }
-                                }}
-                                onPointerLeave={() => {
-                                  peek.setCursor(-9999, -9999, false);
-                                  setPeekCursor(null);
-                                }}
-                              >
-                                <PeekOverlay
+                                  }}
+                                  onPointerMove={(e) => {
+                                    const p = screenToDesign(e.clientX, e.clientY);
+                                    if (p) {
+                                      peek.setCursor(p.x, p.y, true);
+                                      setPeekCursor({
+                                        x: e.clientX - (hostRect?.left ?? 0),
+                                        y: e.clientY - (hostRect?.top ?? 0),
+                                      });
+                                    }
+                                    // Drag preview — vertical pointer delta → rank delta.
+                                    const drag = peekDragRef.current;
+                                    if (drag) {
+                                      const liftSet = peek.controller.liftSet.get();
+                                      if (!liftSet) return;
+                                      const dy = drag.startClientY - e.clientY;
+                                      const STEP_PX = 28;
+                                      const deltaRank = Math.round(dy / STEP_PX);
+                                      const max = liftSet.orderedIds.length - 1;
+                                      const newRank = Math.max(
+                                        0,
+                                        Math.min(max, drag.startRank + deltaRank),
+                                      );
+                                      peek.controller.updateDrag(newRank);
+                                    }
+                                  }}
+                                  onPointerUp={(e) => {
+                                    const drag = peekDragRef.current;
+                                    if (drag) {
+                                      peek.controller.endDrag(true);
+                                      const el = canvasHostRef.current?.querySelector(
+                                        `[data-frame-id="${drag.itemId}"]`,
+                                      );
+                                      if (el instanceof HTMLElement)
+                                        el.removeAttribute("data-peek-dragging");
+                                      peekDragRef.current = null;
+                                      setPeekDraggingId(null);
+                                      try {
+                                        e.currentTarget.releasePointerCapture(e.pointerId);
+                                      } catch {
+                                        /* safe ignore */
+                                      }
+                                    }
+                                  }}
+                                  onPointerCancel={() => {
+                                    const drag = peekDragRef.current;
+                                    if (drag) {
+                                      peek.controller.endDrag(false);
+                                      const el = canvasHostRef.current?.querySelector(
+                                        `[data-frame-id="${drag.itemId}"]`,
+                                      );
+                                      if (el instanceof HTMLElement)
+                                        el.removeAttribute("data-peek-dragging");
+                                      peekDragRef.current = null;
+                                      setPeekDraggingId(null);
+                                    }
+                                  }}
+                                  onPointerLeave={() => {
+                                    peek.setCursor(-9999, -9999, false);
+                                    setPeekCursor(null);
+                                  }}
+                                >
+                                  <PeekOverlay
+                                    controller={peek.controller}
+                                    canvasHost={canvasHostEl}
+                                    cursor={peekCursor}
+                                    colorFor={swatchFor}
+                                    draggingId={peekDraggingId}
+                                  />
+                                </div>
+                              ) : null}
+
+                              {peek.isActive ? (
+                                <PointStackInspector
                                   controller={peek.controller}
-                                  canvasHost={canvasHostEl}
-                                  cursor={peekCursor}
-                                  colorFor={swatchFor}
-                                  draggingId={peekDraggingId}
+                                  labelFor={labelFor}
+                                  swatchFor={swatchFor}
                                 />
-                              </div>
-                            ) : null}
+                              ) : null}
 
-                            {peek.isActive ? (
-                              <PointStackInspector
-                                controller={peek.controller}
-                                labelFor={labelFor}
-                                swatchFor={swatchFor}
-                              />
-                            ) : null}
-
-                            {/* WI-020 / WI-021 / Phase 14 — ContextualToolbar mounts
+                              {/* WI-020 / WI-021 / Phase 14 — ContextualToolbar mounts
                   centered above the canvas. Selection-only:
                     • selectedIds.size === 0 → bar unmounted.
                       design.background editor lives in the header's right
                       cluster (file-level chrome, always discoverable).
                     • selectedIds.size ≥ 1   → selection variant resolved
                       from the toolbar section registry per kind. */}
-                            <SelectionChromeGate>
-                              {typeof document !== "undefined" &&
-                                createPortal(
-                                  <div
-                                    style={{
-                                      // Portal'd to document.body for the same
-                                      // reason as the header / ThumbnailPanel —
-                                      // the outer `fixed inset-0` wrapper creates
-                                      // a stacking context that traps any z-index
-                                      // below body-portal'd SelectionLayer (40) /
-                                      // MarqueeSelection (42) / RubberBand (45).
-                                      // Hoisting to body lets the toolbar share
-                                      // the header's z-tier and sit above
-                                      // selection chrome.
-                                      position: "fixed",
-                                      // 48 (h-12 header) + 12 gap = 60 from top.
-                                      top: 60,
-                                      left: "50%",
-                                      transform: "translateX(-50%)",
-                                      zIndex: 46,
-                                      pointerEvents: "auto",
-                                    }}
-                                  >
-                                    <ContextualToolbar
-                                      editor={editor}
-                                      document={docInAgocraft}
-                                      selectedItems={(() => {
-                                        // Pre-existing bug fix — earlier this loop
-                                        // only iterated `root.children`, so nested
-                                        // items (anything below the first level)
-                                        // never surfaced in `selectedItems` and
-                                        // the toolbar simply didn't render for
-                                        // them. Walk the full tree by resolving
-                                        // each id via findItemDeep so any item in
-                                        // the selection — root or nested — feeds
-                                        // its kind + attrs into the toolbar.
-                                        const out: Array<{
-                                          id: string;
-                                          kind: string;
-                                          attrs: Readonly<Record<string, unknown>>;
-                                        }> = [];
-                                        for (const id of selectedIds) {
-                                          const it = findItemDeep(docInAgocraft, id);
-                                          if (it === undefined) continue;
-                                          out.push({
-                                            id: String(it.id),
-                                            kind: it.kind,
-                                            attrs: it.attrs,
+                              <SelectionChromeGate>
+                                {typeof document !== "undefined" &&
+                                  createPortal(
+                                    <div
+                                      style={{
+                                        // Portal'd to document.body for the same
+                                        // reason as the header / ThumbnailPanel —
+                                        // the outer `fixed inset-0` wrapper creates
+                                        // a stacking context that traps any z-index
+                                        // below body-portal'd SelectionLayer (40) /
+                                        // MarqueeSelection (42) / RubberBand (45).
+                                        // Hoisting to body lets the toolbar share
+                                        // the header's z-tier and sit above
+                                        // selection chrome.
+                                        position: "fixed",
+                                        // 48 (h-12 header) + 12 gap = 60 from top.
+                                        top: 60,
+                                        left: "50%",
+                                        transform: "translateX(-50%)",
+                                        zIndex: 46,
+                                        pointerEvents: "auto",
+                                      }}
+                                    >
+                                      <ContextualToolbar
+                                        editor={editor}
+                                        document={docInAgocraft}
+                                        selectedItems={(() => {
+                                          // Pre-existing bug fix — earlier this loop
+                                          // only iterated `root.children`, so nested
+                                          // items (anything below the first level)
+                                          // never surfaced in `selectedItems` and
+                                          // the toolbar simply didn't render for
+                                          // them. Walk the full tree by resolving
+                                          // each id via findItemDeep so any item in
+                                          // the selection — root or nested — feeds
+                                          // its kind + attrs into the toolbar.
+                                          const out: Array<{
+                                            id: string;
+                                            kind: string;
+                                            attrs: Readonly<Record<string, unknown>>;
+                                          }> = [];
+                                          for (const id of selectedIds) {
+                                            const it = findItemDeep(docInAgocraft, id);
+                                            if (it === undefined) continue;
+                                            out.push({
+                                              id: String(it.id),
+                                              kind: it.kind,
+                                              attrs: it.attrs,
+                                            });
+                                          }
+                                          return out;
+                                        })()}
+                                        onEditMediaSrc={(mediaKind) => {
+                                          setPendingMedia({ action: "edit", kind: mediaKind });
+                                        }}
+                                        onEditShapeFill={(mediaKind, current) => {
+                                          if (!selectedFrameId) return;
+                                          setPendingMedia({
+                                            action: "fill",
+                                            kind: mediaKind,
+                                            itemId: selectedFrameId,
+                                            initialSrc: current,
                                           });
-                                        }
-                                        return out;
-                                      })()}
-                                      onEditMediaSrc={(mediaKind) => {
-                                        setPendingMedia({ action: "edit", kind: mediaKind });
-                                      }}
-                                      onEditShapeFill={(mediaKind, current) => {
-                                        if (!selectedFrameId) return;
-                                        setPendingMedia({
-                                          action: "fill",
-                                          kind: mediaKind,
-                                          itemId: selectedFrameId,
-                                          initialSrc: current,
-                                        });
-                                      }}
-                                    />
-                                  </div>,
-                                  document.body,
-                                )}
-                            </SelectionChromeGate>
+                                        }}
+                                      />
+                                    </div>,
+                                    document.body,
+                                  )}
+                              </SelectionChromeGate>
 
-                            {/* WI-028 Phase 4 — remote cursors overlay. `project` maps the
+                              {/* WI-028 Phase 4 — remote cursors overlay. `project` maps the
                   presence-broadcast design-space coords to host-relative
                   pixels so the SVG renders aligned to the local user's
                   viewport. The SVG itself is pointer-events:none — it
                   never intercepts the design surface gestures. */}
-                            {sync !== undefined ? (
-                              <PresenceCursors engine={sync.engine} project={designToHost} />
-                            ) : null}
-                          </main>
+                              {sync !== undefined ? (
+                                <PresenceCursors engine={sync.engine} project={designToHost} />
+                              ) : null}
+                            </main>
 
-                          {/* ThumbnailPanel floats at the bottom of the viewport
+                            {/* ThumbnailPanel floats at the bottom of the viewport
                           on top of the design canvas (z-stack). The panel's
                           own section uses `position: relative` to host its
                           shorter bg band; the wrapper here owns the
@@ -3232,180 +3220,180 @@ function DesignPageBody() {
                           (SelectionLayer 40 / MarqueeSelection 42 / RubberBand
                           45). Hoisted to body so z-[46] competes with them
                           directly. */}
-                          {typeof document !== "undefined" &&
-                            createPortal(
-                              <div className="fixed inset-x-0 bottom-0 z-[46]">
-                                <ThumbnailPanel
-                                  design={design}
-                                  setPresentationOrder={setPresentationOrderViaEditor}
-                                  selectedId={selectedFrameId}
-                                  onSelect={setSelectedFrameId}
-                                  focusedId={focused?.id}
-                                  focusStage={focusStage}
-                                  disabledFrameIds={disabledFrameIds}
-                                  onCycleFocus={handleCycleFocus}
-                                  onClearFocus={handleClearFocus}
-                                  onZoomToFrame={handleZoomToFrame}
-                                />
-                              </div>,
-                              document.body,
-                            )}
-                          {/* WI-052 — 아쿠 (Aku) assistant: floating launcher →
+                            {typeof document !== "undefined" &&
+                              createPortal(
+                                <div className="fixed inset-x-0 bottom-0 z-[46]">
+                                  <ThumbnailPanel
+                                    design={design}
+                                    setPresentationOrder={setPresentationOrderViaEditor}
+                                    selectedId={selectedFrameId}
+                                    onSelect={setSelectedFrameId}
+                                    focusedId={focused?.id}
+                                    focusStage={focusStage}
+                                    disabledFrameIds={disabledFrameIds}
+                                    onCycleFocus={handleCycleFocus}
+                                    onClearFocus={handleClearFocus}
+                                    onZoomToFrame={handleZoomToFrame}
+                                  />
+                                </div>,
+                                document.body,
+                              )}
+                            {/* WI-052 — 아쿠 (Aku) assistant: floating launcher →
                           expandable chat panel. Mounted inside the providers so
                           its design-aware tools read live selection + edit via
                           editor.exec; self-portals to <body>. */}
-                          <AkuAssistant
-                            editor={editor}
-                            document={docInAgocraft}
-                            designId={designId}
-                            designInfo={{
-                              width: design.width,
-                              height: design.height,
-                              background: design.background,
-                            }}
-                            // WI-065 — after the agent adds slide(s), fit the deck
-                            // at the shared 70% (agent edits skip the UI add-fit).
-                            onFramesAdded={handleFitAll}
-                          />
-                          <CursorTooltipBridge
-                            hover={hoverContext}
-                            selectedIds={selectedIds}
-                            canUndo={canUndo}
-                            canRedo={canRedo}
-                            doc={docInAgocraft}
-                            hotkeyTable={editorHotkeyTable}
-                          />
-                          <EditAffordanceGate>
-                            <ReparentGhostOverlay state={reparentDragState} />
-                          </EditAffordanceGate>
-                          {typeof document !== "undefined" &&
-                            layoutChildDrag.dropPreview !== null &&
-                            createPortal(
-                              <div
-                                className="layout-drop-cell-preview"
-                                style={{
-                                  left: layoutChildDrag.dropPreview.left,
-                                  top: layoutChildDrag.dropPreview.top,
-                                  width: layoutChildDrag.dropPreview.width,
-                                  height: layoutChildDrag.dropPreview.height,
-                                }}
-                              />,
-                              document.body,
-                            )}
-                          <MediaSrcDialog
-                            open={pendingMedia !== null}
-                            kind={pendingMedia?.kind ?? "image"}
-                            initialSrc={(() => {
-                              if (!pendingMedia) return "";
-                              if (pendingMedia.action === "fill") return pendingMedia.initialSrc;
-                              if (pendingMedia.action === "edit") {
-                                if (!selectedFrameId) return "";
-                                const it = docInAgocraft.root.children.find(
-                                  (c) => String(c.id) === selectedFrameId,
-                                );
-                                if (!it || it.kind !== pendingMedia.kind) return "";
-                                return (it.attrs as { src?: string }).src ?? "";
-                              }
-                              return "";
-                            })()}
-                            onConfirm={(src) => {
-                              const pending = pendingMedia;
-                              setPendingMedia(null);
-                              if (!pending) return;
-                              if (pending.action === "fill") {
-                                // DR-028 — a shape's fill is the decoration.fill UNIT, so
-                                // set the image/video paint via weave.item.setDecoration (not
-                                // attrs.fill). Default fit "cover" matches Figma; video
-                                // defaults muted+loop so the autoplay policy is satisfied.
-                                editor.exec("weave.item.setDecoration", {
-                                  itemId: pending.itemId,
-                                  kind: FILL_UNIT_KIND,
-                                  attrs:
-                                    pending.kind === "image"
-                                      ? { type: "image", src, fit: "cover", opacity: 1 }
-                                      : {
-                                          type: "video",
-                                          src,
-                                          fit: "cover",
-                                          muted: true,
-                                          loop: true,
-                                          opacity: 1,
-                                        },
-                                });
-                                return;
-                              }
-                              if (pending.action === "edit") {
-                                if (!selectedFrameId) return;
-                                const it = docInAgocraft.root.children.find(
-                                  (c) => String(c.id) === selectedFrameId,
-                                );
-                                if (it && it.kind === pending.kind) {
-                                  editor.exec("weave.item.update", {
-                                    itemId: selectedFrameId,
-                                    patch: (prev: {
-                                      attrs: Readonly<Record<string, unknown>>;
-                                    }) => ({
-                                      attrs: {
-                                        ...prev.attrs,
-                                        src,
-                                      } as unknown as Readonly<Record<string, unknown>>,
-                                    }),
+                            <AkuAssistant
+                              editor={editor}
+                              document={docInAgocraft}
+                              designId={designId}
+                              designInfo={{
+                                width: design.width,
+                                height: design.height,
+                                background: design.background,
+                              }}
+                              // WI-065 — after the agent adds slide(s), fit the deck
+                              // at the shared 70% (agent edits skip the UI add-fit).
+                              onFramesAdded={handleFitAll}
+                            />
+                            <CursorTooltipBridge
+                              hover={hoverContext}
+                              selectedIds={selectedIds}
+                              canUndo={canUndo}
+                              canRedo={canRedo}
+                              doc={docInAgocraft}
+                              hotkeyTable={editorHotkeyTable}
+                            />
+                            <EditAffordanceGate>
+                              <ReparentGhostOverlay state={reparentDragState} />
+                            </EditAffordanceGate>
+                            {typeof document !== "undefined" &&
+                              layoutChildDrag.dropPreview !== null &&
+                              createPortal(
+                                <div
+                                  className="layout-drop-cell-preview"
+                                  style={{
+                                    left: layoutChildDrag.dropPreview.left,
+                                    top: layoutChildDrag.dropPreview.top,
+                                    width: layoutChildDrag.dropPreview.width,
+                                    height: layoutChildDrag.dropPreview.height,
+                                  }}
+                                />,
+                                document.body,
+                              )}
+                            <MediaSrcDialog
+                              open={pendingMedia !== null}
+                              kind={pendingMedia?.kind ?? "image"}
+                              initialSrc={(() => {
+                                if (!pendingMedia) return "";
+                                if (pendingMedia.action === "fill") return pendingMedia.initialSrc;
+                                if (pendingMedia.action === "edit") {
+                                  if (!selectedFrameId) return "";
+                                  const it = docInAgocraft.root.children.find(
+                                    (c) => String(c.id) === selectedFrameId,
+                                  );
+                                  if (!it || it.kind !== pendingMedia.kind) return "";
+                                  return (it.attrs as { src?: string }).src ?? "";
+                                }
+                                return "";
+                              })()}
+                              onConfirm={(src) => {
+                                const pending = pendingMedia;
+                                setPendingMedia(null);
+                                if (!pending) return;
+                                if (pending.action === "fill") {
+                                  // DR-028 — a shape's fill is the decoration.fill UNIT, so
+                                  // set the image/video paint via weave.item.setDecoration (not
+                                  // attrs.fill). Default fit "cover" matches Figma; video
+                                  // defaults muted+loop so the autoplay policy is satisfied.
+                                  editor.exec("weave.item.setDecoration", {
+                                    itemId: pending.itemId,
+                                    kind: FILL_UNIT_KIND,
+                                    attrs:
+                                      pending.kind === "image"
+                                        ? { type: "image", src, fit: "cover", opacity: 1 }
+                                        : {
+                                            type: "video",
+                                            src,
+                                            fit: "cover",
+                                            muted: true,
+                                            loop: true,
+                                            opacity: 1,
+                                          },
                                   });
                                   return;
                                 }
+                                if (pending.action === "edit") {
+                                  if (!selectedFrameId) return;
+                                  const it = docInAgocraft.root.children.find(
+                                    (c) => String(c.id) === selectedFrameId,
+                                  );
+                                  if (it && it.kind === pending.kind) {
+                                    editor.exec("weave.item.update", {
+                                      itemId: selectedFrameId,
+                                      patch: (prev: {
+                                        attrs: Readonly<Record<string, unknown>>;
+                                      }) => ({
+                                        attrs: {
+                                          ...prev.attrs,
+                                          src,
+                                        } as unknown as Readonly<Record<string, unknown>>,
+                                      }),
+                                    });
+                                    return;
+                                  }
+                                  addNewItem(pending.kind, undefined, src);
+                                  return;
+                                }
                                 addNewItem(pending.kind, undefined, src);
-                                return;
-                              }
-                              addNewItem(pending.kind, undefined, src);
-                            }}
-                            onCancel={() => setPendingMedia(null)}
-                          />
-                          {/* WI-041 Phase 6 — Paste Special dialog.
+                              }}
+                              onCancel={() => setPendingMedia(null)}
+                            />
+                            {/* WI-041 Phase 6 — Paste Special dialog.
                               Cmd+Opt+V (or ContextMenu "선택하여
                               붙여넣기…") opens the dialog; on confirm
                               the host invokes `weave.clipboard.paste`
                               with the chosen mode and the current
                               selection. */}
-                          <PasteSpecialDialog
-                            open={clipboardCommands.pasteSpecialOpen}
-                            onOpenChange={clipboardCommands.setPasteSpecialOpen}
-                            onConfirm={clipboardCommands.handlePasteSpecialConfirm}
-                            clipboardHasItems={clipboardCommands.hasItems}
-                            hasSelection={selectedIds.size > 0}
-                          />
-                          {/* Offline-edit reconcile prompt — opens when the
+                            <PasteSpecialDialog
+                              open={clipboardCommands.pasteSpecialOpen}
+                              onOpenChange={clipboardCommands.setPasteSpecialOpen}
+                              onConfirm={clipboardCommands.handlePasteSpecialConfirm}
+                              clipboardHasItems={clipboardCommands.hasItems}
+                              hasSelection={selectedIds.size > 0}
+                            />
+                            {/* Offline-edit reconcile prompt — opens when the
                               design has an unsynced offline copy in
                               localStorage. "저장" uploads it to the server,
                               "버리기" discards it and loads the server copy. */}
-                          <LocalDesignConflictDialog
-                            open={localConflict}
-                            busy={conflictBusy}
-                            onSave={() => void handleConflictSave()}
-                            onDiscard={() => void handleConflictDiscard()}
-                          />
-                          {/* WI-030 — slide preset picker. Add menu →
+                            <LocalDesignConflictDialog
+                              open={localConflict}
+                              busy={conflictBusy}
+                              onSave={() => void handleConflictSave()}
+                              onDiscard={() => void handleConflictDiscard()}
+                            />
+                            {/* WI-030 — slide preset picker. Add menu →
                           "슬라이드…" opens this Dialog. Picking a
                           preset dispatches a single `weave.preset.insertSlide`
                           which stages the slide + child Items as one history
                           entry; Cmd+Z reverts the whole subtree. */}
-                          <SlidePresetPicker
-                            open={slidePickerOpen}
-                            onOpenChange={setSlidePickerOpen}
-                            onPick={(presetId) => {
-                              const result = editor.exec<unknown, string>(
-                                "weave.preset.insertSlide",
-                                {
-                                  presetId,
-                                  containerId: String(docInAgocraft.root.id),
-                                },
-                              );
-                              if (result.ok) {
-                                setSelectedFrameIdRef.current?.(result.value);
-                              }
-                            }}
-                          />
-                          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-                          {/* WI-036 — QuickActionBar anchored to the hovered
+                            <SlidePresetPicker
+                              open={slidePickerOpen}
+                              onOpenChange={setSlidePickerOpen}
+                              onPick={(presetId) => {
+                                const result = editor.exec<unknown, string>(
+                                  "weave.preset.insertSlide",
+                                  {
+                                    presetId,
+                                    containerId: String(docInAgocraft.root.id),
+                                  },
+                                );
+                                if (result.ok) {
+                                  setSelectedFrameIdRef.current?.(result.value);
+                                }
+                              }}
+                            />
+                            <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+                            {/* WI-036 — QuickActionBar anchored to the hovered
                           frame's viewport top-left (8px gap above the
                           frame edge). The bar carries
                           `data-quick-actions-frame-id` so
@@ -3413,107 +3401,110 @@ function DesignPageBody() {
                           continuation of the underlying frame's hover
                           (hover target union). Position follows the
                           frame via RAF while hover is active. */}
-                          <MultiSelectionOverlay
-                            selectedIds={selectedIds}
-                            onResize={(updates) => {
-                              // WI-036 follow-up — multi-selection resize.
-                              // Dispatch a SINGLE `weave.items.resizeMulti`
-                              // command that emits N patches in one Change,
-                              // so the editor's history records the entire
-                              // drag as ONE undoable step (per-frame
-                              // updates would be N separate entries).
-                              if (updates.length === 0) return;
-                              editor.exec("weave.items.resizeMulti", {
-                                updates: updates.map((u) => ({
-                                  itemId: u.id,
-                                  frame: u.frame,
-                                })),
-                              });
-                            }}
-                          />
-                          <QuickActionBarAnchored
-                            selectedFrameId={selectedFrameId ?? undefined}
-                            selectedIds={selectedIds}
-                            onInsertInFrame={(containerId, kind, options) => {
-                              // WI-036 follow-up / WI-044 — hover-open
-                              // two-level submenu of the `+` button. Shares
-                              // the same `weave.item.add` SSOT as the hotkey
-                              // / Alt+drag / DropdownMenu add paths.
-                              //
-                              // The bar is selection-driven: after the
-                              // submenu inserts a child we deliberately
-                              // KEEP the parent selected (don't follow
-                              // the new item) so the bar stays anchored
-                              // to the same frame and the user can add
-                              // multiple children in a row.
+                            <MultiSelectionOverlay
+                              selectedIds={selectedIds}
+                              onResize={(updates) => {
+                                // WI-036 follow-up — multi-selection resize.
+                                // Dispatch a SINGLE `weave.items.resizeMulti`
+                                // command that emits N patches in one Change,
+                                // so the editor's history records the entire
+                                // drag as ONE undoable step (per-frame
+                                // updates would be N separate entries).
+                                if (updates.length === 0) return;
+                                editor.exec("weave.items.resizeMulti", {
+                                  updates: updates.map((u) => ({
+                                    itemId: u.id,
+                                    frame: u.frame,
+                                  })),
+                                });
+                              }}
+                            />
+                            <QuickActionBarAnchored
+                              selectedFrameId={selectedFrameId ?? undefined}
+                              selectedIds={selectedIds}
+                              onInsertInFrame={(containerId, kind, options) => {
+                                // WI-036 follow-up / WI-044 — hover-open
+                                // two-level submenu of the `+` button. Shares
+                                // the same `weave.item.add` SSOT as the hotkey
+                                // / Alt+drag / DropdownMenu add paths.
+                                //
+                                // The bar is selection-driven: after the
+                                // submenu inserts a child we deliberately
+                                // KEEP the parent selected (don't follow
+                                // the new item) so the bar stays anchored
+                                // to the same frame and the user can add
+                                // multiple children in a row.
 
-                              // Image / video have no inline type variant —
-                              // they open the media picker (same dialog the
-                              // top toolbar uses). The picker's confirm path
-                              // adds into the selected frame, which is this
-                              // anchored bar's target.
-                              if (kind === "image" || kind === "video") {
-                                setPendingMedia({ action: "add", kind });
-                                return;
-                              }
-                              const attrsOverride: Record<string, unknown> = {};
-                              const sub = options?.shapeSubKind;
-                              if (kind === "shape" && sub && sub !== "rectangle") {
-                                attrsOverride.shape = sub;
-                                attrsOverride.subAttrs = options?.subAttrs ?? defaultShapeSubAttrs(sub);
-                              }
-                              if (kind === "line" && options?.lineAttrs) {
-                                attrsOverride.points = options.lineAttrs.points;
-                                if (options.lineAttrs.smooth !== undefined) {
-                                  attrsOverride.smooth = options.lineAttrs.smooth;
+                                // Image / video have no inline type variant —
+                                // they open the media picker (same dialog the
+                                // top toolbar uses). The picker's confirm path
+                                // adds into the selected frame, which is this
+                                // anchored bar's target.
+                                if (kind === "image" || kind === "video") {
+                                  setPendingMedia({ action: "add", kind });
+                                  return;
                                 }
-                                attrsOverride.heads = { start: "none", end: "none" };
-                              }
-                              // WI-044 — frame layout paradigm. "absolute" is
-                              // the default (no spec); flex/grid attach the spec
-                              // at creation time via attrsOverride. A follow-up
-                              // `weave.frame.setLayout` would race the
-                              // PendingCreations staging pipeline (the new item
-                              // isn't in ctx.document until the next tick, so
-                              // findChild would miss it) — and a brand-new frame
-                              // has no children to re-place, so setting the raw
-                              // attrs.layout is sufficient; the onChildAdd hook
-                              // handles placement once children arrive.
-                              const layout = options?.frameLayout;
-                              if (
-                                kind === "frame" &&
-                                layout !== undefined &&
-                                layout !== "absolute"
-                              ) {
-                                const spec: LayoutSpec =
-                                  layout === "auto-flex"
-                                    ? createAutoFlexSpec()
-                                    : createAutoGridSpec({
-                                        columns: [trackFr(1)],
-                                        rows: [trackFr(1)],
-                                      });
-                                attrsOverride.layout = spec;
-                              }
-                              editor.exec<unknown, string>("weave.item.add", {
-                                kind,
-                                containerId,
-                                frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
-                                ...(Object.keys(attrsOverride).length > 0 ? { attrsOverride } : {}),
-                              });
-                            }}
-                            onArrangeHover={setArrangePreview}
-                          />
-                          {/* WI-048 — ghost preview of the Flex / Grid
+                                const attrsOverride: Record<string, unknown> = {};
+                                const sub = options?.shapeSubKind;
+                                if (kind === "shape" && sub && sub !== "rectangle") {
+                                  attrsOverride.shape = sub;
+                                  attrsOverride.subAttrs =
+                                    options?.subAttrs ?? defaultShapeSubAttrs(sub);
+                                }
+                                if (kind === "line" && options?.lineAttrs) {
+                                  attrsOverride.points = options.lineAttrs.points;
+                                  if (options.lineAttrs.smooth !== undefined) {
+                                    attrsOverride.smooth = options.lineAttrs.smooth;
+                                  }
+                                  attrsOverride.heads = { start: "none", end: "none" };
+                                }
+                                // WI-044 — frame layout paradigm. "absolute" is
+                                // the default (no spec); flex/grid attach the spec
+                                // at creation time via attrsOverride. A follow-up
+                                // `weave.frame.setLayout` would race the
+                                // PendingCreations staging pipeline (the new item
+                                // isn't in ctx.document until the next tick, so
+                                // findChild would miss it) — and a brand-new frame
+                                // has no children to re-place, so setting the raw
+                                // attrs.layout is sufficient; the onChildAdd hook
+                                // handles placement once children arrive.
+                                const layout = options?.frameLayout;
+                                if (
+                                  kind === "frame" &&
+                                  layout !== undefined &&
+                                  layout !== "absolute"
+                                ) {
+                                  const spec: LayoutSpec =
+                                    layout === "auto-flex"
+                                      ? createAutoFlexSpec()
+                                      : createAutoGridSpec({
+                                          columns: [trackFr(1)],
+                                          rows: [trackFr(1)],
+                                        });
+                                  attrsOverride.layout = spec;
+                                }
+                                editor.exec<unknown, string>("weave.item.add", {
+                                  kind,
+                                  containerId,
+                                  frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
+                                  ...(Object.keys(attrsOverride).length > 0
+                                    ? { attrsOverride }
+                                    : {}),
+                                });
+                              }}
+                              onArrangeHover={setArrangePreview}
+                            />
+                            {/* WI-048 — ghost preview of the Flex / Grid
                               arrangement while the bar button is hovered. */}
-                          <ArrangePreviewOverlay
-                            layout={arrangePreview}
-                            selectedIds={selectedIds}
-                            doc={docInAgocraft}
-                            designWidth={design.width}
-                            designHeight={design.height}
-                          />
-                        </div>
-                       </DesignDimsProvider>
+                            <ArrangePreviewOverlay
+                              layout={arrangePreview}
+                              selectedIds={selectedIds}
+                              doc={docInAgocraft}
+                              designWidth={design.width}
+                              designHeight={design.height}
+                            />
+                          </div>
+                        </DesignDimsProvider>
                       </DocumentForResolutionProvider>
                     </EditorProvider>
                   </ModeAwareTooltipSurface>
@@ -4412,18 +4403,14 @@ function FrameAddSubmenu({ frameId, onInsert }: FrameAddSubmenuProps): React.Rea
           >
             <DropdownMenuItem
               icon={<IconShapeLine size={16} />}
-              onSelect={() =>
-                insert("line", { lineAttrs: LINE_STRAIGHT })
-              }
+              onSelect={() => insert("line", { lineAttrs: LINE_STRAIGHT })}
               data-testid="frame-add-line-straight"
             >
               직선
             </DropdownMenuItem>
             <DropdownMenuItem
               icon={<IconPencil size={16} />}
-              onSelect={() =>
-                insert("line", { lineAttrs: LINE_FREE })
-              }
+              onSelect={() => insert("line", { lineAttrs: LINE_FREE })}
               data-testid="frame-add-line-free"
             >
               자유선
@@ -4437,9 +4424,7 @@ function FrameAddSubmenu({ frameId, onInsert }: FrameAddSubmenuProps): React.Rea
             </DropdownMenuItem>
             <DropdownMenuItem
               icon={<IconPencil size={16} />}
-              onSelect={() =>
-                insert("line", { lineAttrs: LINE_CURVE_FREE })
-              }
+              onSelect={() => insert("line", { lineAttrs: LINE_CURVE_FREE })}
               data-testid="frame-add-line-curve-free"
             >
               자유곡선

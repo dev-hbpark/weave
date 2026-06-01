@@ -15,19 +15,19 @@
 // W,H solve was singular there — cos 2θ = 0 — and fell back to wrong positions).
 
 import type { Editor, ItemSelectionViewModel, SelectionBounds } from "@agocraft/editor";
+import {
+  endpointSimilarityScreen,
+  type FrameGeom,
+  localToScreen,
+  type PolyFrame,
+  type PolyVertex,
+  parseRotationFromTransform,
+  recoverUnrotatedSize,
+  refitFrameToPoints,
+  screenToLocal,
+} from "./poly-vertex-geometry.js";
 
-export interface PolyVertex {
-  readonly x: number;
-  readonly y: number;
-}
-
-export interface PolyFrame {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-  readonly rotation?: number;
-}
+export type { PolyFrame, PolyVertex } from "./poly-vertex-geometry.js";
 
 export interface PolyShapeState {
   readonly points: ReadonlyArray<PolyVertex>;
@@ -68,32 +68,13 @@ function defaultComposeAttrs(
   };
 }
 
-const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
 const VERTEX_PX = 11;
 const MIDPOINT_PX = 9;
 
-/** Center + un-rotated frame size (screen px) + rotation, derived from the
- *  item's `[data-frame-id]` element and the SelectionLayer AABB bounds. */
-interface FrameGeom {
-  readonly cx: number;
-  readonly cy: number;
-  readonly w: number;
-  readonly h: number;
-  readonly theta: number;
-}
-
-function rotationOf(el: Element): number {
-  const t = getComputedStyle(el).transform;
-  if (!t || t === "none") return 0;
-  const m = t.match(/matrix\(([^)]+)\)/);
-  if (m?.[1] === undefined) return 0;
-  const parts = m[1].split(",").map(Number);
-  const a = parts[0];
-  const b = parts[1];
-  if (a === undefined || b === undefined) return 0;
-  return Math.atan2(b, a);
-}
-
+/** DOM read: derive the {@link FrameGeom} (center, un-rotated size, rotation)
+ *  from the item's `[data-frame-id]` element + the SelectionLayer AABB bounds.
+ *  The math is delegated to the pure `poly-vertex-geometry` kernel; only the
+ *  `getComputedStyle` / `querySelector` / `offsetWidth/Height` reads live here. */
 function frameGeom(itemId: string, bounds: SelectionBounds): FrameGeom {
   const cx = bounds.left + bounds.width / 2;
   const cy = bounds.top + bounds.height / 2;
@@ -103,88 +84,13 @@ function frameGeom(itemId: string, bounds: SelectionBounds): FrameGeom {
       : document.querySelector(`[data-frame-id="${CSS.escape(itemId)}"]`);
   if (el === null) return { cx, cy, w: bounds.width, h: bounds.height, theta: 0 };
 
-  const theta = rotationOf(el);
-  // Recover the UN-rotated frame size (screen px) from the element's
-  // transform-invariant aspect ratio (offsetWidth/offsetHeight) + one AABB
-  // equation. AABBw = W·|cos| + H·|sin| = H·(r·|cos| + |sin|) where r = W/H.
-  // The denominator `r·|cos| + |sin|` is > 0 at EVERY angle, so this is exact
-  // even at 45° (where solving W,H from the AABB alone is singular: cos 2θ = 0).
-  let w = bounds.width;
-  let h = bounds.height;
-  if (el instanceof HTMLElement && el.offsetWidth > 0 && el.offsetHeight > 0) {
-    const r = el.offsetWidth / el.offsetHeight;
-    const denom = r * Math.abs(Math.cos(theta)) + Math.abs(Math.sin(theta));
-    if (denom > 1e-6) {
-      h = bounds.width / denom;
-      w = r * h;
-    }
-  }
+  const theta = parseRotationFromTransform(getComputedStyle(el).transform);
+  const fallback = { w: bounds.width, h: bounds.height };
+  const { w, h } =
+    el instanceof HTMLElement && el.offsetWidth > 0 && el.offsetHeight > 0
+      ? recoverUnrotatedSize(bounds.width, el.offsetWidth / el.offsetHeight, theta, fallback)
+      : fallback;
   return { cx, cy, w, h, theta };
-}
-
-function localToScreen(g: FrameGeom, vx: number, vy: number): { x: number; y: number } {
-  const lx = (vx - 0.5) * g.w;
-  const ly = (vy - 0.5) * g.h;
-  const cos = Math.cos(g.theta);
-  const sin = Math.sin(g.theta);
-  return { x: g.cx + lx * cos - ly * sin, y: g.cy + lx * sin + ly * cos };
-}
-
-function screenToLocal(g: FrameGeom, sx: number, sy: number): { x: number; y: number } {
-  const dx = sx - g.cx;
-  const dy = sy - g.cy;
-  const cos = Math.cos(g.theta);
-  const sin = Math.sin(g.theta);
-  // inverse rotation (R(-θ)) then un-scale by the frame size
-  const lx = dx * cos + dy * sin;
-  const ly = -dx * sin + dy * cos;
-  return { x: lx / Math.max(1, g.w) + 0.5, y: ly / Math.max(1, g.h) + 0.5 };
-}
-
-/** DR-024 — refit the frame so it tightly contains the dragged local points,
- *  re-normalizing the points to [0,1] of the NEW frame. All math is OLD-frame-
- *  relative (no parent/screen dims needed) and assumes an axis-aligned frame.
- *  A ROTATED frame (θ≠0) can't be refit axis-aligned without baking rotation,
- *  so it falls back to the legacy clamp-in-place (frame unchanged). A collapsed
- *  axis (a straight line → zero-thickness box) centers the points on that axis
- *  and keeps a hairline frame dimension so the rubber-band hugs the line. */
-function refitFrameToPoints(
-  localPts: ReadonlyArray<PolyVertex>,
-  frame: PolyFrame,
-  theta: number,
-): { readonly frame?: PolyFrame; readonly points: ReadonlyArray<PolyVertex> } {
-  if (Math.abs(theta) > 0.01) {
-    return { points: localPts.map((p) => ({ x: clamp01(p.x), y: clamp01(p.y) })) };
-  }
-  let minX = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  for (const p of localPts) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-  }
-  const EPS = 1e-3;
-  const rawW = maxX - minX;
-  const rawH = maxY - minY;
-  const collapsedX = rawW < EPS;
-  const collapsedY = rawH < EPS;
-  const spanX = collapsedX ? EPS : rawW;
-  const spanY = collapsedY ? EPS : rawH;
-  const nextFrame: PolyFrame = {
-    x: frame.x + minX * frame.width,
-    y: frame.y + minY * frame.height,
-    width: spanX * frame.width,
-    height: spanY * frame.height,
-    ...(frame.rotation !== undefined ? { rotation: frame.rotation } : {}),
-  };
-  const points = localPts.map((p) => ({
-    x: collapsedX ? 0.5 : (p.x - minX) / spanX,
-    y: collapsedY ? 0.5 : (p.y - minY) / spanY,
-  }));
-  return { frame: nextFrame, points };
 }
 
 export function createPolyVertexHandleViewModel(
@@ -216,29 +122,13 @@ export function createPolyVertexHandleViewModel(
     const baseScreen = basePoints.map((p) => localToScreen(geom, p.x, p.y));
     const move = (ev: PointerEvent) => {
       let newLocal: ReadonlyArray<PolyVertex>;
-      if (isEndpoint) {
-        const anchor = baseScreen[anchorIdx]!;
-        const old = baseScreen[idx]!;
-        const vOX = old.x - anchor.x;
-        const vOY = old.y - anchor.y;
-        const len2 = vOX * vOX + vOY * vOY;
-        if (len2 < 1e-6) {
-          const loc = screenToLocal(geom, ev.clientX, ev.clientY);
-          newLocal = basePoints.map((p, i) => (i === idx ? loc : { x: p.x, y: p.y }));
-        } else {
-          // Complex-number similarity (vNew / vOld) = scale·e^{iφ}, applied about
-          // the anchor to every point so inter-vertex distances scale uniformly.
-          const vNX = ev.clientX - anchor.x;
-          const vNY = ev.clientY - anchor.y;
-          const a = (vNX * vOX + vNY * vOY) / len2;
-          const b = (vNY * vOX - vNX * vOY) / len2;
-          newLocal = baseScreen.map((q) => {
-            const dx = q.x - anchor.x;
-            const dy = q.y - anchor.y;
-            return screenToLocal(geom, anchor.x + a * dx - b * dy, anchor.y + b * dx + a * dy);
-          });
-        }
+      const similarity = isEndpoint
+        ? endpointSimilarityScreen(baseScreen, anchorIdx, ev.clientX, ev.clientY, idx)
+        : null;
+      if (similarity !== null) {
+        newLocal = similarity.map((s) => screenToLocal(geom, s.x, s.y));
       } else {
+        // Interior vertex, or a degenerate endpoint vector → free-move that point.
         const loc = screenToLocal(geom, ev.clientX, ev.clientY);
         newLocal = basePoints.map((p, i) => (i === idx ? loc : { x: p.x, y: p.y }));
       }
