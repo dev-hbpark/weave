@@ -379,6 +379,7 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.update": "아이템 수정",
   "weave.shape.setCornerRadius": "모서리 둥글기",
   "weave.image.setCrop": "이미지 자르기",
+  "weave.image.flip": "이미지 뒤집기",
   "weave.shape.setFill": "채우기 설정",
   "weave.shape.setVertices": "다각형 정점 편집",
   "weave.items.resizeMulti": "크기 조정",

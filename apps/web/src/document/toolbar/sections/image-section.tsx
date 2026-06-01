@@ -1,7 +1,7 @@
 // DR-design-015 — image kind in Tier-2 layout.
 //
 // Quick: replace-src icon (only one common action — open the URL dialog).
-// More: Fit · Opacity · Border radius.
+// More: Fit · Flip · Opacity · Border radius.
 
 import type { ImageAttrs, ImageFit } from "@agocraft/core";
 import {
@@ -84,6 +84,35 @@ export const ImageSection: ToolbarSectionComponent = ({
             triggerClassName="w-full"
           />
           <MixedBadge visible={isMixed(fit)} />
+        </Bar.Field>
+        {/* WI-074 / DR-029 D7 — flip. Mirrors the final composition: a cropped
+            image keeps its visible region (window unchanged), only the display
+            flips. Toggles per selected item (reversible via Cmd+Z). */}
+        <Bar.Field label="Flip">
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="md"
+              aria-label="좌우 반전"
+              onClick={() => {
+                for (const id of ids)
+                  editor.exec("weave.image.flip", { itemId: id, axis: "horizontal" });
+              }}
+            >
+              좌우
+            </Button>
+            <Button
+              variant="ghost"
+              size="md"
+              aria-label="상하 반전"
+              onClick={() => {
+                for (const id of ids)
+                  editor.exec("weave.image.flip", { itemId: id, axis: "vertical" });
+              }}
+            >
+              상하
+            </Button>
+          </div>
         </Bar.Field>
         {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
         <Bar.Field label="Opacity">

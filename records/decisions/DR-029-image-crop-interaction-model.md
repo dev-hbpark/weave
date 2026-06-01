@@ -76,6 +76,23 @@ agocraft에 이미 존재. 결정해야 할 것은 **인터랙션을 어디에·
 (커맨드 crop+rotation·Cmd+Z/redo·가드·UI straighten·**핸들 리사이즈**·핫키 게이트). full
 SelectionLayer 위임은 불필요해짐(향후 다중 아이템/회전된 윈도우 정밀화가 필요하면 재검토).
 
+## D7 — 가로/세로 플립 (2026-06-02)
+
+이미지 좌우(`flipH`)·상하(`flipV`) 뒤집기. **요구사항: 크롭된 경우 보이는 영역이 동일하게
+유지된 채로 플립.** 이를 위해 **소스 이미지가 아니라 최종 합성(frame view)을 frame 중심 기준
+거울 반사**한다(`scaleX/scaleY(-1)` 레이어가 크롭 합성 전체를 감쌈). 결과적으로 크롭 윈도우
+(`x,y,w,h`)·회전은 **전혀 변경하지 않고** 같은 소스 픽셀이 그대로(뒤집혀) 보인다 — 보이는 영역
+보존. (순진한 구현: 소스 img만 flip + 윈도우 고정 → 보이는 영역이 바뀜. 기각.)
+
+- **데이터:** `ImageCrop.flipH?`/`flipV?`(agocraft DR-037 amendment, HANDOFF-021). 회전과 같은
+  자리에 응집. 윈도우 없이 플립만 있어도 `cropRatio={0,0,1,1,flipH:true}`로 표현.
+- **커맨드:** `weave.image.flip { itemId, axis }` 토글(윈도우·회전 보존, 가역). 에이전트는
+  WI-063 컨벤션대로 fold/hidden.
+- **UI:** image-section 툴바 More에 "좌우/상하" 버튼(크롭 모드 진입 불요). 크롭 모드 편집 표면은
+  플립 미적용(소스 공간에서 윈도우 편집; 플립은 표시 변환).
+- **검증:** e2e — 플립 토글+Cmd+Z, **크롭된 이미지 플립 시 윈도우 불변(보이는 영역 보존)**,
+  committed 렌더 `scaleX(-1)`. 유닛 — 토글/윈도우 보존/가드.
+
 ## Undo
 
 크롭 확정 = `item.attrs` Patch 1개(`cropRatio`만 교체, full ImageAttrs 재구성 —

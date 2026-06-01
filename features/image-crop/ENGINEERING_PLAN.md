@@ -61,6 +61,10 @@ DR-029의 D1–D5 결정을 구현한다.
 **image-crop.spec.ts 4/4 브라우저 통과**(커맨드 crop+rotation·Cmd+Z/redo·가드·UI straighten 커밋·
 크롭 중 핫키 게이트).
 
+✅ **플립(DR-029 D7)** — 가로/세로 뒤집기. `ImageCrop.flipH/flipV`(agocraft DR-037 amend) +
+`weave.image.flip` 토글 + image-section 툴바 버튼 + committed 렌더가 **최종 합성을 frame 중심
+거울 반사**(윈도우 불변 → 크롭 시 보이는 영역 보존). e2e 7/7(플립 토글·크롭 보존 포함), 유닛 336.
+
 ✅ **Step 4 완료** — 인터랙티브 윈도우 **이동(move) + 모서리 리사이즈**. React `onPointerDown`이
 디자인 평면 capture 경로에서 swallow됨을 확인하고(DR-029 D4 근거), full body-portal 대신 **`document`
 capture-phase pointerdown 리스너로 `[data-crop-handle]` 프레스를 직접 감지 + stopPropagation**

@@ -1784,4 +1784,87 @@ describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
     expect(badRot.ok).toBe(false);
     if (!badRot.ok) expect(badRot.error.code).toBe("invalid-input");
   });
+
+  // ── WI-074 / DR-029 D7 — weave.image.flip (toggle, window-preserving) ──
+  const flipCmd = () => {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.image.flip");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  };
+  // image item carrying an existing crop window (to assert flip preserves it).
+  function makeCroppedImageCtx(): CommandContext {
+    const weave: WeaveDocument = {
+      id: "doc-img2",
+      title: "Img2",
+      items: [
+        {
+          id: "frame-1",
+          kind: "frame",
+          attrs: { frame: FULL_FRAME },
+          behaviors: [],
+          createdAt: META_DATE,
+        } as unknown as Item,
+      ],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    const image = {
+      id: makeItemId("img-1"),
+      kind: "image",
+      attrs: {
+        frame: FULL_FRAME,
+        src: "x",
+        alt: "",
+        fit: "cover",
+        borderRadius: 0,
+        cropRatio: { x: 0.2, y: 0.1, w: 0.5, h: 0.6 },
+      },
+      units: [],
+      children: [] as ReadonlyArray<AgocraftItem>,
+      meta: { createdAt: META_DATE, updatedAt: META_DATE, schemaVersion: 9 },
+    } as unknown as AgocraftItem;
+    return {
+      document: addChild(toAgocraftDocument(weave), image, "frame-1"),
+      resolve: () => null as never,
+      skipRelations: false,
+    };
+  }
+
+  it("toggles flipH on a plain image (and back to no-crop)", () => {
+    const r1 = flipCmd().run(makeImageCtx(), { itemId: "img-1", axis: "horizontal" });
+    if (!r1.ok) throw new Error("unexpected fail");
+    const p1 = r1.patches[0];
+    if (p1 === undefined || p1.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect((p1.after as { cropRatio: unknown }).cropRatio).toEqual({
+      x: 0,
+      y: 0,
+      w: 1,
+      h: 1,
+      flipH: true,
+    });
+  });
+
+  it("preserves the crop window when flipping (visible region unchanged)", () => {
+    const r = flipCmd().run(makeCroppedImageCtx(), { itemId: "img-1", axis: "vertical" });
+    if (!r.ok) throw new Error("unexpected fail");
+    const p = r.patches[0];
+    if (p === undefined || p.type !== "item.attrs") throw new Error("expected item.attrs");
+    // window (x,y,w,h) identical — only flipV added.
+    expect((p.after as { cropRatio: unknown }).cropRatio).toEqual({
+      x: 0.2,
+      y: 0.1,
+      w: 0.5,
+      h: 0.6,
+      flipV: true,
+    });
+  });
+
+  it("fails not-an-image / item-not-found", () => {
+    const a = flipCmd().run(makeImageCtx(), { itemId: "frame-1", axis: "horizontal" });
+    expect(a.ok).toBe(false);
+    if (!a.ok) expect(a.error.code).toBe("not-an-image");
+    const b = flipCmd().run(makeImageCtx(), { itemId: "ghost", axis: "horizontal" });
+    expect(b.ok).toBe(false);
+    if (!b.ok) expect(b.error.code).toBe("item-not-found");
+  });
 });

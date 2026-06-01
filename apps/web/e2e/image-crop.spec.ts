@@ -15,7 +15,17 @@ import { clearAllDesigns, prepareDesign } from "./helpers.js";
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
-type Crop = { x: number; y: number; w: number; h: number; rotation?: number } | undefined;
+type Crop =
+  | {
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      rotation?: number;
+      flipH?: boolean;
+      flipV?: boolean;
+    }
+  | undefined;
 
 async function addImage(page: Page): Promise<string> {
   const id = await page.evaluate((src) => {
@@ -60,7 +70,17 @@ async function readCrop(page: Page, itemId: string): Promise<Crop> {
   return page.evaluate((cid) => {
     type N = {
       id: unknown;
-      attrs?: { cropRatio?: { x: number; y: number; w: number; h: number; rotation?: number } };
+      attrs?: {
+        cropRatio?: {
+          x: number;
+          y: number;
+          w: number;
+          h: number;
+          rotation?: number;
+          flipH?: boolean;
+          flipV?: boolean;
+        };
+      };
       children?: ReadonlyArray<N>;
     };
     const w = window as unknown as { __weaveDoc?: { root: N } };
@@ -181,6 +201,46 @@ test("WI-074 — dragging the SE crop handle resizes the window", async ({ page 
   expect(crop).toBeDefined();
   expect(crop?.w ?? 1).toBeLessThan(0.99);
   expect(crop?.h ?? 1).toBeLessThan(0.99);
+});
+
+test("WI-074 — flip toggles flipH (display mirrored); Cmd+Z reverts", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-flip" });
+  const id = await addImage(page);
+
+  await page.evaluate((itemId) => {
+    (
+      window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } }
+    ).__weaveEditor!.exec("weave.image.flip", { itemId, axis: "horizontal" });
+  }, id);
+  await expect.poll(() => readCrop(page, id)).toEqual({ x: 0, y: 0, w: 1, h: 1, flipH: true });
+  // committed render mirrors the frame view.
+  await expect
+    .poll(() => page.getByTestId("image-flip-layer").getAttribute("style"))
+    .toContain("scaleX(-1)");
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => readCrop(page, id)).toBeUndefined();
+});
+
+test("WI-074 — flipping a CROPPED image preserves the visible region (window unchanged)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-flip-crop" });
+  const id = await addImage(page);
+
+  // Crop to a sub-window first.
+  await setCrop(page, { itemId: id, crop: { x: 0.2, y: 0.1, w: 0.5, h: 0.6 } });
+  await expect.poll(() => readCrop(page, id)).toEqual({ x: 0.2, y: 0.1, w: 0.5, h: 0.6 });
+
+  // Flip horizontally — window must stay identical, only flipH added.
+  await page.evaluate((itemId) => {
+    (
+      window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } }
+    ).__weaveEditor!.exec("weave.image.flip", { itemId, axis: "horizontal" });
+  }, id);
+  await expect
+    .poll(() => readCrop(page, id))
+    .toEqual({ x: 0.2, y: 0.1, w: 0.5, h: 0.6, flipH: true });
 });
 
 test("WI-074 — crop mode suspends editor hotkeys; restored after exit (Step 5 gate)", async ({

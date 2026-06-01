@@ -46,14 +46,25 @@ interface CropRect {
   readonly h: number;
   /** radians, content straighten (DR-029 D6) */
   readonly rotation: number;
+  /** mirror the final composition (DR-029 D7) — window unchanged, same region flipped */
+  readonly flipH: boolean;
+  readonly flipV: boolean;
 }
 
-const IDENTITY_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1, rotation: 0 };
+const IDENTITY_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1, rotation: 0, flipH: false, flipV: false };
 const MAX_STRAIGHTEN_DEG = 45;
 
 function readCrop(a: ImageAttrs): CropRect {
   const c = a.cropRatio as
-    | { x?: number; y?: number; w?: number; h?: number; rotation?: number }
+    | {
+        x?: number;
+        y?: number;
+        w?: number;
+        h?: number;
+        rotation?: number;
+        flipH?: boolean;
+        flipV?: boolean;
+      }
     | undefined;
   if (c === undefined) return IDENTITY_CROP;
   return {
@@ -62,11 +73,13 @@ function readCrop(a: ImageAttrs): CropRect {
     w: c.w ?? 1,
     h: c.h ?? 1,
     rotation: c.rotation ?? 0,
+    flipH: c.flipH ?? false,
+    flipV: c.flipV ?? false,
   };
 }
 
 const isIdentity = (c: CropRect): boolean =>
-  c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1 && c.rotation === 0;
+  c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1 && c.rotation === 0 && !c.flipH && !c.flipV;
 
 /** Cover-zoom so a θ-rotated element still covers an axis-aligned box of the
  *  given aspect (= width / height). θ = 0 → 1. */
@@ -75,6 +88,18 @@ function coverZoom(theta: number, aspect: number): number {
   const c = Math.abs(Math.cos(theta));
   const s = Math.abs(Math.sin(theta));
   return c + s * Math.max(aspect, 1 / aspect);
+}
+
+/** Flip the FINAL composition around the frame centre (DR-029 D7). Mirroring the
+ *  full frame view keeps the SAME visible source region — only its display flips —
+ *  so a cropped image's visible area is preserved (window untouched). */
+function flipTransform(c: CropRect): CSSProperties {
+  return c.flipH || c.flipV
+    ? {
+        transform: `scaleX(${c.flipH ? -1 : 1}) scaleY(${c.flipV ? -1 : 1})`,
+        transformOrigin: "center",
+      }
+    : {};
 }
 
 function rotationTransform(theta: number, aspect: number): CSSProperties {
@@ -459,6 +484,8 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
             w: next.w,
             h: next.h,
             ...(next.rotation !== 0 ? { rotation: next.rotation } : {}),
+            ...(next.flipH ? { flipH: true } : {}),
+            ...(next.flipV ? { flipV: true } : {}),
           };
       onUpdate?.({ cropRatio } as Partial<ImageAttrs>);
       setCropMode(false);
@@ -496,14 +523,21 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
           onCancel={() => setCropMode(false)}
         />
       ) : (
-        <ImageContent
-          src={a.src}
-          alt={a.alt}
-          objectFit={objectFit}
-          filterCss={filterCss}
-          crop={crop}
-          aspect={aspect}
-        />
+        // DR-029 D7 — flip mirrors the whole frame view (same region, flipped).
+        <div
+          data-testid="image-flip-layer"
+          className="absolute inset-0"
+          style={flipTransform(crop)}
+        >
+          <ImageContent
+            src={a.src}
+            alt={a.alt}
+            objectFit={objectFit}
+            filterCss={filterCss}
+            crop={crop}
+            aspect={aspect}
+          />
+        </div>
       )}
     </div>
   );

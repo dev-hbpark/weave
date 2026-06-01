@@ -217,6 +217,14 @@ export interface SetImageCropInput {
   readonly rotation?: number;
 }
 
+/** WI-074 / DR-029 D7 — toggle a horizontal / vertical flip on an image. Mirrors
+ *  the final composition (window + rotation preserved), so a cropped image keeps
+ *  its visible region — only the display flips. Image-only. */
+export interface FlipImageInput {
+  readonly itemId: string;
+  readonly axis: "horizontal" | "vertical";
+}
+
 /** WI-020 / WI-043 — explicit layout-spec mutation. Targets `attrs.layout`
  *  via the agocraft `item.layout` Patch variant (self-inverting before/after
  *  swap, mergeKeyOf folds rapid SegmentedControl flips into one undo). */
@@ -709,12 +717,16 @@ export function buildWeaveCommands(
       if (input.rotation !== undefined && !finite(input.rotation)) {
         return fail("invalid-input", "weave.image.setCrop: rotation must be a finite number");
       }
+      // Preserve any existing flip (DR-029 D7) — setCrop only sets window + rotation.
+      const prev = (child.attrs as { cropRatio?: { flipH?: boolean; flipV?: boolean } }).cropRatio;
       const cropRatio = {
         x: c.x,
         y: c.y,
         w: c.w,
         h: c.h,
         ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
+        ...(prev?.flipH ? { flipH: true } : {}),
+        ...(prev?.flipV ? { flipV: true } : {}),
       };
       const after: Readonly<Record<string, unknown>> = {
         ...(child.attrs as unknown as Record<string, unknown>),
@@ -726,6 +738,66 @@ export function buildWeaveCommands(
         before: child.attrs,
         after,
       };
+      return ok(undefined, [patch]);
+    },
+  };
+
+  // WI-074 / DR-029 D7 — toggle a horizontal / vertical flip. Mirrors the final
+  // composition: window + rotation are preserved, so a cropped image keeps its
+  // visible region (only the display flips). Image-only. Reversible (toggle/undo).
+  const flipImage: Command<FlipImageInput, void> = {
+    name: "weave.image.flip",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail("item-not-found", `weave.image.flip: no item with id "${input.itemId}"`);
+      }
+      if ((child as { kind?: string }).kind !== "image") {
+        return fail("not-an-image", `weave.image.flip: item "${input.itemId}" is not an image`);
+      }
+      if (input.axis !== "horizontal" && input.axis !== "vertical") {
+        return fail("invalid-input", "weave.image.flip: axis must be 'horizontal' or 'vertical'");
+      }
+      const prev =
+        (
+          child.attrs as {
+            cropRatio?: {
+              x?: number;
+              y?: number;
+              w?: number;
+              h?: number;
+              rotation?: number;
+              flipH?: boolean;
+              flipV?: boolean;
+            };
+          }
+        ).cropRatio ?? {};
+      const flipH = input.axis === "horizontal" ? !(prev.flipH ?? false) : (prev.flipH ?? false);
+      const flipV = input.axis === "vertical" ? !(prev.flipV ?? false) : (prev.flipV ?? false);
+      const x = prev.x ?? 0;
+      const y = prev.y ?? 0;
+      const w = prev.w ?? 1;
+      const h = prev.h ?? 1;
+      const rotation = prev.rotation ?? 0;
+      // Collapse to no-crop when nothing remains (identity window, no rotation/flip).
+      const identity =
+        x === 0 && y === 0 && w === 1 && h === 1 && rotation === 0 && !flipH && !flipV;
+      const cropRatio = identity
+        ? undefined
+        : {
+            x,
+            y,
+            w,
+            h,
+            ...(rotation !== 0 ? { rotation } : {}),
+            ...(flipH ? { flipH: true } : {}),
+            ...(flipV ? { flipV: true } : {}),
+          };
+      const after: Readonly<Record<string, unknown>> = {
+        ...(child.attrs as unknown as Record<string, unknown>),
+        cropRatio,
+      };
+      const patch: Patch = { type: "item.attrs", itemId: child.id, before: child.attrs, after };
       return ok(undefined, [patch]);
     },
   };
@@ -1733,6 +1805,7 @@ export function buildWeaveCommands(
     updateItem as Command,
     setShapeCornerRadius as Command,
     setImageCrop as Command,
+    flipImage as Command,
     setShapeFill as Command,
     resizeMulti as Command,
     itemsUpdate as Command,
