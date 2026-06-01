@@ -13,8 +13,6 @@ import {
 } from "@agocraft/core";
 import { EditorProvider } from "@agocraft/editor/react";
 import {
-  Button,
-  ColorPicker,
   CommandHostProvider,
   CommandIconButton,
   CommandPalette,
@@ -29,7 +27,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -42,26 +39,17 @@ import {
   IconAlignRight,
   IconAlignTop,
   IconAlignVerticalCenter,
-  IconButton,
   IconClose,
-  IconCloudCheck,
-  IconCloudOff,
-  IconCloudUpload,
-  IconCursor,
   IconDistributeHorizontal,
   IconDistributeVertical,
   IconFrame,
-  IconHand,
   IconImage,
   IconLayers,
   IconLayoutAbsolute,
   IconLayoutFlex,
   IconLayoutGrid,
   IconPencil,
-  IconPlay,
   IconPlus,
-  IconQr,
-  IconRedo,
   IconRefresh,
   IconShape,
   IconShapeArrow,
@@ -75,19 +63,17 @@ import {
   IconShapeStar,
   IconShapeTriangle,
   IconText,
-  IconUndo,
   IconUngroup,
   IconVideo,
   QuickActionBar,
   Spinner,
-  ThemePicker,
   UnifiedTooltip,
   useCommandHost,
 } from "@weave/design-system";
 import type { ReactNode as ReactNodeAlias } from "react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   type DocFlavor,
   type DomainKind,
@@ -168,6 +154,7 @@ import {
   setFrameDeleter,
   setFrameDissolver,
   setFrameDuplicator,
+  setFrameSlideToggler,
   setHoverFrameChildAdder,
   setMediaSrcOpener,
   setMultiAligner,
@@ -197,6 +184,7 @@ import {
   LINE_STRAIGHT,
   type LineSeed,
 } from "./design/line-seeds.js";
+import { DesignHeader } from "./design/view/DesignHeader.js";
 import { FrameStage } from "./FrameStage.js";
 import { SlidePresetPicker } from "./new-design/SlidePresetPicker.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
@@ -512,43 +500,6 @@ const MULTI_ALIGN_MENU_ENTRIES: ReadonlyArray<MultiAlignMenuEntry> = [
     Icon: IconDistributeVertical,
   },
 ];
-
-// DR-design-017 — header manual-save lookup tables. Maps the
-// 4-state SaveStatus union (`idle` / `saving` / `saved` / `failed`)
-// to its glyph + AITooltip context + action. Each row is a single
-// declarative entry per state — adding a fifth state is one row
-// here + one branch in handleManualSave, no inline switch (Rule 6).
-const SAVE_GLYPH_BY_STATUS = {
-  idle: <IconCloudUpload />,
-  saving: <Spinner size={18} />,
-  saved: <IconCloudCheck />,
-  failed: <IconCloudOff />,
-} as const;
-
-const SAVE_TOOLTIP_CONTEXT = {
-  idle: "현재 디자인 저장",
-  saving: "저장 중…",
-  saved: "저장됨",
-  failed: "저장 실패",
-} as const;
-
-const SAVE_TOOLTIP_ACTION = {
-  idle: "서버로 즉시 저장",
-  saving: "서버 응답 대기 중",
-  saved: "서버에 저장됨",
-  failed: "다시 시도하려면 클릭",
-} as const;
-
-// DR-design-027 — per-state icon tint for the header save button. idle/saving
-// inherit the subtle IconButton's neutral text; saved/failed use the shared
-// semantic status tokens so the acknowledgement reads consistently in every
-// theme. One row per state (Rule 6) — no inline ternary on status.
-const SAVE_TINT_BY_STATUS = {
-  idle: "",
-  saving: "",
-  saved: "text-[color:var(--status-success)]",
-  failed: "text-[color:var(--status-warn)]",
-} as const;
 
 export function DesignPage() {
   const { id } = useParams<{ id: string }>();
@@ -938,18 +889,12 @@ function DesignPageBody() {
   // flash.
   const migrationStatus = useMigrateInlineMedia({ design, document: docInAgocraft });
 
-
   // DR-027 / WI-071 Phase 1 — manual cloud save 4-state machine + offline
   // reconcile prompt extracted to a view-model hook (save cluster). The two
   // surfaces that drive it (header button + Cmd+S via setDesignSaver) read
   // these returns; mutation still flows through useDesign's callbacks.
-  const {
-    saveStatus,
-    handleManualSave,
-    conflictBusy,
-    handleConflictSave,
-    handleConflictDiscard,
-  } = useDesignSave({ persistNowAwaitable, resolveLocalConflict, navigate });
+  const { saveStatus, handleManualSave, conflictBusy, handleConflictSave, handleConflictDiscard } =
+    useDesignSave({ persistNowAwaitable, resolveLocalConflict, navigate });
 
   const swatchFor = useCallback(
     (id: string) => {
@@ -1340,6 +1285,21 @@ function DesignPageBody() {
     },
     [editor],
   );
+  // WI-072 — QuickActionBar entry point: read the frame's current membership
+  // and flip it (the bar is a single toggle, the thumbnail panel passes the
+  // explicit target value).
+  const docRefForToggle = useRef(docInAgocraft);
+  docRefForToggle.current = docInAgocraft;
+  const toggleFrameSlideFlip = useCallback(
+    (frameId: string) => {
+      const it = findItemDeep(docRefForToggle.current, frameId);
+      if (it === undefined) return;
+      const current = (it.attrs as { presentable?: boolean }).presentable !== false;
+      toggleFrameSlide(frameId, !current);
+    },
+    [toggleFrameSlide],
+  );
+  useEffect(() => setFrameSlideToggler(toggleFrameSlideFlip), [toggleFrameSlideFlip]);
   // WI-036 follow-up — multi-selection delete. Iterates the live
   // `selectedIds` (via ref to avoid re-registering on every selection
   // change) and dispatches `weave.item.remove` for each. After the
@@ -1725,459 +1685,29 @@ function DesignPageBody() {
                         bg (intentionally shorter than the tile) exposed the
                         parent's `--bg-page` color through the flex gap. */}
                           <div className="fixed inset-0 bg-[color:var(--bg-page)]">
-                            {typeof document !== "undefined" &&
-                              createPortal(
-                                <header
-                                  // WI-039 — opaque self-background. The original
-                                  // `bg-[color:var(--surface-1)]` is a translucent
-                                  // glass token; when the header sat in a flex
-                                  // child of `bg-[color:var(--bg-page)]` it
-                                  // composited into a dark glass tone. With the
-                                  // z-stack the canvas (potentially a light
-                                  // design background) now sits behind the header,
-                                  // so the glass token looks washed out. Stacking
-                                  // `--surface-1` as a flat gradient on top of an
-                                  // opaque `--bg-page` base reproduces the exact
-                                  // original perceived color but is now fully
-                                  // self-contained — no parent bg dependency.
-                                  //
-                                  // Portal'd to document.body so its z-index
-                                  // participates in the root stacking context
-                                  // alongside the SelectionLayer / MarqueeSelection
-                                  // / RubberBand portal layers (z 35-45). Without
-                                  // the portal, the outer `fixed inset-0` wrapper
-                                  // creates a stacking context that traps any
-                                  // z-index inside — the chrome would always paint
-                                  // below the body-portal'd selection chrome.
-                                  className="fixed inset-x-0 top-0 z-[46] grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-3 md:px-4 h-12 border-b border-[color:var(--surface-1-border)]"
-                                  style={{
-                                    background:
-                                      "linear-gradient(var(--surface-1), var(--surface-1)), var(--bg-page)",
-                                  }}
-                                  data-testid="design-header"
-                                  role="toolbar"
-                                  aria-label="Edit tools"
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <Link
-                                      to="/"
-                                      className="flex items-center gap-2 no-underline shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
-                                      aria-label="Home"
-                                    >
-                                      <span
-                                        aria-hidden
-                                        className="inline-block w-5 h-5 rounded-[var(--radius-sm)] bg-[image:var(--accent-gradient)] shadow-[var(--shadow-glow)]"
-                                      />
-                                      <span className="text-[13px] font-semibold tracking-tight text-[color:var(--text-strong)]">
-                                        weave
-                                      </span>
-                                    </Link>
-                                    <span
-                                      aria-hidden
-                                      className="text-[12px] text-[color:var(--text-muted)] px-1"
-                                    >
-                                      /
-                                    </span>
-                                    {/* WI-033 P2 — Breadcrumb (Phase 12 drill-in trail
-                              indicator) removed. Figma-aligned selection
-                              navigation has no entered-frame state, so the
-                              header only shows the design title. */}
-                                    <nav
-                                      className="flex items-center gap-1 text-[12px] text-[color:var(--text-muted)] min-w-0"
-                                      aria-label="Breadcrumb"
-                                    >
-                                      <span className="text-[color:var(--text-strong)] truncate max-w-[280px]">
-                                        {design.title}
-                                      </span>
-                                    </nav>
-                                  </div>
-
-                                  <div
-                                    className="flex items-center gap-0.5"
-                                    role="group"
-                                    aria-label="Edit tools"
-                                  >
-                                    {infiniteCanvas ? (
-                                      <>
-                                        {/* Three tool buttons form a mutually-exclusive toggle
-                        group: Select / Hand / Peek. Choosing one
-                        deactivates the others (peek's sticky activation
-                        included). Peek's hold-mode (L key) remains
-                        orthogonal — it engages while held and yields back
-                        on release. */}
-                                        <IconButton
-                                          aria-label="Select tool"
-                                          aria-pressed={!handMode && !peek.isActive}
-                                          size="sm"
-                                          onClick={() => {
-                                            setHandMode(false);
-                                            peek.deactivateSticky();
-                                          }}
-                                          data-testid="toolbar-select"
-                                          data-active={
-                                            !handMode && !peek.isActive ? "true" : undefined
-                                          }
-                                          data-tip="선택 도구"
-                                          data-tip-kbd="V"
-                                          className={
-                                            !handMode && !peek.isActive
-                                              ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                              : undefined
-                                          }
-                                        >
-                                          <IconCursor />
-                                        </IconButton>
-                                        <IconButton
-                                          aria-label="Hand tool"
-                                          aria-pressed={handMode && !peek.isActive}
-                                          size="sm"
-                                          onClick={() => {
-                                            setHandMode(true);
-                                            peek.deactivateSticky();
-                                          }}
-                                          data-testid="toolbar-hand"
-                                          data-active={
-                                            handMode && !peek.isActive ? "true" : undefined
-                                          }
-                                          data-tip="이동 도구"
-                                          data-tip-kbd="H / Space"
-                                          className={
-                                            handMode && !peek.isActive
-                                              ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                              : undefined
-                                          }
-                                        >
-                                          <IconHand />
-                                        </IconButton>
-                                        <IconButton
-                                          aria-label="Peek z-order"
-                                          aria-pressed={peek.isActive}
-                                          size="sm"
-                                          onClick={peek.toggle}
-                                          data-testid="toolbar-peek"
-                                          data-active={peek.isActive ? "true" : undefined}
-                                          data-tip="Z-순서 보기"
-                                          data-tip-kbd="L"
-                                          className={
-                                            peek.isActive
-                                              ? "text-[color:var(--text-strong)] bg-[color:var(--surface-2)]"
-                                              : undefined
-                                          }
-                                        >
-                                          <IconLayers />
-                                        </IconButton>
-                                        <span
-                                          aria-hidden
-                                          className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
-                                        />
-                                      </>
-                                    ) : null}
-                                    {/* WI-020 — Add menu: image / video / 9 shape sub-kinds */}
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <IconButton
-                                          aria-label="Add new item"
-                                          size="sm"
-                                          data-testid="toolbar-add"
-                                          data-tip="추가"
-                                          data-tip-kbd="이미지 · 비디오 · 도형"
-                                        >
-                                          <IconPlus />
-                                        </IconButton>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="start" sideOffset={6}>
-                                        <DropdownMenuLabel>슬라이드</DropdownMenuLabel>
-                                        <DropdownMenuItem
-                                          icon={<IconFrame size={16} />}
-                                          onSelect={() => setSlidePickerOpen(true)}
-                                          data-testid="add-slide"
-                                        >
-                                          슬라이드…
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuLabel>미디어</DropdownMenuLabel>
-                                        <DropdownMenuItem
-                                          icon={<IconImage size={16} />}
-                                          onSelect={() =>
-                                            setPendingMedia({ action: "add", kind: "image" })
-                                          }
-                                          data-testid="add-image"
-                                        >
-                                          이미지
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          icon={<IconVideo size={16} />}
-                                          onSelect={() =>
-                                            setPendingMedia({ action: "add", kind: "video" })
-                                          }
-                                          data-testid="add-video"
-                                        >
-                                          비디오
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuLabel>텍스트</DropdownMenuLabel>
-                                        <DropdownMenuItem
-                                          icon={<IconText size={16} />}
-                                          onSelect={() => addNewItem("text")}
-                                          data-testid="add-text"
-                                          draggable
-                                          onDragStart={(e) => {
-                                            e.dataTransfer.setData(
-                                              "application/x-weave-add-kind",
-                                              "text",
-                                            );
-                                            e.dataTransfer.effectAllowed = "copy";
-                                          }}
-                                        >
-                                          텍스트
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuSub>
-                                          <DropdownMenuSubTrigger
-                                            icon={<IconShapeRectangle size={16} />}
-                                            data-testid="add-shape"
-                                          >
-                                            도형
-                                          </DropdownMenuSubTrigger>
-                                          <DropdownMenuSubContent>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeRectangle size={16} />}
-                                              onSelect={() => addNewItem("shape", "rectangle")}
-                                              data-testid="add-shape-rectangle"
-                                              draggable
-                                              onDragStart={(e) => {
-                                                e.dataTransfer.setData(
-                                                  "application/x-weave-add-kind",
-                                                  "shape",
-                                                );
-                                                e.dataTransfer.effectAllowed = "copy";
-                                              }}
-                                            >
-                                              사각형
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeEllipse size={16} />}
-                                              onSelect={() => addNewItem("shape", "ellipse")}
-                                              data-testid="add-shape-ellipse"
-                                            >
-                                              원
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeArrow size={16} />}
-                                              onSelect={() => addNewItem("shape", "arrow")}
-                                              data-testid="add-shape-arrow"
-                                            >
-                                              화살표
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeTriangle size={16} />}
-                                              onSelect={() => addNewItem("shape", "triangle")}
-                                              data-testid="add-shape-triangle"
-                                            >
-                                              삼각형
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeStar size={16} />}
-                                              onSelect={() => addNewItem("shape", "star")}
-                                              data-testid="add-shape-star"
-                                            >
-                                              별
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapePolygon size={16} />}
-                                              onSelect={() => addNewItem("shape", "polygon")}
-                                              data-testid="add-shape-polygon"
-                                            >
-                                              다각형
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapePoly size={16} />}
-                                              onSelect={() => addNewItem("shape", "poly")}
-                                              data-testid="add-shape-poly"
-                                            >
-                                              자유 다각형
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeHeart size={16} />}
-                                              onSelect={() => addNewItem("shape", "heart")}
-                                              data-testid="add-shape-heart"
-                                            >
-                                              하트
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeSpeechBubble size={16} />}
-                                              onSelect={() => addNewItem("shape", "speech-bubble")}
-                                              data-testid="add-shape-speech-bubble"
-                                            >
-                                              말풍선
-                                            </DropdownMenuItem>
-                                          </DropdownMenuSubContent>
-                                        </DropdownMenuSub>
-                                        <DropdownMenuSub>
-                                          <DropdownMenuSubTrigger
-                                            icon={<IconShapeLine size={16} />}
-                                            data-testid="add-line"
-                                          >
-                                            선
-                                          </DropdownMenuSubTrigger>
-                                          <DropdownMenuSubContent>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeLine size={16} />}
-                                              onSelect={() =>
-                                                addNewItem(
-                                                  "line",
-                                                  undefined,
-                                                  undefined,
-                                                  undefined,
-                                                  LINE_STRAIGHT,
-                                                )
-                                              }
-                                              data-testid="add-line-straight"
-                                            >
-                                              직선
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconPencil size={16} />}
-                                              onSelect={() =>
-                                                addNewItem(
-                                                  "line",
-                                                  undefined,
-                                                  undefined,
-                                                  undefined,
-                                                  LINE_FREE,
-                                                )
-                                              }
-                                              data-testid="add-line-free"
-                                            >
-                                              자유선
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconShapeLine size={16} />}
-                                              onSelect={() =>
-                                                addNewItem(
-                                                  "line",
-                                                  undefined,
-                                                  undefined,
-                                                  undefined,
-                                                  LINE_CURVE,
-                                                )
-                                              }
-                                              data-testid="add-line-curve"
-                                            >
-                                              곡선
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              icon={<IconPencil size={16} />}
-                                              onSelect={() =>
-                                                addNewItem(
-                                                  "line",
-                                                  undefined,
-                                                  undefined,
-                                                  undefined,
-                                                  LINE_CURVE_FREE,
-                                                )
-                                              }
-                                              data-testid="add-line-curve-free"
-                                            >
-                                              자유곡선
-                                            </DropdownMenuItem>
-                                          </DropdownMenuSubContent>
-                                        </DropdownMenuSub>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuLabel>코드</DropdownMenuLabel>
-                                        <DropdownMenuItem
-                                          icon={<IconQr size={16} />}
-                                          onSelect={() => addNewItem("qr")}
-                                          data-testid="add-qr"
-                                          draggable
-                                          onDragStart={(e) => {
-                                            e.dataTransfer.setData(
-                                              "application/x-weave-add-kind",
-                                              "qr",
-                                            );
-                                            e.dataTransfer.effectAllowed = "copy";
-                                          }}
-                                        >
-                                          QR 코드
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                    <span
-                                      aria-hidden
-                                      className="inline-block w-px h-4 bg-[color:var(--surface-1-border)] mx-1.5"
-                                    />
-                                    <CommandIconButton commandId="history.undo" size="sm">
-                                      <IconUndo />
-                                    </CommandIconButton>
-                                    <CommandIconButton commandId="history.redo" size="sm">
-                                      <IconRedo />
-                                    </CommandIconButton>
-                                  </div>
-
-                                  <div className="flex items-center justify-end gap-2">
-                                    {/* Design 배경색 — file-level 속성이라 selection 과
-                                무관한 영구 chrome 인 header 의 우 cluster 에
-                                상주. ContextualToolbar 의 selection==0
-                                variant 를 대체. ThemePicker 와 같은
-                                design-level 컨트롤 군에 속하므로 인접 배치.
-                                `setDesignBackgroundViaEditor` 는
-                                weave.design.setBackground 명령을 통해 History
-                                를 거치므로 Cmd+Z 가 그대로 작동. ColorPicker 는
-                                data-testid 를 trigger 로 전달하지 않으므로
-                                span wrapper 로 e2e hook 노출 (inline-flex 로
-                                trigger 의 layout 에 영향 X). */}
-                                    <span
-                                      data-testid="header-design-background"
-                                      className="inline-flex"
-                                    >
-                                      <ColorPicker
-                                        value={design.background ?? "#ffffff"}
-                                        onValueCommit={(v) => setDesignBackgroundViaEditor(v)}
-                                        onValueChange={() => {
-                                          /* commit-only */
-                                        }}
-                                        aria-label="Design background"
-                                      />
-                                    </span>
-                                    <ThemePicker />
-                                    {/* DR-design-017 — manual cloud save trigger.
-                                  Click forces an immediate `persistNow()`
-                                  even if the debounced auto-save window
-                                  hasn't elapsed. Glyph flashes to a check
-                                  for 1.5s after dispatch so the user
-                                  sees an explicit acknowledgement (the
-                                  cloud POST itself is fire-and-forget).
-                                  DR-design-027 — `subtle` circular chip +
-                                  status-token tint so it reads as a real
-                                  button coherent with the Present CTA. */}
-                                    <IconButton
-                                      aria-label="Save design to server"
-                                      variant="subtle"
-                                      size="md"
-                                      onClick={() => void handleManualSave()}
-                                      disabled={saveStatus === "saving"}
-                                      data-testid="toolbar-save"
-                                      data-state={saveStatus}
-                                      data-tip={SAVE_TOOLTIP_CONTEXT[saveStatus]}
-                                      data-tip-kbd={SAVE_TOOLTIP_ACTION[saveStatus]}
-                                      className={`rounded-[var(--radius-pill)] ${SAVE_TINT_BY_STATUS[saveStatus]}`}
-                                    >
-                                      {SAVE_GLYPH_BY_STATUS[saveStatus]}
-                                    </IconButton>
-                                    <Button size="md" leadingIcon={<IconPlay size={16} />} asChild>
-                                      <Link
-                                        to={`/design/${designId}/present`}
-                                        data-testid="toolbar-present"
-                                        data-tip="프레젠테이션"
-                                        data-tip-kbd="풀스크린"
-                                      >
-                                        Present
-                                      </Link>
-                                    </Button>
-                                  </div>
-                                </header>,
-                                document.body,
-                              )}
+                            <DesignHeader
+                              designTitle={design.title}
+                              designId={designId}
+                              designBackground={design.background}
+                              infiniteCanvas={infiniteCanvas}
+                              handMode={handMode}
+                              peekActive={peek.isActive}
+                              onSelectTool={() => {
+                                setHandMode(false);
+                                peek.deactivateSticky();
+                              }}
+                              onHandTool={() => {
+                                setHandMode(true);
+                                peek.deactivateSticky();
+                              }}
+                              onTogglePeek={peek.toggle}
+                              onOpenSlidePicker={() => setSlidePickerOpen(true)}
+                              onAddMedia={(kind) => setPendingMedia({ action: "add", kind })}
+                              onAddItem={addNewItem}
+                              onSetBackground={setDesignBackgroundViaEditor}
+                              onSave={() => void handleManualSave()}
+                              saveStatus={saveStatus}
+                            />
 
                             {/* WI-029 R5 + WI-033 P3 — text item v1 +
                           Figma frame selection launch announcements
@@ -3551,6 +3081,8 @@ function QuickActionBarAnchored({
               <IconUngroup size={15} />
             ) : id === "image.replaceSrc" || id === "video.replaceSrc" ? (
               <IconRefresh size={14} />
+            ) : id === "frame.toggleSlide" ? (
+              <IconLayers size={15} />
             ) : (
               <span className="inline-block h-1 w-1 rounded-full bg-current" />
             );
