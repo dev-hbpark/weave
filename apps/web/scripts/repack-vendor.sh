@@ -114,15 +114,24 @@ node -e "
   }
   fs.writeFileSync(appPath, JSON.stringify(app, null, 2) + '\n');
 
-  // 4b — workspace root: pnpm.overrides for transitive resolution.
+  // 4b — workspace root: pnpm.overrides for transitive resolution. PRESERVE any
+  //      non-@agocraft override (e.g. @small-think/client → its own vendor
+  //      tarball); only the @agocraft/* entries are rewritten to the new version.
+  //      (An earlier revision reset overrides to {} and silently dropped the
+  //      small-think override, breaking pnpm install.)
   const rootPath = path.join(root, 'package.json');
   const r = JSON.parse(fs.readFileSync(rootPath, 'utf8'));
   r.pnpm = r.pnpm || {};
-  r.pnpm.overrides = {};
+  const prevOverrides = r.pnpm.overrides || {};
+  const nextOverrides = {};
+  for (const [k, val] of Object.entries(prevOverrides)) {
+    if (!k.startsWith('@agocraft/')) nextOverrides[k] = val; // keep foreign overrides
+  }
   for (const short of names) {
-    r.pnpm.overrides['@agocraft/' + short] =
+    nextOverrides['@agocraft/' + short] =
       'file:apps/web/vendor/agocraft/agocraft-' + short + '-' + V + '.tgz';
   }
+  r.pnpm.overrides = nextOverrides;
   fs.writeFileSync(rootPath, JSON.stringify(r, null, 2) + '\n');
 "
 

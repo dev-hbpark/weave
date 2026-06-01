@@ -14,7 +14,7 @@
 // rotated basis. This is exact at EVERY angle including 45° (the older AABB-only
 // W,H solve was singular there — cos 2θ = 0 — and fell back to wrong positions).
 
-import { smoothPolyBounds } from "@agocraft/core";
+import { resolveSnap, type SnapResult, smoothPolyBounds } from "@agocraft/core";
 import type {
   Editor,
   HandleCommandSink,
@@ -44,7 +44,10 @@ import {
   parseRotationFromTransform,
   recoverUnrotatedSize,
   refitFrameToPoints,
+  screenToLocal,
 } from "./poly-vertex-geometry.js";
+import { snapFeedback, useSnapTargetEndpoint } from "./snap-feedback.js";
+import { SNAP_PROVIDERS } from "./snap-registry.js";
 import {
   applyDragStrategy,
   classifyPointHandle,
@@ -91,6 +94,13 @@ export interface PolyVertexHandleDeps {
    *  for the closed-`poly` shape VM; omit for the `line` VM (already a line).
    *  The host owns the command dispatch + re-selecting the new line. */
   readonly onBreakAtVertex?: (itemId: string, vertexIndex: number) => void;
+  /** WI-070 — an OPEN line's endpoint was free-moved (Alt) and SNAPPED onto its
+   *  opposite endpoint; on release fuse the two ends into one and close the path
+   *  into a filled shape. The host owns the command dispatch
+   *  (`weave.line.closeToShape { fuseEndpoints: true }`) + re-selecting the new
+   *  shape. Provided only for the open-`line` VM; when omitted, endpoint snapping
+   *  is disabled (no feedback, no close) — there is no close action to take. */
+  readonly onCloseBySnap?: (itemId: string) => void;
 }
 
 /** Default attrs-merge (shape/poly): points live under `subAttrs`. */
@@ -109,6 +119,9 @@ function defaultComposeAttrs(
 
 const VERTEX_PX = 11;
 const MIDPOINT_PX = 9;
+/** WI-070 — endpoint→opposite-endpoint snap radius (screen px). Matches the
+ *  shared snap tolerance; the engine defaults to this too. */
+const ENDPOINT_SNAP_PX = 6;
 
 /** DOM read: derive the {@link FrameGeom} (center, un-rotated size, rotation)
  *  from the item's `[data-frame-id]` element + the SelectionLayer AABB bounds.
@@ -155,9 +168,13 @@ const VertexHandle = forwardRef<
 ) {
   const adapter = resolvePointHandle(role);
   const selected = useVertexSelected(itemId, idx); // WI-069 — reactive highlight
+  // WI-070 — this endpoint is the live SNAP TARGET (the dragged opposite end is
+  // hovering within range): show a will-fuse ring so the user knows releasing
+  // here closes the path into a shape.
+  const snapTarget = useSnapTargetEndpoint(itemId, idx);
   // WI-069 — a SELECTED vertex is filled with the accent + a white ring and
   // slightly enlarged, so the active point (the Delete target) is unmistakable.
-  const size = selected ? VERTEX_PX + 3 : VERTEX_PX;
+  const size = selected || snapTarget ? VERTEX_PX + 3 : VERTEX_PX;
   return (
     <button
       type="button"
@@ -169,6 +186,7 @@ const VertexHandle = forwardRef<
       data-handle-role={role}
       data-point-type={pointType}
       data-selected={selected ? "true" : undefined}
+      data-snap-target={snapTarget ? "true" : undefined}
       data-testid={`poly-vertex-${idx}`}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
@@ -177,13 +195,22 @@ const VertexHandle = forwardRef<
         width: size,
         height: size,
         borderRadius: handleBorderRadius(pointType), // smooth → circle, corner → square
-        background: selected ? "var(--accent, #4f46e5)" : "var(--surface-1, #fff)",
-        border: selected
-          ? "2px solid var(--surface-1, #fff)"
-          : "1.5px solid var(--accent, #4f46e5)",
-        boxShadow: selected
-          ? "0 0 0 1.5px var(--accent, #4f46e5), 0 1px 3px rgba(0,0,0,0.25)"
-          : "0 1px 3px rgba(0,0,0,0.18)",
+        background: snapTarget
+          ? "var(--accent, #4f46e5)"
+          : selected
+            ? "var(--accent, #4f46e5)"
+            : "var(--surface-1, #fff)",
+        border:
+          selected || snapTarget
+            ? "2px solid var(--surface-1, #fff)"
+            : "1.5px solid var(--accent, #4f46e5)",
+        // WI-070 — the snap target gets a wider accent halo (distinct from the
+        // selected-vertex ring) signalling "release here to fuse + close".
+        boxShadow: snapTarget
+          ? "0 0 0 3px var(--accent, #4f46e5), 0 0 6px 2px var(--accent, #4f46e5)"
+          : selected
+            ? "0 0 0 1.5px var(--accent, #4f46e5), 0 1px 3px rgba(0,0,0,0.25)"
+            : "0 1px 3px rgba(0,0,0,0.18)",
         cursor: "move",
         padding: 0,
         touchAction: "none",
@@ -220,14 +247,23 @@ export function createPolyVertexHandleViewModel(
     kind: "vertex-drag" | "vertex-insert" = "vertex-drag",
   ): void => {
     const n = basePoints.length;
-    const adapter = resolvePointHandle(classifyPointHandle(idx, n, closed));
+    const role = classifyPointHandle(idx, n, closed);
+    const adapter = resolvePointHandle(role);
     const anchorIdx = idx === 0 ? n - 1 : 0;
     const baseScreen = basePoints.map((p) => localToScreen(geom, p.x, p.y));
     const compose = deps.composeAttrs ?? defaultComposeAttrs;
+    // WI-070 — endpoint→opposite-endpoint snap-close is offered only while
+    // FREE-MOVING an endpoint of an open line that the host can actually close,
+    // and only with ≥ 4 points (fusing the two ends must leave a ≥ 3-vertex
+    // shape). The opposite endpoint does not move during a free-move, so its
+    // drag-start screen position is the snap target for the whole gesture.
+    const canFuseClose = role === "endpoint" && n >= 4 && deps.onCloseBySnap !== undefined;
+    const oppositeScreen = baseScreen[anchorIdx];
+
     const sink: HandleCommandSink = {
       update: (p) => {
         const strategy = resolveDragStrategy(adapter, p.altKey);
-        const newLocal = applyDragStrategy(strategy, {
+        let newLocal = applyDragStrategy(strategy, {
           basePoints,
           baseScreen,
           idx,
@@ -236,6 +272,29 @@ export function createPolyVertexHandleViewModel(
           clientX: p.clientX,
           clientY: p.clientY,
         });
+        // Snap the free-moving endpoint onto the opposite end if within range.
+        // All snap situations flow through the same provider registry + engine;
+        // Phase 1 registers only the endpoint-close provider.
+        let snap: SnapResult | null = null;
+        if (canFuseClose && strategy === "free-move" && oppositeScreen !== undefined) {
+          const moving = [{ x: p.clientX, y: p.clientY }];
+          const targets = SNAP_PROVIDERS.collectTargets({
+            movingItemId: itemId,
+            movingPoints: moving,
+            modifiers: { alt: p.altKey, shift: p.shiftKey, meta: p.metaKey, ctrl: p.ctrlKey },
+            extra: { snapClose: { oppositeScreen, anchorIndex: anchorIdx } },
+          });
+          snap = resolveSnap(moving, targets, {
+            pointRadiusPx: ENDPOINT_SNAP_PX,
+            lineTolerancePx: ENDPOINT_SNAP_PX,
+          });
+          if (snap.hits.length > 0) {
+            const loc = screenToLocal(geom, p.clientX + snap.dx, p.clientY + snap.dy);
+            newLocal = newLocal.map((q, i) => (i === idx ? { ...q, x: loc.x, y: loc.y } : q));
+          }
+        }
+        snapFeedback.set(snap);
+
         const refit = refitFrameToPoints(newLocal, baseFrame, geom.theta);
         deps.editor.exec("weave.item.update", {
           itemId,
@@ -243,6 +302,21 @@ export function createPolyVertexHandleViewModel(
             attrs: compose(prev.attrs, refit.frame, refit.points),
           }),
         });
+      },
+      // On release, if the endpoint was snapped onto its opposite end, fuse +
+      // close (host dispatches the conversion). Always clears the feedback.
+      commit: () => {
+        const snapped = snapFeedback.get();
+        const willClose =
+          snapped?.hits.some(
+            (h) =>
+              h.target.source.type === "opposite-endpoint" && h.target.source.itemId === itemId,
+          ) === true;
+        snapFeedback.clear();
+        if (willClose) deps.onCloseBySnap?.(itemId);
+      },
+      cancel: () => {
+        snapFeedback.clear();
       },
     };
     startHandleGesture({

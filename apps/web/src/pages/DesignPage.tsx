@@ -158,6 +158,10 @@ import { createFrameDefaultViewModel } from "../document/selection-chrome/frame-
 import { createPolyVertexHandleViewModel } from "../document/selection-chrome/poly-vertex-handle.js";
 import { createShapeSelectionViewModel } from "../document/selection-chrome/shape-selection-view-model.js";
 import { createSlideBulletHandleViewModel } from "../document/selection-chrome/slide-bullet-handle.js";
+// WI-070 — import for its registration side effect: registers the endpoint→
+// opposite-endpoint snap provider into SNAP_PROVIDERS (the host wires providers).
+import "../document/selection-chrome/endpoint-snap-provider.js";
+import { SnapFeedbackLayer } from "../document/selection-chrome/SnapFeedbackLayer.js";
 import { createTextSelectionViewModel } from "../document/selection-chrome/text-selection-view-model.js";
 import { removeVertexAndRefit } from "../document/selection-chrome/vertex-ops.js";
 import { vertexSelection } from "../document/selection-chrome/vertex-selection.js";
@@ -915,6 +919,18 @@ function DesignPageBody() {
           ...(frame !== undefined ? { frame } : {}),
           points,
         }),
+        // WI-070 — an endpoint free-moved (Alt) and SNAPPED onto the opposite
+        // endpoint: fuse the two ends and close the line into a filled shape,
+        // then re-select the fresh shape (same pattern as the menu close + the
+        // breakToLine re-select; the ref keeps the VM from closing over a stale
+        // selectFrame).
+        onCloseBySnap: (id) => {
+          const r = editor.exec<unknown, string>("weave.line.closeToShape", {
+            itemId: id,
+            fuseEndpoints: true,
+          });
+          if (r.ok) selectFrameRef.current(r.value);
+        },
       }),
     );
   }, [selectionChrome, editor]);
@@ -3403,6 +3419,11 @@ function DesignPageBody() {
                             <EditAffordanceGate>
                               <ReparentGhostOverlay state={reparentDragState} />
                             </EditAffordanceGate>
+                            {/* WI-070 — snap guide overlay (self-portals to body,
+                          pointer-events:none). Renders the active snap's guides:
+                          Phase 1 the endpoint-close radial marker; Phase 2 the
+                          alignment / spacing / grid guide lines. */}
+                            <SnapFeedbackLayer />
                             {typeof document !== "undefined" &&
                               layoutChildDrag.dropPreview !== null &&
                               createPortal(
