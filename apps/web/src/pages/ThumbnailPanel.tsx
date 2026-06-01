@@ -698,7 +698,10 @@ export function ThumbnailPanel({
                     data-tip="슬라이드(덱)에서 제외"
                     className={
                       "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
-                      "text-[color:var(--accent-strong)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 " +
+                      // WI-072 — kept subtly visible (not hover-only) so deck
+                      // membership is discoverable at a glance and reliably hit-
+                      // testable; brightens on hover/focus.
+                      "text-[color:var(--accent-strong)] opacity-60 group-hover:opacity-100 focus-visible:opacity-100 " +
                       "hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
                     }
                   >
