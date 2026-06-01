@@ -95,45 +95,12 @@ import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
  *  (typically a per-frame ContextMenu) can render a Layer Picker
  *  section listing every frame overlapping the right-clicked point.
  *  Empty `layers` → the section is elided. */
+import { nextPanForZoom } from "./frame-stage/camera-math.js";
+import { perceivedLuminance } from "./frame-stage/luminance.js";
+
 export interface FrameMenuContext {
   readonly layers: ReadonlyArray<LayerHit>;
   readonly onPickLayer: (id: string) => void;
-}
-
-/** WI-037 follow-up — compute the next pan/zoom state for a scale change
- *  that anchors a specific viewport point. The point at `(anchor.x,
- *  anchor.y)` (in outer-container CSS px, top-left origin) stays under
- *  the cursor across the zoom: the design-pixel coord beneath it before
- *  the change equals the design-pixel coord beneath it after.
- *
- *  Caller convention:
- *  - **Pointer-driven** (wheel / pinch) → pass the event's
- *    `clientX/Y − rect.left/top`.
- *  - **Hotkey or zoom button** → pass the viewport centre,
- *    `{ x: outerW / 2, y: outerH / 2 }`.
- *
- *  Pure: takes prev pan + raw multiplicative factor, returns next pan.
- *  Honours the same `[0.1, 8]` scale clamp the wheel handler used to
- *  apply inline; the effective factor is re-derived after clamp so an
- *  anchored zoom that hits the limit does not drift. */
-function nextPanForZoom(
-  prev: { tx: number; ty: number; scale: number },
-  factor: number,
-  anchor: { x: number; y: number; outerW: number; outerH: number },
-): { tx: number; ty: number; scale: number } {
-  const nextScale = Math.max(0.1, Math.min(8, prev.scale * factor));
-  const effective = nextScale / prev.scale;
-  if (effective === 1) return prev;
-  const { x: px, y: py, outerW: W, outerH: H } = anchor;
-  // Outer pan div has `transform-origin: center center`, so a local
-  // point lx maps to screen x = tx + W/2 + (lx − W/2) * scale.
-  // Solve for tx_new such that the same lx still lands at px after the
-  // scale change: tx_new = px − W/2 − (px − tx − W/2) * effective.
-  return {
-    scale: nextScale,
-    tx: px - W / 2 - (px - prev.tx - W / 2) * effective,
-    ty: py - H / 2 - (py - prev.ty - H / 2) * effective,
-  };
 }
 
 export interface FrameStageProps {
@@ -985,40 +952,6 @@ function NestedFrame({
 // WI-033 P2 — `AbsoluteFrame` / `ROOT_ABS_FRAME` / `absoluteFrameFor`
 // (Phase 12c entered-frame-to-design-plane camera math) removed
 // alongside the drill-in mode.
-
-/** Perceived luminance for a CSS color. Returns 0..1 where ≥ 0.5 reads as
- *  "light" (dark ink on top is the right choice). Falls back to "light"
- *  for inputs the canvas can't parse — that's the conservative bet when
- *  most designs will use white anyway. */
-function perceivedLuminance(color: string): number {
-  if (typeof document === "undefined") return 1;
-  const probe = document.createElement("canvas").getContext("2d");
-  if (probe === null) return 1;
-  probe.fillStyle = "#000";
-  probe.fillStyle = color;
-  // Browser normalizes the parsed color back to rgb(...) / rgba(...).
-  const m = probe.fillStyle.match(/rgba?\(([^)]+)\)/);
-  if (m === null) {
-    // Hex / named — read pixel via a 1×1 paint to get rgba.
-    const c = document.createElement("canvas");
-    c.width = 1;
-    c.height = 1;
-    const ctx = c.getContext("2d");
-    if (ctx === null) return 1;
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, 1, 1);
-    const data = ctx.getImageData(0, 0, 1, 1).data;
-    const r = (data[0] ?? 0) / 255;
-    const g = (data[1] ?? 0) / 255;
-    const b = (data[2] ?? 0) / 255;
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  }
-  const parts = m[1]!.split(",").map((s) => parseFloat(s.trim()));
-  const r = (parts[0] ?? 0) / 255;
-  const g = (parts[1] ?? 0) / 255;
-  const b = (parts[2] ?? 0) / 255;
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
 
 export function FrameStage(props: FrameStageProps) {
   const {
