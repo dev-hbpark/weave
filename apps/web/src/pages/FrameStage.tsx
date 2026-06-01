@@ -26,7 +26,6 @@ import {
   GESTURE_PRIORITY_FALLBACK,
   type ResizeDir,
 } from "@agocraft/editor";
-
 import { motion, useMotionValue } from "motion/react";
 import type React from "react";
 import {
@@ -46,11 +45,9 @@ import {
   useInteractionMode,
 } from "../document";
 import { isDomainItem } from "../document/agocraft-mirror.js";
-
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
 import { useRouterOrNull } from "../document/interactions/router-context.js";
-
 import { TotalScaleContext } from "../document/interactions/total-scale-context.js";
 import { ViewportCullContext } from "../document/interactions/viewport-cull-context.js";
 import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index.js";
@@ -60,9 +57,9 @@ import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index
 // handles) + move gate. No layout branching lives here.
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../document/layout/registry.js";
 import { MarqueeSelectionLayer } from "../document/marquee/MarqueeSelectionLayer.js";
-
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
 import { RubberBandLayer } from "../document/rubber-band/RubberBandLayer.js";
+import { createFrameMoveSnap } from "../document/selection-chrome/frame-move-snap.js";
 // DR-032 / WI-067 P3 — resize/rotate handles run through the uniform handle
 // interaction pipeline (createFrameResizeBinding/createFrameRotateBinding
 // retired from the GestureRouter).
@@ -942,6 +939,12 @@ export function FrameStage(props: FrameStageProps) {
   // the Alt-override rubber-band binding registered on the outer router
   // below. Same capability the design-plane RubberBandLayer uses for
   // its (lower priority) plain-drag binding.
+  // WI-073 — snap guide lines while dragging a frame/item. Stable instance; it
+  // captures DOM viewport rects on each drag's `begin` and publishes guides to
+  // the `snapFeedback` store (drawn by SnapFeedbackLayer). Injected into the
+  // move binding below.
+  const frameMoveSnap = useMemo(() => createFrameMoveSnap({ hostEl: () => outerRef.current }), []);
+
   const designCapability = useMemo(() => defaultInsertableRegistry.get("design"), []);
   const designAdaptedCapability = useMemo(
     () =>
@@ -987,6 +990,8 @@ export function FrameStage(props: FrameStageProps) {
     const frameMove = frameDragAllowed
       ? createFrameMoveBinding({
           access: frameAccess,
+          // WI-073 — alignment / bounds / equal-spacing snap guides during move.
+          snap: frameMoveSnap,
           priority: GESTURE_PRIORITY_ELEMENT_BODY,
           moveThreshold: 3,
           // HANDOFF-011 / WI-033 — opt out of the binding's raw

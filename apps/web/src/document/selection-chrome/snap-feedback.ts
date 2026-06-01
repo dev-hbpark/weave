@@ -19,15 +19,21 @@ function emit(): void {
 function sameResult(a: SnapResult | null, b: SnapResult | null): boolean {
   if (a === b) return true;
   if (a === null || b === null) return false;
-  return a.dx === b.dx && a.dy === b.dy && a.hits.length === b.hits.length;
+  return (
+    a.dx === b.dx &&
+    a.dy === b.dy &&
+    a.hits.length === b.hits.length &&
+    a.guides.length === b.guides.length
+  );
 }
 
 export const snapFeedback = {
   get: (): SnapResult | null => current,
   set: (r: SnapResult | null): void => {
-    // Treat an empty (no-hit) result as "no snap" so feedback only shows on a
-    // real lock.
-    const next = r !== null && r.hits.length > 0 ? r : null;
+    // Show feedback on a real lock: either a hit (endpoint point-snap) OR active
+    // guide lines (move-drag alignment/bounds/grid/spacing). WI-072+ move-snap
+    // publishes guides with no hits, so gate on EITHER being non-empty.
+    const next = r !== null && (r.hits.length > 0 || r.guides.length > 0) ? r : null;
     if (sameResult(current, next)) return;
     current = next;
     emit();
