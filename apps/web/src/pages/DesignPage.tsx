@@ -88,7 +88,6 @@ import {
   useEditAffordancesAllowed,
   useInteractionMode,
   useSelection,
-  useSelectionChromeVisible,
   useTooltipsAllowed,
 } from "../document";
 import { computeAddFrame } from "../document/add-geometry.js";
@@ -125,7 +124,6 @@ import { type LayerHit, LayerPickerMenu } from "../document/layer-picker/index.j
 import { MigrationResultBanner } from "../document/MigrationResultBanner.js";
 import { computeAlignedFrames } from "../document/multi/align-ops.js";
 import { type ArrangeLayout, computeArrangedFrames } from "../document/multi/layout-arrange.js";
-import { PeekOverlay, PointStackInspector } from "../document/peek-mode/index.js";
 import { PresenceCursors } from "../document/presence/PresenceCursors.js";
 import { usePresenceLocalCursor } from "../document/presence/use-presence-local-cursor.js";
 import { projectHoverAffordance } from "../document/render/hover-affordance-projector.js";
@@ -139,7 +137,6 @@ import {
   DesignDimsProvider,
   DocumentForResolutionProvider,
 } from "../document/style/resolver-context.js";
-import { ContextualToolbar } from "../document/toolbar/ContextualToolbar.js";
 import { CursorTooltipBridge } from "../document/tooltip/CursorTooltipBridge.js";
 import {
   dispatchEditorCommand,
@@ -182,7 +179,9 @@ import {
 } from "./design/line-seeds.js";
 import { DesignDialogs } from "./design/view/DesignDialogs.js";
 import { DesignHeader } from "./design/view/DesignHeader.js";
-import { FrameStage, type FrameMenuContext } from "./FrameStage.js";
+import { PeekCaptureLayer } from "./design/view/PeekCaptureLayer.js";
+import { SelectionToolbarOverlay } from "./design/view/SelectionToolbarOverlay.js";
+import { type FrameMenuContext, FrameStage } from "./FrameStage.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
 
 /** Mounts the single UnifiedTooltip surface and disables it whenever the
@@ -1714,102 +1713,89 @@ function DesignPageBody() {
 
   // DR-027 / WI-071 Phase 2 — frame context-menu builder lifted out of the
   // FrameStage renderFrameMenu slot so the canvas JSX stays declarative.
-  const renderFrameMenu = (itemId: string, children: ReactNodeAlias, ctx?: FrameMenuContext): ReactNodeAlias => {
-                                    // WI-039 — selection-aware reparent. The
-                                    // gesture moves either the right-clicked
-                                    // frame OR the multi-selection it belongs
-                                    // to; cycle-blocked rows are dimmed.
-                                    const movedIds: ReadonlyArray<string> =
-                                      selectedIds.has(itemId) && selectedIds.size > 1
-                                        ? [...selectedIds]
-                                        : [itemId];
-                                    const reparentTree = buildFrameTree(docInAgocraft, movedIds);
-                                    const handleReparent = (targetPickerId: string) => {
-                                      const newParentId = resolvePickerTargetId(
-                                        docInAgocraft,
-                                        targetPickerId,
-                                      );
-                                      editor.exec("weave.item.reparent", {
-                                        entries: movedIds.map((id) => ({
-                                          itemId: id,
-                                          newParentId,
-                                        })),
-                                        // Real design size → rotation-aware reparent
-                                        // stays correct across rotated, non-square ancestors.
-                                        designWidth: design.width,
-                                        designHeight: design.height,
-                                      });
-                                    };
-                                    // WI-065 / DR-031 — shape ↔ line conversion. Gate each
-                                    // row on the live item's convertibility (core decides).
-                                    const cvItem = findItemDeep(docInAgocraft, itemId) as
-                                      | SerializedItem
-                                      | undefined;
-                                    const canBreak =
-                                      cvItem !== undefined && canBreakShapeToLine(cvItem);
-                                    const canClose =
-                                      cvItem !== undefined && canCloseLineToShape(cvItem);
-                                    return (
-                                      <FrameContextMenu
-                                        itemId={itemId}
-                                        onDelete={() => {
-                                          removeItem(itemId);
-                                          bumpHistoryTick();
-                                        }}
-                                        {...(canBreak
-                                          ? {
-                                              onBreakToLine: () => {
-                                                const r = editor.exec<unknown, string>(
-                                                  "weave.shape.breakToLine",
-                                                  { itemId },
-                                                );
-                                                if (r.ok) selectFrame(r.value);
-                                              },
-                                            }
-                                          : {})}
-                                        {...(canClose
-                                          ? {
-                                              onCloseToShape: () => {
-                                                const r = editor.exec<unknown, string>(
-                                                  "weave.line.closeToShape",
-                                                  { itemId },
-                                                );
-                                                if (r.ok) selectFrame(r.value);
-                                              },
-                                            }
-                                          : {})}
-                                        onZOrder={(dir) => {
-                                          const cmdId = {
-                                            bringForward: "weave.item.bringForward",
-                                            sendBackward: "weave.item.sendBackward",
-                                            bringToFront: "weave.item.bringToFront",
-                                            sendToBack: "weave.item.sendToBack",
-                                          }[dir];
-                                          editor.exec(cmdId, { itemId });
-                                        }}
-                                        reparentTree={reparentTree}
-                                        onReparent={handleReparent}
-                                        onClipboard={(verb) =>
-                                          dispatchEditorCommand(
-                                            `weave.clipboard.${
-                                              verb === "pasteSpecial" ? "pasteSpecial" : verb
-                                            }`,
-                                            { editor },
-                                            commandContext,
-                                          )
-                                        }
-                                        clipboardHasItems={clipboardCommands.hasItems}
-                                        {...(ctx !== undefined
-                                          ? {
-                                              layers: ctx.layers,
-                                              onPickLayer: ctx.onPickLayer,
-                                            }
-                                          : {})}
-                                      >
-                                        {children}
-                                      </FrameContextMenu>
-                                    );
-                                  };
+  const renderFrameMenu = (
+    itemId: string,
+    children: ReactNodeAlias,
+    ctx?: FrameMenuContext,
+  ): ReactNodeAlias => {
+    // WI-039 — selection-aware reparent. The
+    // gesture moves either the right-clicked
+    // frame OR the multi-selection it belongs
+    // to; cycle-blocked rows are dimmed.
+    const movedIds: ReadonlyArray<string> =
+      selectedIds.has(itemId) && selectedIds.size > 1 ? [...selectedIds] : [itemId];
+    const reparentTree = buildFrameTree(docInAgocraft, movedIds);
+    const handleReparent = (targetPickerId: string) => {
+      const newParentId = resolvePickerTargetId(docInAgocraft, targetPickerId);
+      editor.exec("weave.item.reparent", {
+        entries: movedIds.map((id) => ({
+          itemId: id,
+          newParentId,
+        })),
+        // Real design size → rotation-aware reparent
+        // stays correct across rotated, non-square ancestors.
+        designWidth: design.width,
+        designHeight: design.height,
+      });
+    };
+    // WI-065 / DR-031 — shape ↔ line conversion. Gate each
+    // row on the live item's convertibility (core decides).
+    const cvItem = findItemDeep(docInAgocraft, itemId) as SerializedItem | undefined;
+    const canBreak = cvItem !== undefined && canBreakShapeToLine(cvItem);
+    const canClose = cvItem !== undefined && canCloseLineToShape(cvItem);
+    return (
+      <FrameContextMenu
+        itemId={itemId}
+        onDelete={() => {
+          removeItem(itemId);
+          bumpHistoryTick();
+        }}
+        {...(canBreak
+          ? {
+              onBreakToLine: () => {
+                const r = editor.exec<unknown, string>("weave.shape.breakToLine", { itemId });
+                if (r.ok) selectFrame(r.value);
+              },
+            }
+          : {})}
+        {...(canClose
+          ? {
+              onCloseToShape: () => {
+                const r = editor.exec<unknown, string>("weave.line.closeToShape", { itemId });
+                if (r.ok) selectFrame(r.value);
+              },
+            }
+          : {})}
+        onZOrder={(dir) => {
+          const cmdId = {
+            bringForward: "weave.item.bringForward",
+            sendBackward: "weave.item.sendBackward",
+            bringToFront: "weave.item.bringToFront",
+            sendToBack: "weave.item.sendToBack",
+          }[dir];
+          editor.exec(cmdId, { itemId });
+        }}
+        reparentTree={reparentTree}
+        onReparent={handleReparent}
+        onClipboard={(verb) =>
+          dispatchEditorCommand(
+            `weave.clipboard.${verb === "pasteSpecial" ? "pasteSpecial" : verb}`,
+            { editor },
+            commandContext,
+          )
+        }
+        clipboardHasItems={clipboardCommands.hasItems}
+        {...(ctx !== undefined
+          ? {
+              layers: ctx.layers,
+              onPickLayer: ctx.onPickLayer,
+            }
+          : {})}
+      >
+        {children}
+      </FrameContextMenu>
+    );
+  };
 
   return (
     <EditorVMProvider vm={vm}>
@@ -2022,207 +2008,40 @@ function DesignPageBody() {
                                 />
                               </div>
 
-                              {/* WI-019 Phase 3 (rev2) — Peek mode capture layer + overlay.
-                  The capture div sits z-above FrameStage and is mounted
-                  ONLY while peek is active, intercepting pointer events
-                  to (a) report cursor → controller, (b) handle drag-to-
-                  reorder on lifted frames. PeekOverlay is responsible for
-                  the CSS lift effect on the *real* frame DOM via data
-                  attributes (no transparent placeholder boxes).            */}
-                              {peek.isActive ? (
-                                <div
-                                  data-testid="peek-capture"
-                                  style={{
-                                    position: "absolute",
-                                    inset: 0,
-                                    zIndex: 30,
-                                    cursor: peekDragRef.current ? "grabbing" : "crosshair",
-                                  }}
-                                  onPointerDown={(e) => {
-                                    if (e.button !== 0) return;
-                                    const p = screenToDesign(e.clientX, e.clientY);
-                                    if (!p) return;
-                                    const id = hitTestLifted(p.x, p.y);
-                                    if (!id) return;
-                                    const liftSet = peek.controller.liftSet.get();
-                                    if (!liftSet) return;
-                                    const startRank = liftSet.orderedIds.indexOf(id);
-                                    if (startRank < 0) return;
-                                    if (!peek.controller.startDrag(id)) return;
-                                    peekDragRef.current = {
-                                      itemId: id,
-                                      startClientY: e.clientY,
-                                      startRank,
-                                      pointerId: e.pointerId,
-                                    };
-                                    setPeekDraggingId(id);
-                                    // Mark the dragging frame for the stronger lifted style.
-                                    const el = canvasHostRef.current?.querySelector(
-                                      `[data-frame-id="${id}"]`,
-                                    );
-                                    if (el instanceof HTMLElement)
-                                      el.setAttribute("data-peek-dragging", "");
-                                    try {
-                                      e.currentTarget.setPointerCapture(e.pointerId);
-                                    } catch {
-                                      /* setPointerCapture may throw on detached pointers — safe ignore. */
-                                    }
-                                  }}
-                                  onPointerMove={(e) => {
-                                    const p = screenToDesign(e.clientX, e.clientY);
-                                    if (p) {
-                                      peek.setCursor(p.x, p.y, true);
-                                      setPeekCursor({
-                                        x: e.clientX - (hostRect?.left ?? 0),
-                                        y: e.clientY - (hostRect?.top ?? 0),
-                                      });
-                                    }
-                                    // Drag preview — vertical pointer delta → rank delta.
-                                    const drag = peekDragRef.current;
-                                    if (drag) {
-                                      const liftSet = peek.controller.liftSet.get();
-                                      if (!liftSet) return;
-                                      const dy = drag.startClientY - e.clientY;
-                                      const STEP_PX = 28;
-                                      const deltaRank = Math.round(dy / STEP_PX);
-                                      const max = liftSet.orderedIds.length - 1;
-                                      const newRank = Math.max(
-                                        0,
-                                        Math.min(max, drag.startRank + deltaRank),
-                                      );
-                                      peek.controller.updateDrag(newRank);
-                                    }
-                                  }}
-                                  onPointerUp={(e) => {
-                                    const drag = peekDragRef.current;
-                                    if (drag) {
-                                      peek.controller.endDrag(true);
-                                      const el = canvasHostRef.current?.querySelector(
-                                        `[data-frame-id="${drag.itemId}"]`,
-                                      );
-                                      if (el instanceof HTMLElement)
-                                        el.removeAttribute("data-peek-dragging");
-                                      peekDragRef.current = null;
-                                      setPeekDraggingId(null);
-                                      try {
-                                        e.currentTarget.releasePointerCapture(e.pointerId);
-                                      } catch {
-                                        /* safe ignore */
-                                      }
-                                    }
-                                  }}
-                                  onPointerCancel={() => {
-                                    const drag = peekDragRef.current;
-                                    if (drag) {
-                                      peek.controller.endDrag(false);
-                                      const el = canvasHostRef.current?.querySelector(
-                                        `[data-frame-id="${drag.itemId}"]`,
-                                      );
-                                      if (el instanceof HTMLElement)
-                                        el.removeAttribute("data-peek-dragging");
-                                      peekDragRef.current = null;
-                                      setPeekDraggingId(null);
-                                    }
-                                  }}
-                                  onPointerLeave={() => {
-                                    peek.setCursor(-9999, -9999, false);
-                                    setPeekCursor(null);
-                                  }}
-                                >
-                                  <PeekOverlay
-                                    controller={peek.controller}
-                                    canvasHost={canvasHostEl}
-                                    cursor={peekCursor}
-                                    colorFor={swatchFor}
-                                    draggingId={peekDraggingId}
-                                  />
-                                </div>
-                              ) : null}
+                              {/* DR-027 / WI-071 — peek interaction surface (capture + overlay + inspector). */}
+                              <PeekCaptureLayer
+                                peek={peek}
+                                screenToDesign={screenToDesign}
+                                hitTestLifted={hitTestLifted}
+                                canvasHostRef={canvasHostRef}
+                                canvasHostEl={canvasHostEl}
+                                hostRect={hostRect}
+                                peekDragRef={peekDragRef}
+                                peekCursor={peekCursor}
+                                setPeekCursor={setPeekCursor}
+                                peekDraggingId={peekDraggingId}
+                                setPeekDraggingId={setPeekDraggingId}
+                                colorFor={swatchFor}
+                                labelFor={labelFor}
+                              />
 
-                              {peek.isActive ? (
-                                <PointStackInspector
-                                  controller={peek.controller}
-                                  labelFor={labelFor}
-                                  swatchFor={swatchFor}
-                                />
-                              ) : null}
-
-                              {/* WI-020 / WI-021 / Phase 14 — ContextualToolbar mounts
-                  centered above the canvas. Selection-only:
-                    • selectedIds.size === 0 → bar unmounted.
-                      design.background editor lives in the header's right
-                      cluster (file-level chrome, always discoverable).
-                    • selectedIds.size ≥ 1   → selection variant resolved
-                      from the toolbar section registry per kind. */}
-                              <SelectionChromeGate>
-                                {typeof document !== "undefined" &&
-                                  createPortal(
-                                    <div
-                                      style={{
-                                        // Portal'd to document.body for the same
-                                        // reason as the header / ThumbnailPanel —
-                                        // the outer `fixed inset-0` wrapper creates
-                                        // a stacking context that traps any z-index
-                                        // below body-portal'd SelectionLayer (40) /
-                                        // MarqueeSelection (42) / RubberBand (45).
-                                        // Hoisting to body lets the toolbar share
-                                        // the header's z-tier and sit above
-                                        // selection chrome.
-                                        position: "fixed",
-                                        // 48 (h-12 header) + 12 gap = 60 from top.
-                                        top: 60,
-                                        left: "50%",
-                                        transform: "translateX(-50%)",
-                                        zIndex: 46,
-                                        pointerEvents: "auto",
-                                      }}
-                                    >
-                                      <ContextualToolbar
-                                        editor={editor}
-                                        document={docInAgocraft}
-                                        selectedItems={(() => {
-                                          // Pre-existing bug fix — earlier this loop
-                                          // only iterated `root.children`, so nested
-                                          // items (anything below the first level)
-                                          // never surfaced in `selectedItems` and
-                                          // the toolbar simply didn't render for
-                                          // them. Walk the full tree by resolving
-                                          // each id via findItemDeep so any item in
-                                          // the selection — root or nested — feeds
-                                          // its kind + attrs into the toolbar.
-                                          const out: Array<{
-                                            id: string;
-                                            kind: string;
-                                            attrs: Readonly<Record<string, unknown>>;
-                                          }> = [];
-                                          for (const id of selectedIds) {
-                                            const it = findItemDeep(docInAgocraft, id);
-                                            if (it === undefined) continue;
-                                            out.push({
-                                              id: String(it.id),
-                                              kind: it.kind,
-                                              attrs: it.attrs,
-                                            });
-                                          }
-                                          return out;
-                                        })()}
-                                        onEditMediaSrc={(mediaKind) => {
-                                          setPendingMedia({ action: "edit", kind: mediaKind });
-                                        }}
-                                        onEditShapeFill={(mediaKind, current) => {
-                                          if (!selectedFrameId) return;
-                                          setPendingMedia({
-                                            action: "fill",
-                                            kind: mediaKind,
-                                            itemId: selectedFrameId,
-                                            initialSrc: current,
-                                          });
-                                        }}
-                                      />
-                                    </div>,
-                                    document.body,
-                                  )}
-                              </SelectionChromeGate>
+                              <SelectionToolbarOverlay
+                                editor={editor}
+                                document={docInAgocraft}
+                                selectedIds={selectedIds}
+                                onEditMediaSrc={(mediaKind) =>
+                                  setPendingMedia({ action: "edit", kind: mediaKind })
+                                }
+                                onEditShapeFill={(mediaKind, current) => {
+                                  if (!selectedFrameId) return;
+                                  setPendingMedia({
+                                    action: "fill",
+                                    kind: mediaKind,
+                                    itemId: selectedFrameId,
+                                    initialSrc: current,
+                                  });
+                                }}
+                              />
 
                               {/* WI-028 Phase 4 — remote cursors overlay. `project` maps the
                   presence-broadcast design-space coords to host-relative
@@ -2684,18 +2503,6 @@ function MultiSelectionOverlay({
       })}
     </div>
   );
-}
-
-/** WI-040 — chrome visibility gate for affordances that should track
- *  `useSelectionChromeVisible` (idle / frame-manipulating / text-editing,
- *  with peek hidden). Lives as a separate component so the hook reads
- *  the InteractionMode + PeekActive contexts that wrap the DesignPage
- *  return tree — DesignPage's main body sits OUTSIDE those providers,
- *  so calling the hook there would return the no-op fallback. */
-function SelectionChromeGate({ children }: { readonly children: ReactNodeAlias }): ReactNodeAlias {
-  const visible = useSelectionChromeVisible();
-  if (!visible) return null;
-  return <>{children}</>;
 }
 
 /** WI-040 — strictly idle gate for short-lived affordances that should
