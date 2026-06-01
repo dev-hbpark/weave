@@ -61,8 +61,13 @@ DR-029의 D1–D5 결정을 구현한다.
 **image-crop.spec.ts 4/4 브라우저 통과**(커맨드 crop+rotation·Cmd+Z/redo·가드·UI straighten 커밋·
 크롭 중 핫키 게이트).
 
-⏭ 남은 폴리시: **Step 4** — 인라인 핸들을 `SelectionLayer` 오버레이로 이관(줌 무관 상수 크기).
-현재 핸들은 design 좌표 인라인이라 캔버스 줌에 따라 크기가 변함(기능엔 영향 없음).
+**Step 4 결과 (확정):** 인라인 크롭 핸들/윈도우 드래그는 **불가** — 디자인 평면의 capture-phase
+제스처 컨트롤러(marquee / rubber-band / frame-move / handle-dispatcher)가 pointerdown을
+가로채 React 핸들러까지 닿지 않음(브라우저 디버그로 확인). 이는 **DR-029 D4가 SelectionLayer
+(body-portal) 위임을 택한 바로 그 이유**. 따라서 v1 UI는 **straighten(회전) + 읽기전용 크롭
+윈도우 표시**로 확정하고, **인터랙티브 윈도우 드래그/리사이즈는 SelectionLayer 위임으로 후속**.
+윈도우는 `weave.image.setCrop`(툴바/에이전트)로 설정. (부수 검증분: 크롭 중 셀렉션 크롬 게이트는
+유지 — 크롭 뷰 위에 리사이즈 핸들이 안 뜨도록.)
 
 ## Build steps
 

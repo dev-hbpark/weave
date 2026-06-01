@@ -60,6 +60,16 @@ agocraft에 이미 존재. 결정해야 할 것은 **인터랙션을 어디에·
      원칙 유지). `(cropRatio, rotation)`는 크롭 모드에서 함께 캡처되어 `ImageCrop` 한 객체로
      커밋 — v1은 사후 재해석하지 않고 커밋 시점 쌍을 그대로 저장.
 
+## Implementation note (2026-06-02) — D4 confirmed, window-drag UI deferred
+
+빌드 중 인라인 핸들(D4의 경량 대안)을 시도했으나, 디자인 평면의 capture-phase 제스처
+컨트롤러(marquee / rubber-band / frame-move / handle-dispatcher)가 크롭 에디터 내부의
+pointerdown을 가로채 React 핸들러에 닿지 않음(브라우저로 확인). **이는 D4가 SelectionLayer
+(body-portal) 위임을 명시한 근거를 재확인.** v1은 **straighten(회전) + 읽기전용 크롭 윈도우 +
+크롭 중 셀렉션 크롬 게이트(D5)** 로 출시하고, **인터랙티브 윈도우 드래그/리사이즈는 SelectionLayer
+위임으로 후속**(윈도우는 `weave.image.setCrop` 커맨드/에이전트로 설정 가능). 회전 렌더(cover-zoom)·
+커맨드·게이트는 e2e 4/4로 검증.
+
 ## Undo
 
 크롭 확정 = `item.attrs` Patch 1개(`cropRatio`만 교체, full ImageAttrs 재구성 —

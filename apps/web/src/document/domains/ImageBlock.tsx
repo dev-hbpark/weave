@@ -8,13 +8,14 @@
 //  • committed render — the window (x,y,w,h) is scaled to fill the frame; the
 //    content is rotated by `rotation` (DR-029 D6 straighten) with a cover-zoom so
 //    the frame never shows empty corners.
-//  • crop mode (double-click) — the full image is shown with a dim mask outside a
-//    draggable/resizable window + a straighten slider. Commit routes through
-//    `onUpdate({ cropRatio })` → weave.item.update → History (undoable).
-//    v1 NOTE: handles are inline (scale with zoom); WI-074 Step 2 migrates them to
-//    the SelectionLayer overlay for constant screen size. Offset windows combined
-//    with large rotation may expose minor edges (cover-zoom uses frame aspect) —
-//    precise pixel crop is deferred (DR-029 D1).
+//  • crop mode (double-click) — the full image is shown with a dim mask + outline
+//    marking the current crop window, plus a STRAIGHTEN slider (content rotation).
+//    Commit routes through `onUpdate({ cropRatio })` → weave.item.update → History.
+//    v1 NOTE: interactive window drag/resize is deferred (inline handles are
+//    swallowed by the design-plane gesture controllers — DR-029 D4 SelectionLayer
+//    delegation). Set the window via weave.image.setCrop (toolbar / agent). Offset
+//    windows + large rotation may expose minor edges (cover-zoom uses frame
+//    aspect) — precise pixel crop is deferred (DR-029 D1).
 
 import type { Item as AgocraftItem, FilterSpec, ShadowSpec } from "@agocraft/core";
 import {
@@ -46,7 +47,6 @@ interface CropRect {
 }
 
 const IDENTITY_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1, rotation: 0 };
-const MIN_WINDOW = 0.05;
 const MAX_STRAIGHTEN_DEG = 45;
 
 function readCrop(a: ImageAttrs): CropRect {
@@ -65,8 +65,6 @@ function readCrop(a: ImageAttrs): CropRect {
 
 const isIdentity = (c: CropRect): boolean =>
   c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1 && c.rotation === 0;
-
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 /** Cover-zoom so a θ-rotated element still covers an axis-aligned box of the
  *  given aspect (= width / height). θ = 0 → 1. */
@@ -137,38 +135,14 @@ function ImageContent(props: {
   );
 }
 
-// ── crop-mode editor ───────────────────────────────────────────────────────
-
-type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
-const HANDLES: ReadonlyArray<{ id: HandleId; cx: number; cy: number }> = [
-  { id: "nw", cx: 0, cy: 0 },
-  { id: "n", cx: 0.5, cy: 0 },
-  { id: "ne", cx: 1, cy: 0 },
-  { id: "e", cx: 1, cy: 0.5 },
-  { id: "se", cx: 1, cy: 1 },
-  { id: "s", cx: 0.5, cy: 1 },
-  { id: "sw", cx: 0, cy: 1 },
-  { id: "w", cx: 0, cy: 0.5 },
-];
-
-function resizeWindow(c: CropRect, id: HandleId, dx: number, dy: number): CropRect {
-  let l = c.x;
-  let t = c.y;
-  let r = c.x + c.w;
-  let b = c.y + c.h;
-  if (id.includes("w")) l = clamp(l + dx, 0, r - MIN_WINDOW);
-  if (id.includes("e")) r = clamp(r + dx, l + MIN_WINDOW, 1);
-  if (id.includes("n")) t = clamp(t + dy, 0, b - MIN_WINDOW);
-  if (id.includes("s")) b = clamp(b + dy, t + MIN_WINDOW, 1);
-  return { ...c, x: l, y: t, w: r - l, h: b - t };
-}
-
-interface DragState {
-  readonly mode: "move" | HandleId;
-  readonly startX: number;
-  readonly startY: number;
-  readonly start: CropRect;
-}
+// ── crop-mode editor (WI-074) ────────────────────────────────────────────────
+//
+// v1 UI scope: STRAIGHTEN (content rotation, DR-029 D6) + a read-only view of the
+// current crop window (dim mask + outline). Interactive window drag/resize is
+// deferred: inline handles are swallowed by the design-plane's capture-phase
+// gesture controllers (marquee / rubber-band / frame-move / handle dispatcher) —
+// exactly the reason DR-029 D4 specifies SelectionLayer (body-portal) delegation.
+// Until that lands, set the window via `weave.image.setCrop` (toolbar / agent).
 
 function CropEditor(props: {
   readonly src: string;
@@ -182,8 +156,6 @@ function CropEditor(props: {
 }): JSX.Element {
   const { src, alt, objectFit, filterCss, initial, aspect, onCommit, onCancel } = props;
   const [draft, setDraft] = useState<CropRect>(initial);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<DragState | null>(null);
   const draftRef = useRef<CropRect>(draft);
   draftRef.current = draft;
 
@@ -202,51 +174,10 @@ function CropEditor(props: {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onCancel, onCommit]);
 
-  const beginDrag = useCallback(
-    (mode: DragState["mode"]) => (e: ReactPointerEvent<HTMLDivElement>) => {
-      e.stopPropagation();
-      e.preventDefault();
-      (e.currentTarget as Element).setPointerCapture(e.pointerId);
-      dragRef.current = {
-        mode,
-        startX: e.clientX,
-        startY: e.clientY,
-        start: draftRef.current,
-      };
-    },
-    [],
-  );
-
-  const onMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    const box = boxRef.current;
-    if (drag === null || box === null) return;
-    const r = box.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return;
-    const dx = (e.clientX - drag.startX) / r.width;
-    const dy = (e.clientY - drag.startY) / r.height;
-    if (drag.mode === "move") {
-      const s = drag.start;
-      setDraft({
-        ...s,
-        x: clamp(s.x + dx, 0, 1 - s.w),
-        y: clamp(s.y + dy, 0, 1 - s.h),
-      });
-    } else {
-      setDraft(resizeWindow(drag.start, drag.mode, dx, dy));
-    }
-  }, []);
-
-  const endDrag = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    if (dragRef.current === null) return;
-    (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
-    dragRef.current = null;
-  }, []);
-
   const stop = (e: ReactPointerEvent<HTMLDivElement>) => e.stopPropagation();
   const deg = Math.round((draft.rotation * 180) / Math.PI);
 
-  // dim mask = four rects around the window (top / bottom / left / right).
+  // dim mask = four rects around the current window (read-only view).
   const win = draft;
   const dim = "rgba(0,0,0,0.45)";
   const maskRects: ReadonlyArray<CSSProperties> = [
@@ -263,7 +194,6 @@ function CropEditor(props: {
 
   return (
     <div
-      ref={boxRef}
       data-testid="image-crop-editor"
       className="absolute inset-0"
       onPointerDown={stop}
@@ -295,7 +225,7 @@ function CropEditor(props: {
           style={{ ...s, background: dim, pointerEvents: "none" }}
         />
       ))}
-      {/* crop window — move by dragging the interior */}
+      {/* crop window — read-only outline of the current crop region */}
       <div
         data-testid="image-crop-window"
         className="absolute"
@@ -306,39 +236,13 @@ function CropEditor(props: {
           height: `${win.h * 100}%`,
           outline: "1px solid rgba(255,255,255,0.95)",
           boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
-          cursor: "move",
+          pointerEvents: "none",
         }}
-        onPointerDown={beginDrag("move")}
-        onPointerMove={onMove}
-        onPointerUp={endDrag}
-      >
-        {HANDLES.map((hnd) => (
-          <div
-            key={hnd.id}
-            data-testid={`image-crop-handle-${hnd.id}`}
-            className="absolute"
-            style={{
-              left: `${hnd.cx * 100}%`,
-              top: `${hnd.cy * 100}%`,
-              width: 10,
-              height: 10,
-              marginLeft: -5,
-              marginTop: -5,
-              background: "#fff",
-              border: "1px solid rgba(0,0,0,0.5)",
-              borderRadius: 2,
-              cursor: `${hnd.id}-resize`,
-            }}
-            onPointerDown={beginDrag(hnd.id)}
-            onPointerMove={onMove}
-            onPointerUp={endDrag}
-          />
-        ))}
-      </div>
+      />
       {/* controls — straighten + done / cancel */}
       <div
         className="absolute flex items-center gap-2 rounded-md bg-black/70 px-2 py-1"
-        style={{ left: "50%", bottom: 6, transform: "translateX(-50%)", pointerEvents: "auto" }}
+        style={{ left: "50%", top: 6, transform: "translateX(-50%)", pointerEvents: "auto" }}
         onPointerDown={stop}
       >
         <input

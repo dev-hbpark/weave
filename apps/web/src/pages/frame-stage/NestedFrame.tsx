@@ -35,6 +35,7 @@ import {
   SelectionVmContext,
   selectFromHit,
 } from "../../document/interactions/selection-context.js";
+import { useIsCropping } from "../../document/interactions/cropping-state.js";
 import {
   HIT_THRESHOLD_PX,
   TotalScaleContext,
@@ -168,7 +169,11 @@ export function NestedFrame({
   // open (context-menu), Space-pan (hand), or mid-rubber-band; stays on
   // through `idle`, `frame-manipulating` (handles glued through drag),
   // and `text-editing` (frame still resizable while typing).
-  const chromeVisible = useSelectionChromeVisible();
+  // WI-074 — suppress selection chrome (resize/rotate handle buttons) while an
+  // image crop is open, so its body-portal handles don't cover the inline crop
+  // handles / intercept their pointer events.
+  const cropping = useIsCropping();
+  const chromeVisible = useSelectionChromeVisible() && !cropping;
   // DR-018 — selection chrome registry. Cross-cutting providers (plugins,
   // AI selection-actions, future domain extensions) register here; the
   // NestedFrame's `<SelectionLayer>` resolver merges their specs with

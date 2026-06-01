@@ -15,9 +15,7 @@ import { clearAllDesigns, prepareDesign } from "./helpers.js";
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
-type Crop =
-  | { x: number; y: number; w: number; h: number; rotation?: number }
-  | undefined;
+type Crop = { x: number; y: number; w: number; h: number; rotation?: number } | undefined;
 
 async function addImage(page: Page): Promise<string> {
   const id = await page.evaluate((src) => {
@@ -93,7 +91,9 @@ test("WI-074 — setCrop sets the window + rotation; Cmd+Z reverts, Cmd+Shift+Z 
   expect(
     await setCrop(page, { itemId: id, crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 }, rotation: 0.2 }),
   ).toBe(true);
-  await expect.poll(() => readCrop(page, id)).toEqual({ x: 0.2, y: 0.2, w: 0.6, h: 0.6, rotation: 0.2 });
+  await expect
+    .poll(() => readCrop(page, id))
+    .toEqual({ x: 0.2, y: 0.2, w: 0.6, h: 0.6, rotation: 0.2 });
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => readCrop(page, id)).toBeUndefined();
@@ -155,6 +155,12 @@ test("WI-074 — UI: double-click enters crop mode; straighten + 완료 commits 
   await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
   expect((await readCrop(page, id))?.rotation ?? 0).toBeCloseTo((20 * Math.PI) / 180, 2);
 });
+
+// NOTE (WI-074 v1): interactive crop-window drag/resize in the UI is deferred —
+// inline handles are swallowed by the design-plane's capture-phase gesture
+// controllers (DR-029 D4 SelectionLayer delegation). The window is set via the
+// command path (covered above); the UI covers straighten (rotation) + read-only
+// window view. A handle-drag e2e returns when SelectionLayer delegation lands.
 
 test("WI-074 — crop mode suspends editor hotkeys; restored after exit (Step 5 gate)", async ({
   page,
