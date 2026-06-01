@@ -156,11 +156,32 @@ test("WI-074 — UI: double-click enters crop mode; straighten + 완료 commits 
   expect((await readCrop(page, id))?.rotation ?? 0).toBeCloseTo((20 * Math.PI) / 180, 2);
 });
 
-// NOTE (WI-074 v1): interactive crop-window drag/resize in the UI is deferred —
-// inline handles are swallowed by the design-plane's capture-phase gesture
-// controllers (DR-029 D4 SelectionLayer delegation). The window is set via the
-// command path (covered above); the UI covers straighten (rotation) + read-only
-// window view. A handle-drag e2e returns when SelectionLayer delegation lands.
+test("WI-074 — dragging the SE crop handle resizes the window", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-handle" });
+  const id = await addImage(page);
+
+  await page.locator(`[data-frame-id="${id}"]`).dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+
+  const win = page.getByTestId("image-crop-window");
+  const box = await page.getByTestId("image-crop-handle-se").boundingBox();
+  if (box === null) throw new Error("no SE handle box");
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  // Real mouse drag — a document capture-phase listener starts the gesture from
+  // the handle press; window-level move/up track the rest.
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx - 60, cy - 60, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => win.getAttribute("data-crop-w")).not.toBe("1.0000");
+
+  await page.getByTestId("image-crop-apply").click();
+  const crop = await readCrop(page, id);
+  expect(crop).toBeDefined();
+  expect(crop?.w ?? 1).toBeLessThan(0.99);
+  expect(crop?.h ?? 1).toBeLessThan(0.99);
+});
 
 test("WI-074 — crop mode suspends editor hotkeys; restored after exit (Step 5 gate)", async ({
   page,

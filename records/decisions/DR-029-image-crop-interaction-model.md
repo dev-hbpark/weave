@@ -60,15 +60,21 @@ agocraft에 이미 존재. 결정해야 할 것은 **인터랙션을 어디에·
      원칙 유지). `(cropRatio, rotation)`는 크롭 모드에서 함께 캡처되어 `ImageCrop` 한 객체로
      커밋 — v1은 사후 재해석하지 않고 커밋 시점 쌍을 그대로 저장.
 
-## Implementation note (2026-06-02) — D4 confirmed, window-drag UI deferred
+## Implementation note (2026-06-02) — D4 해결: document-capture 우회 (full portal 불요)
 
-빌드 중 인라인 핸들(D4의 경량 대안)을 시도했으나, 디자인 평면의 capture-phase 제스처
-컨트롤러(marquee / rubber-band / frame-move / handle-dispatcher)가 크롭 에디터 내부의
-pointerdown을 가로채 React 핸들러에 닿지 않음(브라우저로 확인). **이는 D4가 SelectionLayer
-(body-portal) 위임을 명시한 근거를 재확인.** v1은 **straighten(회전) + 읽기전용 크롭 윈도우 +
-크롭 중 셀렉션 크롬 게이트(D5)** 로 출시하고, **인터랙티브 윈도우 드래그/리사이즈는 SelectionLayer
-위임으로 후속**(윈도우는 `weave.image.setCrop` 커맨드/에이전트로 설정 가능). 회전 렌더(cover-zoom)·
-커맨드·게이트는 e2e 4/4로 검증.
+빌드 중 인라인 핸들의 React `onPointerDown`이 발화하지 않음을 브라우저 디버그로 확인 — 디자인
+평면의 capture-phase 경로에서 pointerdown이 React 루트보다 먼저 처리/차단됨. **D4가 SelectionLayer
+(body-portal) 위임을 명시한 근거가 이것.** 다만 full body-portal 재구현 대신 **더 가벼운 해법으로
+해결**:
+- 크롭 에디터가 **`document` capture-phase pointerdown 리스너**로 `[data-crop-handle]` 프레스를
+  직접 감지해 드래그를 시작하고 `stopPropagation()` (React onPointerDown 우회 + 디자인 평면
+  컨트롤러 차단). 이동/리사이즈는 window-level pointermove/up로 추적.
+- 핸들은 **`TotalScaleContext`로 카운터스케일**(줌 무관 ~10px). **크롭 중 셀렉션 크롬 게이트(D5)**
+  로 셀렉션 핸들이 경쟁하지 않음.
+
+결과: **straighten(회전) + 윈도우 이동(move) + 모서리 리사이즈**가 UI에서 동작. e2e **5/5** 통과
+(커맨드 crop+rotation·Cmd+Z/redo·가드·UI straighten·**핸들 리사이즈**·핫키 게이트). full
+SelectionLayer 위임은 불필요해짐(향후 다중 아이템/회전된 윈도우 정밀화가 필요하면 재검토).
 
 ## Undo
 
