@@ -1,6 +1,5 @@
 import {
   type Document as AgocraftDocument,
-  type Item as AgocraftItem,
   canBreakShapeToLine,
   canCloseLineToShape,
   createAutoFlexSpec,
@@ -12,7 +11,7 @@ import {
   type ShapeSubKind,
   trackFr,
 } from "@agocraft/core";
-import { EditorProvider, useEditorVM } from "@agocraft/editor/react";
+import { EditorProvider } from "@agocraft/editor/react";
 import {
   Button,
   ColorPicker,
@@ -112,13 +111,11 @@ import {
   absoluteFrameBox,
   findItemDeep,
   findParentAndIndex,
-  findTrailDeep,
   isDomainItem,
 } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { PasteSpecialDialog } from "../document/clipboard/PasteSpecialDialog.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
-import { useIsTextEditing } from "../document/clipboard/use-is-text-editing.js";
 import {
   basisFromFrameSample,
   basisFromLetterbox,
@@ -188,7 +185,6 @@ import {
   setMultiAligner,
   setMultiDeleter,
   setMultiLayoutArranger,
-  setPaletteOpener,
   setSelectionNavigator,
   setZOrderDispatcher,
   useEditorHotkeys,
@@ -200,35 +196,15 @@ import { registerZOrderAdapters } from "../document/zorder/register.js";
 import { AkuAssistant } from "../features/aku/AkuAssistant.js";
 import { FigmaSelectionLaunchBanner } from "../launch/FigmaSelectionLaunchBanner.js";
 import { TextV1LaunchBanner } from "../launch/TextV1LaunchBanner.js";
+import { useDesignCommandHost } from "./design/hooks/use-command-host.js";
+import { useDesignSave } from "./design/hooks/use-design-save.js";
+import { useFrameFocus } from "./design/hooks/use-frame-focus.js";
+import { useHandTool } from "./design/hooks/use-hand-tool.js";
 import { FrameStage } from "./FrameStage.js";
 import { cameraFitBox } from "./frame-camera-bridge.js";
 import { SlidePresetPicker } from "./new-design/SlidePresetPicker.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
 
-/** WI-039 — z-order focus gate set computation.
- *
- *  Walks the trail from doc root to the focused frame and collects every
- *  frame id that should be visually + interactively suppressed for the
- *  given mode. Returns the empty set when the focused frame doesn't
- *  exist (it was deleted while focused — the host's clear-on-removal
- *  effect tidies up shortly after).
- *
- *  `mode = "above"` (stage 1): at every ancestor, take only the children
- *  whose paint order is AFTER the trail element. This yields true z-order
- *  above across nested levels — including later siblings of any ancestor,
- *  not just same-parent siblings of the focused frame.
- *
- *  `mode = "outside"` (stage 2): at every ancestor, take every child
- *  except the trail element. Yields the entire complement of the focused
- *  frame's subtree (siblings + their subtrees + cousins + their subtrees,
- *  recursively). Ancestors themselves stay untouched so the DOM chain
- *  that mounts the focused frame still paints and receives events.
- *
- *  Descendants of each collected sibling are added explicitly. Opacity
- *  inherits through CSS, but `pointer-events` is re-applied per frame
- *  wrapper by FrameStage's hit gate, so a parent-only set would let
- *  descendants stay interactive. Including every id in the set lets the
- *  per-frame gate enforce the block uniformly. */
 /** Seed for the "자유선" (freeform line) add — an OPEN `poly` (renders as an
  *  SVG <polyline>) that the user reshapes via vertex handles. Distinct from
  *  the closed-by-default "자유 다각형" (`poly`, closed:true → filled polygon). */
@@ -275,41 +251,6 @@ const LINE_CURVE_FREE: LineSeed = {
   ],
   smooth: true,
 };
-
-function collectFocusGateIds(
-  doc: AgocraftDocument,
-  focusedId: string,
-  mode: "above" | "outside",
-): ReadonlySet<string> {
-  const trail = findTrailDeep(doc, focusedId);
-  if (trail === undefined) return new Set<string>();
-  // trail = [root.child_in_path, ..., focused]; focused itself sits at
-  // trail[trail.length - 1]. Ancestors that own a child in the trail are:
-  // root, trail[0], trail[1], ..., trail[trail.length - 2].
-  const out = new Set<string>();
-  const addSubtree = (item: AgocraftItem): void => {
-    out.add(String(item.id));
-    for (const c of item.children) addSubtree(c);
-  };
-  const collectLevel = (parent: AgocraftItem, trailChild: AgocraftItem): void => {
-    const idx = parent.children.findIndex((c) => String(c.id) === String(trailChild.id));
-    if (idx < 0) return;
-    const start = mode === "above" ? idx + 1 : 0;
-    for (let i = start; i < parent.children.length; i += 1) {
-      if (mode === "outside" && i === idx) continue;
-      const sibling = parent.children[i];
-      if (sibling !== undefined) addSubtree(sibling);
-    }
-  };
-  const firstTrail = trail[0];
-  if (firstTrail !== undefined) collectLevel(doc.root, firstTrail);
-  for (let k = 0; k < trail.length - 1; k += 1) {
-    const ancestor = trail[k];
-    const next = trail[k + 1];
-    if (ancestor !== undefined && next !== undefined) collectLevel(ancestor, next);
-  }
-  return out;
-}
 
 /** Mounts the single UnifiedTooltip surface and disables it whenever the
  *  editor's InteractionMode is not in a tooltip-friendly state (rubber-
@@ -1349,71 +1290,17 @@ function DesignPageBody() {
   // opens this dialog instead of immediately inserting a blank slide.
   const [slidePickerOpen, setSlidePickerOpen] = useState(false);
 
-  // DR-design-017 — manual cloud save. The ChangeStream debounced sink in
-  // useWeaveEditor already mirrors every patch to the cloud via
-  // `persistNow`, so this button is a *force-now* affordance: the user
-  // wants to commit a session-final state immediately (e.g. before
-  // closing the tab on a slow network where the debounce window hasn't
-  // elapsed).
-  //
-  // 4-state machine:
-  //   idle    → IconCloudUpload (default)
-  //   saving  → Spinner          (round-trip in flight)
-  //   saved   → IconCloudCheck   (success flash, 1500ms then idle)
-  //   failed  → IconCloudOff     (cloud round-trip failed, 4000ms then idle)
-  //
-  // Failure flash is longer than success because the user needs more
-  // time to register that the save did NOT land — and the button
-  // remains clickable in the `failed` state so the user can retry.
-  type SaveStatus = "idle" | "saving" | "saved" | "failed";
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const saveFlashTimerRef = useRef<number | null>(null);
-  const handleManualSave = useCallback(async () => {
-    if (saveFlashTimerRef.current !== null) {
-      window.clearTimeout(saveFlashTimerRef.current);
-      saveFlashTimerRef.current = null;
-    }
-    setSaveStatus("saving");
-    const ok = await persistNowAwaitable();
-    setSaveStatus(ok ? "saved" : "failed");
-    const flashMs = ok ? 1500 : 4000;
-    saveFlashTimerRef.current = window.setTimeout(() => {
-      setSaveStatus("idle");
-      saveFlashTimerRef.current = null;
-    }, flashMs);
-  }, [persistNowAwaitable]);
-  useEffect(() => {
-    return () => {
-      if (saveFlashTimerRef.current !== null) {
-        window.clearTimeout(saveFlashTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Offline-edit reconcile prompt. `useDesign.localConflict` flips true
-  // when the opened design has an unsynced offline copy in localStorage.
-  const [conflictBusy, setConflictBusy] = useState(false);
-  const handleConflictSave = useCallback(async () => {
-    setConflictBusy(true);
-    const { ok, newDesignId } = await resolveLocalConflict("save");
-    setConflictBusy(false);
-    if (ok && newDesignId !== undefined) {
-      // The offline edit was saved as a new design — open it so the user
-      // continues on the copy they just preserved.
-      navigate(`/design/${newDesignId}`);
-      return;
-    }
-    if (typeof window !== "undefined") {
-      window.alert(
-        "서버에 저장하지 못했습니다. 변경사항은 로컬에 보관되며 다음에 다시 저장을 시도할 수 있습니다.",
-      );
-    }
-  }, [resolveLocalConflict, navigate]);
-  const handleConflictDiscard = useCallback(async () => {
-    setConflictBusy(true);
-    await resolveLocalConflict("discard");
-    setConflictBusy(false);
-  }, [resolveLocalConflict]);
+  // DR-027 / WI-071 Phase 1 — manual cloud save 4-state machine + offline
+  // reconcile prompt extracted to a view-model hook (save cluster). The two
+  // surfaces that drive it (header button + Cmd+S via setDesignSaver) read
+  // these returns; mutation still flows through useDesign's callbacks.
+  const {
+    saveStatus,
+    handleManualSave,
+    conflictBusy,
+    handleConflictSave,
+    handleConflictDiscard,
+  } = useDesignSave({ persistNowAwaitable, resolveLocalConflict, navigate });
 
   const swatchFor = useCallback(
     (id: string) => {
@@ -1533,126 +1420,24 @@ function DesignPageBody() {
   // Mirror into the ref the add-menu callback uses (declaration-order safe).
   setSelectedFrameIdRef.current = (id) => setSelectedFrameId(id ?? undefined);
 
-  // WI-039 — z-order focus, two-stage.
-  //
-  // Each slide tile in ThumbnailPanel cycles through:
-  //   undefined        → no focus, every frame renders normally
-  //   stage 1 "dim"    → everything painted ABOVE the focused frame +
-  //                      descendants in z-order fades to
-  //                      `--focus-dim-opacity` AND ignores pointer events.
-  //                      The focused tree is unaffected and stays the only
-  //                      interactive surface ABOVE the painted z-order line.
-  //   stage 2 "isolate"→ everything OUTSIDE the focused frame tree fades
-  //                      to `--focus-isolate-opacity` (0 by default) and
-  //                      ignores pointer events. Only the focused tree
-  //                      remains visible and editable.
-  //
-  // Both stages block interaction; the difference is the *scope* (above-
-  // tree vs. outside-tree) and the *opacity depth* (dim vs. invisible).
-  //
-  // "Above" is true z-order, not just same-parent siblings: at every
-  // ancestor of the focused frame we collect its children that come AFTER
-  // the trail element, with their entire subtrees. "Outside" is the same
-  // walk but takes all non-trail children at each level.
-  //
-  // Single-toggle: at most one frame is focused at a time. Cycling a
-  // different tile resets the previous stage and restarts the new tile
-  // at stage 1 (or jumps to stage 2 via the shift-click power path).
-  // Focus is independent of selection — the user can select a frame
-  // without focusing it, and vice versa. Esc on the focus toggle button
-  // clears focus immediately (handled in ThumbnailPanel).
-  type FocusedFrame = { readonly id: string; readonly stage: 1 | 2 };
-  const [focused, setFocused] = useState<FocusedFrame | undefined>(undefined);
-  const handleCycleFocus = useCallback(
-    (id: string, opts?: { readonly skipToIsolate?: boolean }) => {
-      const skipToIsolate = opts?.skipToIsolate === true;
-      setFocused((curr) => {
-        if (curr === undefined || curr.id !== id) {
-          return { id, stage: skipToIsolate ? 2 : 1 };
-        }
-        if (curr.stage === 1) return { id, stage: 2 };
-        return undefined;
-      });
-    },
-    [],
-  );
-  const handleClearFocus = useCallback(() => setFocused(undefined), []);
-  // Double-clicking a thumbnail brings its frame full-screen — the same
-  // camera fit applied when an item is added into a frame.
-  // Double-clicking a slide's thumbnail fits that frame. Like every camera fit
-  // it uses cameraFitBox's shared FRAME_FIT_FILL (70%), so all fits land at a
-  // consistent size with breathing room (WI-065).
-  const handleZoomToFrame = useCallback(
-    (id: string) => {
-      const box = absoluteFrameBox(docInAgocraft, id, design.width, design.height);
-      if (box !== null) cameraFitBox(box);
-    },
-    [docInAgocraft, design.width, design.height],
-  );
-  // Double-clicking empty design space fits the camera to the union bounds of
-  // every top-level item, so the whole design comes into view at once — at the
-  // same FRAME_FIT_FILL size as every other fit (cameraFitBox default).
-  const handleFitAll = useCallback(() => {
-    let minX = Number.POSITIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-    let found = false;
-    for (const c of docInAgocraft.root.children) {
-      if (!isDomainItem(c)) continue;
-      const box = absoluteFrameBox(docInAgocraft, String(c.id), design.width, design.height);
-      if (box === null) continue;
-      minX = Math.min(minX, box.x);
-      minY = Math.min(minY, box.y);
-      maxX = Math.max(maxX, box.x + box.w);
-      maxY = Math.max(maxY, box.y + box.h);
-      found = true;
-    }
-    if (!found) return;
-    cameraFitBox({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
-  }, [docInAgocraft, design.width, design.height]);
-  // Walk the focused frame's trail and collect every frame id that should
-  // be gated out for the given mode. `above` only takes later siblings at
-  // each ancestor level; `outside` takes every non-trail sibling at every
-  // level. Descendants of each selected sibling are included so the per-
-  // frame hit gate in FrameStage blocks pointer events for the whole
-  // subtree (CSS opacity inherits but `pointer-events` is re-applied per
-  // wrapper, so each descendant id must appear in the set explicitly).
-  const dimmedFrameIds = useMemo<ReadonlySet<string>>(() => {
-    if (focused?.stage !== 1) return new Set<string>();
-    return collectFocusGateIds(docInAgocraft, focused.id, "above");
-  }, [focused, docInAgocraft]);
-  const isolatedFrameIds = useMemo<ReadonlySet<string>>(() => {
-    if (focused?.stage !== 2) return new Set<string>();
-    return collectFocusGateIds(docInAgocraft, focused.id, "outside");
-  }, [focused, docInAgocraft]);
-  // Tiles whose underlying frame is currently gated (dim OR isolate) get
-  // a "disabled" treatment in ThumbnailPanel: no hover pop, no click-
-  // select, no drag-to-reorder, no keyboard activate. Aligning the panel
-  // surface with the canvas surface keeps the "interaction blocked"
-  // semantic consistent — a frame that ignores edits should also ignore
-  // a click on its thumbnail. The focus toggle button on the tile stays
-  // functional so the user can still cycle focus from any tile.
-  const disabledFrameIds = useMemo<ReadonlySet<string>>(() => {
-    if (dimmedFrameIds.size === 0 && isolatedFrameIds.size === 0) {
-      return new Set<string>();
-    }
-    const merged = new Set<string>(dimmedFrameIds);
-    for (const id of isolatedFrameIds) merged.add(id);
-    return merged;
-  }, [dimmedFrameIds, isolatedFrameIds]);
-  // Stage indicator on the design root so peer surfaces (e.g.,
-  // ThumbnailPanel) can react via `[data-focus-stage]` selectors
-  // without prop drilling. `0` keeps the attribute always present so
-  // CSS rules don't have to defend against `undefined`.
-  const focusStage: 0 | 1 | 2 = focused?.stage ?? 0;
-  // Clear focus when the focused frame is removed from the document.
-  useEffect(() => {
-    if (focused === undefined) return;
-    if (findItemDeep(docInAgocraft, focused.id) === undefined) {
-      setFocused(undefined);
-    }
-  }, [focused, docInAgocraft]);
+  // DR-027 / WI-071 Phase 1 — WI-039 two-stage z-order focus (dim/isolate gate
+  // sets + camera-fit handlers) extracted to a view-model hook. Read-only over
+  // the document; focus is independent of selection.
+  const {
+    focusedId,
+    dimmedFrameIds,
+    isolatedFrameIds,
+    disabledFrameIds,
+    focusStage,
+    handleCycleFocus,
+    handleClearFocus,
+    handleZoomToFrame,
+    handleFitAll,
+  } = useFrameFocus({
+    document: docInAgocraft,
+    designWidth: design.width,
+    designHeight: design.height,
+  });
 
   // WI-033 P2 dead-code cleanup — `enteredFrameStack` consumer +
   // `setEnteredFrameId` callback removed. Phase 12 drill-in mode is
@@ -1662,9 +1447,9 @@ function DesignPageBody() {
   // and NestedFrame enteredId/onEnter prop wiring were all removed
   // in the same WI-033 P2 step.
 
-  // V / H tool toggle (Figma parity). Stored on vm.handTool so the
-  // FrameStage pan binding consults a single flag.
-  const handMode = useEditorVM(vm, (v) => v.handTool.get());
+  // DR-027 / WI-071 Phase 1 — V/H hand-tool toggle (vm.handTool single source +
+  // V/H hotkeys) extracted to a view-model hook.
+  const { handMode, setHandMode } = useHandTool({ vm, infiniteCanvas });
 
   // WI-039 — Reparent drag controller (Cmd/Ctrl + Shift + drag).
   // Reads the current document + selection on each gesture frame via
@@ -1693,33 +1478,10 @@ function DesignPageBody() {
     getSelectedIds: () => reparentSelectedIdsRef.current,
     enabled: !handMode && !peek.isActive,
   });
-  const setHandMode = useCallback(
-    (next: boolean) => {
-      vm.handTool.set(next);
-    },
-    [vm],
-  );
-
   // WI-033 P2 — Esc-exits-entered-frame effect removed alongside the
   // drill-in mode. Selection deselect on Esc remains an open question
   // (P3 follow-up); for now the standard browser focus model handles
   // Esc inside text inputs natively.
-
-  // V / H hotkeys for select / hand modes (Figma parity).
-  useEffect(() => {
-    if (!infiniteCanvas) return undefined;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target;
-      if (t instanceof HTMLElement && t.matches('input, textarea, [contenteditable="true"]')) {
-        return;
-      }
-      if (e.key === "v" || e.key === "V") setHandMode(false);
-      else if (e.key === "h" || e.key === "H") setHandMode(true);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [infiniteCanvas, setHandMode]);
 
   // canUndo / canRedo — read directly off `editor.history` with a manual
   // tick. The vm exposes derived `canUndo` / `canRedo` Signals but
@@ -1794,128 +1556,22 @@ function DesignPageBody() {
     },
   });
 
-  // WI-026 Phase 5 + WI-027 — host context for CommandMetadata.isEnabled
-  // AND CommandMetadata.visibleWhen. Each CommandButton calls
-  // registry.isEnabled(id, context); QuickActionBar calls
-  // registry.listVisible(context). Reference equality on `context`
-  // controls re-renders.
-  // WI-036 follow-up — selection-driven QuickActionBar. The bar's
-  // commands now read `selectedKind` / `selectedId` instead of
-  // `hoveredKind` / `hoveredId`. Resolve the selected frame's kind
-  // by walking the doc once per selection change.
-  //
-  // Multi-selection (size > 1) reports `selectedKind = "multi"` so
-  // visibleWhen filters surface the `multi.*` command set instead
-  // of per-kind ones. Single selection keeps the per-kind kind.
-  const selectedKind = useMemo<string | undefined>(() => {
-    if (selectedIds.size > 1) return "multi";
-    if (selectedFrameId === undefined) return undefined;
-    function walk(item: AgocraftItem): string | undefined {
-      if (String(item.id) === selectedFrameId) return item.kind;
-      for (const c of item.children) {
-        const r = walk(c);
-        if (r !== undefined) return r;
-      }
-      return undefined;
-    }
-    return walk(docInAgocraft.root);
-  }, [docInAgocraft, selectedFrameId, selectedIds]);
-
-  // WI-041 Phase 5 follow-up — reactive `isTextEditing` axis (DR-019 D7).
-  // Flips when focus enters / leaves Lexical or any input / textarea.
-  // The hotkey path already short-circuits via `isTextEditingTarget`;
-  // this React-reactive surface lets the ContextMenu's "Paste" /
-  // "Paste Special" entries grey out the same way without a separate
-  // poll loop.
-  const isTextEditing = useIsTextEditing();
-
-  // Multi-selection same-parent invariant — drives the enabledWhen
-  // for every `multi.align-*` / `multi.distribute-*` command. v1 align
-  // is same-parent-only; the QuickActionBar greys the buttons out
-  // (and hotkeys decline to fire) when the selection straddles parents
-  // so the user gets a clear "this combination isn't supported" signal
-  // instead of a wrong-coordinate-space operation.
-  const multiSameParent = useMemo(() => {
-    if (selectedIds.size < 2) return true;
-    let firstParentId: string | undefined;
-    for (const id of selectedIds) {
-      const found = findParentAndIndex(docInAgocraft, id);
-      if (found === undefined) return false;
-      const pid = String(found.parent.id);
-      if (firstParentId === undefined) firstParentId = pid;
-      else if (pid !== firstParentId) return false;
-    }
-    return true;
-  }, [selectedIds, docInAgocraft]);
-
-  const commandContext = useMemo<Readonly<Record<string, unknown>>>(
-    () => ({
+  // DR-027 / WI-071 Phase 1 — command-host derivation (commandContext +
+  // dispatchCommand), the multi-same-parent invariant, and command-palette
+  // open state extracted to a view-model hook (WI-026/027/036/041). All
+  // command execution still routes through dispatchEditorCommand.
+  const { commandContext, dispatchCommand, multiSameParent, paletteOpen, setPaletteOpen } =
+    useDesignCommandHost({
+      document: docInAgocraft,
+      selectedFrameId,
+      selectedIds,
       canUndo,
       canRedo,
-      hasSelection: selectedIds.size > 0,
-      selectionCount: selectedIds.size,
-      // WI-033 A3 — selection.* hotkeys read this to enable Enter / Tab
-      // only when a frame is currently selected (shape sub-selection is
-      // navigated through the shape's own SelectionLayer, not these
-      // hotkeys).
-      hasFrameSelection: selectedFrameId !== undefined,
-      selectedFrameId,
-      selectedKind,
-      selectedId: selectedFrameId,
-      hoveredKind: hoverContext.hoveredKind,
-      hoveredId: hoverContext.hoveredId,
-      hoveredRole: hoverContext.hoveredRole,
-      // WI-041 — paste button + hotkey enabled state. Drives the
-      // ContextMenu's "Paste" / "Paste Special" disabled-look in real
-      // time as the clipboard store fills / clears.
+      hoverContext,
       clipboardHasItems: clipboardCommands.hasItems,
-      // WI-041 Phase 5 — reactive text-edit gate so any clipboard
-      // surface that reads `commandContext` (ContextMenu Paste row,
-      // future CommandButtons) greys out while Lexical owns focus.
-      isTextEditing,
-      // multi.align-* / multi.distribute-* enabledWhen gate.
-      multiSameParent,
-    }),
-    [
-      canUndo,
-      canRedo,
-      selectedIds.size,
-      selectedFrameId,
-      selectedKind,
-      hoverContext.hoveredKind,
-      hoverContext.hoveredId,
-      hoverContext.hoveredRole,
-      clipboardCommands.hasItems,
-      isTextEditing,
-      multiSameParent,
-    ],
-  );
-
-  // WI-026 Phase 4 + WI-027 Phase D — dispatch is the host-supplied
-  // executor. It looks up the command's runtime action (held in
-  // `EDITOR_COMMANDS`) and calls it with the current editor. We pass the
-  // current hover context as a third arg so hover-scoped commands
-  // (frame.duplicate / frame.delete / image.replaceSrc) can resolve
-  // their target via the host slots registered below.
-  const dispatchCommand = useCallback(
-    (id: string) => {
-      // WI-036 follow-up — pass the full commandContext (hover +
-      // selection) so the host slot dispatcher can resolve the
-      // target from whichever paradigm the command uses. The bar
-      // commands prefer selection now; legacy hover-scoped ones
-      // (none today) would still see hoverContext keys.
-      dispatchEditorCommand(id, { editor }, commandContext);
-      bumpHistoryTick();
-    },
-    [editor, bumpHistoryTick, commandContext],
-  );
-
-  // WI-026 Phase 6 — command palette state. The hotkey "palette.open"
-  // calls into setPaletteOpener's registered opener (this effect wires
-  // it), so opening the palette goes through the same dispatch path
-  // as a header click.
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  useEffect(() => setPaletteOpener(() => setPaletteOpen(true)), []);
+      editor,
+      bumpHistoryTick,
+    });
   // Cmd+S (Mod+S) — manual save hotkey. Same callback as the header
   // IconButton, so the two surfaces stay in lockstep on `saveStatus`
   // ("저장됨" flash flips uniformly whether the user clicks or types).
@@ -3381,7 +3037,7 @@ function DesignPageBody() {
                                     setPresentationOrder={setPresentationOrderViaEditor}
                                     selectedId={selectedFrameId}
                                     onSelect={setSelectedFrameId}
-                                    focusedId={focused?.id}
+                                    focusedId={focusedId}
                                     focusStage={focusStage}
                                     disabledFrameIds={disabledFrameIds}
                                     onCycleFocus={handleCycleFocus}

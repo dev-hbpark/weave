@@ -10,7 +10,7 @@
 | Date | 2026-06-01 |
 | Trigger | 사용자 요청 — "MVVM 패턴 책임 분리 + Model→ViewModel→View 흐름 준수 + View에 비즈니스 로직 혼입 여부" 전수검사 (agocraft + weave) |
 | Status | **Active** — 후속 WI 발행 대기 (F-1 / F-2 / F-3 중심, F-4 즉시 처리 가능) |
-| Cross-references | [AUDIT-003 agocraft](../../agocraft/records/audits/AUDIT-003-2026-06-01-mvvm-layer-separation.md), [DR-017 editor-vm-context](../decisions/), [DR-023 selection-chrome-ownership](../decisions/DR-023-selection-chrome-ownership.md) |
+| Cross-references | [AUDIT-003 agocraft](../../agocraft/records/audits/AUDIT-003-2026-06-01-mvvm-layer-separation.md), [DR-017 editor-vm-context](../decisions/), [DR-023 selection-chrome-ownership](../decisions/DR-023-selection-chrome-ownership.md), [WI-063 순수 계산 추출](../work-items/WI-063-mvvm-view-domain-logic-extraction.md), [DR-027 / WI-071 오케스트레이션 분해](../decisions/DR-027-page-orchestration-decomposition.md) (인접 축 — 본 audit이 노출한 동일 god-component의 "오케스트레이션 크기/책임 경계" 부채) |
 
 ## 0. 측정 기준 (확립된 아키텍처)
 
