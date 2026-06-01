@@ -8,6 +8,9 @@
 export interface PolyVertex {
   readonly x: number;
   readonly y: number;
+  /** DR-033 — per-vertex curve type (smooth/corner). Rides through the
+   *  geometry kernel untouched; only the handle reads it for shape + toggle. */
+  readonly smooth?: boolean;
 }
 
 export interface PolyFrame {

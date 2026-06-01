@@ -146,21 +146,26 @@ test("WI-057 — midpoint handle inserts a vertex (3 → 4)", async ({ page }) =
   await expect.poll(() => countPoints(page, id)).toBe(4);
 });
 
-test("WI-057 — double-click a vertex removes it, but not below min 3", async ({ page }) => {
+test("WI-057 / DR-033 — vertex right-click menu removes a vertex, but not below min 3", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-057-remove" });
   const id = await addPoly(page);
   await setSelection(page, [id]);
 
-  // Add one so we have 4, then remove one back to 3.
+  // Add one so we have 4, then remove one back to 3 via the vertex menu
+  // (double-click now toggles point type, so remove moved to the right-click menu).
   await page.getByTestId("poly-midpoint-0").click();
   await expect.poll(() => countPoints(page, id)).toBe(4);
 
-  await page.getByTestId("poly-vertex-0").dblclick();
+  await page.getByTestId("poly-vertex-0").click({ button: "right" });
+  await page.getByTestId("vtx-remove-0").click();
   await expect.poll(() => countPoints(page, id)).toBe(3);
 
-  // A closed poly cannot drop below 3 — further removal is a no-op.
-  await page.getByTestId("poly-vertex-0").dblclick();
-  await page.waitForTimeout(100);
+  // A closed poly cannot drop below 3 — at the min the remove item is hidden.
+  await page.getByTestId("poly-vertex-0").click({ button: "right" });
+  await expect(page.getByTestId("vtx-remove-0")).toHaveCount(0);
+  await page.keyboard.press("Escape");
   expect(await countPoints(page, id)).toBe(3);
 });
 

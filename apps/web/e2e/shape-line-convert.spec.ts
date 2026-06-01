@@ -97,9 +97,7 @@ async function rootNodes(page: Page): Promise<RootNode[]> {
   });
 }
 
-test("WI-065 — right-click a poly vertex breaks it into a line; Cmd+Z restores the shape", async ({
-  page,
-}) => {
+test("WI-065 — vertex menu 'break to line'; Cmd+Z restores the shape", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-065-break" });
   const polyId = await addPoly(page);
   await setSelection(page, [polyId]);
@@ -107,8 +105,10 @@ test("WI-065 — right-click a poly vertex breaks it into a line; Cmd+Z restores
   // The poly shows a handle per vertex.
   await expect(page.getByTestId("poly-vertex-1")).toBeVisible();
 
-  // Right-click vertex 1 → break the ring there into a `line`.
+  // Right-click vertex 1 → menu → "선으로 끊기" opens the ring there into a `line`.
+  // (DR-033 — vertex right-click is now a menu; break is a menu item.)
   await page.getByTestId("poly-vertex-1").click({ button: "right" });
+  await page.getByTestId("vtx-break-1").click();
   await expect.poll(async () => (await rootNodes(page)).map((n) => n.kind)).toEqual(["line"]);
 
   const after = await rootNodes(page);

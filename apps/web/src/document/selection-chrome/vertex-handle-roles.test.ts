@@ -3,7 +3,8 @@ import type { FrameGeom } from "./poly-vertex-geometry.js";
 import {
   applyDragStrategy,
   classifyPointHandle,
-  isModifierSensitive,
+  handleBorderRadius,
+  pointTypeOf,
   resolveDragStrategy,
   resolvePointHandle,
 } from "./vertex-handle-roles.js";
@@ -23,25 +24,30 @@ describe("classifyPointHandle", () => {
   });
 });
 
-describe("role registry — polymorphic visual + strategy", () => {
-  it("vertex ignores the modifier (always free-move, always round)", () => {
+describe("role registry — drag strategy", () => {
+  it("vertex ignores the modifier (always free-move)", () => {
     const a = resolvePointHandle("vertex");
-    expect(isModifierSensitive(a)).toBe(false);
     expect(resolveDragStrategy(a, false)).toBe("free-move");
     expect(resolveDragStrategy(a, true)).toBe("free-move");
-    expect(a.visual(false)).toEqual({ borderRadius: "50%" });
-    expect(a.visual(true)).toEqual({ borderRadius: "50%" });
   });
 
-  it("endpoint switches strategy + shape on the modifier", () => {
+  it("endpoint switches strategy on the modifier (stretch ↔ free-move)", () => {
     const a = resolvePointHandle("endpoint");
-    expect(isModifierSensitive(a)).toBe(true);
-    // no modifier → stretch (square)
     expect(resolveDragStrategy(a, false)).toBe("endpoint-stretch");
-    expect(a.visual(false)).toEqual({ borderRadius: 2, mode: "stretch" });
-    // modifier held → free-move (round, like an interior vertex)
     expect(resolveDragStrategy(a, true)).toBe("free-move");
-    expect(a.visual(true)).toEqual({ borderRadius: "50%", mode: "free" });
+  });
+});
+
+describe("DR-033 — point type (shape)", () => {
+  it("pointTypeOf: own smooth wins, else global fallback", () => {
+    expect(pointTypeOf(true, false)).toBe("smooth");
+    expect(pointTypeOf(false, true)).toBe("corner");
+    expect(pointTypeOf(undefined, true)).toBe("smooth"); // fallback to global
+    expect(pointTypeOf(undefined, false)).toBe("corner");
+  });
+  it("handleBorderRadius: smooth → circle, corner → square", () => {
+    expect(handleBorderRadius("smooth")).toBe("50%");
+    expect(handleBorderRadius("corner")).toBe(2);
   });
 });
 

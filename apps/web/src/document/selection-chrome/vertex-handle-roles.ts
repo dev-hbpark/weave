@@ -80,25 +80,35 @@ export function applyDragStrategy(id: DragStrategyId, args: DragArgs): ReadonlyA
   return DRAG_STRATEGIES[id](args);
 }
 
-// ───── Role registry (visual + drag policy per role) ─────────────────────────
+// ───── Point type (DR-033) ───────────────────────────────────────────────────
 
-/** Visual the handle renders for the current modifier state. */
-export interface HandleVisual {
-  /** CSS border-radius (px number or string). Square endpoint vs round vertex. */
-  readonly borderRadius: number | string;
-  /** `data-handle-mode` value, or undefined when the role has no modes. */
-  readonly mode?: string;
+/** Per-vertex curve type — drives the handle SHAPE (smooth = round, corner =
+ *  square). Distinct from the drag ROLE (vertex/endpoint), which drives behavior. */
+export type PointType = "corner" | "smooth";
+
+/** Effective type of a vertex: its own `smooth`, else the line/poly's global
+ *  `smooth` flag (DR-033 fallback). */
+export function pointTypeOf(pointSmooth: boolean | undefined, globalSmooth: boolean): PointType {
+  return (pointSmooth ?? globalSmooth) ? "smooth" : "corner";
 }
+
+/** Handle shape by point TYPE: smooth → circle, corner → square. Uniform across
+ *  roles — the type is the persistent geometric property worth showing (this
+ *  supersedes WI-066's transient Alt-shape toggle; Alt now only changes the
+ *  endpoint DRAG behavior via `resolveDragStrategy`, not the shape). */
+export function handleBorderRadius(type: PointType): number | string {
+  return type === "smooth" ? "50%" : 2;
+}
+
+// ───── Role registry (drag policy per role) ──────────────────────────────────
 
 export interface PointHandleAdapter {
   readonly role: PointHandleRole;
   /** Drag strategy with NO modifier held. */
   readonly strategy: DragStrategyId;
   /** Strategy when the free-move modifier (Alt) is held; undefined = the role
-   *  ignores the modifier (its visual + behavior never change). */
+   *  ignores the modifier. */
   readonly modifierStrategy?: DragStrategyId;
-  /** Visual for the current modifier state. */
-  readonly visual: (modifierActive: boolean) => HandleVisual;
   /** Accessible label (1-based index). */
   readonly label: (idx: number) => string;
   /** Tooltip, or undefined. */
@@ -109,17 +119,15 @@ const POINT_HANDLE_ADAPTERS: { readonly [R in PointHandleRole]: PointHandleAdapt
   vertex: {
     role: "vertex",
     strategy: "free-move",
-    visual: () => ({ borderRadius: "50%" }),
     label: (idx) => `정점 ${idx + 1}`,
+    title: "더블클릭: 곡선/각진 점 전환 · 우클릭: 메뉴",
   },
   endpoint: {
     role: "endpoint",
     strategy: "endpoint-stretch",
     modifierStrategy: "free-move",
-    visual: (modifierActive) =>
-      modifierActive ? { borderRadius: "50%", mode: "free" } : { borderRadius: 2, mode: "stretch" },
     label: (idx) => `끝점 ${idx + 1}`,
-    title: "드래그: 선 늘이기 · Alt+드래그: 점 자유 이동",
+    title: "드래그: 선 늘이기 · Alt+드래그: 점 자유 이동 · 더블클릭: 곡선/각진 전환",
   },
 };
 
@@ -137,9 +145,4 @@ export function resolveDragStrategy(
   return modifierActive && adapter.modifierStrategy !== undefined
     ? adapter.modifierStrategy
     : adapter.strategy;
-}
-
-/** Whether the role's behavior/visual depends on the free-move modifier. */
-export function isModifierSensitive(adapter: PointHandleAdapter): boolean {
-  return adapter.modifierStrategy !== undefined;
 }

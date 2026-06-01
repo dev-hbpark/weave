@@ -851,15 +851,22 @@ function DesignPageBody() {
             | {
                 subAttrs?: {
                   shape?: string;
-                  points?: ReadonlyArray<{ x: number; y: number }>;
+                  points?: ReadonlyArray<{ x: number; y: number; smooth?: boolean }>;
                   closed?: boolean;
+                  smooth?: boolean;
                 };
                 frame?: { x: number; y: number; width: number; height: number; rotation?: number };
               }
             | undefined;
           const sub = attrs?.subAttrs;
           if (sub?.shape !== "poly" || attrs?.frame === undefined) return null;
-          return { points: sub.points ?? [], closed: sub.closed ?? true, frame: attrs.frame };
+          return {
+            points: sub.points ?? [],
+            closed: sub.closed ?? true,
+            frame: attrs.frame,
+            // DR-033 — global fallback for per-vertex type.
+            ...(sub.smooth !== undefined ? { smooth: sub.smooth } : {}),
+          };
         },
         // WI-065 / DR-031 — right-click a vertex breaks the poly into a `line`
         // at exactly that vertex, then re-selects the new line. Re-selection
@@ -889,11 +896,17 @@ function DesignPageBody() {
           const item = findItemDeep(docInAgocraftRef.current, itemId);
           if (item?.kind !== "line") return null;
           const attrs = item.attrs as {
-            points?: ReadonlyArray<{ x: number; y: number }>;
+            points?: ReadonlyArray<{ x: number; y: number; smooth?: boolean }>;
+            smooth?: boolean;
             frame?: { x: number; y: number; width: number; height: number; rotation?: number };
           };
           if (attrs.frame === undefined) return null;
-          return { points: attrs.points ?? [], closed: false, frame: attrs.frame };
+          return {
+            points: attrs.points ?? [],
+            closed: false,
+            frame: attrs.frame,
+            ...(attrs.smooth !== undefined ? { smooth: attrs.smooth } : {}),
+          };
         },
         composeAttrs: (prev, frame, points) => ({
           ...prev,

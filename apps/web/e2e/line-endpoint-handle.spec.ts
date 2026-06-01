@@ -77,22 +77,15 @@ test("WI-066 — endpoints are square handles; Alt+drag frees the point, plain d
 
   const ep = page.getByTestId("poly-vertex-0"); // left endpoint
   await expect(ep).toBeVisible();
-  // Default (stretch) → square handle, marked as an endpoint.
+  // DR-033 — handle SHAPE = point TYPE. A fresh straight line's endpoint is a
+  // corner → square (border-radius 2px), marked as an endpoint by ROLE.
   await expect(ep).toHaveAttribute("data-handle-role", "endpoint");
-  await expect(ep).toHaveAttribute("data-handle-mode", "stretch");
+  await expect(ep).toHaveAttribute("data-point-type", "corner");
   expect(await ep.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("2px");
-  // The interior vertex stays round.
   await expect(page.getByTestId("poly-vertex-1")).toHaveAttribute("data-handle-role", "vertex");
 
-  // Shape toggles LIVE with the modifier (no drag): Alt held → free-move look
-  // (round); released → back to stretch (square).
-  await page.keyboard.down("Alt");
-  await expect(ep).toHaveAttribute("data-handle-mode", "free");
-  expect(await ep.evaluate((el) => getComputedStyle(el).borderRadius)).not.toBe("2px");
-  await page.keyboard.up("Alt");
-  await expect(ep).toHaveAttribute("data-handle-mode", "stretch");
-  expect(await ep.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("2px");
-
+  // Alt no longer changes the SHAPE (that's the persistent point type now); it
+  // changes the endpoint DRAG behavior, verified below.
   // Alt + drag the endpoint left: free-move → the middle vertex's screen
   // position is preserved (only the dragged point moves).
   const midBefore = await centerX(page, "poly-vertex-1");

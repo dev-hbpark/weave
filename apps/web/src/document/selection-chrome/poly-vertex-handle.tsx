@@ -22,10 +22,17 @@ import type {
   SelectionBounds,
 } from "@agocraft/editor";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@weave/design-system";
+import {
+  type ComponentPropsWithoutRef,
+  forwardRef,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  useEffect,
-  useState,
 } from "react";
 import { startHandleGesture, toHandlePointer } from "./handle-gesture-runner.js";
 import {
@@ -40,8 +47,10 @@ import {
 import {
   applyDragStrategy,
   classifyPointHandle,
-  isModifierSensitive,
+  handleBorderRadius,
   type PointHandleRole,
+  type PointType,
+  pointTypeOf,
   resolveDragStrategy,
   resolvePointHandle,
 } from "./vertex-handle-roles.js";
@@ -54,6 +63,9 @@ export interface PolyShapeState {
   /** The item's frame (0..1 of parent). Vertex drags refit it to the points
    *  (DR-024 — the rubber-band follows the vertices). */
   readonly frame: PolyFrame;
+  /** DR-033 — the line/poly's global `smooth` flag; a vertex with no own
+   *  `smooth` falls back to it when deciding its corner/smooth type. */
+  readonly smooth?: boolean;
 }
 
 export interface PolyVertexHandleDeps {
@@ -117,59 +129,42 @@ function frameGeom(itemId: string, bounds: SelectionBounds): FrameGeom {
   return { cx, cy, w, h, theta };
 }
 
-/** WI-066 — a single point handle. ALL role-specific behavior (shape, label,
- *  tooltip, modifier sensitivity) is resolved from the `vertex-handle-roles`
- *  registry by `role` — no inline `isEndpoint ? … : …` branching here (Rule 6).
- *  When the role is modifier-sensitive (endpoint) it subscribes to the
- *  Alt/Option key and re-renders ITS OWN shape live (square = stretch, round =
- *  free-move) so the visual always matches the drag the handle will perform. */
-function VertexHandle({
-  idx,
-  role,
-  onPointerDown,
-  onDoubleClick,
-  onContextMenu,
-}: {
-  readonly idx: number;
-  readonly role: PointHandleRole;
-  readonly onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => void;
-  readonly onDoubleClick: (e: ReactMouseEvent<HTMLButtonElement>) => void;
-  readonly onContextMenu?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
-}) {
+/** DR-033 — a single point handle. SHAPE encodes the point TYPE (smooth = round,
+ *  corner = square) via the role registry; ROLE (vertex/endpoint) drives drag
+ *  behavior (Rule 6 — resolved in the registry, no inline branching). Label /
+ *  tooltip come from the role adapter. Double-click toggles type; right-click
+ *  opens the vertex menu. */
+/** forwardRef + `...rest` spread so the `ContextMenuTrigger asChild` wrapper can
+ *  inject its ref + `onContextMenu` onto the underlying <button> (Radix Slot). */
+const VertexHandle = forwardRef<
+  HTMLButtonElement,
+  {
+    readonly idx: number;
+    readonly role: PointHandleRole;
+    readonly pointType: PointType;
+    readonly onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => void;
+    readonly onDoubleClick: (e: ReactMouseEvent<HTMLButtonElement>) => void;
+  } & ComponentPropsWithoutRef<"button">
+>(function VertexHandle({ idx, role, pointType, onPointerDown, onDoubleClick, ...rest }, ref) {
   const adapter = resolvePointHandle(role);
-  const modifierSensitive = isModifierSensitive(adapter);
-  const [modifierActive, setModifierActive] = useState(false);
-  useEffect(() => {
-    if (!modifierSensitive) return undefined;
-    const sync = (e: KeyboardEvent) => setModifierActive(e.altKey);
-    const clear = () => setModifierActive(false); // window blur → can't see keyup
-    window.addEventListener("keydown", sync);
-    window.addEventListener("keyup", sync);
-    window.addEventListener("blur", clear);
-    return () => {
-      window.removeEventListener("keydown", sync);
-      window.removeEventListener("keyup", sync);
-      window.removeEventListener("blur", clear);
-    };
-  }, [modifierSensitive]);
-  const visual = adapter.visual(modifierActive);
   return (
     <button
       type="button"
+      ref={ref}
       aria-label={adapter.label(idx)}
       title={adapter.title}
       data-handle-kind="custom"
       data-handle-id={`poly.vertex.${idx}`}
       data-handle-role={role}
-      data-handle-mode={visual.mode}
+      data-point-type={pointType}
       data-testid={`poly-vertex-${idx}`}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
+      {...rest}
       style={{
         width: VERTEX_PX,
         height: VERTEX_PX,
-        borderRadius: visual.borderRadius,
+        borderRadius: handleBorderRadius(pointType), // smooth → circle, corner → square
         background: "var(--surface-1, #fff)",
         border: "1.5px solid var(--accent, #4f46e5)",
         boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
@@ -179,7 +174,7 @@ function VertexHandle({
       }}
     />
   );
-}
+});
 
 export function createPolyVertexHandleViewModel(
   deps: PolyVertexHandleDeps,
@@ -244,7 +239,7 @@ export function createPolyVertexHandleViewModel(
   };
 
   /** Set the point list (no frame change) via the kind-appropriate attrs path
-   *  — used by midpoint-insert / double-click-remove for shape AND line. */
+   *  — used by midpoint-insert / remove / point-type toggle for shape AND line. */
   const dispatchPoints = (itemId: string, points: ReadonlyArray<PolyVertex>): void => {
     const compose = deps.composeAttrs ?? defaultComposeAttrs;
     deps.editor.exec("weave.item.update", {
@@ -253,6 +248,33 @@ export function createPolyVertexHandleViewModel(
         attrs: compose(prev.attrs, undefined, points),
       }),
     });
+  };
+
+  /** DR-033 — flip a vertex between corner ↔ smooth (sets its explicit `smooth`
+   *  to the opposite of its current EFFECTIVE type). One path can then mix
+   *  straight + curved segments. */
+  const togglePointType = (itemId: string, idx: number): void => {
+    const cur = deps.getPoly(itemId);
+    const pt = cur?.points[idx];
+    if (cur === null || cur === undefined || pt === undefined) return;
+    const nowSmooth = pt.smooth ?? cur.smooth ?? false;
+    dispatchPoints(
+      itemId,
+      cur.points.map((q, i) => (i === idx ? { ...q, smooth: !nowSmooth } : q)),
+    );
+  };
+
+  /** Remove a vertex (kept ≥ min for closed/open). Now lives in the vertex
+   *  right-click menu (double-click toggles type instead). */
+  const removeVertex = (itemId: string, idx: number): void => {
+    const cur = deps.getPoly(itemId);
+    if (cur === null) return;
+    const min = cur.closed ? 3 : 2;
+    if (cur.points.length <= min) return;
+    dispatchPoints(
+      itemId,
+      cur.points.filter((_, i) => i !== idx),
+    );
   };
 
   return {
@@ -266,12 +288,15 @@ export function createPolyVertexHandleViewModel(
       const minPoints = closed ? 3 : 2;
       const specs = [];
 
-      // ── vertex handles (move / remove) ──
+      // ── vertex handles (move / toggle type / right-click menu) ──
+      const globalSmooth = poly.smooth ?? false;
       for (let idx = 0; idx < points.length; idx++) {
         const pt = points[idx]!;
         // WI-066 — classify the handle's role once; the registry owns the rest
-        // (shape, label, drag strategy). No inline endpoint branching (Rule 6).
+        // (label, drag strategy). DR-033 — shape comes from the point TYPE.
         const role = classifyPointHandle(idx, points.length, closed);
+        const pointType = pointTypeOf(pt.smooth, globalSmooth);
+        const removable = points.length > minPoints;
         specs.push({
           id: `poly-vertex-${idx}`,
           order: 200,
@@ -282,10 +307,11 @@ export function createPolyVertexHandleViewModel(
           },
           render: (ctx: { bounds: SelectionBounds }) => {
             const geom = frameGeom(info.itemId, ctx.bounds);
-            return (
+            const handle = (
               <VertexHandle
                 idx={idx}
                 role={role}
+                pointType={pointType}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   const cur = deps.getPoly(info.itemId);
@@ -300,25 +326,46 @@ export function createPolyVertexHandleViewModel(
                     toHandlePointer(e),
                   );
                 }}
+                // DR-033 — double-click toggles corner ↔ smooth.
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  const cur = deps.getPoly(info.itemId);
-                  if (cur === null || cur.points.length <= minPoints) return;
-                  const next = cur.points.filter((_, i) => i !== idx);
-                  dispatchPoints(info.itemId, next);
+                  togglePointType(info.itemId, idx);
                 }}
-                {...(deps.onBreakAtVertex !== undefined
-                  ? {
-                      onContextMenu: (e: ReactMouseEvent<HTMLButtonElement>) => {
-                        // WI-065 / DR-031 — right-click a vertex opens the ring
-                        // here into a `line`. Suppress the browser menu.
-                        e.preventDefault();
-                        e.stopPropagation();
-                        deps.onBreakAtVertex?.(info.itemId, idx);
-                      },
-                    }
-                  : {})}
               />
+            );
+            // Right-click → vertex menu: 전환 · 선으로 끊기(도형) · 삭제.
+            return (
+              <ContextMenu>
+                <ContextMenuTrigger asChild>{handle}</ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem
+                    data-testid={`vtx-toggle-${idx}`}
+                    onSelect={() => togglePointType(info.itemId, idx)}
+                  >
+                    {pointType === "smooth" ? "각진 점으로" : "곡선 점으로"}
+                  </ContextMenuItem>
+                  {deps.onBreakAtVertex !== undefined && (
+                    <ContextMenuItem
+                      data-testid={`vtx-break-${idx}`}
+                      onSelect={() => deps.onBreakAtVertex?.(info.itemId, idx)}
+                    >
+                      선으로 끊기
+                    </ContextMenuItem>
+                  )}
+                  {removable && (
+                    <>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        variant="danger"
+                        data-testid={`vtx-remove-${idx}`}
+                        onSelect={() => removeVertex(info.itemId, idx)}
+                      >
+                        꼭지점 삭제
+                      </ContextMenuItem>
+                    </>
+                  )}
+                </ContextMenuContent>
+              </ContextMenu>
             );
           },
         });
