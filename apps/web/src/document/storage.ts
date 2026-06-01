@@ -10,7 +10,6 @@ import {
 } from "@agocraft/core";
 import { ensureRootStyleProvider, toAgocraftDocument } from "./agocraft-mirror.js";
 import { migrateLegacyKindsToFrame } from "./migrate-frame-only.js";
-import { migrateShapeLinesToLineKind } from "./migrate-shape-to-line.js";
 import type { CanvasShape, Design, Document, Item, ItemFrame } from "./types.js";
 import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME } from "./types.js";
 
@@ -332,7 +331,7 @@ export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | unde
   let documentJson = blob.document;
   if (WI032_MIGRATE_ENABLED) {
     const rawAsAgo = documentJson as unknown as AgocraftDocument;
-    const migrated = migrateShapeLinesToLineKind(migrateLegacyKindsToFrame(rawAsAgo));
+    const migrated = migrateLegacyKindsToFrame(rawAsAgo);
     if (migrated !== rawAsAgo) {
       documentJson = migrated as unknown as typeof documentJson;
     }
@@ -349,7 +348,7 @@ export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | unde
   if (!result.ok) return undefined;
   let document = result.document;
   if (WI032_MIGRATE_ENABLED) {
-    document = migrateShapeLinesToLineKind(migrateLegacyKindsToFrame(document));
+    document = migrateLegacyKindsToFrame(document);
   }
   document = ensureRootStyleProvider(document);
   return {
@@ -415,7 +414,7 @@ export function loadDesign(id: string): Design | undefined {
         let documentJson = parsed.document;
         if (WI032_MIGRATE_ENABLED) {
           const rawAsAgo = documentJson as unknown as AgocraftDocument;
-          const migrated = migrateShapeLinesToLineKind(migrateLegacyKindsToFrame(rawAsAgo));
+          const migrated = migrateLegacyKindsToFrame(rawAsAgo);
           if (migrated !== rawAsAgo) {
             // Save the v9 backup before the migrated shape is persisted
             // (RISK-004 §1 — rollback path).
@@ -438,7 +437,7 @@ export function loadDesign(id: string): Design | undefined {
             // Defensive second pass — covers nested legacy Items that
             // somehow survived the raw-JSON pass (shouldn't happen in
             // practice, but kept for safety; no-op on frame-only docs).
-            const migrated = migrateShapeLinesToLineKind(migrateLegacyKindsToFrame(document));
+            const migrated = migrateLegacyKindsToFrame(document);
             if (migrated !== document) saveBackupBlob(id, rawV5);
             document = migrated;
           }
@@ -472,7 +471,7 @@ export function loadDesign(id: string): Design | undefined {
     // v4 docs predate WI-032 paradigm — apply the same frame migration
     // when the WI-032 flag is enabled.
     return WI032_MIGRATE_ENABLED
-      ? { ...wrapped, document: migrateShapeLinesToLineKind(migrateLegacyKindsToFrame(wrapped.document)) }
+      ? { ...wrapped, document: migrateLegacyKindsToFrame(wrapped.document) }
       : wrapped;
   }
 

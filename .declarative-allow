@@ -13,13 +13,9 @@
 
 # ── AUDIT-005 permitted exceptions ──────────────────────────────────────────
 
-# migrate-shape-to-line — a one-time load migration (DR-025 / WI-062 Phase 6)
-# that rewrites the FROZEN legacy "line-as-shape" sub-kinds (poly / line / arrow)
-# to the `line` kind. Pure transform over a closed, retired input set — no new
-# legacy shapes will ever be added, so this is the "pure transform" permitted
-# exception. Idempotent; deleted once no persisted legacy shapes remain.
-^apps/web/src/document/migrate-shape-to-line\.ts:75$
-^apps/web/src/document/migrate-shape-to-line\.ts:77$
+# (migrate-shape-to-line removed pre-production — WI-070 follow-up: the legacy
+#  "line-as-shape" load migration was deleted with no persisted prod data to
+#  preserve, so its two allowlist entries are gone with it.)
 
 # changeToPatch — single-site invariant sibling: the one place that maps every
 # agocraft Change variant to its Patch shape for the sync mirror (same category
