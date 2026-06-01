@@ -97,3 +97,4 @@ apps/web/src/pages/
 
 - 2026-06-01 — 플랜 수립. DR-027 / WI-071 발행.
 - 2026-06-01 — Phase 1 슬라이스 1 완료: `use-design-save` 추출. typecheck 0 / vitest 334 green / biome 순증가 0. 상세는 WI-071 progress log.
+- 2026-06-01 — **Phase 1 로직 추출 전체 완료 (슬라이스 1–7).** 7개 view-model 훅: use-design-save · use-command-host(useDesignCommandHost) · use-frame-focus · use-hand-tool · use-design-peek · use-selection-chrome-registry · use-item-add. DesignPage.tsx **4574→3877줄(−697)**. 3 커밋(bf9c328 / 1a5ba76 / 8d1e895), 브랜치 wi-071-page-decomposition. 전 슬라이스 typecheck 0 · vitest green · biome 신규 훅 clean·DesignPage 베이스라인 · 관련 e2e(peek-mode·history-*·vertex/line/shape·add-menu 등) green. 기존/환경성 실패 3건(frame-handles:32, viewport-add-rule:151/249)은 stash로 커밋 베이스라인에서도 동일 실패 확인 → 본 리팩터 무관. **남음**: Phase 2(뷰 서브컴포넌트 분리 + 오케스트레이터 ~250줄 수렴), Phase 3(FrameStage).
