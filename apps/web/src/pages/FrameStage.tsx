@@ -52,11 +52,7 @@ import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
 import { useRouterOrNull } from "../document/interactions/router-context.js";
 
 import { TotalScaleContext } from "../document/interactions/total-scale-context.js";
-import {
-  CULL_ROOT_MARGIN,
-  ViewportCullContext,
-  type ViewportCullRegistry,
-} from "../document/interactions/viewport-cull-context.js";
+import { ViewportCullContext } from "../document/interactions/viewport-cull-context.js";
 import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index.js";
 // WI-019/WI-021 — layout-driven manipulation constraints. The agocraft
 // LayoutEngine is the single owner: weave only READS
@@ -84,6 +80,7 @@ import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
 import { nextPanForZoom } from "./frame-stage/camera-math.js";
 import { perceivedLuminance } from "./frame-stage/luminance.js";
 import { NestedFrame } from "./frame-stage/NestedFrame.js";
+import { useViewportCulling } from "./frame-stage/use-viewport-culling.js";
 
 export interface FrameMenuContext {
   readonly layers: ReadonlyArray<LayerHit>;
@@ -1274,67 +1271,8 @@ export function FrameStage(props: FrameStageProps) {
   // the wheel-recency signal hoisted above the wheel handler.
   const gestureActive = panDragging || recentWheel;
 
-  // WI-058 / DR-021 — viewport culling registry. One IntersectionObserver,
-  // root = the viewport-clipping `outerRef`, with a one-viewport `rootMargin`
-  // buffer so frames are pre-rendered just before they pan into view (no
-  // pop-in). Frames register their wrapper via the context; the observer
-  // callback flips `visibility` directly (ref-mutation, no re-render). Only
-  // armed for the infinite canvas — stacked/fit flavors fit the viewport so
-  // nothing is ever off-screen to cull.
-  const cullCallbacks = useRef(new Map<Element, (visible: boolean) => void>());
-  const cullObserver = useRef<IntersectionObserver | null>(null);
-  // DEV-only A/B escape hatch (WI-058 perf measurement). Setting
-  // `window.__weaveDisableCull = true` before mount turns culling off so a
-  // baseline can be captured at identical geometry. Gated behind DEV per the
-  // `window.__weave*` dev-globals rule (apps/web/CLAUDE.md); production never
-  // reads it.
-  const cullEnabled =
-    infiniteCanvas &&
-    !(
-      import.meta.env.DEV &&
-      (globalThis as { __weaveDisableCull?: boolean }).__weaveDisableCull === true
-    );
-  useEffect(() => {
-    if (!cullEnabled) return;
-    const root = outerRef.current;
-    if (root === null) return;
-    // Pre-render buffer (WI-058 2b). Half a viewport each side keeps the cull
-    // working set tight while still pre-rendering + re-decoding a frame before
-    // it reaches the edge on a normal pan; `__weaveCullMargin` overrides it in
-    // DEV for the margin sweep (production never reads the global).
-    const rootMargin =
-      (import.meta.env.DEV && (globalThis as { __weaveCullMargin?: string }).__weaveCullMargin) ||
-      CULL_ROOT_MARGIN;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          cullCallbacks.current.get(entry.target)?.(entry.isIntersecting);
-        }
-      },
-      { root, rootMargin, threshold: 0 },
-    );
-    cullObserver.current = io;
-    // Pick up any frames that registered before this effect ran (child
-    // effects fire before the parent's on the same commit).
-    for (const el of cullCallbacks.current.keys()) io.observe(el);
-    return () => {
-      io.disconnect();
-      cullObserver.current = null;
-    };
-  }, [cullEnabled]);
-  const cullRegistry = useMemo<ViewportCullRegistry | null>(() => {
-    if (!cullEnabled) return null;
-    return {
-      observe(el, onChange) {
-        cullCallbacks.current.set(el, onChange);
-        cullObserver.current?.observe(el);
-        return () => {
-          cullCallbacks.current.delete(el);
-          cullObserver.current?.unobserve(el);
-        };
-      },
-    };
-  }, [cullEnabled]);
+  // DR-027 / WI-071 Phase 3 — viewport culling registry extracted to a hook.
+  const cullRegistry = useViewportCulling(infiniteCanvas, outerRef);
 
   return (
     <TotalScaleContext.Provider value={totalScaleMV}>
