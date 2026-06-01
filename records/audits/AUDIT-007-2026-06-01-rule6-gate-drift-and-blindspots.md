@@ -10,7 +10,7 @@
 | Scope | `workspace/weave` + `workspace/agocraft` + `workspace/small-think` (소스 전체) + OS-root 게이트 자산 |
 | Trigger | 사용자 요청 — "새로 업데이트된 코드 작성 규칙 워크플로우를 따르지 않은 코드를 모두 조사 + 예외 적용까지". 커밋 `22f3eaa`(SOLID/GRASP/IoC 트리거 + Rule 6 게이트 문서 동기화) 직후 재감사 |
 | Date | 2026-06-01 |
-| Status | **Completed (core)** — ① 게이트 드리프트 수정 + ② 게이트 정규식 보강(bare/camelCase switch 검출, 정본 4중 동기화) + ③ 전 위반 리팩토링 **완료**(weave V6-1~V6-4 · agocraft A6-1 · small-think S6-1; weave 293·core 717·prefs 31 tests green·3 게이트 green). ④ agocraft gate-blind 허용예외 pin 보강만 선택 잔여(미착수). |
+| Status | **CLOSED (2026-06-01)** — ①②③ 완료 + ④ 종결(무의미 확인: 강화 게이트가 잡는 유일 agocraft switch `renderable.ts:122`는 이미 allowlist 등록, 나머지 후보는 gate-blind라 pin inert). weave 293·core 717·prefs 31 tests green · 3 게이트 green · 회귀 0. 3개 리포 커밋·push 완료(weave `c53a03d` / agocraft `b0d09d8` / OS-root `d142d59`, 전부 origin/main 반영). |
 | Cross-references | `docs/04-specialized-engineering/CODE_STRUCTURE_DESIGN_RULES.md` § Rule 3·6, [AUDIT-005](AUDIT-005-2026-06-01-rule6-re-audit.md), [AUDIT-002](AUDIT-002-2026-05-25-declarative-branching.md) |
 
 ## 1. 핵심 발견 — 게이트 "green"은 3겹의 false-green
