@@ -14,6 +14,7 @@
 // rotated basis. This is exact at EVERY angle including 45° (the older AABB-only
 // W,H solve was singular there — cos 2θ = 0 — and fell back to wrong positions).
 
+import { smoothPolyBounds } from "@agocraft/core";
 import type {
   Editor,
   HandleCommandSink,
@@ -272,11 +273,24 @@ export function createPolyVertexHandleViewModel(
     const cur = deps.getPoly(itemId);
     const pt = cur?.points[idx];
     if (cur === null || cur === undefined || pt === undefined) return;
-    const nowSmooth = pt.smooth ?? cur.smooth ?? false;
-    dispatchPoints(
+    const defaultSmooth = cur.smooth ?? false;
+    const nowSmooth = pt.smooth ?? defaultSmooth;
+    const next = cur.points.map((q, i) => (i === idx ? { ...q, smooth: !nowSmooth } : q));
+    // DR-033 / WI-069 — refit the frame to the GEOMETRY: when the path curves
+    // anywhere, fit the curve's bbox (overshoot included) so the rubber-band
+    // wraps the curve; all-corner → tighten to the points. (Same as drag.)
+    const curvey = next.some((p) => (p.smooth ?? defaultSmooth) === true);
+    const bounds = curvey
+      ? (smoothPolyBounds(next, cur.closed, defaultSmooth) ?? undefined)
+      : undefined;
+    const refit = refitFrameToPoints(next, cur.frame, cur.frame.rotation ?? 0, bounds);
+    const compose = deps.composeAttrs ?? defaultComposeAttrs;
+    deps.editor.exec("weave.item.update", {
       itemId,
-      cur.points.map((q, i) => (i === idx ? { ...q, smooth: !nowSmooth } : q)),
-    );
+      patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+        attrs: compose(prev.attrs, refit.frame, refit.points),
+      }),
+    });
   };
 
   /** Remove a vertex (vertex right-click menu). Refits the frame to the

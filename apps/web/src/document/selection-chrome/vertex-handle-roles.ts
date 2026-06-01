@@ -53,19 +53,24 @@ export interface DragArgs {
   readonly clientY: number;
 }
 
-/** Move a single point to the cursor; all others stay put. */
+/** Move a single point to the cursor; all others stay put. Preserves each
+ *  point's `smooth` (DR-033) — only x/y change. */
 function freeMoveStrategy(a: DragArgs): ReadonlyArray<PolyVertex> {
   const loc = screenToLocal(a.geom, a.clientX, a.clientY);
-  return a.basePoints.map((p, i) => (i === a.idx ? loc : { x: p.x, y: p.y }));
+  return a.basePoints.map((p, i) => (i === a.idx ? { ...p, x: loc.x, y: loc.y } : { ...p }));
 }
 
 /** Uniform similarity (scale + rotate) of the whole polyline about the opposite
  *  endpoint — the line stretches keeping its shape (DR-024 §B). A degenerate
- *  vector (e.g. a 2-point line collapsing) delegates to free-move. */
+ *  vector (e.g. a 2-point line collapsing) delegates to free-move. Preserves
+ *  each point's `smooth` (DR-033). */
 function endpointStretchStrategy(a: DragArgs): ReadonlyArray<PolyVertex> {
   const sim = endpointSimilarityScreen(a.baseScreen, a.anchorIdx, a.clientX, a.clientY, a.idx);
   if (sim === null) return freeMoveStrategy(a);
-  return sim.map((s) => screenToLocal(a.geom, s.x, s.y));
+  return sim.map((s, i) => {
+    const loc = screenToLocal(a.geom, s.x, s.y);
+    return { ...a.basePoints[i], x: loc.x, y: loc.y };
+  });
 }
 
 const DRAG_STRATEGIES: {

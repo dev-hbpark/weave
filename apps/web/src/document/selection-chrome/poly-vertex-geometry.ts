@@ -99,19 +99,33 @@ export function refitFrameToPoints(
   localPts: ReadonlyArray<PolyVertex>,
   frame: PolyFrame,
   theta: number,
+  /** DR-033 — optional explicit bbox (e.g. the CURVE's bbox from
+   *  `smoothPolyBounds`) to fit instead of the control-vertex bbox, so a smooth
+   *  path's overshoot is bounded. Omit → the control-point bbox. */
+  bounds?: {
+    readonly minX: number;
+    readonly maxX: number;
+    readonly minY: number;
+    readonly maxY: number;
+  },
 ): { readonly frame?: PolyFrame; readonly points: ReadonlyArray<PolyVertex> } {
+  // Preserve every PolyVertex field (notably `smooth`) — only x/y are remapped.
   if (Math.abs(theta) > 0.01) {
-    return { points: localPts.map((p) => ({ x: clamp01(p.x), y: clamp01(p.y) })) };
+    return { points: localPts.map((p) => ({ ...p, x: clamp01(p.x), y: clamp01(p.y) })) };
   }
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
-  for (const p of localPts) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
+  if (bounds !== undefined) {
+    ({ minX, maxX, minY, maxY } = bounds);
+  } else {
+    for (const p of localPts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
   }
   const EPS = 1e-3;
   const rawW = maxX - minX;
@@ -128,6 +142,7 @@ export function refitFrameToPoints(
     ...(frame.rotation !== undefined ? { rotation: frame.rotation } : {}),
   };
   const points = localPts.map((p) => ({
+    ...p,
     x: collapsedX ? 0.5 : (p.x - minX) / spanX,
     y: collapsedY ? 0.5 : (p.y - minY) / spanY,
   }));
