@@ -1704,7 +1704,10 @@ describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
     } as unknown as AgocraftItem;
     return {
       document: addChild(toAgocraftDocument(weave), image, "frame-1"),
-      resolve: () => null as never,
+      resolve: ((token: Token<unknown>) =>
+        token === IdGeneratorToken
+          ? createUuidV7Generator(defaultClock, defaultRandom)
+          : null) as CommandContext["resolve"],
       skipRelations: false,
     };
   }
@@ -1785,11 +1788,22 @@ describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
     if (!badRot.ok) expect(badRot.error.code).toBe("invalid-input");
   });
 
-  // ── WI-074 / DR-029 D7 — weave.image.flip (toggle, window-preserving) ──
+  // ── WI-074 / DR-029 D7 — weave.item.flip (generic, transform.flip unit) ──
   const flipCmd = () => {
-    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.image.flip");
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.flip");
     if (c === undefined) throw new Error("command not found");
     return c;
+  };
+  const createdFlipUnit = (
+    result: CommandResult<unknown>,
+  ): { flipH?: boolean; flipV?: boolean } => {
+    if (!result.ok) throw new Error("unexpected fail");
+    const create = result.patches.find((p) => (p as { type?: string }).type === "unit.create") as
+      | { unit?: { kind?: string; attrs?: { flipH?: boolean; flipV?: boolean } } }
+      | undefined;
+    if (create === undefined) throw new Error("expected a unit.create patch");
+    expect(create.unit?.kind).toBe("transform.flip");
+    return create.unit?.attrs ?? {};
   };
   // image item carrying an existing crop window (to assert flip preserves it).
   function makeCroppedImageCtx(): CommandContext {
@@ -1825,44 +1839,34 @@ describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
     } as unknown as AgocraftItem;
     return {
       document: addChild(toAgocraftDocument(weave), image, "frame-1"),
-      resolve: () => null as never,
+      resolve: ((token: Token<unknown>) =>
+        token === IdGeneratorToken
+          ? createUuidV7Generator(defaultClock, defaultRandom)
+          : null) as CommandContext["resolve"],
       skipRelations: false,
     };
   }
 
-  it("toggles flipH on a plain image (and back to no-crop)", () => {
-    const r1 = flipCmd().run(makeImageCtx(), { itemId: "img-1", axis: "horizontal" });
-    if (!r1.ok) throw new Error("unexpected fail");
-    const p1 = r1.patches[0];
-    if (p1 === undefined || p1.type !== "item.attrs") throw new Error("expected item.attrs");
-    expect((p1.after as { cropRatio: unknown }).cropRatio).toEqual({
-      x: 0,
-      y: 0,
-      w: 1,
-      h: 1,
-      flipH: true,
-    });
+  it("toggles a horizontal flip as a transform.flip unit on an image", () => {
+    const attrs = createdFlipUnit(
+      flipCmd().run(makeImageCtx(), { itemId: "img-1", axis: "horizontal" }),
+    );
+    expect(attrs).toEqual({ flipH: true, flipV: false });
   });
 
-  it("preserves the crop window when flipping (visible region unchanged)", () => {
-    const r = flipCmd().run(makeCroppedImageCtx(), { itemId: "img-1", axis: "vertical" });
-    if (!r.ok) throw new Error("unexpected fail");
-    const p = r.patches[0];
-    if (p === undefined || p.type !== "item.attrs") throw new Error("expected item.attrs");
-    // window (x,y,w,h) identical — only flipV added.
-    expect((p.after as { cropRatio: unknown }).cropRatio).toEqual({
-      x: 0.2,
-      y: 0.1,
-      w: 0.5,
-      h: 0.6,
-      flipV: true,
-    });
+  it("does NOT touch cropRatio when flipping a cropped image (visible region preserved)", () => {
+    const result = flipCmd().run(makeCroppedImageCtx(), { itemId: "img-1", axis: "vertical" });
+    if (!result.ok) throw new Error("unexpected fail");
+    // Flip is a separate unit — no item.attrs (cropRatio) patch at all.
+    expect(result.patches.some((p) => (p as { type?: string }).type === "item.attrs")).toBe(false);
+    expect(createdFlipUnit(result)).toEqual({ flipH: false, flipV: true });
   });
 
-  it("fails not-an-image / item-not-found", () => {
+  it("rejects unsupported kinds (flip-not-supported) + item-not-found", () => {
+    // `frame-1` is a frame → not flippable.
     const a = flipCmd().run(makeImageCtx(), { itemId: "frame-1", axis: "horizontal" });
     expect(a.ok).toBe(false);
-    if (!a.ok) expect(a.error.code).toBe("not-an-image");
+    if (!a.ok) expect(a.error.code).toBe("flip-not-supported");
     const b = flipCmd().run(makeImageCtx(), { itemId: "ghost", axis: "horizontal" });
     expect(b.ok).toBe(false);
     if (!b.ok) expect(b.error.code).toBe("item-not-found");

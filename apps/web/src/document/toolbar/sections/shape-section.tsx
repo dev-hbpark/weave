@@ -35,6 +35,7 @@ import type { ReactNode } from "react";
 import { findItemDeep } from "../../agocraft-mirror.js";
 import { useDocumentForResolution } from "../../style/resolver-context.js";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
+import { FlipControls } from "./flip-controls.js";
 import { FillControl, OpacityControl, ShadowControls, StrokeControl } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
@@ -147,6 +148,9 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
         <FillControl editor={editor} ids={ids} />
       </Bar.Quick>
       <Bar.More>
+        <Bar.Field label="Flip">
+          <FlipControls editor={editor} ids={ids} />
+        </Bar.Field>
         <Bar.Field label="Shape">
           <Select<ShapeSubKind>
             value={isMixed(shape) ? "" : shape}

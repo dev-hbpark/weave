@@ -17,6 +17,7 @@ import {
   Switch,
 } from "@weave/design-system";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
+import { FlipControls } from "./flip-controls.js";
 import { OpacityControl, ShadowControls } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
@@ -69,6 +70,9 @@ export const VideoSection: ToolbarSectionComponent = ({
         </IconButton>
       </Bar.Quick>
       <Bar.More>
+        <Bar.Field label="Flip">
+          <FlipControls editor={editor} ids={ids} />
+        </Bar.Field>
         <Bar.Field label="Source">
           <Button
             variant="ghost"

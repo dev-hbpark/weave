@@ -6,13 +6,10 @@
 // "line" kind, so selecting a line shows this instead of the shape panel
 // (도형과 선은 완전 다른 타입).
 
-import {
-  ContextualToolbar as Bar,
-  IconShapeLine,
-  Select,
-} from "@weave/design-system";
+import { ContextualToolbar as Bar, IconShapeLine, Select } from "@weave/design-system";
 import type { LineAttrs } from "../../types.js";
 import { isMixed, MixedBadge, sharedValue, updateAll } from "../multi-edit.js";
+import { FlipControls } from "./flip-controls.js";
 import { OpacityControl, StrokeControl } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
@@ -51,6 +48,9 @@ export const LineSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
         <StrokeControl editor={editor} ids={ids} />
       </Bar.Quick>
       <Bar.More>
+        <Bar.Field label="Flip">
+          <FlipControls editor={editor} ids={ids} />
+        </Bar.Field>
         <Bar.Field label="Stroke">
           <StrokeControl editor={editor} ids={ids} />
         </Bar.Field>

@@ -14,6 +14,7 @@ import {
   Select,
 } from "@weave/design-system";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
+import { FlipControls } from "./flip-controls.js";
 import { FilterControl, OpacityControl, ShadowControls } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
@@ -85,34 +86,11 @@ export const ImageSection: ToolbarSectionComponent = ({
           />
           <MixedBadge visible={isMixed(fit)} />
         </Bar.Field>
-        {/* WI-074 / DR-029 D7 — flip. Mirrors the final composition: a cropped
-            image keeps its visible region (window unchanged), only the display
-            flips. Toggles per selected item (reversible via Cmd+Z). */}
+        {/* WI-074 / DR-029 D7 — flip (shared control). Mirrors the final
+            composition: a cropped image keeps its visible region (window
+            unchanged), only the display flips. */}
         <Bar.Field label="Flip">
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="md"
-              aria-label="좌우 반전"
-              onClick={() => {
-                for (const id of ids)
-                  editor.exec("weave.image.flip", { itemId: id, axis: "horizontal" });
-              }}
-            >
-              좌우
-            </Button>
-            <Button
-              variant="ghost"
-              size="md"
-              aria-label="상하 반전"
-              onClick={() => {
-                for (const id of ids)
-                  editor.exec("weave.image.flip", { itemId: id, axis: "vertical" });
-              }}
-            >
-              상하
-            </Button>
-          </div>
+          <FlipControls editor={editor} ids={ids} />
         </Bar.Field>
         {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
         <Bar.Field label="Opacity">

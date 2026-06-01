@@ -28,6 +28,7 @@ import {
 import { isDomainItem } from "../../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
 import { ParentFrameHeightContext } from "../../document/domains/parent-frame-context.js";
+import { useIsCropping } from "../../document/interactions/cropping-state.js";
 import { useSelectionChromeOrNull } from "../../document/interactions/selection-chrome-context.js";
 import {
   type ClickIntent,
@@ -35,7 +36,6 @@ import {
   SelectionVmContext,
   selectFromHit,
 } from "../../document/interactions/selection-context.js";
-import { useIsCropping } from "../../document/interactions/cropping-state.js";
 import {
   HIT_THRESHOLD_PX,
   TotalScaleContext,
@@ -44,11 +44,10 @@ import {
   FrameCulledContext,
   ViewportCullContext,
 } from "../../document/interactions/viewport-cull-context.js";
-
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../../document/layout/registry.js";
 import { FrameContent } from "../../document/render/FrameContent.js";
-
 import { applyLayoutConstraintFilter } from "../../document/selection-chrome/layout-constraint-filter.js";
+import { FLIP_ALLOWED_KINDS, flipTransform, readFlip } from "../../document/transform-flip.js";
 import type { FrameStageProps } from "../FrameStage.js";
 
 interface NestedFrameProps {
@@ -281,6 +280,13 @@ export function NestedFrame({
   const topPx = parentHeightPx * frame.y;
 
   const kind = item.kind as DomainKind;
+  // WI-074 / DR-029 D7 — generic content flip (transform.flip unit), applied as a
+  // frame-centre mirror of this item's content. Allow-listed kinds only
+  // (qr/text/frame excluded). Same region, mirrored — preserves cropped visible area.
+  const flip = FLIP_ALLOWED_KINDS.has(kind)
+    ? readFlip(item as unknown as Parameters<typeof readFlip>[0])
+    : { flipH: false, flipV: false };
+  const flipped = flip.flipH || flip.flipV;
 
   // Selection outline — every id in `selectedIds` (Figma marquee) gets
   // the accent outline; the legacy `selectedId` is still the primary
@@ -607,29 +613,58 @@ export function NestedFrame({
     >
       {/* Phase 2 (fontSizeSpec) — expose this item's parent-frame height (px)
           so a text item's `kind:"ratio"` fontSize resolves against it (root =
-          designHeight, which is what `parentHeightPx` carries at the top). */}
-      <ParentFrameHeightContext.Provider value={parentHeightPx}>
-        <FrameCulledContext.Provider value={culled}>
-          <FrameContent
-            item={item as unknown as AgoItem}
-            {...(onUpdateItem
-              ? {
-                  onUpdate: (patch: Record<string, unknown>) =>
-                    onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
-                }
-              : {})}
-            {...(onUpdateShape
-              ? {
-                  onUpdateShape: (shapeId: string, patch: object) =>
-                    onUpdateShape(itemId, shapeId, patch),
-                }
-              : {})}
-            {...(onRemoveShape
-              ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
-              : {})}
-          />
-        </FrameCulledContext.Provider>
-      </ParentFrameHeightContext.Provider>
+          designHeight, which is what `parentHeightPx` carries at the top).
+          WI-074 D7 — a flipped item wraps its content in a frame-centre mirror
+          layer (same region, display flipped). */}
+      {flipped ? (
+        <div className="absolute inset-0" style={flipTransform(flip)}>
+          <ParentFrameHeightContext.Provider value={parentHeightPx}>
+            <FrameCulledContext.Provider value={culled}>
+              <FrameContent
+                item={item as unknown as AgoItem}
+                {...(onUpdateItem
+                  ? {
+                      onUpdate: (patch: Record<string, unknown>) =>
+                        onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
+                    }
+                  : {})}
+                {...(onUpdateShape
+                  ? {
+                      onUpdateShape: (shapeId: string, patch: object) =>
+                        onUpdateShape(itemId, shapeId, patch),
+                    }
+                  : {})}
+                {...(onRemoveShape
+                  ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
+                  : {})}
+              />
+            </FrameCulledContext.Provider>
+          </ParentFrameHeightContext.Provider>
+        </div>
+      ) : (
+        <ParentFrameHeightContext.Provider value={parentHeightPx}>
+          <FrameCulledContext.Provider value={culled}>
+            <FrameContent
+              item={item as unknown as AgoItem}
+              {...(onUpdateItem
+                ? {
+                    onUpdate: (patch: Record<string, unknown>) =>
+                      onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
+                  }
+                : {})}
+              {...(onUpdateShape
+                ? {
+                    onUpdateShape: (shapeId: string, patch: object) =>
+                      onUpdateShape(itemId, shapeId, patch),
+                  }
+                : {})}
+              {...(onRemoveShape
+                ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
+                : {})}
+            />
+          </FrameCulledContext.Provider>
+        </ParentFrameHeightContext.Provider>
+      )}
       {(() => {
         return childFrames.map((c) => (
           <NestedFrame

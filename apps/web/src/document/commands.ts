@@ -43,6 +43,7 @@ import {
   defaultShapeSubAttrs,
   FILL_UNIT_KIND,
   fail,
+  findUnitInItem,
   itemId as makeItemId,
   unitId as makeUnitId,
   moveAboveCommand,
@@ -92,6 +93,7 @@ import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
+import { FLIP_ALLOWED_KINDS, FLIP_UNIT_KIND } from "./transform-flip.js";
 import type { DomainKind, InteractionBehavior, ItemFrame, Item as WeaveItem } from "./types.js";
 
 /** Slice of useDocument's callback surface used by the *direct* commands
@@ -217,10 +219,11 @@ export interface SetImageCropInput {
   readonly rotation?: number;
 }
 
-/** WI-074 / DR-029 D7 — toggle a horizontal / vertical flip on an image. Mirrors
- *  the final composition (window + rotation preserved), so a cropped image keeps
- *  its visible region — only the display flips. Image-only. */
-export interface FlipImageInput {
+/** WI-074 / DR-029 D7 — toggle a horizontal / vertical flip on an item. Stored as
+ *  a kind-agnostic `transform.flip` UNIT, applied at NestedFrame as a frame-centre
+ *  mirror — so cropped content keeps its visible region (only the display flips).
+ *  Allowed kinds: image / video / shape / line (qr/text/frame excluded). */
+export interface FlipItemInput {
   readonly itemId: string;
   readonly axis: "horizontal" | "vertical";
 }
@@ -717,16 +720,14 @@ export function buildWeaveCommands(
       if (input.rotation !== undefined && !finite(input.rotation)) {
         return fail("invalid-input", "weave.image.setCrop: rotation must be a finite number");
       }
-      // Preserve any existing flip (DR-029 D7) — setCrop only sets window + rotation.
-      const prev = (child.attrs as { cropRatio?: { flipH?: boolean; flipV?: boolean } }).cropRatio;
+      // Flip (DR-029 D7) is a separate `transform.flip` unit, not part of cropRatio,
+      // so setCrop only sets the window + rotation.
       const cropRatio = {
         x: c.x,
         y: c.y,
         w: c.w,
         h: c.h,
         ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
-        ...(prev?.flipH ? { flipH: true } : {}),
-        ...(prev?.flipV ? { flipV: true } : {}),
       };
       const after: Readonly<Record<string, unknown>> = {
         ...(child.attrs as unknown as Record<string, unknown>),
@@ -742,63 +743,36 @@ export function buildWeaveCommands(
     },
   };
 
-  // WI-074 / DR-029 D7 — toggle a horizontal / vertical flip. Mirrors the final
-  // composition: window + rotation are preserved, so a cropped image keeps its
-  // visible region (only the display flips). Image-only. Reversible (toggle/undo).
-  const flipImage: Command<FlipImageInput, void> = {
-    name: "weave.image.flip",
+  // WI-074 / DR-029 D7 — toggle a horizontal / vertical flip on ANY supported item.
+  // Stored as a kind-agnostic `transform.flip` UNIT (toggled via setDecoration), so
+  // the same generic mechanism mirrors image / video / shape / line at NestedFrame.
+  // qr/text/frame are excluded (scannability / readability / container coord safety).
+  const flipItem: Command<FlipItemInput, void> = {
+    name: "weave.item.flip",
     run: (ctx, input) => {
       const child = findChild(ctx.document, input.itemId);
       if (child === undefined) {
-        return fail("item-not-found", `weave.image.flip: no item with id "${input.itemId}"`);
+        return fail("item-not-found", `weave.item.flip: no item with id "${input.itemId}"`);
       }
-      if ((child as { kind?: string }).kind !== "image") {
-        return fail("not-an-image", `weave.image.flip: item "${input.itemId}" is not an image`);
+      const kind = (child as { kind?: string }).kind ?? "";
+      if (!FLIP_ALLOWED_KINDS.has(kind)) {
+        return fail("flip-not-supported", `weave.item.flip: kind "${kind}" cannot be flipped`);
       }
       if (input.axis !== "horizontal" && input.axis !== "vertical") {
-        return fail("invalid-input", "weave.image.flip: axis must be 'horizontal' or 'vertical'");
+        return fail("invalid-input", "weave.item.flip: axis must be 'horizontal' or 'vertical'");
       }
-      const prev =
-        (
-          child.attrs as {
-            cropRatio?: {
-              x?: number;
-              y?: number;
-              w?: number;
-              h?: number;
-              rotation?: number;
-              flipH?: boolean;
-              flipV?: boolean;
-            };
-          }
-        ).cropRatio ?? {};
-      const flipH = input.axis === "horizontal" ? !(prev.flipH ?? false) : (prev.flipH ?? false);
-      const flipV = input.axis === "vertical" ? !(prev.flipV ?? false) : (prev.flipV ?? false);
-      const x = prev.x ?? 0;
-      const y = prev.y ?? 0;
-      const w = prev.w ?? 1;
-      const h = prev.h ?? 1;
-      const rotation = prev.rotation ?? 0;
-      // Collapse to no-crop when nothing remains (identity window, no rotation/flip).
-      const identity =
-        x === 0 && y === 0 && w === 1 && h === 1 && rotation === 0 && !flipH && !flipV;
-      const cropRatio = identity
-        ? undefined
-        : {
-            x,
-            y,
-            w,
-            h,
-            ...(rotation !== 0 ? { rotation } : {}),
-            ...(flipH ? { flipH: true } : {}),
-            ...(flipV ? { flipV: true } : {}),
-          };
-      const after: Readonly<Record<string, unknown>> = {
-        ...(child.attrs as unknown as Record<string, unknown>),
-        cropRatio,
-      };
-      const patch: Patch = { type: "item.attrs", itemId: child.id, before: child.attrs, after };
-      return ok(undefined, [patch]);
+      const cur = findUnitInItem(child as unknown as AgocraftItem, FLIP_UNIT_KIND)?.attrs as
+        | { flipH?: boolean; flipV?: boolean }
+        | undefined;
+      const flipH = input.axis === "horizontal" ? !(cur?.flipH ?? false) : (cur?.flipH ?? false);
+      const flipV = input.axis === "vertical" ? !(cur?.flipV ?? false) : (cur?.flipV ?? false);
+      // Clear the unit when neither axis is flipped; otherwise set the spec.
+      // Reuse the setDecoration kit (replace = remove-then-create, single undo).
+      return setDecorationCommand.run(ctx, {
+        itemId: input.itemId,
+        kind: FLIP_UNIT_KIND,
+        attrs: !flipH && !flipV ? null : { flipH, flipV },
+      });
     },
   };
 
@@ -1805,7 +1779,7 @@ export function buildWeaveCommands(
     updateItem as Command,
     setShapeCornerRadius as Command,
     setImageCrop as Command,
-    flipImage as Command,
+    flipItem as Command,
     setShapeFill as Command,
     resizeMulti as Command,
     itemsUpdate as Command,

@@ -97,6 +97,60 @@ async function readCrop(page: Page, itemId: string): Promise<Crop> {
   }, itemId);
 }
 
+async function readFlip(
+  page: Page,
+  itemId: string,
+): Promise<{ flipH?: boolean; flipV?: boolean } | null> {
+  return page.evaluate((cid) => {
+    type U = { kind?: string; attrs?: { flipH?: boolean; flipV?: boolean } };
+    type N = { id: unknown; units?: ReadonlyArray<U>; children?: ReadonlyArray<N> };
+    const w = window as unknown as { __weaveDoc?: { root: N } };
+    const find = (n: N | undefined): N | undefined => {
+      if (n === undefined) return undefined;
+      if (String(n.id) === cid) return n;
+      for (const c of n.children ?? []) {
+        const hit = find(c);
+        if (hit !== undefined) return hit;
+      }
+      return undefined;
+    };
+    const u = find(w.__weaveDoc?.root)?.units?.find((x) => x.kind === "transform.flip");
+    return u?.attrs ?? null;
+  }, itemId);
+}
+
+async function flip(page: Page, itemId: string, axis: "horizontal" | "vertical"): Promise<boolean> {
+  const ok = await page.evaluate(
+    ([id, ax]) =>
+      (
+        window as unknown as {
+          __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
+        }
+      ).__weaveEditor!.exec("weave.item.flip", { itemId: id, axis: ax }).ok !== false,
+    [itemId, axis] as const,
+  );
+  await page.waitForTimeout(100);
+  return ok;
+}
+
+async function addKind(page: Page, kind: string): Promise<string> {
+  const id = await page.evaluate((k) => {
+    const w = window as unknown as {
+      __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
+      __weaveDoc?: { root: { id: unknown } };
+    };
+    return String(
+      w.__weaveEditor!.exec("weave.item.add", {
+        kind: k,
+        containerId: String(w.__weaveDoc!.root.id),
+        frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
+      }).value,
+    );
+  }, kind);
+  await page.waitForTimeout(120);
+  return id;
+}
+
 test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
@@ -203,44 +257,48 @@ test("WI-074 — dragging the SE crop handle resizes the window", async ({ page 
   expect(crop?.h ?? 1).toBeLessThan(0.99);
 });
 
-test("WI-074 — flip toggles flipH (display mirrored); Cmd+Z reverts", async ({ page }) => {
+test("WI-074 — flip toggles a transform.flip unit (display mirrored); Cmd+Z reverts", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-074-flip" });
   const id = await addImage(page);
 
-  await page.evaluate((itemId) => {
-    (
-      window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } }
-    ).__weaveEditor!.exec("weave.image.flip", { itemId, axis: "horizontal" });
-  }, id);
-  await expect.poll(() => readCrop(page, id)).toEqual({ x: 0, y: 0, w: 1, h: 1, flipH: true });
-  // committed render mirrors the frame view.
+  expect(await flip(page, id, "horizontal")).toBe(true);
+  await expect.poll(() => readFlip(page, id)).toEqual({ flipH: true, flipV: false });
+  // committed render mirrors the frame view (NestedFrame flip layer).
   await expect
-    .poll(() => page.getByTestId("image-flip-layer").getAttribute("style"))
-    .toContain("scaleX(-1)");
+    .poll(() => page.locator(`[data-frame-id="${id}"] div[style*="scaleX(-1)"]`).count())
+    .toBeGreaterThan(0);
 
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => readCrop(page, id)).toBeUndefined();
+  await expect.poll(() => readFlip(page, id)).toBeNull();
 });
 
-test("WI-074 — flipping a CROPPED image preserves the visible region (window unchanged)", async ({
+test("WI-074 — flipping a CROPPED image preserves the visible region (cropRatio unchanged)", async ({
   page,
 }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-074-flip-crop" });
   const id = await addImage(page);
 
-  // Crop to a sub-window first.
   await setCrop(page, { itemId: id, crop: { x: 0.2, y: 0.1, w: 0.5, h: 0.6 } });
   await expect.poll(() => readCrop(page, id)).toEqual({ x: 0.2, y: 0.1, w: 0.5, h: 0.6 });
 
-  // Flip horizontally — window must stay identical, only flipH added.
-  await page.evaluate((itemId) => {
-    (
-      window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } }
-    ).__weaveEditor!.exec("weave.image.flip", { itemId, axis: "horizontal" });
-  }, id);
-  await expect
-    .poll(() => readCrop(page, id))
-    .toEqual({ x: 0.2, y: 0.1, w: 0.5, h: 0.6, flipH: true });
+  // Flip — the crop window (cropRatio) must stay identical; flip is a separate unit.
+  expect(await flip(page, id, "horizontal")).toBe(true);
+  expect(await readCrop(page, id)).toEqual({ x: 0.2, y: 0.1, w: 0.5, h: 0.6 });
+  expect(await readFlip(page, id)).toEqual({ flipH: true, flipV: false });
+});
+
+test("WI-074 — flip generalizes to shapes; qr is rejected", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-flip-generic" });
+
+  const shapeId = await addKind(page, "shape");
+  expect(await flip(page, shapeId, "horizontal")).toBe(true);
+  await expect.poll(() => readFlip(page, shapeId)).toEqual({ flipH: true, flipV: false });
+
+  const qrId = await addKind(page, "qr");
+  expect(await flip(page, qrId, "horizontal")).toBe(false); // flip-not-supported
+  expect(await readFlip(page, qrId)).toBeNull();
 });
 
 test("WI-074 — crop mode suspends editor hotkeys; restored after exit (Step 5 gate)", async ({
