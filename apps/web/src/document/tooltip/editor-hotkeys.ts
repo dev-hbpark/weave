@@ -31,6 +31,7 @@ import { createHotkeyRegistry } from "@agocraft/input/hotkey";
 import type { AITooltipHotkeyTable } from "@weave/design-system";
 import { useEffect, useMemo, useRef } from "react";
 import { KNOWN_DOMAIN_KINDS } from "../domain-kinds.js";
+import { isCroppingNow } from "../interactions/cropping-state.js";
 
 interface EditorActionDeps {
   readonly editor: Editor;
@@ -1068,7 +1069,8 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
           scope: cmd.hotkey.scope ?? "editor",
           label: koLabel,
           action: (ctx) => {
-            if (isTextEditingTarget(ctx.event.target)) return;
+            // WI-074 — while an image crop is open, the inline editor owns input.
+            if (isTextEditingTarget(ctx.event.target) || isCroppingNow()) return;
             action({ editor: editorRef.current });
           },
         }),
@@ -1082,7 +1084,7 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
       if (ev.modifiers.shift || ev.modifiers.meta || ev.modifiers.ctrl || ev.modifiers.alt) return;
       const cmdId = IME_SAFE_TOOL_BINDINGS[ev.code];
       if (cmdId === undefined) return;
-      if (isTextEditingTarget(ev.target)) return;
+      if (isTextEditingTarget(ev.target) || isCroppingNow()) return;
       ev.raw.preventDefault();
       findAction(cmdId)?.({ editor: editorRef.current });
     });

@@ -55,12 +55,14 @@ DR-029의 D1–D5 결정을 구현한다.
 
 ✅ Step 0 (agocraft DR-037 재벤더) · 1 (커맨드) · 2 (에이전트 fold) · 3 (크롭 모드 렌더+UI:
 더블클릭·dim 마스크·윈도우 이동/리사이즈 핸들·straighten 슬라이더·완료/취소·History 커밋) ·
-6 (stale 주석 정정) · 7 (e2e). 검증: weave typecheck + **333 unit** + build green, **image-crop.spec.ts
-3/3 브라우저 통과**(커맨드 crop+rotation·Cmd+Z/redo·가드·UI straighten 커밋).
+**5 (`useIsCropping` 전역 게이트** — `cropping-state.ts` 작은 구독 스토어; editor-hotkeys 2개
+게이트 + DesignPage window keydown bail로 크롭 중 Delete/R·T·F/Cmd 단축키 비활성) ·
+6 (stale 주석 정정) · 7 (e2e). 검증: weave typecheck + **333 unit** + build green,
+**image-crop.spec.ts 4/4 브라우저 통과**(커맨드 crop+rotation·Cmd+Z/redo·가드·UI straighten 커밋·
+크롭 중 핫키 게이트).
 
 ⏭ 남은 폴리시: **Step 4** — 인라인 핸들을 `SelectionLayer` 오버레이로 이관(줌 무관 상수 크기).
-**Step 5** — `useIsCropping` 전역 게이트(크롭 중 마퀴/러버밴드/핫키 비활성). v1은 크롭 오버레이의
-`stopPropagation`으로 프레임 제스처 충돌을 막고 ESC/Enter는 자체 처리.
+현재 핸들은 design 좌표 인라인이라 캔버스 줌에 따라 크기가 변함(기능엔 영향 없음).
 
 ## Build steps
 

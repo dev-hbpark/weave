@@ -48,6 +48,16 @@ async function setCrop(page: Page, input: Record<string, unknown>): Promise<bool
   return ok;
 }
 
+async function descendantCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    type N = { children?: ReadonlyArray<N> };
+    const w = window as unknown as { __weaveDoc?: { root: N } };
+    const count = (n: N | undefined): number =>
+      n === undefined ? 0 : (n.children ?? []).reduce((acc, c) => acc + 1 + count(c), 0);
+    return count(w.__weaveDoc?.root);
+  });
+}
+
 async function readCrop(page: Page, itemId: string): Promise<Crop> {
   return page.evaluate((cid) => {
     type N = {
@@ -144,4 +154,25 @@ test("WI-074 — UI: double-click enters crop mode; straighten + 완료 commits 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
   expect((await readCrop(page, id))?.rotation ?? 0).toBeCloseTo((20 * Math.PI) / 180, 2);
+});
+
+test("WI-074 — crop mode suspends editor hotkeys; restored after exit (Step 5 gate)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-gate" });
+  const id = await addImage(page);
+  const before = await descendantCount(page);
+
+  // In crop mode the `r` tool hotkey must NOT add a rectangle.
+  await page.locator(`[data-frame-id="${id}"]`).dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+  await page.keyboard.press("r");
+  await page.waitForTimeout(140);
+  expect(await descendantCount(page)).toBe(before);
+
+  // After exit, the same hotkey works again.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
+  await page.keyboard.press("r");
+  await expect.poll(() => descendantCount(page)).toBeGreaterThan(before);
 });

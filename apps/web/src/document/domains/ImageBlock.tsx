@@ -27,6 +27,7 @@ import {
 } from "@agocraft/core";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { croppingState } from "../interactions/cropping-state.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
 
@@ -382,6 +383,15 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
   const a = item.attrs;
   const editable = onUpdate !== undefined;
   const [cropMode, setCropMode] = useState(false);
+
+  // WI-074 Step 5 — publish crop-active to the global gate so editor hotkeys /
+  // selection gestures suspend while this image is being cropped.
+  const itemId = String(item.id);
+  useEffect(() => {
+    if (!cropMode) return;
+    croppingState.enter(itemId);
+    return () => croppingState.exit(itemId);
+  }, [cropMode, itemId]);
 
   const objectFit: CSSProperties["objectFit"] =
     a.fit === "fill"

@@ -106,6 +106,7 @@ import {
   designToHostPx,
   type RatioFrame,
 } from "../document/coordinate-projection.js";
+import { isCroppingNow } from "../document/interactions/cropping-state.js";
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
@@ -1328,6 +1329,9 @@ function DesignPageBody() {
       if (t instanceof HTMLElement && t.matches('input, textarea, [contenteditable="true"]')) {
         return;
       }
+      // WI-074 — an open image crop owns the keyboard (ESC/Enter handled by the
+      // crop editor); suppress Select-All / Delete / Duplicate / dissolve here.
+      if (isCroppingNow()) return;
       const mod = e.metaKey || e.ctrlKey;
       // Cmd/Ctrl + A — context-aware Select All. No frame selected ⇒ the
       // design's first-level children; a frame selected ⇒ that frame's
