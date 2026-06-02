@@ -111,6 +111,44 @@ test("panel can be resized from the corner", async ({ page }) => {
   expect((b1?.height ?? 0) - (b0?.height ?? 0)).toBeGreaterThan(60);
 });
 
+test("transcript auto-scrolls to the bottom when opened with a long history", async ({ page }) => {
+  const id = await prepareDesign(page, { flavor: "mixed", title: "Aku-Scroll" });
+  // Seed a token + a long persisted conversation, then reload so the panel
+  // restores them at mount. This suite is backend-free — we only need the
+  // transcript to RENDER (no live streaming), which `loadConversation` provides.
+  await page.evaluate((designId) => {
+    window.localStorage.setItem("weave.aku.token", "e2e-token");
+    const msgs = Array.from({ length: 40 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      text: `메시지 ${i} — ${"내용 ".repeat(12)}`,
+      at: 1700000000000 + i,
+    }));
+    window.localStorage.setItem(`weave.aku.conversation.${designId}`, JSON.stringify(msgs));
+  }, id);
+  await page.reload();
+  // The offline-reconcile dialog can reappear after the reload — resolve it.
+  const conflict = page.getByTestId("local-conflict-dialog");
+  if (await conflict.isVisible().catch(() => false)) {
+    await page.getByTestId("local-conflict-save").click();
+    await conflict.waitFor({ state: "hidden" });
+  }
+
+  await page.locator("[data-aku-launcher]").click();
+  await expect(page.locator("[data-aku-panel]")).toBeVisible();
+  const body = page.locator("[data-aku-body]");
+  await expect(body).toBeVisible();
+
+  // Content must overflow (otherwise "scrolled to bottom" is vacuously true)…
+  await expect
+    .poll(() => body.evaluate((el) => el.scrollHeight - el.clientHeight), { timeout: 4000 })
+    .toBeGreaterThan(40);
+  // …and the transcript should sit AT the bottom (distance-to-bottom ≈ 0).
+  const distanceToBottom = await body.evaluate(
+    (el) => el.scrollHeight - el.clientHeight - el.scrollTop,
+  );
+  expect(distanceToBottom).toBeLessThan(8);
+});
+
 test("typing in the composer does not trigger canvas hotkeys", async ({ page }) => {
   await openAku(page);
   // Seed a child directly via the editor (NOT via Aku — this suite is backend-free)
