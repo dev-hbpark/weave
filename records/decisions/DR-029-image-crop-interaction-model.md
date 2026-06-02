@@ -138,6 +138,23 @@ SelectionLayer 위임은 불필요해짐(향후 다중 아이템/회전된 윈�
 > D1 좌표계(cover vs source) 한계는 유지 — P1 이중 렌더는 cover-displayed 이미지의 window-wrapper
 > 기하를 재사용(committed 렌더와 일관). 종횡비 불일치 시 정밀 픽셀 크롭은 여전히 후속.
 
+## D8b — 크롭 UI 마감 (캔버스 dim + 슬라이더/버튼 제거 + QuickActionBar 완료/취소) (2026-06-02)
+
+운영자 요청 3건:
+1. **dim 캔버스 전체** — FrameStage 디자인-플레인 레벨 dim 오버레이(크롭 중), 크롭 프레임은
+   `zIndex` 상승으로 dim 위에 표시(밝은 크롭 영역 보임). 크롭 프레임의 전체 원본은 자체 dim
+   오버레이로 어둡게 → 원본 어둡게 + 크롭 영역 밝게.
+2. **straighten 슬라이더 제거** — 회전은 P2의 SelectionLayer rotate 핸들로.
+3. **인라인 취소/완료 제거 → QuickActionBar에 완료/취소만** — `crop.apply`/`crop.cancel` 커맨드
+   (category `"crop"`, `visibleWhen: ctx.isCropping`). DesignPage가 크롭 중 QuickActionBar에
+   `category="crop"` 전달 → 다른 액션 숨기고 완료/취소만. commandContext에 `isCropping` 추가
+   (use-command-host, reactive). 아이콘: 완료=IconCheck, 취소=IconClose.
+
+부수: **cropMode를 공유 스토어 구동**으로 전환(`useCroppingItemId()===itemId`) — 외부(QuickActionBar/
+키보드)에서 종료 가능. 더블클릭=enter, **Enter=완료**(DesignPage가 draft로 `weave.image.setCrop`
+exec + exit), **ESC=취소**(exit). 회전 0이면 cropRatio에 rotation 생략. e2e 11/11
+(완료/ESC, 캔버스 dim, QuickActionBar 완료/취소).
+
 ## Undo
 
 크롭 확정 = `item.attrs` Patch 1개(`cropRatio`만 교체, full ImageAttrs 재구성 —

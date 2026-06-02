@@ -31,7 +31,7 @@ import { createHotkeyRegistry } from "@agocraft/input/hotkey";
 import type { AITooltipHotkeyTable } from "@weave/design-system";
 import { useEffect, useMemo, useRef } from "react";
 import { KNOWN_DOMAIN_KINDS } from "../domain-kinds.js";
-import { isCroppingNow } from "../interactions/cropping-state.js";
+import { croppingState, isCroppingNow } from "../interactions/cropping-state.js";
 
 interface EditorActionDeps {
   readonly editor: Editor;
@@ -891,6 +891,39 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     enabledWhen: (ctx) => multiAlignEnabled(ctx) && (ctx.selectionCount as number) >= 3,
     action: () => {
       multiAligner?.("distribute-vertical");
+    },
+  },
+  // WI-074 D8b — crop apply / cancel. Visible ONLY while a crop is open; the
+  // QuickActionBar shows them (category "crop") in place of the normal actions.
+  {
+    id: "crop.apply",
+    label: { en: "Apply crop", ko: "완료" },
+    hint: { en: "Apply the crop.", ko: "자르기를 적용합니다." },
+    category: "crop",
+    visibleWhen: (ctx) => ctx.isCropping === true,
+    action: ({ editor }) => {
+      const id = croppingState.activeId();
+      if (id === null) return;
+      const d = croppingState.getDraft();
+      if (d !== null) {
+        editor.exec("weave.image.setCrop", {
+          itemId: id,
+          crop: { x: d.x, y: d.y, w: d.w, h: d.h },
+          ...(d.rotation !== 0 ? { rotation: d.rotation } : {}),
+        });
+      }
+      croppingState.exit(id);
+    },
+  },
+  {
+    id: "crop.cancel",
+    label: { en: "Cancel crop", ko: "취소" },
+    hint: { en: "Discard the crop.", ko: "자르기를 취소합니다." },
+    category: "crop",
+    visibleWhen: (ctx) => ctx.isCropping === true,
+    action: () => {
+      const id = croppingState.activeId();
+      if (id !== null) croppingState.exit(id);
     },
   },
 ];

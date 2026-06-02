@@ -38,6 +38,7 @@ import {
   IconAlignRight,
   IconAlignTop,
   IconAlignVerticalCenter,
+  IconCheck,
   IconClose,
   IconDistributeHorizontal,
   IconDistributeVertical,
@@ -106,7 +107,11 @@ import {
   designToHostPx,
   type RatioFrame,
 } from "../document/coordinate-projection.js";
-import { croppingState, isCroppingNow } from "../document/interactions/cropping-state.js";
+import {
+  croppingState,
+  isCroppingNow,
+  useIsCropping,
+} from "../document/interactions/cropping-state.js";
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
@@ -1331,7 +1336,7 @@ function DesignPageBody() {
         editor.exec("weave.image.setCrop", {
           itemId: cropItemId,
           crop: { x: d.x, y: d.y, w: d.w, h: d.h },
-          rotation: d.rotation,
+          ...(d.rotation !== 0 ? { rotation: d.rotation } : {}),
         });
       }
       croppingState.exit(cropItemId);
@@ -2753,6 +2758,8 @@ function QuickActionBarAnchored({
   // boolean for this — same gate the upcoming HoverAffordanceLayer
   // (Phase 3) will share.
   const affordancesAllowed = useEditAffordancesAllowed();
+  // WI-074 D8b — while cropping, the bar shows ONLY the crop apply/cancel commands.
+  const cropping = useIsCropping();
   const isMulti = selectedIds.size > 1;
   const [anchor, setAnchor] = useState<{ top: number; left: number; frameId: string } | null>(null);
   // Stable key for the multi-select case so the effect re-mounts
@@ -2829,6 +2836,9 @@ function QuickActionBarAnchored({
     >
       <QuickActionBar
         data-testid="hover-quick-actions"
+        // WI-074 D8b — during a crop, filter to the "crop" category so only the
+        // 완료 / 취소 commands surface (the normal frame actions are suppressed).
+        {...(cropping ? { category: "crop" } : {})}
         // 8 multi-selection align/distribute commands stay registered
         // (so their Alt+letter hotkeys + command palette entries keep
         // working) but are HIDDEN from the bar — one `multi.align`
@@ -2844,6 +2854,21 @@ function QuickActionBarAnchored({
         // to remove the selection.
         pinToEndIds={DELETE_PIN_IDS}
         renderItem={(id) => {
+          // WI-074 D8b — crop 완료 / 취소.
+          if (id === "crop.apply") {
+            return (
+              <CommandIconButton commandId={id} size="sm">
+                <IconCheck size={15} />
+              </CommandIconButton>
+            );
+          }
+          if (id === "crop.cancel") {
+            return (
+              <CommandIconButton commandId={id} size="sm">
+                <IconClose size={14} />
+              </CommandIconButton>
+            );
+          }
           // WI-036 follow-up — the `+` button doubles as a hover-
           // open submenu listing every add option (frame / text /
           // 9 shape variants). Single-click dispatches the default

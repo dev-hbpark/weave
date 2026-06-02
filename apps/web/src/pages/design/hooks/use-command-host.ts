@@ -3,6 +3,7 @@ import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { findParentAndIndex } from "../../../document/agocraft-mirror.js";
 import { useIsTextEditing } from "../../../document/clipboard/use-is-text-editing.js";
+import { useIsCropping } from "../../../document/interactions/cropping-state.js";
 import type { HoverContext } from "../../../document/interactions/use-hover-context.js";
 import {
   dispatchEditorCommand,
@@ -51,6 +52,9 @@ export function useDesignCommandHost({
   editor,
   bumpHistoryTick,
 }: UseDesignCommandHostParams): UseDesignCommandHost {
+  // WI-074 D8b — reactive crop-active flag drives the crop-only QuickActionBar
+  // commands (완료/취소) via their visibleWhen.
+  const isCropping = useIsCropping();
   // WI-036 follow-up — selection-driven QuickActionBar reads `selectedKind`.
   // Multi-selection (size > 1) reports `selectedKind = "multi"` so visibleWhen
   // filters surface the `multi.*` command set instead of per-kind ones.
@@ -112,6 +116,8 @@ export function useDesignCommandHost({
       clipboardHasItems,
       // WI-041 Phase 5 — reactive text-edit gate.
       isTextEditing,
+      // WI-074 D8b — crop.apply / crop.cancel visibleWhen gate.
+      isCropping,
       // multi.align-* / multi.distribute-* enabledWhen gate.
       multiSameParent,
     }),
@@ -126,6 +132,7 @@ export function useDesignCommandHost({
       hoverContext.hoveredRole,
       clipboardHasItems,
       isTextEditing,
+      isCropping,
       multiSameParent,
     ],
   );

@@ -295,6 +295,24 @@ test("WI-074 D8 P2 — SelectionLayer resize handle resizes the crop window; rot
   expect(crop?.h ?? 1).toBeLessThan(0.99);
 });
 
+test("WI-074 D8b — QuickActionBar shows 완료/취소 during crop; 완료 commits", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-qab" });
+  const id = await addImage(page);
+  await setCrop(page, { itemId: id, crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 } });
+  await page.locator(`[data-frame-id="${id}"]`).click();
+  await page.locator(`[data-frame-id="${id}"]`).dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+
+  // The quick-action bar surfaces ONLY the crop 완료 / 취소 commands.
+  await expect.poll(() => page.getByTestId("cmd-crop-apply").count()).toBeGreaterThan(0);
+  await expect(page.getByTestId("cmd-crop-cancel")).toBeVisible();
+
+  await page.getByTestId("cmd-crop-apply").click();
+  await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
+  // committed (window preserved since unedited).
+  expect(await readCrop(page, id)).toEqual({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+});
+
 test("WI-074 — flip toggles a transform.flip unit (display mirrored); Cmd+Z reverts", async ({
   page,
 }) => {
