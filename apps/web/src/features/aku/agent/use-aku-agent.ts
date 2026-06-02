@@ -15,6 +15,7 @@
 
 import {
   type AgentRunState,
+  type ClarifyRequest,
   type ConnectionState,
   connectAgocraftAgent,
   INITIAL_AGENT_STATE,
@@ -51,6 +52,11 @@ export interface UseAkuAgent {
   readonly status: AkuStatus;
   /** Reverse-MCP connection lifecycle, orthogonal to `status` (small-think DR-010). */
   readonly connection: AkuConnection;
+  /** A pending pre-generation "which media item types?" question from the server,
+   *  or null. The panel renders a picker; answering it resolves the agent's run. */
+  readonly pendingClarify: { readonly req: ClarifyRequest } | null;
+  /** Answer the pending clarify question with the selected item-type names. */
+  resolveClarify(types: readonly string[]): void;
   send(text: string, images?: ReadonlyArray<AkuImage>): void;
   stop(): void;
   /** Re-run the most recent user turn (drops its response first). */
@@ -206,11 +212,18 @@ export function useAkuAgent(deps: {
   readonly url?: string;
   readonly token?: string;
 }): UseAkuAgent {
-  const { editor, getDocument, getSelection, getDesignInfo, designId } = deps;
-  const url = deps.url ?? envStr("VITE_AKU_AGENT_URL") ?? DEV_URL;
+  // Render-stable values are destructured from `deps` HERE, once. Everything
+  // volatile (the getters + callbacks like onFramesAdded) is read inside the
+  // long-lived callbacks via `depsRef.current.*` (set up below). There is
+  // intentionally NO other `deps.<member>` access anywhere in this file — a
+  // guard test (use-aku-agent.deps-guard.test.ts) enforces it, so a future dep
+  // can never be read straight off the first-render `deps` and go stale
+  // (WI-075 / DR-030).
+  const { editor, designId, url: urlProp, token: tokenProp } = deps;
+  const url = urlProp ?? envStr("VITE_AKU_AGENT_URL") ?? DEV_URL;
   // Token precedence: injected dep → env → saved-in-browser → none (prompt).
   const [token, setTokenState] = useState<string | null>(
-    () => deps.token ?? envStr("VITE_AKU_AGENT_TOKEN") ?? loadToken(),
+    () => tokenProp ?? envStr("VITE_AKU_AGENT_TOKEN") ?? loadToken(),
   );
   const hasToken = token !== null && token !== "";
 
@@ -232,7 +245,7 @@ export function useAkuAgent(deps: {
       fromStorage: loadToken(),
       origin: window.location.origin,
       hasToken,
-      note: "resolved = deps.token ?? env ?? storage; the setup screen shows when this is null/empty",
+      note: "resolved = injected token ?? env ?? storage; the setup screen shows when this is null/empty",
     });
   }, [hasToken]);
 
@@ -241,15 +254,37 @@ export function useAkuAgent(deps: {
   );
   const [status, setStatus] = useState<AkuStatus>("idle");
   const [connection, setConnection] = useState<AkuConnection>(() => toConnection("idle"));
+  // Pre-generation media-type question (small-think clarify): when the server asks
+  // before creating a design, we surface a picker and resolve once the user answers.
+  const [pendingClarify, setPendingClarify] = useState<{
+    readonly req: ClarifyRequest;
+    readonly resolve: (types: readonly string[]) => void;
+  } | null>(null);
+  // Stable handler (a ref → reconnects don't re-create it). Returns a promise the
+  // server's onClarify awaits; resolved by the picker via resolveClarify.
+  const onClarifyRef = useRef(
+    (req: ClarifyRequest): Promise<readonly string[]> =>
+      new Promise<readonly string[]>((resolve) => setPendingClarify({ req, resolve })),
+  );
+  const resolveClarify = useCallback((types: readonly string[]): void => {
+    setPendingClarify((cur) => {
+      cur?.resolve(types);
+      return null;
+    });
+  }, []);
   const messagesRef = useRef<ReadonlyArray<AkuMessage>>(messages);
 
-  // Latest-value refs so the stable callbacks never go stale.
-  const getDocumentRef = useRef(getDocument);
-  getDocumentRef.current = getDocument;
-  const getSelectionRef = useRef(getSelection);
-  getSelectionRef.current = getSelection;
-  const getDesignInfoRef = useRef(getDesignInfo);
-  getDesignInfoRef.current = getDesignInfo;
+  // Single latest-value mirror of the WHOLE `deps` object. Every read of a
+  // volatile dep — the getters AND the callbacks like `onFramesAdded` — inside
+  // the long-lived async callbacks (runTurn 등) MUST go through
+  // `depsRef.current.*`. Reading `deps.X` directly there captures the
+  // first-render value forever, because those callbacks are memoized with a
+  // stable dependency array that intentionally omits `deps`. Consolidating the
+  // former per-field refs into one mirror means a NEW dep needs zero ref wiring
+  // and can never silently go stale (WI-075 / DR-030 — the `onFramesAdded`
+  // agent-fit-at-70% regression came from a missing per-field ref here).
+  const depsRef = useRef(deps);
+  depsRef.current = deps;
 
   // One reverse-MCP link per mounted hook, opened lazily on first send.
   const handleRef = useRef<ToolClientHandle | null>(null);
@@ -319,7 +354,7 @@ export function useAkuAgent(deps: {
       return Promise.reject(new Error("no-token")); // gated by the UI; defensive
     }
     if (connectingRef.current === null) {
-      const schema = getDocumentRef.current().schema as Schema | undefined;
+      const schema = depsRef.current.getDocument().schema as Schema | undefined;
       // connectTimeoutMs + auto-reconnect + heartbeat are owned by the library now
       // (small-think DR-010): no consumer-side Promise.race, and transient drops
       // self-heal — the handle re-dials and re-submits in-flight turns.
@@ -328,7 +363,7 @@ export function useAkuAgent(deps: {
         // calls share one transaction id → one Cmd+Z (WI-060).
         editor: roundGroup.editor,
         commands,
-        getDocument: () => getDocumentRef.current(),
+        getDocument: () => depsRef.current.getDocument(),
         schemas: WEAVE_COMMAND_SCHEMAS,
         // Curated, weave-accurate capabilities → grounds the agent's (cached)
         // system prompt in weave's kinds/attrs/coordinate model (WI-054 hardening).
@@ -337,6 +372,8 @@ export function useAkuAgent(deps: {
         // at connect (the ctl hello). The server caches it as "# weave domain
         // knowledge", grounding every task in how weave's model works (WI-054+).
         domain: { name: "weave", text: AKU_ABLATION.weaveDomain ? WEAVE_DOMAIN_KNOWLEDGE : "" },
+        // Opt into the server's pre-generation "which media item types?" question.
+        onClarify: (req) => onClarifyRef.current(req),
         userId: `weave:${designId === "" ? "default" : designId}`,
         url,
         token,
@@ -421,7 +458,7 @@ export function useAkuAgent(deps: {
       const depthBefore = editor.history.undoSize();
       // WI-065 — top-level frame count before the turn; if it grows, the agent
       // added slide(s) and we fit the camera afterwards (see below).
-      const rootFramesBefore = getDocumentRef.current().root.children.length;
+      const rootFramesBefore = depsRef.current.getDocument().root.children.length;
 
       // Attached images serve two roles: (a) VISION — raw bytes go to the model
       // via submit({ images }); (b) ASSET — upload them so the agent can drop the
@@ -442,12 +479,12 @@ export function useAkuAgent(deps: {
       // primer + design info + image assets + current selection (all view-state,
       // absent from the document snapshot) so it can size text against the canvas
       // and resolve "이걸 …" / "이 이미지를 …" prompts.
-      const design = getDesignInfoRef.current?.();
+      const design = depsRef.current.getDesignInfo?.();
       const designLine =
         design !== undefined
           ? `\n\n[디자인] 캔버스 ${design.width}×${design.height}px · 배경 ${design.background} · frame 좌표(x/y/width/height)는 부모 프레임 대비 0..1 비율(최상위 아이템의 부모 = 디자인 캔버스 전체), fontSize·letterSpacing 등 타이포 크기는 이 캔버스 기준 절대 px`
           : "";
-      const selected = getSelectionRef.current();
+      const selected = depsRef.current.getSelection();
       const selectionLine =
         selected.length > 0 ? `\n\n[컨텍스트] 현재 선택된 아이템 id: ${selected.join(", ")}` : "";
       const primer = AKU_ABLATION.taskPrimer ? WEAVE_TASK_PRIMER : "";
@@ -528,7 +565,7 @@ export function useAkuAgent(deps: {
             (succeeded
               ? prev.text !== ""
                 ? prev.text
-                : (res.finalText || "완료했어요.")
+                : res.finalText || "완료했어요."
               : (res.error ?? "요청을 처리하지 못했어요.")) + truncatedNote,
           ...(succeeded ? {} : { error: true }),
           historyDepthAfter: depthAfter,
@@ -538,8 +575,8 @@ export function useAkuAgent(deps: {
         // content at the shared 70%, so an agent-built deck lands like every other
         // fit instead of staying at the base ~100% view. Gated on a frame-count
         // increase so pure edits don't yank the camera.
-        if (succeeded && getDocumentRef.current().root.children.length > rootFramesBefore) {
-          deps.onFramesAdded?.();
+        if (succeeded && depsRef.current.getDocument().root.children.length > rootFramesBefore) {
+          depsRef.current.onFramesAdded?.();
         }
       } catch (err) {
         if (genRef.current !== gen) return;
@@ -667,6 +704,8 @@ export function useAkuAgent(deps: {
     messages,
     status,
     connection,
+    pendingClarify,
+    resolveClarify,
     send,
     stop,
     regenerate: rerunLast,

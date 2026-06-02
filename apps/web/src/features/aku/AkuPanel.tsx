@@ -4,11 +4,13 @@
 // a bottom-right grabber resizes. Header = 아쿠 title (drag) + 새 대화 + close;
 // Body = transcript; Footer = composer.
 
+import type { ClarifyRequest } from "@agocraft/agent-client";
 import { Banner, IconButton, IconClose, IconPlus, Panel } from "@weave/design-system";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { AkuMascot } from "./AkuMascot.js";
 import { AkuTokenSetup } from "./AkuTokenSetup.js";
+import { ClarifyPicker } from "./ClarifyPicker.js";
 import { MessageList } from "./MessageList.js";
 import type {
   AkuConnection,
@@ -26,6 +28,8 @@ export function AkuPanel({
   messages,
   status,
   connection,
+  pendingClarify,
+  onResolveClarify,
   onSend,
   onStop,
   onClose,
@@ -46,6 +50,10 @@ export function AkuPanel({
   readonly status: AkuStatus;
   /** Reverse-MCP connection lifecycle — drives the connecting/reconnecting banner. */
   readonly connection: AkuConnection;
+  /** A pending pre-generation "which media types?" question, or null. */
+  readonly pendingClarify: { readonly req: ClarifyRequest } | null;
+  /** Answer the pending clarify question with the selected item-type names. */
+  readonly onResolveClarify: (types: readonly string[]) => void;
   readonly onSend: (text: string, images: ReadonlyArray<AkuImage>) => void;
   readonly onStop: () => void;
   readonly onClose: () => void;
@@ -61,6 +69,20 @@ export function AkuPanel({
   /** Forget the saved token → back to the setup gate (escape a wrong token). */
   readonly onResetToken: () => void;
 }): JSX.Element {
+  // Auto-scroll the transcript to the bottom whenever a new message arrives or
+  // the streaming reply grows, so the latest content is always in view. Tracking
+  // the last message's text length also keeps it pinned to the bottom while the
+  // assistant streams; `status` covers the streaming→final markdown swap (which
+  // can change height without changing message count/text). useLayoutEffect runs
+  // before paint so there is no visible jump.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const lastText = messages.at(-1)?.text ?? "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll signal is the message count + streamed length + status, not bodyRef.
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (el === null) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, lastText.length, status]);
   return (
     <div
       className="fixed z-[48]"
@@ -102,7 +124,7 @@ export function AkuPanel({
             <IconClose size={16} />
           </IconButton>
         </Panel.Header>
-        <Panel.Body>
+        <Panel.Body ref={bodyRef} data-aku-body>
           {hasToken && connection.banner !== null ? (
             <div className="px-3 pt-2">
               <Banner
@@ -133,6 +155,11 @@ export function AkuPanel({
         </Panel.Body>
         {hasToken ? (
           <Panel.Footer>
+            {pendingClarify !== null ? (
+              <div className="pb-2">
+                <ClarifyPicker request={pendingClarify.req} onSubmit={onResolveClarify} />
+              </div>
+            ) : null}
             <AkuComposer
               onSend={onSend}
               onStop={onStop}

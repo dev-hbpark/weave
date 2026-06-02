@@ -69,6 +69,8 @@ export function AkuAssistant({
     messages,
     status,
     connection,
+    pendingClarify,
+    resolveClarify,
     send,
     stop,
     regenerate,
@@ -126,6 +128,8 @@ export function AkuAssistant({
         messages={messages}
         status={status}
         connection={connection}
+        pendingClarify={pendingClarify}
+        onResolveClarify={resolveClarify}
         onSend={send}
         onStop={stop}
         onClose={() => setOpen(false)}
