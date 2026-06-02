@@ -463,7 +463,10 @@ export interface Design {
   readonly height: number; // absolute px
   /** Canvas background. CSS color string — drives the editor's design-plane
    *  background and the presentation surface. Models the "page" the user is
-   *  designing on, independent of the editor's UI theme. Default: white. */
+   *  designing on. Freshly generated designs default to the active theme's
+   *  page-background token (`NEW_DESIGN_BACKGROUND`) so the page matches the
+   *  current theme; legacy designs that were saved without a background fall
+   *  back to `DEFAULT_DESIGN_BACKGROUND` (white) on load. */
   readonly background: string;
   readonly document: AgocraftDocument;
   readonly presentationOrder: ReadonlyArray<string>;
@@ -474,4 +477,13 @@ export interface Design {
   };
 }
 
+/** Load-time fallback for designs persisted without a background (legacy
+ *  data). Kept white so existing designs render unchanged. */
 export const DEFAULT_DESIGN_BACKGROUND = "#ffffff";
+
+/** Background applied to freshly generated designs. References the theme's
+ *  page-background token via a CSS `var(--*)` literal — CSS resolves it per
+ *  the active `<html data-theme>`, so a new design's page always matches the
+ *  current theme. Token registry: `color.bg.page` → `--bg-page` in
+ *  `style/theme-tokens.ts`. */
+export const NEW_DESIGN_BACKGROUND = "var(--bg-page)";

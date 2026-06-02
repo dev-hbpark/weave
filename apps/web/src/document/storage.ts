@@ -11,7 +11,7 @@ import {
 import { ensureRootStyleProvider, toAgocraftDocument } from "./agocraft-mirror.js";
 import { migrateLegacyKindsToFrame } from "./migrate-frame-only.js";
 import type { CanvasShape, Design, Document, Item, ItemFrame } from "./types.js";
-import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME } from "./types.js";
+import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME, NEW_DESIGN_BACKGROUND } from "./types.js";
 
 // localStorage persistence.
 //
@@ -790,7 +790,9 @@ export function createBlankDesign(input: {
     title: input.title,
     width: input.width,
     height: input.height,
-    background: input.background ?? DEFAULT_DESIGN_BACKGROUND,
+    // Fresh designs adopt the active theme's page-background token so the
+    // page matches the current theme. Callers can still override.
+    background: input.background ?? NEW_DESIGN_BACKGROUND,
     document,
     presentationOrder: [],
     meta: { createdAt: now, updatedAt: now, schemaVersion: 5 },

@@ -1367,7 +1367,10 @@ export function FrameStage(props: FrameStageProps) {
           ref={outerRef}
           className="absolute inset-0 overflow-hidden"
           // Design canvas background comes from `design.background` (model-
-          // driven). Defaults to white. Documents float on this plane and
+          // driven). Fresh designs default to the theme page-bg token
+          // (`var(--bg-page)`); CSS resolves it per the active theme. Legacy
+          // designs without a stored background fall back to white. Documents
+          // float on this plane and
           // provide their own content; the same plane renders in edit and
           // presentation. `touch-action: none` keeps trackpad / touchscreen
           // pinch gestures from triggering browser-level page zoom (which

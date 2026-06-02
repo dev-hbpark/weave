@@ -162,6 +162,40 @@ test("design background editor mounts in the header regardless of selection", as
   await expect(page.getByTestId("header-design-background")).toBeVisible();
 });
 
+test("a freshly generated design paints the active theme's page-background token", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  // prepareDesign walks the real new-design wizard → createBlankDesign, i.e.
+  // the generation path. New designs default to `var(--bg-page)`.
+  await prepareDesign(page, { flavor: "mixed", title: "BG-THEME" });
+
+  const probe = await page.evaluate(() => {
+    const plane = document.querySelector("[data-canvas]") as HTMLElement | null;
+    if (plane === null) return null;
+    // Resolve --bg-page the same way CSS does for the plane: paint it onto a
+    // probe and read back the browser-normalized rgb(...).
+    const el = document.createElement("div");
+    el.style.color = "var(--bg-page)";
+    document.body.appendChild(el);
+    const tokenColor = getComputedStyle(el).color;
+    el.remove();
+    return {
+      planeBg: getComputedStyle(plane).backgroundColor,
+      tokenColor,
+      tone: plane.getAttribute("data-bg-tone"),
+      theme: document.documentElement.dataset.theme ?? "aurora",
+    };
+  });
+
+  expect(probe).not.toBeNull();
+  // The generated design plane is painted with the resolved theme token.
+  expect(probe?.planeBg).toBe(probe?.tokenColor);
+  // Aurora (the default theme) is dark — the luminance probe must resolve the
+  // `var(--bg-page)` token rather than falling back to "light".
+  expect(probe?.tone).toBe("dark");
+});
+
 test("editing design background updates the rendered canvas + persists", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const designId = await prepareDesign(page, {
