@@ -230,31 +230,32 @@ test("WI-074 — UI: double-click enters crop mode; straighten + 완료 commits 
   expect((await readCrop(page, id))?.rotation ?? 0).toBeCloseTo((20 * Math.PI) / 180, 2);
 });
 
-test("WI-074 — dragging the SE crop handle resizes the window", async ({ page }) => {
-  await prepareDesign(page, { flavor: "mixed", title: "WI-074-handle" });
+test("WI-074 — crop mode (D8): dragging pans the crop window (cropRatio x/y)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-pan" });
   const id = await addImage(page);
+  // Need a sub-window first so there is room to pan.
+  await setCrop(page, { itemId: id, crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 } });
 
   await page.locator(`[data-frame-id="${id}"]`).dblclick();
   await expect(page.getByTestId("image-crop-editor")).toBeVisible();
 
-  const win = page.getByTestId("image-crop-window");
-  const box = await page.getByTestId("image-crop-handle-se").boundingBox();
-  if (box === null) throw new Error("no SE handle box");
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
-  // Real mouse drag — a document capture-phase listener starts the gesture from
-  // the handle press; window-level move/up track the rest.
+  // Drag from the frame centre — the bright crop (pointer-events:none) passes the
+  // press through to the dimmed full-image pan layer.
+  const fbox = await page.locator(`[data-frame-id="${id}"]`).boundingBox();
+  if (fbox === null) throw new Error("no frame box");
+  const cx = fbox.x + fbox.width / 2;
+  const cy = fbox.y + fbox.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  await page.mouse.move(cx - 60, cy - 60, { steps: 10 });
+  await page.mouse.move(cx + 40, cy, { steps: 10 });
   await page.mouse.up();
-  await expect.poll(() => win.getAttribute("data-crop-w")).not.toBe("1.0000");
-
   await page.getByTestId("image-crop-apply").click();
+
   const crop = await readCrop(page, id);
   expect(crop).toBeDefined();
-  expect(crop?.w ?? 1).toBeLessThan(0.99);
-  expect(crop?.h ?? 1).toBeLessThan(0.99);
+  // window size unchanged; x moved (dragging right reveals the image's left → x↓).
+  expect(crop?.w ?? 0).toBeCloseTo(0.6, 5);
+  expect(crop?.x ?? 0.2).toBeLessThan(0.2);
 });
 
 test("WI-074 — flip toggles a transform.flip unit (display mirrored); Cmd+Z reverts", async ({

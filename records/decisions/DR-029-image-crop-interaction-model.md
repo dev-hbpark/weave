@@ -108,6 +108,30 @@ SelectionLayer 위임은 불필요해짐(향후 다중 아이템/회전된 윈�
 > 크롭(+straighten)은 래스터 의미 전용이라 일반화하지 않음(image 한정 유지). 컨테이너(frame)
 > flip은 **표시 전용으로 구현됨**(위 frame 처리) — 자식 미러링 + 비인터랙티브, 프레임 box는 편집 가능.
 
+## D8 — 크롭 UI 재설계 (Figma식: SelectionLayer 핸들 + 이중 렌더) (2026-06-02)
+
+운영자 요청으로 크롭 UI를 재설계한다. 확정 사항:
+- **핸들 이관:** 크롭 핸들을 기존 인라인(ImageBlock document-capture) 대신 **SelectionLayer
+  오버레이**(줌 무관 상수크기·body-portal)로 옮긴다 — 기존 resize 핸들→크롭 윈도우 resize,
+  rotate 핸들→크롭 straighten. (이전에 보류했던 D4 위임의 정식 채택.)
+- **원본 핸들:** "원본 리사이즈" = **크롭 프레임 안에서 원본 이미지 스케일/이동**(cropRatio 변경),
+  **다중선택 리사이즈 핸들 위치(외곽 오프셋)** 에 배치 — 크롭 윈도우 핸들과 분리.
+- **이중 렌더:** 편집 영역에 아이템을 **두 번 그린다** — (1) 전체 원본(프레임 밖까지) **dim**,
+  (2) 프레임 영역만 한 번 더 **bright**. 핸들·밝은 영역 외 전부 dim → 원본 중 잘린 정도가 보임.
+
+**단계별 구현:**
+- **P1 ✅ (이 커밋)** — 크롭 모드 이중 렌더(전체 원본 dim, 프레임 밖까지 + 프레임영역 bright) +
+  **드래그 팬**(cropRatio x/y) + straighten + 커밋. ImageBlock 루트는 크롭 중 `overflow:visible`.
+  인라인 코너 resize 핸들은 제거(P2로 이관). e2e 팬 테스트.
+- **P2 (다음)** — SelectionLayer 크롭 핸들: 크롭 전용 SelectionViewModel 등록(crop-resize 8 +
+  crop-rotate), `data-handle-kind="crop-resize"/"crop-rotate"` + FrameStage body-capture 디스패처
+  분기 → `startHandleGesture`의 sink가 cropRatio 갱신(frame 대신). 크롭 중 기본 chrome은 대체.
+- **P3 (다음)** — 원본 image-scale/이동 핸들: `data-handle-kind="image-scale"`, 다중선택
+  오버레이 핸들 위치(−16px 외곽) 재사용, sink가 cropRatio 스케일/오프셋 갱신.
+
+> D1 좌표계(cover vs source) 한계는 유지 — P1 이중 렌더는 cover-displayed 이미지의 window-wrapper
+> 기하를 재사용(committed 렌더와 일관). 종횡비 불일치 시 정밀 픽셀 크롭은 여전히 후속.
+
 ## Undo
 
 크롭 확정 = `item.attrs` Patch 1개(`cropRatio`만 교체, full ImageAttrs 재구성 —

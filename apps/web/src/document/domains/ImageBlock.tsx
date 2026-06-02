@@ -8,14 +8,12 @@
 //  • committed render — the window (x,y,w,h) is scaled to fill the frame; the
 //    content is rotated by `rotation` (DR-029 D6 straighten) with a cover-zoom so
 //    the frame never shows empty corners.
-//  • crop mode (double-click) — the full image is shown with a dim mask + outline
-//    marking the current crop window, plus a STRAIGHTEN slider (content rotation).
-//    Commit routes through `onUpdate({ cropRatio })` → weave.item.update → History.
-//    v1 NOTE: interactive window drag/resize is deferred (inline handles are
-//    swallowed by the design-plane gesture controllers — DR-029 D4 SelectionLayer
-//    delegation). Set the window via weave.image.setCrop (toolbar / agent). Offset
-//    windows + large rotation may expose minor edges (cover-zoom uses frame
-//    aspect) — precise pixel crop is deferred (DR-029 D1).
+//  • crop mode (double-click, DR-029 D8 redesign) — the FULL source is shown
+//    extending beyond the frame box, DIMMED; the frame-box region is drawn a SECOND
+//    time at full brightness (the kept crop) so you can see how much is cropped out.
+//    Drag to PAN (cropRatio x/y); a STRAIGHTEN slider rotates content (D6). Commit →
+//    `onUpdate({ cropRatio })` → weave.item.update → History. Crop-window RESIZE +
+//    image-scale handles move to the SelectionLayer overlay in Phase 2/3.
 
 import type { Item as AgocraftItem, FilterSpec, ShadowSpec } from "@agocraft/core";
 import {
@@ -26,11 +24,9 @@ import {
   SHADOW_UNIT_KIND,
   shadowToCss,
 } from "@agocraft/core";
-import { useMotionValue, useMotionValueEvent } from "motion/react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { croppingState } from "../interactions/cropping-state.js";
-import { TotalScaleContext } from "../interactions/total-scale-context.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
 
@@ -137,44 +133,27 @@ function ImageContent(props: {
   );
 }
 
-// ── crop-mode editor (WI-074) ────────────────────────────────────────────────
+// ── crop-mode editor (WI-074 / DR-029 D8 redesign — Phase 1) ─────────────────
 //
-// STRAIGHTEN (content rotation, DR-029 D6) + draggable/resizable crop window.
-// The window drag is started from a DOCUMENT capture-phase pointerdown listener
-// that recognizes `[data-crop-handle]` targets and stopPropagation()s — this
-// bypasses React's onPointerDown (which the design-plane gesture controllers
-// swallow before it fires) and blocks those controllers from claiming the press.
-// Move/resize then tracks on window-level pointermove/up. Handles counter-scale
-// by the on-screen scale (TotalScaleContext) so they stay ~10px at any zoom;
-// selection chrome is gated off during crop (NestedFrame) so it doesn't compete.
+// Crop mode shows the FULL source extending beyond the frame box, DIMMED, with the
+// frame-box region drawn a SECOND time at full brightness — so you can see how much
+// of the original is cropped out. Drag to PAN (cropRatio x/y); the straighten slider
+// rotates content (DR-029 D6). Crop-window RESIZE + image-scale handles move to the
+// SelectionLayer overlay in Phase 2/3. The document capture-phase pointerdown
+// bypasses the design-plane gesture controllers that swallow React onPointerDown.
 
-type CropMode = "move" | "nw" | "ne" | "se" | "sw";
-const CROP_HANDLES: ReadonlyArray<{ id: Exclude<CropMode, "move">; pos: CSSProperties }> = [
-  { id: "nw", pos: { left: 0, top: 0 } },
-  { id: "ne", pos: { right: 0, top: 0 } },
-  { id: "se", pos: { right: 0, bottom: 0 } },
-  { id: "sw", pos: { left: 0, bottom: 0 } },
-];
-const MIN_WINDOW = 0.05;
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-function resizeCrop(c: CropRect, id: Exclude<CropMode, "move">, dx: number, dy: number): CropRect {
-  let l = c.x;
-  let t = c.y;
-  let r = c.x + c.w;
-  let b = c.y + c.h;
-  if (id.includes("w")) l = clamp(l + dx, 0, r - MIN_WINDOW);
-  if (id.includes("e")) r = clamp(r + dx, l + MIN_WINDOW, 1);
-  if (id.includes("n")) t = clamp(t + dy, 0, b - MIN_WINDOW);
-  if (id.includes("s")) b = clamp(b + dy, t + MIN_WINDOW, 1);
-  return { ...c, x: l, y: t, w: r - l, h: b - t };
-}
-
-interface CropDrag {
-  readonly mode: CropMode;
-  readonly startX: number;
-  readonly startY: number;
-  readonly start: CropRect;
+/** Wrapper that maps the crop window [x,x+w]x[y,y+h] onto the frame box; with the
+ *  parent overflow visible, the rest of the (cover-displayed) image extends beyond. */
+function cropWindowWrapperStyle(c: CropRect): CSSProperties {
+  return {
+    position: "absolute",
+    left: `${-c.x * (1 / c.w) * 100}%`,
+    top: `${-c.y * (1 / c.h) * 100}%`,
+    width: `${(1 / c.w) * 100}%`,
+    height: `${(1 / c.h) * 100}%`,
+  };
 }
 
 function CropEditor(props: {
@@ -192,15 +171,7 @@ function CropEditor(props: {
   const draftRef = useRef<CropRect>(draft);
   draftRef.current = draft;
   const boxRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<CropDrag | null>(null);
-
-  // Counter-scale handles to a constant ~10px on screen (TotalScaleContext is the
-  // design-plane's live scale, exposed for domain renderers).
-  const fallbackScale = useMotionValue(1);
-  const totalScale = useContext(TotalScaleContext) ?? fallbackScale;
-  const [scale, setScale] = useState(() => totalScale.get() || 1);
-  useMotionValueEvent(totalScale, "change", (v) => setScale(v || 1));
-  const handleSize = 10 / scale;
+  const dragRef = useRef<{ startX: number; startY: number; start: CropRect } | null>(null);
 
   // ESC = cancel, Enter = commit.
   useEffect(() => {
@@ -217,20 +188,17 @@ function CropEditor(props: {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onCancel, onCommit]);
 
-  // Window drag/resize: document capture pointerdown (recognizes crop handles,
-  // bypasses the swallowed React onPointerDown) + window move/up tracking.
+  // Pan: drag the image to choose which part fills the frame box (cropRatio x/y).
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const target = e.target;
       const box = boxRef.current;
       if (!(target instanceof Element) || box === null) return;
-      const handle = target.closest("[data-crop-handle]");
-      if (handle === null || !box.contains(handle)) return;
-      const mode = handle.getAttribute("data-crop-handle") as CropMode;
+      if (target.closest("[data-crop-pan]") === null) return;
       e.preventDefault();
       e.stopPropagation();
-      dragRef.current = { mode, startX: e.clientX, startY: e.clientY, start: draftRef.current };
+      dragRef.current = { startX: e.clientX, startY: e.clientY, start: draftRef.current };
     };
     const onMove = (e: PointerEvent) => {
       const drag = dragRef.current;
@@ -238,14 +206,11 @@ function CropEditor(props: {
       if (drag === null || box === null) return;
       const r = box.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) return;
-      const dx = (e.clientX - drag.startX) / r.width;
-      const dy = (e.clientY - drag.startY) / r.height;
-      if (drag.mode === "move") {
-        const s = drag.start;
-        setDraft({ ...s, x: clamp(s.x + dx, 0, 1 - s.w), y: clamp(s.y + dy, 0, 1 - s.h) });
-      } else {
-        setDraft(resizeCrop(drag.start, drag.mode, dx, dy));
-      }
+      const s = drag.start;
+      // Dragging right reveals more of the image's LEFT side -> window x decreases.
+      const dx = ((e.clientX - drag.startX) / r.width) * s.w;
+      const dy = ((e.clientY - drag.startY) / r.height) * s.h;
+      setDraft({ ...s, x: clamp(s.x - dx, 0, 1 - s.w), y: clamp(s.y - dy, 0, 1 - s.h) });
     };
     const onUp = () => {
       dragRef.current = null;
@@ -262,91 +227,59 @@ function CropEditor(props: {
 
   const stop = (e: ReactPointerEvent<HTMLDivElement>) => e.stopPropagation();
   const deg = Math.round((draft.rotation * 180) / Math.PI);
-
-  // dim mask = four rects around the current window.
   const win = draft;
-  const dim = "rgba(0,0,0,0.45)";
-  const maskRects: ReadonlyArray<CSSProperties> = [
-    { left: 0, top: 0, width: "100%", height: `${win.y * 100}%` },
-    { left: 0, top: `${(win.y + win.h) * 100}%`, width: "100%", bottom: 0 },
-    { left: 0, top: `${win.y * 100}%`, width: `${win.x * 100}%`, height: `${win.h * 100}%` },
-    {
-      left: `${(win.x + win.w) * 100}%`,
-      top: `${win.y * 100}%`,
-      right: 0,
-      height: `${win.h * 100}%`,
-    },
-  ];
+  const wrapper = cropWindowWrapperStyle(win);
+  const imgStyle: CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    objectFit,
+    filter: filterCss,
+    userSelect: "none",
+    ...rotationTransform(win.rotation, aspect),
+  };
 
   return (
     <div
       ref={boxRef}
       data-testid="image-crop-editor"
       className="absolute inset-0"
+      style={{ overflow: "visible" }}
       onPointerDown={stop}
       onDoubleClick={stop}
     >
-      {/* full image (rotated) — the crop context */}
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        decoding="async"
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit,
-          filter: filterCss,
-          userSelect: "none",
-          ...rotationTransform(draft.rotation, aspect),
-        }}
-      />
-      {/* dim mask outside the window */}
-      {maskRects.map((s, i) => (
+      {/* Draw 1 — the full source, extending beyond the frame box, DIMMED. Pan target. */}
+      <div
+        data-crop-pan
+        data-testid="image-crop-pan"
+        className="absolute"
+        style={{ ...wrapper, cursor: "move" }}
+      >
+        <img src={src} alt={alt} draggable={false} decoding="async" style={imgStyle} />
         <div
-          // biome-ignore lint/suspicious/noArrayIndexKey: fixed 4-rect mask
-          key={i}
-          className="absolute"
-          style={{ ...s, background: dim, pointerEvents: "none" }}
+          className="absolute inset-0"
+          style={{ background: "rgba(0,0,0,0.55)", pointerEvents: "none" }}
         />
-      ))}
-      {/* crop window — drag interior to pan, corner handles to resize */}
+      </div>
+      {/* Draw 2 — the frame-box region drawn again, BRIGHT (the kept crop). */}
+      <div className="absolute inset-0" style={{ overflow: "hidden", pointerEvents: "none" }}>
+        <div className="absolute" style={wrapper}>
+          <img src={src} alt={alt} draggable={false} decoding="async" style={imgStyle} />
+        </div>
+      </div>
+      {/* crop boundary outline = the frame box */}
       <div
         data-testid="image-crop-window"
-        data-crop-handle="move"
         data-crop-w={win.w.toFixed(4)}
         data-crop-h={win.h.toFixed(4)}
-        className="absolute"
+        className="absolute inset-0"
         style={{
-          left: `${win.x * 100}%`,
-          top: `${win.y * 100}%`,
-          width: `${win.w * 100}%`,
-          height: `${win.h * 100}%`,
           outline: "1px solid rgba(255,255,255,0.95)",
           boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
-          cursor: "move",
+          pointerEvents: "none",
         }}
-      >
-        {CROP_HANDLES.map((hnd) => (
-          <div
-            key={hnd.id}
-            data-testid={`image-crop-handle-${hnd.id}`}
-            data-crop-handle={hnd.id}
-            className="absolute"
-            style={{
-              ...hnd.pos,
-              width: handleSize,
-              height: handleSize,
-              background: "#fff",
-              border: "1px solid rgba(0,0,0,0.5)",
-              borderRadius: 2,
-              cursor: `${hnd.id}-resize`,
-            }}
-          />
-        ))}
-      </div>
+      />
       {/* controls — straighten + done / cancel */}
       <div
         className="absolute flex items-center gap-2 rounded-md bg-black/70 px-2 py-1"
@@ -469,9 +402,11 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
   return (
     <div
       ref={boxRef}
-      className="relative h-full w-full overflow-hidden"
+      // WI-074 D8 — crop mode shows the full source beyond the frame box, so drop
+      // the overflow clip while cropping.
+      className={cropMode ? "relative h-full w-full" : "relative h-full w-full overflow-hidden"}
       style={{
-        borderRadius: a.borderRadius ? `${a.borderRadius * 50}%` : 0,
+        borderRadius: cropMode || !a.borderRadius ? 0 : `${a.borderRadius * 50}%`,
         opacity,
         boxShadow: shadow,
       }}
