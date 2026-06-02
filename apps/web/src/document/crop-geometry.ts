@@ -6,9 +6,20 @@
 import type { CropDraft } from "./interactions/cropping-state.js";
 
 export const MIN_CROP_WINDOW = 0.05;
-export const MAX_STRAIGHTEN_RAD = (45 * Math.PI) / 180;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+const TWO_PI = 2 * Math.PI;
+/** Wrap an angle (radians) into (-π, π]. Keeps the stored rotation bounded across
+ *  repeated gestures; the wrap is visually seamless because the cover-zoom uses
+ *  |cos|/|sin| (θ and θ±2π render identically). */
+function normalizeAngle(theta: number): number {
+  if (!Number.isFinite(theta)) return 0;
+  let t = theta % TWO_PI;
+  if (t > Math.PI) t -= TWO_PI;
+  else if (t <= -Math.PI) t += TWO_PI;
+  return t;
+}
 
 /** Resize the crop window from a handle direction ("nw".."se"/"n".."w"). dx/dy are
  *  fractions of the frame box. The opposite edge stays fixed. */
@@ -34,7 +45,9 @@ export function panCropWindow(c: CropDraft, dx: number, dy: number): CropDraft {
   };
 }
 
-/** Set content straighten rotation (radians), clamped to ±45°. */
+/** Set content rotation (radians). Full 360° is allowed (WI-074) — the angle is
+ *  normalized into (-π, π] and the cover-zoom keeps the frame fully covered at
+ *  every angle. */
 export function setStraighten(c: CropDraft, rotation: number): CropDraft {
-  return { ...c, rotation: clamp(rotation, -MAX_STRAIGHTEN_RAD, MAX_STRAIGHTEN_RAD) };
+  return { ...c, rotation: normalizeAngle(rotation) };
 }

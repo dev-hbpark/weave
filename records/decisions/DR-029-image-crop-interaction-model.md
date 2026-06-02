@@ -185,6 +185,24 @@ box-shadow가 프레임 경계를 넘어 캔버스 전체를 균일하게 dim함
 안에서 크롭 시 shadow가 경계에서 잘릴 수 있음 — 그 경우 body-portal projection으로 격상
 (backlog). 현 아키텍처에서는 평면-루트/중첩 모두 정상.
 
+## D9 — 크롭 회전 360° 전체 허용 (2026-06-02)
+
+**요청:** 크롭 회전을 360° 전체로. D6의 straighten은 ±45°로 클램프돼 있었다(캔바식 미세
+보정 전제). 운영자는 자유 회전을 원함.
+
+**변경:** `setStraighten`의 `clamp(±MAX_STRAIGHTEN_RAD)` 제거 → 각도를 `(-π, π]`로 **정규화**
+(`normalizeAngle`). `MAX_STRAIGHTEN_RAD` 상수 삭제. 정규화는 반복 제스처에서 값을 유계로
+유지하며, cover-zoom이 `|cos|/|sin|` 기반이라 θ와 θ±2π가 동일 렌더 → 180° 경계 wrap이
+시각적으로 매끄럽다.
+
+**커버리지 검증:** cover-zoom `|cos| + |sin|·max(a,1/a)`(a=프레임 박스 종횡비)는 전 각도에서
+유효. 135°·250° 커밋 렌더 스크린샷에서 프레임이 갭 없이 완전히 채워짐 확인(초기 "검은 갭"은
+테스트 SVG의 `%23` 이중 인코딩 아티팩트였고 실제 렌더 아님). `weave.image.setCrop`은 회전을
+클램프하지 않으므로 명령 경로 변경 불필요.
+
+검증: crop-geometry 단위 7(정규화/wrap/non-finite/윈도 보존/clamp 유지), e2e 13/13(회전
+핸들 ~120° 아크 → |rotation| > 45° 확인 포함), 343 unit / build green.
+
 ## Undo
 
 크롭 확정 = `item.attrs` Patch 1개(`cropRatio`만 교체, full ImageAttrs 재구성 —

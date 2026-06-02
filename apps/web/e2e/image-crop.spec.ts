@@ -332,6 +332,45 @@ test("WI-074 D8 P2 — SelectionLayer resize handle resizes the crop window; rot
   expect(crop?.h ?? 1).toBeLessThan(0.99);
 });
 
+test("WI-074 — crop rotation allows beyond 45° (full 360°)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-rot360" });
+  const id = await addImage(page);
+  await page.locator(`[data-frame-id="${id}"]`).click();
+  await page.locator(`[data-frame-id="${id}"]`).dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+
+  const frameBox = await page.locator(`[data-frame-id="${id}"]`).boundingBox();
+  const rot = page
+    .locator(`[data-selection-handle-item-id="${id}"] [data-handle-kind="rotation"]`)
+    .first();
+  await expect.poll(() => rot.count()).toBeGreaterThan(0);
+  const rb = await rot.boundingBox();
+  if (frameBox === null || rb === null) throw new Error("no boxes");
+  const cx = frameBox.x + frameBox.width / 2;
+  const cy = frameBox.y + frameBox.height / 2;
+  const hx = rb.x + rb.width / 2;
+  const hy = rb.y + rb.height / 2;
+  const r = Math.hypot(hx - cx, hy - cy);
+  const a0 = Math.atan2(hy - cy, hx - cx);
+
+  // Arc the rotate handle ~120° around the frame center — old code clamped to 45°.
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+  const steps = 24;
+  const target = (120 * Math.PI) / 180;
+  for (let i = 1; i <= steps; i++) {
+    const a = a0 + (target * i) / steps;
+    await page.mouse.move(cx + r * Math.cos(a), cy + r * Math.sin(a));
+  }
+  await page.mouse.up();
+  await page.keyboard.press("Enter");
+
+  const crop = await readCrop(page, id);
+  const rotation = crop?.rotation ?? 0;
+  // Beyond the old ±45° (=0.785rad) clamp; ~120° ≈ 2.09rad.
+  expect(Math.abs(rotation)).toBeGreaterThan(Math.PI / 4 + 0.05);
+});
+
 test("WI-074 D8b — QuickActionBar shows 완료/취소 during crop; 완료 commits", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-074-qab" });
   const id = await addImage(page);
