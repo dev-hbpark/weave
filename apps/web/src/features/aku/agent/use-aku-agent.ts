@@ -20,6 +20,7 @@ import {
   connectAgocraftAgent,
   INITIAL_AGENT_STATE,
   reduceAgentState,
+  type ServerInfo,
   type ToolClientHandle,
 } from "@agocraft/agent-client";
 import type { Document as AgocraftDocument, CommandRegistry, Schema } from "@agocraft/core";
@@ -53,6 +54,10 @@ export interface UseAkuAgent {
   readonly status: AkuStatus;
   /** Reverse-MCP connection lifecycle, orthogonal to `status` (small-think DR-010). */
   readonly connection: AkuConnection;
+  /** The agent-server's announced active configuration (execution mode + the model /
+   *  speed knobs it is actually running with), or null until it arrives on connect.
+   *  Descriptive only — never carries secrets. Surfaced in the panel header. */
+  readonly serverInfo: ServerInfo | null;
   /** A pending pre-generation "which media item types?" question from the server,
    *  or null. The panel renders a picker; answering it resolves the agent's run. */
   readonly pendingClarify: { readonly req: ClarifyRequest } | null;
@@ -268,6 +273,8 @@ export function useAkuAgent(deps: {
   );
   const [status, setStatus] = useState<AkuStatus>("idle");
   const [connection, setConnection] = useState<AkuConnection>(() => toConnection("idle"));
+  // Server config announced on connect (mode + perf knobs); null until it arrives.
+  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   // Pre-generation media-type question (small-think clarify): when the server asks
   // before creating a design, we surface a picker and resolve once the user answers.
   const [pendingClarify, setPendingClarify] = useState<{
@@ -388,6 +395,9 @@ export function useAkuAgent(deps: {
         domain: { name: "weave", text: AKU_ABLATION.weaveDomain ? WEAVE_DOMAIN_KNOWLEDGE : "" },
         // Opt into the server's pre-generation "which media item types?" question.
         onClarify: (req) => onClarifyRef.current(req),
+        // The server announces its active config (mode + model/speed knobs) on connect;
+        // surface it in the panel header so the operator sees what's actually running.
+        onServerInfo: (info) => setServerInfo(info),
         userId: `weave:${designId === "" ? "default" : designId}`,
         url,
         token,
@@ -691,6 +701,7 @@ export function useAkuAgent(deps: {
     handleRef.current = null;
     connectingRef.current = null;
     setConnection(toConnection("idle"));
+    setServerInfo(null); // stale once the link is dropped; re-announced on reconnect
   }, []);
 
   const setToken = useCallback(
@@ -719,6 +730,7 @@ export function useAkuAgent(deps: {
     messages,
     status,
     connection,
+    serverInfo,
     pendingClarify,
     resolveClarify,
     send,

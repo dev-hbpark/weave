@@ -231,7 +231,7 @@ importers:
 packages:
 
   '@agocraft/agent-client@file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260602053511.tgz':
-    resolution: {integrity: sha512-0yVvP/xBEnoxrSlfgpdX1wk5CQRkDRFt1TTy5t0tOvQYslbjhYT30vuxcGtZYdVE/yZQFkftvAwsuLU4lmwCcA==, tarball: file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260602053511.tgz}
+    resolution: {integrity: sha512-qg7VYYlfEi6LBpQnnleXj5B5zKzDQImKqzK6ZdzP7Z4OysdLHI10FrYUhJgOc4ypWGEGmMIf2YrMvhAfiRyGgg==, tarball: file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260602053511.tgz}
     version: 1.0.0-rc.20260602053511
 
   '@agocraft/core@file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260602053511.tgz':
@@ -1562,7 +1562,7 @@ packages:
     os: [win32]
 
   '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz':
-    resolution: {integrity: sha512-I9aJbiU39QMwWI3ivH2LgU2s9nSrUYKZbEqYkNTI6NzLavUrmFY6IdZjFgdzt+QedlVYWGhdYU0d7X+6z72IUg==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz}
+    resolution: {integrity: sha512-SomOmkx1LB00gFuZKLHegaQJGK9ZJLya59SONz4pX/zCwjJClVjUmEIyddBhkj9G3oManxjd1GrRMaVfFMrB6Q==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.0.tgz}
     version: 0.1.0
 
   '@stablelib/base64@1.0.1':

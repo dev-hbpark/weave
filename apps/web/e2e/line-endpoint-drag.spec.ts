@@ -19,7 +19,10 @@ async function selectedId(page: Page): Promise<string> {
     return s?.kind === "single" ? String(s.itemId) : "";
   });
 }
-async function poly(page: Page, id: string): Promise<{
+async function poly(
+  page: Page,
+  id: string,
+): Promise<{
   frame: Record<string, number>;
   points: { x: number; y: number }[];
 }> {

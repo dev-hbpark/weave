@@ -16,10 +16,7 @@ test.beforeEach(async ({ page }) => {
 
 /** Add a top-level video item (into the design root) with the given attrs and
  *  return its id. Goes through `weave.item.add` exactly like the agent does. */
-async function addVideo(
-  page: Page,
-  attrsOverride: Record<string, unknown>,
-): Promise<string> {
+async function addVideo(page: Page, attrsOverride: Record<string, unknown>): Promise<string> {
   await page.waitForFunction(() => {
     const w = window as unknown as { __weaveEditor?: unknown; __weaveDoc?: unknown };
     return w.__weaveEditor !== undefined && w.__weaveDoc !== undefined;

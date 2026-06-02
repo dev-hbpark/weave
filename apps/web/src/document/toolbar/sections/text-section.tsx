@@ -15,8 +15,6 @@ import type {
   TextTruncation,
   TextWeight,
 } from "@agocraft/core";
-// weave-extended TextAttrs (adds `textOverflow`) — not the agocraft re-export.
-import type { TextAttrs } from "../../types.js";
 import {
   Accordion,
   AccordionItem,
@@ -42,11 +40,19 @@ import {
 import { useState } from "react";
 import { TextOnboardingHint } from "../../../launch/TextOnboardingHint.js";
 import { fontSizeTooltipCopy } from "../../../launch/text-v1-copy.js";
+import { absoluteFrameBox, findItemDeep } from "../../agocraft-mirror.js";
 import {
   deriveTextAutoResize,
   type LegacyTextAutoResize,
   layoutChildFromTextAutoResize,
 } from "../../domains/derive-text-auto-resize.js";
+import {
+  type DesignDims,
+  useDesignDims,
+  useDocumentForResolution,
+} from "../../style/resolver-context.js";
+// weave-extended TextAttrs (adds `textOverflow`) — not the agocraft re-export.
+import type { TextAttrs } from "../../types.js";
 import {
   batchPerItem,
   isMixed,
@@ -56,12 +62,6 @@ import {
   updateAll,
   useResolveSharedColor,
 } from "../multi-edit.js";
-import { absoluteFrameBox, findItemDeep } from "../../agocraft-mirror.js";
-import {
-  type DesignDims,
-  useDesignDims,
-  useDocumentForResolution,
-} from "../../style/resolver-context.js";
 import { OpacityControl } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 

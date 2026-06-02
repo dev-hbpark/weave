@@ -18,7 +18,10 @@ import {
   useDesign,
 } from "../document";
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
-import { dispatchHotspotAction, openExternalHref } from "../document/interactions/hotspot-action.js";
+import {
+  dispatchHotspotAction,
+  openExternalHref,
+} from "../document/interactions/hotspot-action.js";
 import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 

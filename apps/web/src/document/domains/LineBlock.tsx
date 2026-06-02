@@ -70,7 +70,12 @@ export function LineBlock({ item, onUpdate }: LineBlockProps): JSX.Element {
   const fillProps: SVGAttributes<SVGElement> = { fill: "none" };
   const strokeProps: SVGAttributes<SVGElement> = strokeAttrs
     ? (strokeAttrs as unknown as SVGAttributes<SVGElement>)
-    : { stroke: DEFAULT_LINE_STROKE, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" };
+    : {
+        stroke: DEFAULT_LINE_STROKE,
+        strokeWidth: 2,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+      };
 
   // Endpoint markers inherit `currentColor`; match the line's solid color.
   const markerColor =

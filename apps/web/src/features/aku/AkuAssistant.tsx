@@ -69,6 +69,7 @@ export function AkuAssistant({
     messages,
     status,
     connection,
+    serverInfo,
     pendingClarify,
     resolveClarify,
     send,
@@ -128,6 +129,7 @@ export function AkuAssistant({
         messages={messages}
         status={status}
         connection={connection}
+        serverInfo={serverInfo}
         pendingClarify={pendingClarify}
         onResolveClarify={resolveClarify}
         onSend={send}

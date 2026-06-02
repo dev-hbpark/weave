@@ -149,7 +149,11 @@ test("Add 선 category → 곡선 / 자유곡선 create smooth `line` kind items
     .last()
     .evaluate((el) => {
       const cs = getComputedStyle(el);
-      return { fill: cs.fill, stroke: cs.stroke, hasCubic: (el.getAttribute("d") ?? "").includes("C") };
+      return {
+        fill: cs.fill,
+        stroke: cs.stroke,
+        hasCubic: (el.getAttribute("d") ?? "").includes("C"),
+      };
     });
   expect(paint.hasCubic).toBe(true);
   expect(paint.fill).toBe("none");

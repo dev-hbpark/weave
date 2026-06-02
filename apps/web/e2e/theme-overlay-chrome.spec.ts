@@ -32,9 +32,7 @@ async function setTheme(page: Page, theme: string): Promise<void> {
 /** The overlay surface bg actually resolved for the floating chrome. */
 async function overlayBg(page: Page): Promise<string> {
   return page.evaluate(() =>
-    getComputedStyle(document.documentElement)
-      .getPropertyValue("--surface-overlay")
-      .trim(),
+    getComputedStyle(document.documentElement).getPropertyValue("--surface-overlay").trim(),
   );
 }
 
@@ -62,14 +60,10 @@ test("overlay chrome follows light themes (DR-design-028)", async ({ page }) => 
   for (const theme of LIGHT_THEMES) {
     await setTheme(page, theme);
     const bg = await overlayBg(page);
-    expect(bg, `overlay for ${theme} must differ from dark navy`).not.toBe(
-      darkOverlay,
-    );
+    expect(bg, `overlay for ${theme} must differ from dark navy`).not.toBe(darkOverlay);
     // Light overlays are high-luminance: their first rgb channel is ≥ 240.
     const firstChannel = Number(bg.match(/\d+/)?.[0] ?? "0");
-    expect(firstChannel, `overlay for ${theme} should be light`).toBeGreaterThan(
-      230,
-    );
+    expect(firstChannel, `overlay for ${theme} should be light`).toBeGreaterThan(230);
     await page.screenshot({
       path: `test-results/overlay-${theme}.png`,
       fullPage: false,

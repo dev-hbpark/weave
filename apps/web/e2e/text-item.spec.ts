@@ -62,9 +62,9 @@ test("Add menu → 텍스트 creates a text item with default attrs", async ({ p
   expect(attrs.color).toBe("var(--text-default)");
   // New text defaults to Auto-width (TEXT_ITEM_SPEC §4.6): layoutChild anchor
   // is scale × scale. Width then auto-fits the text (no fixed default width).
-  expect((attrs.layoutChild as { anchor?: { horizontal?: string; vertical?: string } }).anchor).toEqual(
-    { horizontal: "scale", vertical: "scale" },
-  );
+  expect(
+    (attrs.layoutChild as { anchor?: { horizontal?: string; vertical?: string } }).anchor,
+  ).toEqual({ horizontal: "scale", vertical: "scale" });
 
   // Rendered DOM has the TextBlock with the default text.
   await expect(page.getByTestId("text-block")).toBeVisible();
@@ -103,9 +103,7 @@ test("Toolbar text section appears; changing fontSize updates the item", async (
 // (new height / old height). The legacy `fontSize` px mirror and the
 // explicit `fontSizeSpec` are both rewritten so px and % units convert
 // correctly. Edge handles still change box dimensions only.
-test("DR-022 — corner-resize scales fontSize by box height ratio (px spec)", async ({
-  page,
-}) => {
+test("DR-022 — corner-resize scales fontSize by box height ratio (px spec)", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-C" });
   const id = await addTextViaMenu(page);
@@ -127,7 +125,10 @@ test("DR-022 — corner-resize scales fontSize by box height ratio (px spec)", a
           // Fixed mode (left × top anchor) → all 8 handles. Derived from
           // `layoutChild`; the legacy `textAutoResize` field was removed in
           // agocraft v10.
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "left", vertical: "top" },
+          },
         },
       }),
     });
@@ -168,9 +169,7 @@ test("DR-022 — corner-resize scales fontSize by box height ratio (px spec)", a
 // DR-022 — the ratio unit converts too: corner resize multiplies the
 // `kind:"ratio"` value by the same height factor, so a responsive font stays
 // responsive but grows with the box.
-test("DR-022 — corner-resize scales fontSizeSpec ratio value by height ratio", async ({
-  page,
-}) => {
+test("DR-022 — corner-resize scales fontSizeSpec ratio value by height ratio", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Text-C-ratio" });
   const id = await addTextViaMenu(page);
@@ -187,7 +186,10 @@ test("DR-022 — corner-resize scales fontSizeSpec ratio value by height ratio",
           frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
           fontSize: 80,
           fontSizeSpec: { kind: "ratio", value: 0.05 },
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "left", vertical: "top" },
+          },
         },
       }),
     });
@@ -290,7 +292,10 @@ test("px↔% font-unit toggle preserves rendered size (no shrink)", async ({ pag
           frame: { x: 0.3, y: 0.3, width: 0.3, height: 0.15, rotation: 0 },
           fontSize: 80,
           fontSizeSpec: { kind: "px", value: 80 },
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "left", vertical: "top" },
+          },
         },
       }),
     });
@@ -336,7 +341,9 @@ test("% slider stays in sync when ratio exceeds the normal editing range", async
   // 52% — past the 40% normal ceiling, as a big corner-resize can produce.
   await page.evaluate(
     ({ fid, fs }) => {
-      const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+      const w = window as unknown as {
+        __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+      };
       w.__weaveEditor?.exec("weave.item.update", {
         itemId: fid,
         patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
@@ -344,7 +351,10 @@ test("% slider stays in sync when ratio exceeds the normal editing range", async
             ...prev.attrs,
             fontSize: fs,
             fontSizeSpec: { kind: "ratio", value: 0.52 },
-            layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+            layoutChild: {
+              kind: "absolute-constraints",
+              anchor: { horizontal: "left", vertical: "top" },
+            },
           },
         }),
       });
@@ -428,7 +438,10 @@ test("Auto-H mode does NOT render n/s resize handles (height auto, width manual)
       patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
         attrs: {
           ...prev.attrs,
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "top" },
+          },
         },
       }),
     });
@@ -492,7 +505,10 @@ test("typing newlines (Enter) grows frame.height automatically", async ({ page }
           frame: { x: 0.3, y: 0.3, width: 0.3, height: 0.4, rotation: 0 },
           // Auto-height (scale × top) — this test covers height auto-growth;
           // new text now defaults to Auto-width, so set the mode explicitly.
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "top" },
+          },
           // Clear the add-geometry ratio spec so the explicit `fontSize`
           // controls the rendered size — otherwise `fontSizeSpec` (ratio ×
           // design height) dominates and makes one line fill ~half the canvas.
@@ -564,7 +580,10 @@ test("narrowing width via the e handle wraps the text — height grows", async (
           // Auto-height (scale × top) — this test narrows the user-set width
           // (e handle) and expects wrap → height grows. New text defaults to
           // Auto-width, so set the mode explicitly.
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "top" },
+          },
           // Clear the add-geometry ratio spec so `fontSize` (px) controls the
           // rendered size; otherwise the ratio font makes the auto-height box
           // grow many times the canvas height and pushes the e handle off-screen.
@@ -627,7 +646,10 @@ test("cannot narrow width below ≈ one character (min-width clamp)", async ({ p
           frame: { x: 0.4, y: 0.4, width: 0.4, height: 0.1, rotation: 0 },
           // Auto-height — the e (width) handle this test drags only exists in
           // Auto-height/Fixed; new text defaults to Auto-width (no e/w).
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "top" },
+          },
           fontSize: 48,
           text: "M",
         },
@@ -675,7 +697,10 @@ test("edge-resize does NOT change fontSize", async ({ page }) => {
           frame: { x: 0.3, y: 0.3, width: 0.2, height: 0.2, rotation: 0 },
           // Auto-height — the e (width) handle this test drags only exists in
           // Auto-height/Fixed; new text defaults to Auto-width (no e/w).
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "top" },
+          },
           // Clear the add-geometry ratio spec so `fontSize` (px) controls the
           // rendered size; the ratio font would otherwise auto-height the box
           // many times the canvas height and push the e handle off-screen.
@@ -726,7 +751,10 @@ test("WI-029 — Fixed mode exposes all 8 resize handles", async ({ page }) => {
         // `layoutChild`; the legacy `textAutoResize` field is gone (v10).
         attrs: {
           ...prev.attrs,
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "left", vertical: "top" },
+          },
         },
       }),
     });
@@ -829,7 +857,9 @@ test("Auto-W mode — dragging the s handle changes height (height is manual)", 
   }, id);
   // Fonts must be loaded before measuring — a late web-font swap reflows the
   // auto-fit width and shifts the bottom-centre handle.
-  await page.evaluate(() => (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts?.ready);
+  await page.evaluate(
+    () => (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts?.ready,
+  );
   // Wait for the width auto-fit to settle (0.6 → hug the line) BEFORE grabbing
   // the s handle — otherwise the box reflows mid-capture and the handle shifts.
   await page.waitForFunction(
@@ -1046,7 +1076,10 @@ test("WI-029 — Truncate ENDING + maxLines clamps content via -webkit-line-clam
           // Fixed mode is required for truncation to apply (the `isFixed` gate
           // in TextBlock). Derived from `layoutChild` (left × top); legacy
           // `textAutoResize` field removed in agocraft v10.
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "left", vertical: "top" },
+          },
           textTruncation: "ENDING",
           maxLines: 3,
         },
@@ -1081,7 +1114,9 @@ test("textOverflow toggles clip vs visible in a non-Fixed mode (all-mode overflo
     await page.evaluate(
       (args) => {
         const [fid, v] = args as [string, string];
-        const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+        const w = window as unknown as {
+          __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+        };
         w.__weaveEditor?.exec("weave.item.update", {
           itemId: fid,
           patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
@@ -1103,7 +1138,10 @@ test("textOverflow toggles clip vs visible in a non-Fixed mode (all-mode overflo
       patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
         attrs: {
           ...prev.attrs,
-          layoutChild: { kind: "absolute-constraints", anchor: { horizontal: "scale", vertical: "top" } },
+          layoutChild: {
+            kind: "absolute-constraints",
+            anchor: { horizontal: "scale", vertical: "top" },
+          },
         },
       }),
     });

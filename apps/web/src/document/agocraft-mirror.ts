@@ -159,7 +159,10 @@ export function toAgocraftItem(item: WeaveItem, updatedAt: string): AgocraftItem
  *  unit set otherwise (behaviors, seed fill not overridden) is preserved. */
 export function applyCreationUnits(
   item: AgocraftItem,
-  units: ReadonlyArray<{ readonly kind: string; readonly attrs?: Readonly<Record<string, unknown>> }>,
+  units: ReadonlyArray<{
+    readonly kind: string;
+    readonly attrs?: Readonly<Record<string, unknown>>;
+  }>,
 ): AgocraftItem {
   if (units.length === 0) return item;
   const byKey = new Map<string, AgocraftUnit>();

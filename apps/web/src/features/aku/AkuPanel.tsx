@@ -4,11 +4,12 @@
 // a bottom-right grabber resizes. Header = 아쿠 title (drag) + 새 대화 + close;
 // Body = transcript; Footer = composer.
 
-import type { ClarifyRequest } from "@agocraft/agent-client";
+import type { ClarifyRequest, ServerInfo } from "@agocraft/agent-client";
 import { Banner, IconButton, IconClose, IconPlus, Panel } from "@weave/design-system";
 import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { AkuMascot } from "./AkuMascot.js";
+import { AkuServerInfoChip } from "./AkuServerInfoChip.js";
 import { AkuTokenSetup } from "./AkuTokenSetup.js";
 import { ClarifyPicker } from "./ClarifyPicker.js";
 import { MessageList } from "./MessageList.js";
@@ -28,6 +29,7 @@ export function AkuPanel({
   messages,
   status,
   connection,
+  serverInfo,
   pendingClarify,
   onResolveClarify,
   onSend,
@@ -50,6 +52,9 @@ export function AkuPanel({
   readonly status: AkuStatus;
   /** Reverse-MCP connection lifecycle — drives the connecting/reconnecting banner. */
   readonly connection: AkuConnection;
+  /** The agent-server's announced active config (mode + model/speed knobs), or null
+   *  until it arrives on connect. Rendered as a header chip with a hover tooltip. */
+  readonly serverInfo: ServerInfo | null;
   /** A pending pre-generation "which media types?" question, or null. */
   readonly pendingClarify: { readonly req: ClarifyRequest } | null;
   /** Answer the pending clarify question with the selected item-type names. */
@@ -100,6 +105,9 @@ export function AkuPanel({
             <AkuMascot variant="mark" className="w-5 h-5 shrink-0" />
             <Panel.Title>아쿠</Panel.Title>
           </div>
+          {/* Server config chip — outside the drag handle so hover/focus isn't
+              captured by the move gesture. Renders nothing until serverInfo arrives. */}
+          <AkuServerInfoChip serverInfo={serverInfo} />
           {hasToken ? (
             <button
               type="button"
