@@ -44,6 +44,15 @@ const FRAME_BASE_NOTE =
   "corner (0 = parent's top-left edge, 1 = parent's bottom-right edge), width/height = size as a " +
   "fraction of the parent; rotation = radians about the box center. NEVER pixels.";
 
+// Frame attrs note. Nested frames are the primary layout tool — but a nested
+// frame is a SLIDE by default, so the agent must opt it out of the deck.
+const FRAME_ATTRS_NOTE =
+  "For frame items: a TOP-LEVEL frame (no containerId) is a presentation SLIDE; a NESTED frame " +
+  "(containerId = another frame's id) is a layout container — give it attrs.layout via " +
+  "weave.frame.setLayout (auto-flex / auto-grid) to auto-arrange children into rows/columns/grids/cards. " +
+  "On EVERY nested frame set attrs.presentable:false so it stays a LAYOUT GROUP, not an extra slide — only " +
+  "the top-level slide frame should be in the deck. attrs.cornerRadius = 0..1 of the frame's own min(w,h).";
+
 // Text attrs sizing note, shared by `weave.item.add` (attrsOverride) and
 // `weave.item.update` (attrs). The detailed per-field model (units, defaults,
 // resize modes, role-based fontSize guidance) lives in WEAVE_CAPABILITIES'
@@ -273,7 +282,7 @@ const ATTRS_WITH_TEXT_NOTE: Json = {
     },
     subAttrs: SHAPE_SUBATTRS_SCHEMA,
   },
-  description: `${FRAME_BASE_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
+  description: `${FRAME_BASE_NOTE} ${FRAME_ATTRS_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
 };
 
 // WI-063 / WI-078 — units (decoration + transform) attached in ONE call so an item
