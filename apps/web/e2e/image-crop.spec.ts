@@ -45,6 +45,43 @@ async function addImage(page: Page): Promise<string> {
   return id;
 }
 
+// Slide-on-frame nesting: root → frame (slide) → image. Two ticks so the
+// second add reads the committed frame as a valid container (DR-029 D8c).
+async function addImageInFrame(page: Page): Promise<string> {
+  const frameId = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveEditor: { exec: (n: string, i: unknown) => { value?: unknown } };
+      __weaveDoc: { root: { id: unknown } };
+    };
+    return String(
+      w.__weaveEditor.exec("weave.item.add", {
+        kind: "frame",
+        containerId: String(w.__weaveDoc.root.id),
+        frame: { x: 0.1, y: 0.1, width: 0.7, height: 0.7, rotation: 0 },
+      }).value,
+    );
+  });
+  await page.waitForTimeout(160);
+  const id = await page.evaluate(
+    ({ fid, src }) => {
+      const w = window as unknown as {
+        __weaveEditor: { exec: (n: string, i: unknown) => { value?: unknown } };
+      };
+      return String(
+        w.__weaveEditor.exec("weave.item.add", {
+          kind: "image",
+          containerId: fid,
+          frame: { x: 0.1, y: 0.1, width: 0.7, height: 0.7, rotation: 0 },
+          attrsOverride: { src },
+        }).value,
+      );
+    },
+    { fid: frameId, src: PNG },
+  );
+  await page.waitForTimeout(160);
+  return id;
+}
+
 async function setCrop(page: Page, input: Record<string, unknown>): Promise<boolean> {
   const ok = await page.evaluate((inp) => {
     const w = window as unknown as {
@@ -311,6 +348,29 @@ test("WI-074 D8b — QuickActionBar shows 완료/취소 during crop; 완료 comm
   await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
   // committed (window preserved since unedited).
   expect(await readCrop(page, id)).toEqual({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+});
+
+test("WI-074 D8c — nested image (slide-frame → image) enters crop; spotlight dim shows", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-nest" });
+  const id = await addImageInFrame(page);
+  await setCrop(page, { itemId: id, crop: { x: 0.3, y: 0.45, w: 0.55, h: 0.35 } });
+
+  // Drill in: dblclick the parent frame (slide), then the image, to enter crop.
+  const img = page.locator(`[data-frame-id="${id}"]`);
+  await img.dblclick();
+  await img.dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+  // The spotlight dim renders even though the image is nested inside a frame
+  // (weave frame containers are overflow:visible, so the box-shadow is not
+  // clipped — it dims the whole canvas around the crop window).
+  await expect(page.getByTestId("crop-dim")).toBeVisible();
+
+  // ESC cancels cleanly (crop window unchanged).
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
+  expect(await readCrop(page, id)).toEqual({ x: 0.3, y: 0.45, w: 0.55, h: 0.35 });
 });
 
 test("WI-074 — flip toggles a transform.flip unit (display mirrored); Cmd+Z reverts", async ({

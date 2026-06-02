@@ -174,10 +174,16 @@ FrameStage `crop-design-dim` 제거. 크롭 프레임 z51 상승은 유지(spotl
 평면 far `115,115,115`(균일 dim). e2e 11/11 / 336 unit / build green. testid:
 `crop-design-dim` → `crop-dim`.
 
-**트레이드오프:** overflow:hidden 프레임(슬라이드) 안에 중첩된 이미지를 크롭하면 shadow가
-그 프레임 경계에서 잘릴 수 있음(평면 전체까지 못 미침). 현 평면-루트 케이스에서는 무관하며
-2-dim 스태킹 방식보다 견고. 추후 중첩 클리핑 케이스는 body-portal projection으로 격상 가능
-(backlog).
+**중첩(슬라이드 위 frame 안 이미지) 검증 (2026-06-02):** root→frame→image 구조로 크롭
+진입 후 픽셀 샘플 — 프레임 안 잘린 원본 `0,58,58`(dim), 크롭 윈도 `254,247,251`(밝음),
+**프레임 바깥** 평면 `115,115,115`(dim), 바깥 캔버스 배경 `0,0,0`(dim). 즉 spotlight의
+box-shadow가 프레임 경계를 넘어 캔버스 전체를 균일하게 dim함. 이유: weave 프레임 컨테이너
+체인은 `overflow:visible`(유일한 `overflow:hidden`은 뷰포트 클립으로 한참 상위 = 화면 밖).
+따라서 shadow가 클리핑되지 않음.
+
+**트레이드오프(이론상):** 만약 향후 프레임에 `overflow:hidden`/clip을 도입하면 그 프레임
+안에서 크롭 시 shadow가 경계에서 잘릴 수 있음 — 그 경우 body-portal projection으로 격상
+(backlog). 현 아키텍처에서는 평면-루트/중첩 모두 정상.
 
 ## Undo
 
