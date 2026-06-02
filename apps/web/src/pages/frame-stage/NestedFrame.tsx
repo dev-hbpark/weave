@@ -366,6 +366,8 @@ export function NestedFrame({
         : 1,
     transition: "opacity 180ms ease",
     ...(frame.rotation ? { transform: `rotate(${frame.rotation}rad)` } : {}),
+    // WI-074 D8b — lift the cropping frame above the full-design dim (z 50).
+    ...(isCroppingThis ? { zIndex: 51 } : {}),
   };
 
   // Auto-width/height text: the selection chrome must hug the LIVE text while

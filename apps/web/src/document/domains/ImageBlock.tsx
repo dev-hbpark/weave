@@ -25,9 +25,9 @@ import {
   shadowToCss,
 } from "@agocraft/core";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { panCropWindow, setStraighten } from "../crop-geometry.js";
-import { croppingState, useCropDraft } from "../interactions/cropping-state.js";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { panCropWindow } from "../crop-geometry.js";
+import { croppingState, useCropDraft, useCroppingItemId } from "../interactions/cropping-state.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
 
@@ -46,7 +46,6 @@ interface CropRect {
 }
 
 const IDENTITY_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1, rotation: 0 };
-const MAX_STRAIGHTEN_DEG = 45;
 
 function readCrop(a: ImageAttrs): CropRect {
   const c = a.cropRatio as
@@ -162,30 +161,15 @@ function CropEditor(props: {
   readonly filterCss: string;
   readonly initial: CropRect;
   readonly aspect: number;
-  readonly onCommit: (crop: CropRect) => void;
-  readonly onCancel: () => void;
 }): JSX.Element {
-  const { src, alt, objectFit, filterCss, initial, aspect, onCommit, onCancel } = props;
+  const { src, alt, objectFit, filterCss, initial, aspect } = props;
   // D8 P2 — the crop draft lives in the shared store so the SelectionLayer crop
   // handles (NestedFrame) + the FrameStage dispatcher edit the SAME draft live.
+  // D8b — straighten + apply/cancel UI moved out (rotate handle + QuickActionBar);
+  // commit/cancel is driven externally (DesignPage) via the store.
   const draft = useCropDraft() ?? initial;
   const boxRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; start: CropRect } | null>(null);
-
-  // ESC = cancel, Enter = commit.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        onCommit(croppingState.getDraft() ?? initial);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onCancel, onCommit, initial]);
 
   // Pan: drag the image to choose which part fills the frame box (cropRatio x/y).
   useEffect(() => {
@@ -225,7 +209,6 @@ function CropEditor(props: {
   }, []);
 
   const stop = (e: ReactPointerEvent<HTMLDivElement>) => e.stopPropagation();
-  const deg = Math.round((draft.rotation * 180) / Math.PI);
   const win = draft;
   const wrapper = cropWindowWrapperStyle(win);
   const imgStyle: CSSProperties = {
@@ -279,42 +262,6 @@ function CropEditor(props: {
           pointerEvents: "none",
         }}
       />
-      {/* controls — straighten + done / cancel */}
-      <div
-        className="absolute flex items-center gap-2 rounded-md bg-black/70 px-2 py-1"
-        style={{ left: "50%", top: 6, transform: "translateX(-50%)", pointerEvents: "auto" }}
-        onPointerDown={stop}
-      >
-        <input
-          aria-label="이미지 회전(스트레이튼)"
-          data-testid="image-crop-straighten"
-          type="range"
-          min={-MAX_STRAIGHTEN_DEG}
-          max={MAX_STRAIGHTEN_DEG}
-          step={1}
-          value={deg}
-          onChange={(e) =>
-            croppingState.setDraft(setStraighten(draft, (Number(e.target.value) * Math.PI) / 180))
-          }
-        />
-        <span className="w-8 text-center text-xs text-white tabular-nums">{deg}°</span>
-        <button
-          type="button"
-          data-testid="image-crop-cancel"
-          className="rounded px-2 py-0.5 text-xs text-white hover:bg-white/20"
-          onClick={onCancel}
-        >
-          취소
-        </button>
-        <button
-          type="button"
-          data-testid="image-crop-apply"
-          className="rounded bg-white px-2 py-0.5 text-xs text-black hover:bg-white/90"
-          onClick={() => onCommit(croppingState.getDraft() ?? initial)}
-        >
-          완료
-        </button>
-      </div>
     </div>
   );
 }
@@ -326,17 +273,13 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
   const culled = useIsCulled();
   const a = item.attrs;
   const editable = onUpdate !== undefined;
-  const [cropMode, setCropMode] = useState(false);
-
-  // WI-074 Step 5 — publish crop-active to the global gate so editor hotkeys /
-  // selection gestures suspend while this image is being cropped.
   const itemId = String(item.id);
-  useEffect(() => {
-    if (!cropMode) return;
-    // D8 P2 — seed the shared draft with the current crop so handles/pan edit it.
-    croppingState.enter(itemId, readCrop(item.attrs));
-    return () => croppingState.exit(itemId);
-  }, [cropMode, itemId, item.attrs]);
+  // WI-074 D8b — crop mode is driven by the shared store: entered on double-click,
+  // exited EXTERNALLY (DesignPage 완료/취소 + Enter/ESC) so the QuickActionBar /
+  // keyboard can end a crop. Also the Step 5 gate (suspends hotkeys + gestures).
+  const cropMode = useCroppingItemId() === itemId;
+  // Safety: end this item's crop if it unmounts mid-crop.
+  useEffect(() => () => croppingState.exit(itemId), [itemId]);
 
   const objectFit: CSSProperties["objectFit"] =
     a.fit === "fill"
@@ -382,23 +325,6 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
     return () => ro.disconnect();
   }, []);
 
-  const commitCrop = useCallback(
-    (next: CropRect) => {
-      const cropRatio = isIdentity(next)
-        ? undefined
-        : {
-            x: next.x,
-            y: next.y,
-            w: next.w,
-            h: next.h,
-            ...(next.rotation !== 0 ? { rotation: next.rotation } : {}),
-          };
-      onUpdate?.({ cropRatio } as Partial<ImageAttrs>);
-      setCropMode(false);
-    },
-    [onUpdate],
-  );
-
   return (
     <div
       ref={boxRef}
@@ -414,7 +340,8 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
         ? {
             onDoubleClick: (e: React.MouseEvent) => {
               e.stopPropagation();
-              setCropMode(true);
+              // D8b — enter crop via the shared store; commit/cancel is external.
+              croppingState.enter(itemId, readCrop(item.attrs));
             },
           }
         : {})}
@@ -427,8 +354,6 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
           filterCss={filterCss}
           initial={crop}
           aspect={aspect}
-          onCommit={commitCrop}
-          onCancel={() => setCropMode(false)}
         />
       ) : (
         <ImageContent

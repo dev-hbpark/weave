@@ -3,8 +3,8 @@
 // Verifies the full round-trip in the live runtime:
 //  • command path (`weave.image.setCrop`) — window + rotation set, Cmd+Z revert,
 //    Cmd+Shift+Z redo, plus image-only + range guards.
-//  • UI path — double-click enters crop mode; the straighten slider + 완료 commit
-//    rotation into `cropRatio`; ESC cancels with no commit.
+//  • UI path (DR-029 D8b) — double-click enters crop; SelectionLayer handles edit
+//    the crop; whole-design dim; Enter = 완료, ESC = 취소 (commit/cancel external).
 //
 // Rotation is stored INSIDE `cropRatio` (agocraft DR-037 `ImageCrop.rotation`).
 
@@ -202,32 +202,40 @@ test("WI-074 — guards: non-image and out-of-range crop are rejected", async ({
   expect(await setCrop(page, { itemId: shapeId, crop: { x: 0, y: 0, w: 1, h: 1 } })).toBe(false);
 });
 
-test("WI-074 — UI: double-click enters crop mode; straighten + 완료 commits rotation", async ({
+test("WI-074 D8b — Enter commits the crop, ESC cancels; whole-design dim shows", async ({
   page,
 }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-074-ui" });
   const id = await addImage(page);
+  await setCrop(page, { itemId: id, crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 } });
 
   // Enter crop mode by double-clicking the image.
   await page.locator(`[data-frame-id="${id}"]`).dblclick();
   await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+  // The whole-design dim overlay is present.
+  await expect(page.getByTestId("crop-design-dim")).toBeVisible();
 
-  // Straighten to +20°, then commit.
-  await page.getByTestId("image-crop-straighten").fill("20");
-  await page.getByTestId("image-crop-apply").click();
-  await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
-
-  const crop = await readCrop(page, id);
-  expect(crop).toBeDefined();
-  // 20° ≈ 0.349 rad.
-  expect(crop?.rotation ?? 0).toBeCloseTo((20 * Math.PI) / 180, 2);
-
-  // Re-enter and ESC → no further commit (rotation stays at 20°).
-  await page.locator(`[data-frame-id="${id}"]`).dblclick();
-  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+  // Pan the crop, then ESC → cancel (cropRatio unchanged).
+  const fbox = await page.locator(`[data-frame-id="${id}"]`).boundingBox();
+  if (fbox === null) throw new Error("no frame box");
+  await page.mouse.move(fbox.x + fbox.width / 2, fbox.y + fbox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(fbox.x + fbox.width / 2 + 40, fbox.y + fbox.height / 2, { steps: 8 });
+  await page.mouse.up();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
-  expect((await readCrop(page, id))?.rotation ?? 0).toBeCloseTo((20 * Math.PI) / 180, 2);
+  expect(await readCrop(page, id)).toEqual({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+
+  // Re-enter, pan, Enter → commit (cropRatio x changed).
+  await page.locator(`[data-frame-id="${id}"]`).dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+  await page.mouse.move(fbox.x + fbox.width / 2, fbox.y + fbox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(fbox.x + fbox.width / 2 + 40, fbox.y + fbox.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("image-crop-editor")).toHaveCount(0);
+  expect((await readCrop(page, id))?.x ?? 0.2).toBeLessThan(0.2);
 });
 
 test("WI-074 — crop mode (D8): dragging pans the crop window (cropRatio x/y)", async ({ page }) => {
@@ -249,7 +257,7 @@ test("WI-074 — crop mode (D8): dragging pans the crop window (cropRatio x/y)",
   await page.mouse.down();
   await page.mouse.move(cx + 40, cy, { steps: 10 });
   await page.mouse.up();
-  await page.getByTestId("image-crop-apply").click();
+  await page.keyboard.press("Enter");
 
   const crop = await readCrop(page, id);
   expect(crop).toBeDefined();
@@ -279,7 +287,7 @@ test("WI-074 D8 P2 — SelectionLayer resize handle resizes the crop window; rot
   await page.mouse.down();
   await page.mouse.move(cx - 80, cy - 80, { steps: 10 });
   await page.mouse.up();
-  await page.getByTestId("image-crop-apply").click();
+  await page.keyboard.press("Enter");
 
   const crop = await readCrop(page, id);
   expect(crop).toBeDefined();

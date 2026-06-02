@@ -106,7 +106,7 @@ import {
   designToHostPx,
   type RatioFrame,
 } from "../document/coordinate-projection.js";
-import { isCroppingNow } from "../document/interactions/cropping-state.js";
+import { croppingState, isCroppingNow } from "../document/interactions/cropping-state.js";
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
@@ -1323,15 +1323,41 @@ function DesignPageBody() {
   // browser's native Select-All / Delete / Backspace / Escape inside an
   // input / textarea / Lexical contenteditable. This window listener
   // bails first when a text surface owns focus, so typing stays intact.
+  // WI-074 D8b — commit the live crop draft (완료) for an item, then end the crop.
+  const applyCrop = useCallback(
+    (cropItemId: string) => {
+      const d = croppingState.getDraft();
+      if (d !== null) {
+        editor.exec("weave.image.setCrop", {
+          itemId: cropItemId,
+          crop: { x: d.x, y: d.y, w: d.w, h: d.h },
+          rotation: d.rotation,
+        });
+      }
+      croppingState.exit(cropItemId);
+    },
+    [editor],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
       if (t instanceof HTMLElement && t.matches('input, textarea, [contenteditable="true"]')) {
         return;
       }
-      // WI-074 — an open image crop owns the keyboard (ESC/Enter handled by the
-      // crop editor); suppress Select-All / Delete / Duplicate / dissolve here.
-      if (isCroppingNow()) return;
+      // WI-074 D8b — an open image crop owns the keyboard: Enter = 완료 (commit the
+      // draft), ESC = 취소 (discard). All other editor keys are suppressed mid-crop.
+      if (isCroppingNow()) {
+        const cropItemId = croppingState.activeId();
+        if (e.key === "Enter" && cropItemId !== null) {
+          e.preventDefault();
+          applyCrop(cropItemId);
+        } else if (e.key === "Escape" && cropItemId !== null) {
+          e.preventDefault();
+          croppingState.exit(cropItemId);
+        }
+        return;
+      }
       const mod = e.metaKey || e.ctrlKey;
       // Cmd/Ctrl + A — context-aware Select All. No frame selected ⇒ the
       // design's first-level children; a frame selected ⇒ that frame's
@@ -1489,7 +1515,7 @@ function DesignPageBody() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editor, selectFrames, selectFrame, dissolveFrame]);
+  }, [editor, selectFrames, selectFrame, dissolveFrame, applyCrop]);
   // Multi-selection align / distribute — single slot dispatched by the
   // 8 `multi.align-*` / `multi.distribute-*` commands. Steps:
   //   1. Read the live selected ids + doc through refs (selection /
