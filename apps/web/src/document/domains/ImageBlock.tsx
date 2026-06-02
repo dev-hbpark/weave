@@ -128,6 +128,57 @@ function ImageContent(props: {
   );
 }
 
+/** Placeholder shown when an image item has no `src` (WI-076). Replaces the
+ *  browser's broken-`<img>` glyph with a neutral framed surface; when `alt` is
+ *  set it is rendered as a centered caption so the slot can describe what image
+ *  belongs here. The outer wrapper already applies borderRadius / shadow /
+ *  opacity, so this fills the box with `inset: 0`. */
+function ImagePlaceholder({ alt }: { readonly alt: string }): JSX.Element {
+  const caption = alt.trim();
+  return (
+    <div
+      data-testid="image-placeholder"
+      className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center"
+      style={{
+        background: "rgba(148, 163, 184, 0.14)",
+        color: "rgba(71, 85, 105, 0.85)",
+        userSelect: "none",
+      }}
+    >
+      <svg
+        width="34"
+        height="34"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        style={{ opacity: 0.6, flexShrink: 0 }}
+      >
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <path d="m21 15-4.5-4.5L5 21" />
+      </svg>
+      {caption ? (
+        <span
+          className="max-w-full text-[12px] leading-snug"
+          style={{
+            display: "-webkit-box",
+            WebkitLineClamp: 4,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            wordBreak: "break-word",
+          }}
+        >
+          {caption}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 // ── crop-mode editor (WI-074 / DR-029 D8 redesign — Phase 1) ─────────────────
 //
 // Crop mode shows the FULL source extending beyond the frame box, DIMMED, with the
@@ -283,6 +334,10 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
   const culled = useIsCulled();
   const a = item.attrs;
   const editable = onUpdate !== undefined;
+  // WI-076 — a source-less image renders a placeholder (see ImagePlaceholder)
+  // instead of a broken `<img>`. Crop mode is meaningless without a source, so
+  // it (and the double-click that enters it) is gated on this.
+  const hasSrc = a.src.trim().length > 0;
   const itemId = String(item.id);
   // WI-074 D8b — crop mode is driven by the shared store: entered on double-click,
   // exited EXTERNALLY (DesignPage 완료/취소 + Enter/ESC) so the QuickActionBar /
@@ -348,7 +403,7 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
         opacity,
         boxShadow: shadow,
       }}
-      {...(editable
+      {...(editable && hasSrc
         ? {
             onDoubleClick: (e: React.MouseEvent) => {
               e.stopPropagation();
@@ -361,7 +416,9 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
           }
         : {})}
     >
-      {culled ? null : cropMode ? (
+      {culled ? null : !hasSrc ? (
+        <ImagePlaceholder alt={a.alt} />
+      ) : cropMode ? (
         <CropEditor
           src={a.src}
           alt={a.alt}

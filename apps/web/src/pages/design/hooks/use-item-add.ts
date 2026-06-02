@@ -57,6 +57,8 @@ export interface UseItemAdd {
       readonly smooth?: boolean;
       readonly heads?: { readonly start: string; readonly end: string };
     },
+    // WI-076 — caption (image `alt`) for the source-less placeholder. Image only.
+    altOverride?: string,
   ) => void;
   readonly slidePickerOpen: boolean;
   readonly setSlidePickerOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -87,6 +89,8 @@ export function useItemAdd({
         readonly smooth?: boolean;
         readonly heads?: { readonly start: string; readonly end: string };
       },
+      // WI-076 — caption (image `alt`) for the source-less placeholder.
+      altOverride?: string,
     ) => {
       // Default frame for adds INTO a frame (frame-relative). Root adds override
       // this with the viewport-centred geometry below.
@@ -111,6 +115,11 @@ export function useItemAdd({
       }
       if ((kind === "image" || kind === "video") && srcOverride) {
         attrsOverride.src = srcOverride;
+      }
+      // WI-076 — seed the caption (alt) so a source-less image renders its
+      // placeholder text immediately. Trimmed-empty falls back to the default "".
+      if (kind === "image" && altOverride !== undefined && altOverride.trim().length > 0) {
+        attrsOverride.alt = altOverride.trim();
       }
       // Container rule: add INTO the selected item only when it is a frame.
       // A selected non-frame item routes the add to the design root. Nothing

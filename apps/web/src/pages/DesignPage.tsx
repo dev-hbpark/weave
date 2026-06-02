@@ -1705,7 +1705,16 @@ function DesignPageBody() {
     }
     return "";
   })();
-  const handleMediaConfirm = (src: string) => {
+  // WI-076 — prefill the caption field (image `alt`) when editing an image.
+  const mediaInitialAlt = (() => {
+    if (!pendingMedia || pendingMedia.kind !== "image") return "";
+    if (pendingMedia.action === "edit" && selectedFrameId) {
+      const it = findItemDeep(docInAgocraft, selectedFrameId);
+      if (it && it.kind === "image") return (it.attrs as { alt?: string }).alt ?? "";
+    }
+    return "";
+  })();
+  const handleMediaConfirm = (src: string, alt?: string) => {
     const pending = pendingMedia;
     setPendingMedia(null);
     if (!pending) return;
@@ -1731,15 +1740,20 @@ function DesignPageBody() {
         editor.exec("weave.item.update", {
           itemId: selectedFrameId,
           patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-            attrs: { ...prev.attrs, src } as unknown as Readonly<Record<string, unknown>>,
+            // WI-076 — caption (alt) updates alongside src for image items.
+            attrs: {
+              ...prev.attrs,
+              src,
+              ...(alt !== undefined ? { alt } : {}),
+            } as unknown as Readonly<Record<string, unknown>>,
           }),
         });
         return;
       }
-      addNewItem(pending.kind, undefined, src);
+      addNewItem(pending.kind, undefined, src, undefined, undefined, alt);
       return;
     }
-    addNewItem(pending.kind, undefined, src);
+    addNewItem(pending.kind, undefined, src, undefined, undefined, alt);
   };
   const handlePickPreset = (presetId: string) => {
     const result = editor.exec<unknown, string>("weave.preset.insertSlide", {
@@ -2176,6 +2190,7 @@ function DesignPageBody() {
                               mediaOpen={pendingMedia !== null}
                               mediaKind={pendingMedia?.kind ?? "image"}
                               mediaInitialSrc={mediaInitialSrc}
+                              mediaInitialAlt={mediaInitialAlt}
                               onMediaConfirm={handleMediaConfirm}
                               onMediaCancel={() => setPendingMedia(null)}
                               pasteSpecialOpen={clipboardCommands.pasteSpecialOpen}

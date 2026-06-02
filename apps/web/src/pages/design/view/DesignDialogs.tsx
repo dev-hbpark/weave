@@ -15,7 +15,8 @@ export interface DesignDialogsProps {
   readonly mediaOpen: boolean;
   readonly mediaKind: "image" | "video";
   readonly mediaInitialSrc: string;
-  readonly onMediaConfirm: (src: string) => void;
+  readonly mediaInitialAlt: string;
+  readonly onMediaConfirm: (src: string, alt?: string) => void;
   readonly onMediaCancel: () => void;
   // PasteSpecialDialog (WI-041)
   readonly pasteSpecialOpen: boolean;
@@ -41,6 +42,7 @@ export function DesignDialogs({
   mediaOpen,
   mediaKind,
   mediaInitialSrc,
+  mediaInitialAlt,
   onMediaConfirm,
   onMediaCancel,
   pasteSpecialOpen,
@@ -64,6 +66,7 @@ export function DesignDialogs({
         open={mediaOpen}
         kind={mediaKind}
         initialSrc={mediaInitialSrc}
+        initialAlt={mediaInitialAlt}
         onConfirm={onMediaConfirm}
         onCancel={onMediaCancel}
       />

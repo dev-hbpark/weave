@@ -31,7 +31,11 @@ export interface MediaSrcDialogProps {
   readonly open: boolean;
   readonly kind: "image" | "video";
   readonly initialSrc?: string;
-  readonly onConfirm: (src: string) => void;
+  /** WI-076 — current caption (image `alt`), prefilled in edit mode. */
+  readonly initialAlt?: string;
+  /** `alt` is the placeholder caption for source-less images (image only);
+   *  omitted / empty for video and for images added with a real source. */
+  readonly onConfirm: (src: string, alt?: string) => void;
   readonly onCancel: () => void;
 }
 
@@ -50,8 +54,10 @@ function fileToDataUrl(file: File): Promise<string> {
 }
 
 export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
-  const { open, kind, initialSrc, onConfirm, onCancel } = props;
+  const { open, kind, initialSrc, initialAlt, onConfirm, onCancel } = props;
   const [value, setValue] = useState(initialSrc ?? "");
+  // WI-076 — caption shown in the source-less placeholder (image `alt`).
+  const [caption, setCaption] = useState(initialAlt ?? "");
   const [error, setError] = useState<string | null>(null);
   const [uploadedName, setUploadedName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -71,6 +77,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
   useEffect(() => {
     if (open) {
       setValue(initialSrc ?? "");
+      setCaption(initialAlt ?? "");
       setError(null);
       setUploadedName(null);
       setDragging(false);
@@ -78,7 +85,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
       setUploadWarning(null);
       setResources(listResources());
     }
-  }, [open, initialSrc]);
+  }, [open, initialSrc, initialAlt]);
 
   // Filter to the current kind only — picking a video while in an
   // image dialog wouldn't make sense.
@@ -174,6 +181,11 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
     if (e.currentTarget === e.target) setDragging(false);
   }
 
+  // WI-076 — image caption travels with every image confirm so it lands on
+  // `attrs.alt` (placeholder text + a11y). Video has no caption surface.
+  const captionArg = (): string | undefined =>
+    kind === "image" ? caption.trim() || undefined : undefined;
+
   function submit(): void {
     if (uploading) return; // cloud-await guard — Confirm is also visually disabled
     const trimmed = value.trim();
@@ -185,7 +197,14 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
       setError("http(s):// · data: · blob: · 절대 / 상대 경로만 허용됩니다");
       return;
     }
-    onConfirm(trimmed);
+    onConfirm(trimmed, captionArg());
+  }
+
+  // WI-076 — add a source-less image: confirm with an empty src + the caption.
+  // The renderer shows a placeholder (optionally captioned) instead of `<img>`.
+  function submitWithoutSource(): void {
+    if (uploading) return;
+    onConfirm("", captionArg());
   }
 
   function clearUpload(): void {
@@ -384,12 +403,44 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
           data-testid="media-src-input"
         />
 
+        {/* WI-076 — optional caption for the source-less placeholder. Stored as
+            the image `alt` (also serves accessibility). Image kind only. */}
+        {kind === "image" ? (
+          <div className="mt-3">
+            <TextField
+              label="설명 (선택)"
+              placeholder="이미지가 없을 때 가운데 표시할 텍스트"
+              value={caption}
+              onChange={(e) => setCaption(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              data-testid="media-src-caption"
+            />
+          </div>
+        ) : null}
+
         <div className="mt-5 flex items-center justify-end gap-2">
           <DialogClose asChild>
             <Button variant="ghost" size="md" data-testid="media-src-cancel">
               취소
             </Button>
           </DialogClose>
+          {/* WI-076 — add a placeholder image with no source. Image kind only. */}
+          {kind === "image" ? (
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={submitWithoutSource}
+              disabled={uploading}
+              data-testid="media-src-skip"
+            >
+              소스 없이 추가
+            </Button>
+          ) : null}
           <Button
             variant="primary"
             size="md"

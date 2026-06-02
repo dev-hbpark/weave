@@ -38,6 +38,9 @@ export const ImageSection: ToolbarSectionComponent = ({
     (it) => (it.attrs as unknown as ImageAttrs).borderRadius,
   );
   const src = sharedValue<string>(items, (it) => (it.attrs as unknown as ImageAttrs).src);
+  // WI-076 — caption (alt): shown centered in the source-less placeholder and
+  // used as the `<img>` alt text once a source is set.
+  const alt = sharedValue<string>(items, (it) => (it.attrs as unknown as ImageAttrs).alt ?? "");
   return (
     <>
       <Bar.Kind icon={<IconImage size={18} />} label="Image" />
@@ -65,6 +68,21 @@ export const ImageSection: ToolbarSectionComponent = ({
             {isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
           </Button>
           <MixedBadge visible={isMixed(src)} />
+        </Bar.Field>
+        <Bar.Field label="설명">
+          <input
+            type="text"
+            aria-label="이미지 설명"
+            placeholder="소스 없을 때 중앙 표시"
+            value={isMixed(alt) ? "" : alt}
+            onChange={(e) =>
+              updateAll(editor, ids, (prev) => ({
+                attrs: { ...prev.attrs, alt: e.currentTarget.value },
+              }))
+            }
+            className="w-full px-2 py-1.5 rounded-[var(--radius-sm)] bg-[color:var(--surface-2)] border border-[color:var(--surface-2-border)] text-[12px] text-[color:var(--text-strong)] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+          />
+          <MixedBadge visible={isMixed(alt)} />
         </Bar.Field>
         <Bar.Field label="Fit">
           <Select<ImageFit>

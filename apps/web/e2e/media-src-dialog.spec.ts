@@ -77,6 +77,34 @@ test("ContextualToolbar Source button re-opens dialog and replaces src", async (
   await expect(page.locator('img[src="https://example.com/new.jpg"]')).toBeVisible();
 });
 
+test("Add → image without source creates a captioned placeholder (WI-076)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Src-F" });
+  await page.getByTestId("toolbar-add").click();
+  await page.getByTestId("add-image").click();
+  const dialog = page.getByTestId("media-src-dialog");
+  await expect(dialog).toBeVisible();
+
+  // Type a caption, then add WITHOUT a source.
+  await page.getByTestId("media-src-caption").fill("로고 들어갈 자리");
+  await page.getByTestId("media-src-skip").click();
+
+  // Item created; the source-less placeholder (not a broken <img>) renders the
+  // centered caption.
+  await expect(page.locator("[data-frame-id]")).toHaveCount(1);
+  const placeholder = page.getByTestId("image-placeholder");
+  await expect(placeholder).toBeVisible();
+  await expect(placeholder).toContainText("로고 들어갈 자리");
+  await expect(page.locator("[data-frame-id] img")).toHaveCount(0);
+
+  // Setting a real source later swaps the placeholder for the <img>.
+  await page.getByTestId("image-edit-src").click();
+  await expect(dialog).toBeVisible();
+  await page.getByTestId("media-src-input").fill("https://example.com/late.jpg");
+  await page.getByTestId("media-src-confirm").click();
+  await expect(page.locator('img[src="https://example.com/late.jpg"]')).toBeVisible();
+  await expect(page.getByTestId("image-placeholder")).toHaveCount(0);
+});
+
 test("Cancel closes the dialog without adding an item", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "Src-D" });
   await page.getByTestId("toolbar-add").click();
