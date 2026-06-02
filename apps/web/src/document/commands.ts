@@ -93,6 +93,7 @@ import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
+import { CROP_OFFSET_UNIT_KIND } from "./transform-crop-offset.js";
 import { FLIP_ALLOWED_KINDS, FLIP_UNIT_KIND } from "./transform-flip.js";
 import type { DomainKind, InteractionBehavior, ItemFrame, Item as WeaveItem } from "./types.js";
 
@@ -217,6 +218,10 @@ export interface SetImageCropInput {
   };
   /** Content rotation (radians). Omitted = 0. */
   readonly rotation?: number;
+  /** WI-074 D12 — image-offset (frame-box fractions) for panning within the rotation
+   *  cover-zoom magnification. Stored as the weave-local `crop.offset` unit. When
+   *  omitted or {0,0} the unit is cleared. */
+  readonly offset?: { readonly ox: number; readonly oy: number };
 }
 
 /** WI-074 / DR-029 D7 — toggle a horizontal / vertical flip on an item. Stored as
@@ -739,6 +744,21 @@ export function buildWeaveCommands(
         before: child.attrs,
         after,
       };
+      // WI-074 D12 — persist the image-offset (pan within the rotation magnification)
+      // as the weave-local `crop.offset` unit, in the SAME transaction (single undo).
+      const off = input.offset;
+      if (off !== undefined) {
+        if (!finite(off.ox) || !finite(off.oy)) {
+          return fail("invalid-input", "weave.image.setCrop: offset must be finite numbers");
+        }
+        const offsetResult = setDecorationCommand.run(ctx, {
+          itemId: input.itemId,
+          kind: CROP_OFFSET_UNIT_KIND,
+          attrs: off.ox === 0 && off.oy === 0 ? null : { ox: off.ox, oy: off.oy },
+        });
+        if (!offsetResult.ok) return offsetResult;
+        return ok(undefined, [patch, ...offsetResult.patches]);
+      }
       return ok(undefined, [patch]);
     },
   };

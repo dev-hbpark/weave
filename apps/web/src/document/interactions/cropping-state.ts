@@ -18,6 +18,10 @@ export interface CropDraft {
   readonly w: number;
   readonly h: number;
   readonly rotation: number;
+  /** WI-074 D12 — image-offset (frame-box fractions) for panning within the
+   *  rotation cover-zoom magnification. 0 when not rotated. */
+  readonly ox: number;
+  readonly oy: number;
 }
 
 let activeId: string | null = null;

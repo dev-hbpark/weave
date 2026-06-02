@@ -156,6 +156,28 @@ async function readFlip(
   }, itemId);
 }
 
+async function readCropOffset(
+  page: Page,
+  itemId: string,
+): Promise<{ ox?: number; oy?: number } | null> {
+  return page.evaluate((cid) => {
+    type U = { kind?: string; attrs?: { ox?: number; oy?: number } };
+    type N = { id: unknown; units?: ReadonlyArray<U>; children?: ReadonlyArray<N> };
+    const w = window as unknown as { __weaveDoc?: { root: N } };
+    const find = (n: N | undefined): N | undefined => {
+      if (n === undefined) return undefined;
+      if (String(n.id) === cid) return n;
+      for (const c of n.children ?? []) {
+        const hit = find(c);
+        if (hit !== undefined) return hit;
+      }
+      return undefined;
+    };
+    const u = find(w.__weaveDoc?.root)?.units?.find((x) => x.kind === "crop.offset");
+    return u?.attrs ?? null;
+  }, itemId);
+}
+
 async function flip(page: Page, itemId: string, axis: "horizontal" | "vertical"): Promise<boolean> {
   const ok = await page.evaluate(
     ([id, ax]) =>
@@ -371,15 +393,15 @@ test("WI-074 — crop rotation allows beyond 45° (full 360°)", async ({ page }
   expect(Math.abs(rotation)).toBeGreaterThan(Math.PI / 4 + 0.05);
 });
 
-test("WI-074 — pan works after rotation (window moves within source, no commit rejection)", async ({
+test("WI-074 D12 — rotated pan moves into the cover-zoom magnification (offset), persists, undoes", async ({
   page,
 }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-074-pan-rot" });
   const id = await addImage(page);
   await setCrop(page, {
     itemId: id,
-    crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
-    rotation: (45 * Math.PI) / 180,
+    crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 },
+    rotation: (40 * Math.PI) / 180,
   });
   await page.locator(`[data-frame-id="${id}"]`).dblclick();
   await expect(page.getByTestId("image-crop-editor")).toBeVisible();
@@ -388,18 +410,29 @@ test("WI-074 — pan works after rotation (window moves within source, no commit
   if (fb === null) throw new Error("no frame box");
   const cx = fb.x + fb.width / 2;
   const cy = fb.y + fb.height / 2;
-  // Drag right → window x decreases. Pan must apply (and commit, staying in [0,1])
-  // even though the content is rotated (regression: the rotation pivot fix).
+  // Drag far → pans the magnified image (the rotation enlargement), stored as the
+  // crop.offset unit. The window (cropRatio) stays in [0,1] and unchanged.
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  for (let i = 1; i <= 12; i++) await page.mouse.move(cx + (180 * i) / 12, cy);
+  for (let i = 1; i <= 15; i++) await page.mouse.move(cx + (300 * i) / 15, cy + (120 * i) / 15);
   await page.mouse.up();
   await page.keyboard.press("Enter");
 
+  // Window unchanged + in bounds; rotation preserved.
   const crop = await readCrop(page, id);
-  expect(crop?.x ?? 0.25).toBeLessThan(0.25); // pan moved the window
-  expect(crop?.x ?? 0).toBeGreaterThanOrEqual(0); // stayed in source bounds
-  expect(crop?.rotation ?? 0).toBeCloseTo((45 * Math.PI) / 180, 4); // rotation preserved
+  expect(crop?.x).toBeCloseTo(0.2, 4);
+  expect(crop?.w).toBeCloseTo(0.6, 4);
+  expect(crop?.rotation ?? 0).toBeCloseTo((40 * Math.PI) / 180, 4);
+  // The offset moved (we panned into the magnification) and persisted.
+  const off = await readCropOffset(page, id);
+  expect(off).not.toBeNull();
+  expect(Math.abs(off?.ox ?? 0) + Math.abs(off?.oy ?? 0)).toBeGreaterThan(0.01);
+
+  // Single undo reverts the whole crop (window + offset unit) in one step.
+  await page.keyboard.press("ControlOrMeta+z");
+  await page.waitForTimeout(120);
+  const offAfterUndo = await readCropOffset(page, id);
+  expect(offAfterUndo?.ox ?? 0).toBeCloseTo(0, 4);
 });
 
 test("WI-074 — crop rotate handle snaps to a cardinal (≈90°) and shows the guide", async ({

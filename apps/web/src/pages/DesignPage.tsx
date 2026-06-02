@@ -1338,6 +1338,8 @@ function DesignPageBody() {
           itemId: cropItemId,
           crop: { x: d.x, y: d.y, w: d.w, h: d.h },
           ...(d.rotation !== 0 ? { rotation: d.rotation } : {}),
+          // WI-074 D12 — persist the in-magnification pan offset.
+          offset: { ox: d.ox, oy: d.oy },
         });
       }
       croppingState.exit(cropItemId);

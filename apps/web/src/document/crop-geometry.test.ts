@@ -6,13 +6,14 @@ import { describe, expect, it } from "vitest";
 import {
   coverZoom,
   MIN_CROP_WINDOW,
+  panCropOffset,
   panCropWindow,
   resizeCropWindow,
   setStraighten,
 } from "./crop-geometry.js";
 import type { CropDraft } from "./interactions/cropping-state.js";
 
-const base: CropDraft = { x: 0.2, y: 0.2, w: 0.6, h: 0.6, rotation: 0 };
+const base: CropDraft = { x: 0.2, y: 0.2, w: 0.6, h: 0.6, rotation: 0, ox: 0, oy: 0 };
 const deg = (d: number): number => (d * Math.PI) / 180;
 const close = (a: number, b: number): boolean => Math.abs(a - b) < 1e-9;
 
@@ -68,22 +69,43 @@ describe("resizeCropWindow / panCropWindow stay clamped", () => {
 });
 
 describe("panCropWindow — window stays in source [0,1] (D11)", () => {
-  const sq: CropDraft = { x: 0.25, y: 0.25, w: 0.5, h: 0.5, rotation: 0 };
+  const sq: CropDraft = { x: 0.25, y: 0.25, w: 0.5, h: 0.5, rotation: 0, ox: 0, oy: 0 };
 
-  it("clamps to [0, 1-w] / [0, 1-h] regardless of rotation (window is a source region)", () => {
+  it("clamps to [0, 1-w] / [0, 1-h]", () => {
     expect(panCropWindow(sq, -10, 0).x).toBeCloseTo(0.5, 6); // 1-w
     expect(panCropWindow(sq, 10, 0).x).toBeCloseTo(0, 6);
-    // Rotation does NOT change the window's source-space bounds (the rotation
-    // pivots the rendered content around the window center instead — see ImageBlock).
-    const rot = { ...sq, rotation: deg(45) };
-    expect(panCropWindow(rot, -10, 0).x).toBeCloseTo(0.5, 6);
-    expect(panCropWindow(rot, 0, 10).y).toBeCloseTo(0, 6);
+    expect(panCropWindow(sq, 0, -10).y).toBeCloseTo(0.5, 6);
+    expect(panCropWindow(sq, 0, 10).y).toBeCloseTo(0, 6);
+  });
+});
+
+describe("panCropOffset — pan within the rotation magnification (D12)", () => {
+  const sq: CropDraft = { x: 0.25, y: 0.25, w: 0.5, h: 0.5, rotation: 0, ox: 0, oy: 0 };
+
+  it("θ=0 has no magnification slack → offset pinned to 0", () => {
+    const r = panCropOffset({ ...sq }, 0.3, 0.3, 1);
+    expect(r.ox).toBe(0);
+    expect(r.oy).toBe(0);
   });
 
-  it("a partial drag moves the window the same amount with or without rotation", () => {
-    const a = panCropWindow(sq, 0.2, 0).x;
-    const b = panCropWindow({ ...sq, rotation: deg(45) }, 0.2, 0).x;
-    expect(a).toBeCloseTo(b, 9);
+  it("rotated: a small drag moves the offset (reachable magnified overflow)", () => {
+    const r = panCropOffset({ ...sq, rotation: deg(45) }, 0.1, 0, 1);
+    expect(Math.abs(r.ox) + Math.abs(r.oy)).toBeGreaterThan(0);
+  });
+
+  it("rotated: offset is clamped (huge drag stays finite and bounded by the magnification)", () => {
+    const r = panCropOffset({ ...sq, rotation: deg(45) }, 100, 100, 1);
+    expect(Number.isFinite(r.ox)).toBe(true);
+    expect(Number.isFinite(r.oy)).toBe(true);
+    // Bounded by the rotated full-source half-extent (Z/(2w) ≈ 1.41 for w=0.5,45°).
+    expect(Math.abs(r.ox)).toBeLessThan(2);
+    expect(Math.abs(r.oy)).toBeLessThan(2);
+  });
+
+  it("rotated: opposite drags give opposite-signed offsets", () => {
+    const a = panCropOffset({ ...sq, rotation: deg(30) }, 0.15, 0, 1).ox;
+    const b = panCropOffset({ ...sq, rotation: deg(30) }, -0.15, 0, 1).ox;
+    expect(Math.sign(a)).toBe(-Math.sign(b));
   });
 });
 

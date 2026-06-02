@@ -910,6 +910,7 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
           itemId: id,
           crop: { x: d.x, y: d.y, w: d.w, h: d.h },
           ...(d.rotation !== 0 ? { rotation: d.rotation } : {}),
+          offset: { ox: d.ox, oy: d.oy },
         });
       }
       croppingState.exit(id);

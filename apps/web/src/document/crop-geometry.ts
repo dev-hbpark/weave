@@ -57,6 +57,51 @@ export function panCropWindow(c: CropDraft, dx: number, dy: number): CropDraft {
   };
 }
 
+/** Pan within the rotation cover-zoom magnification (WI-074 D12). When rotated, the
+ *  image is magnified by `coverZoom` to fill the frame; this moves the magnified
+ *  image by (dx,dy) frame fractions and clamps so the frame stays inside the
+ *  rotated, magnified SOURCE rect (gap-free) while reaching its full extent. The
+ *  offset (ox,oy) is a separate weave-local field; the window (x,y,w,h) is untouched
+ *  (it stays within [0,1]). `aspect` = frame box width/height. At θ=0 there is no
+ *  magnification slack → offset is pinned to 0 (pan uses the window instead). */
+export function panCropOffset(c: CropDraft, dx: number, dy: number, aspect = 1): CropDraft {
+  const theta = c.rotation ?? 0;
+  if (theta === 0) return { ...c, ox: 0, oy: 0 };
+  const a = aspect > 0 ? aspect : 1;
+  const oxDes = (c.ox ?? 0) + dx;
+  const oyDes = (c.oy ?? 0) + dy;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const ac = Math.abs(cosT);
+  const as = Math.abs(sinT);
+  const Z = coverZoom(theta, a);
+  // Rotated full-source rect half-sizes + the source-center→window-center offset, in
+  // square-px space S (1 unit = frame width; frame height = 1/a).
+  const rectHalfX = Z / (2 * c.w);
+  const rectHalfY = Z / (2 * c.h * a);
+  const supX = 0.5 * ac + (1 / (2 * a)) * as;
+  const supY = 0.5 * as + (1 / (2 * a)) * ac;
+  const limX = Math.max(0, rectHalfX - supX);
+  const limY = Math.max(0, rectHalfY - supY);
+  const d0x = (0.5 - c.x - c.w / 2) / c.w;
+  const d0y = (0.5 - c.y - c.h / 2) / (c.h * a);
+  // Desired offset in S, into the image-local (rotated) frame via R(-θ).
+  const vSx = oxDes;
+  const vSy = oyDes / a;
+  const vx = vSx * cosT + vSy * sinT;
+  const vy = -vSx * sinT + vSy * cosT;
+  const Dlx = clamp(-(Z * d0x + vx), -limX, limX);
+  const Dly = clamp(-(Z * d0y + vy), -limY, limY);
+  // Back-solve the (clamped) offset: (ox, oy/a) = R(θ)·(-Z·d0 - D_local).
+  const ux = -Z * d0x - Dlx;
+  const uy = -Z * d0y - Dly;
+  return {
+    ...c,
+    ox: ux * cosT - uy * sinT,
+    oy: (ux * sinT + uy * cosT) * a,
+  };
+}
+
 /** Set content rotation (radians). Full 360° is allowed (WI-074) — the angle is
  *  normalized into (-π, π] and the cover-zoom keeps the frame fully covered at
  *  every angle. */

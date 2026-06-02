@@ -253,6 +253,35 @@ source 0.5,0.5 매핑) 기준으로 적용. 팬으로 윈도를 옮기면 회전
 팬이 윈도를 이동시키고 커밋됨(회전 보존) 1, 스크린샷으로 팬 양극단 갭 없음+콘텐츠 평행이동 확인.
 353 unit / 18 crop e2e green.
 
+## D12 — 회전 확대분(cover-zoom)까지 팬 (이미지 오프셋) (2026-06-02)
+
+**증상(운영자 보고, D11 후에도):** 회전이 이미지를 확대(cover-zoom)하는데 "이 커진 부분까지
+이동(팬)이 안 됨". D11은 팬 *방향*만 고쳤고, 확대로 프레임 밖으로 밀려난 부분은 여전히 도달 불가.
+
+**근본 원인:** cropRatio.{x,y,w,h}는 소스 [0,1] 윈도라 `x+w≤1` 검증을 받음(커맨드). cover-zoom
+확대는 윈도가 표현 못하는 "확대 슬랙"이라, 윈도 팬([0,1-w])만으론 확대분에 못 들어감. 윈도를
+[0,1] 밖으로 늘리면 소스 데이터가 없어 갭(폐기됨).
+
+**결정(운영자 선택):** 확대 유지 + 확대분까지 팬. 이를 위해 **이미지 오프셋**(확대 내 평행이동)을
+도입.
+
+**구현:**
+- **weave-local 유닛 `crop.offset` {ox,oy}**(프레임 박스 분수) 신설 — flip 유닛과 동일 패턴
+  (`transform-crop-offset.ts`, `readCropOffset`). cropRatio(agocraft)는 그대로 [0,1] 윈도.
+- **`panCropOffset(c,dx,dy,aspect)`**(crop-geometry): 확대(=`coverZoom`)된 회전 소스 사각형 안에
+  프레임이 머물도록(갭 없음) 오프셋을 회전 프레임에서 클램프. θ=0이면 슬랙 0 → 오프셋 0.
+- **렌더**: `cropWindowWrapperStyle`에 (ox,oy) 평행이동 추가(Draw1/Draw2/커밋 ImageContent 공유).
+- **팬 제스처**(ImageBlock): θ=0 → 윈도 팬(`panCropWindow`, 기존), θ≠0 → 오프셋 팬(`panCropOffset`).
+- **커밋**: `weave.image.setCrop`에 `offset` 입력 추가 → 같은 트랜잭션에서 `crop.offset` 유닛을
+  setDecoration으로 기록(**단일 undo**). draft/enter/CropRect/CropDraft에 ox,oy 추가.
+
+검증: crop-geometry 단위 14(panCropOffset θ=0 0/회전 이동/클램프 유계/반대부호), e2e — 회전 후
+팬이 오프셋을 움직여 커밋·**단일 undo** 복원, 윈도/회전 보존 1. 스크린샷으로 회전 35° 후 드래그가
+확대로 밀려난 흰 테두리·코너 원까지 **갭 없이** 도달 확인. 356 unit / 18 crop e2e green.
+
+**한계:** rotation 변경(straighten) 후 기존 오프셋은 재클램프 없이 보존 → 드물게 약간의 갭 가능
+(다음 팬에서 재클램프). 독립 이미지 스케일(줌) 핸들은 여전히 P3 backlog.
+
 ## Undo
 
 크롭 확정 = `item.attrs` Patch 1개(`cropRatio`만 교체, full ImageAttrs 재구성 —

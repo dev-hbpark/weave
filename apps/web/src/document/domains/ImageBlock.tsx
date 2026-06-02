@@ -26,9 +26,10 @@ import {
 } from "@agocraft/core";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { coverZoom, panCropWindow } from "../crop-geometry.js";
+import { coverZoom, panCropOffset, panCropWindow } from "../crop-geometry.js";
 import { croppingState, useCropDraft, useCroppingItemId } from "../interactions/cropping-state.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
+import { readCropOffset } from "../transform-crop-offset.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
 
 interface ImageBlockProps {
@@ -43,9 +44,12 @@ interface CropRect {
   readonly h: number;
   /** radians, content straighten (DR-029 D6) */
   readonly rotation: number;
+  /** WI-074 D12 — image-offset (frame fractions) within the rotation magnification. */
+  readonly ox: number;
+  readonly oy: number;
 }
 
-const IDENTITY_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1, rotation: 0 };
+const IDENTITY_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1, rotation: 0, ox: 0, oy: 0 };
 
 function readCrop(a: ImageAttrs): CropRect {
   const c = a.cropRatio as
@@ -58,6 +62,8 @@ function readCrop(a: ImageAttrs): CropRect {
     w: c.w ?? 1,
     h: c.h ?? 1,
     rotation: c.rotation ?? 0,
+    ox: 0,
+    oy: 0,
   };
 }
 
@@ -109,15 +115,7 @@ function ImageContent(props: {
     );
   }
   return (
-    <div
-      className="absolute"
-      style={{
-        left: `${-crop.x * (1 / crop.w) * 100}%`,
-        top: `${-crop.y * (1 / crop.h) * 100}%`,
-        width: `${(1 / crop.w) * 100}%`,
-        height: `${(1 / crop.h) * 100}%`,
-      }}
-    >
+    <div className="absolute" style={cropWindowWrapperStyle(crop)}>
       <img
         src={src}
         alt={alt}
@@ -140,12 +138,14 @@ function ImageContent(props: {
 // bypasses the design-plane gesture controllers that swallow React onPointerDown.
 
 /** Wrapper that maps the crop window [x,x+w]x[y,y+h] onto the frame box; with the
- *  parent overflow visible, the rest of the (cover-displayed) image extends beyond. */
+ *  parent overflow visible, the rest of the (cover-displayed) image extends beyond.
+ *  The (ox,oy) offset (WI-074 D12) additionally translates the magnified image so
+ *  the user can pan into the rotation cover-zoom overflow (frame-box fractions). */
 function cropWindowWrapperStyle(c: CropRect): CSSProperties {
   return {
     position: "absolute",
-    left: `${-c.x * (1 / c.w) * 100}%`,
-    top: `${-c.y * (1 / c.h) * 100}%`,
+    left: `${(-c.x * (1 / c.w) + c.ox) * 100}%`,
+    top: `${(-c.y * (1 / c.h) + c.oy) * 100}%`,
     width: `${(1 / c.w) * 100}%`,
     height: `${(1 / c.h) * 100}%`,
   };
@@ -190,7 +190,14 @@ function CropEditor(props: {
       if (r.width === 0 || r.height === 0) return;
       const dx = (e.clientX - drag.startX) / r.width;
       const dy = (e.clientY - drag.startY) / r.height;
-      croppingState.setDraft(panCropWindow(drag.start, dx, dy));
+      // WI-074 D12 — rotated: pan the image WITHIN the cover-zoom magnification
+      // (offset), so the magnified overflow is reachable. Un-rotated: pan the
+      // crop window (source region) as before.
+      const next =
+        (drag.start.rotation ?? 0) === 0
+          ? panCropWindow(drag.start, dx, dy)
+          : panCropOffset(drag.start, dx, dy, r.width / r.height);
+      croppingState.setDraft(next);
     };
     const onUp = () => {
       dragRef.current = null;
@@ -310,7 +317,9 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
         | undefined
     )?.value ?? 1;
 
-  const crop = readCrop(a);
+  // WI-074 D12 — merge the persisted crop image-offset (weave-local unit) into the
+  // committed crop so the rendered image reflects the in-magnification pan.
+  const crop = { ...readCrop(a), ...readCropOffset(item as unknown as AgocraftItem) };
 
   // Frame-box aspect (width / height) — drives the rotation cover-zoom.
   const boxRef = useRef<HTMLDivElement>(null);
@@ -344,7 +353,10 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
             onDoubleClick: (e: React.MouseEvent) => {
               e.stopPropagation();
               // D8b — enter crop via the shared store; commit/cancel is external.
-              croppingState.enter(itemId, readCrop(item.attrs));
+              croppingState.enter(itemId, {
+                ...readCrop(item.attrs),
+                ...readCropOffset(item as unknown as AgocraftItem),
+              });
             },
           }
         : {})}
