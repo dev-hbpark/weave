@@ -59,6 +59,7 @@ import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index
 // handles) + move gate. No layout branching lives here.
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../document/layout/registry.js";
 import { MarqueeSelectionLayer } from "../document/marquee/MarqueeSelectionLayer.js";
+import { snapRotation } from "../document/rotation-snap.js";
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
 import { RubberBandLayer } from "../document/rubber-band/RubberBandLayer.js";
 import { createFrameMoveSnap } from "../document/selection-chrome/frame-move-snap.js";
@@ -69,6 +70,7 @@ import {
   startHandleGesture,
   toHandlePointer,
 } from "../document/selection-chrome/handle-gesture-runner.js";
+import { rotationSnapFeedback } from "../document/selection-chrome/rotation-snap-feedback.js";
 
 import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
 
@@ -1129,10 +1131,22 @@ export function FrameStage(props: FrameStageProps) {
             itemId: String(itemId),
             origin,
             sink: {
+              // WI-074 — Shift = 10° steps; otherwise snap to 0/90/180/270 (guide).
               update: (p) => {
                 const ang = Math.atan2(p.clientY - center.y, p.clientX - center.x);
-                croppingState.setDraft(setStraighten(start, start.rotation + (ang - startAng)));
+                const snap = snapRotation(start.rotation + (ang - startAng), p.shiftKey);
+                croppingState.setDraft(setStraighten(start, snap.rotation));
+                if (snap.cardinalDeg !== null) {
+                  rotationSnapFeedback.set({
+                    cx: center.x,
+                    cy: center.y,
+                    deg: snap.cardinalDeg,
+                    rad: snap.rotation,
+                  });
+                } else rotationSnapFeedback.clear();
               },
+              commit: () => rotationSnapFeedback.clear(),
+              cancel: () => rotationSnapFeedback.clear(),
             },
           });
           return;
@@ -1146,12 +1160,32 @@ export function FrameStage(props: FrameStageProps) {
           itemId: String(itemId),
           origin,
           sink: {
-            update: (p) =>
+            // WI-074 — Shift = 10° steps; otherwise snap to 0/90/180/270 (guide).
+            update: (p) => {
+              const geom = frameAccess.computeRotate(orig, center, startVec, {
+                x: p.clientX,
+                y: p.clientY,
+              });
+              const snap = snapRotation((geom as unknown as ItemFrame).rotation ?? 0, p.shiftKey);
               frameAccess.commitFrame(
                 itemId,
-                frameAccess.computeRotate(orig, center, startVec, { x: p.clientX, y: p.clientY }),
+                {
+                  ...(geom as unknown as ItemFrame),
+                  rotation: snap.rotation,
+                } as unknown as FrameGeom,
                 sessionId,
-              ),
+              );
+              if (snap.cardinalDeg !== null) {
+                rotationSnapFeedback.set({
+                  cx: center.x,
+                  cy: center.y,
+                  deg: snap.cardinalDeg,
+                  rad: snap.rotation,
+                });
+              } else rotationSnapFeedback.clear();
+            },
+            commit: () => rotationSnapFeedback.clear(),
+            cancel: () => rotationSnapFeedback.clear(),
           },
         });
         return;

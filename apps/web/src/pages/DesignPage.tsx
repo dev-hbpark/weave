@@ -136,6 +136,7 @@ import { projectHoverAffordance } from "../document/render/hover-affordance-proj
 // WI-070 — import for its registration side effect: registers the endpoint→
 // opposite-endpoint snap provider into SNAP_PROVIDERS (the host wires providers).
 import "../document/selection-chrome/endpoint-snap-provider.js";
+import { RotationSnapLayer } from "../document/selection-chrome/RotationSnapLayer.js";
 import { SnapFeedbackLayer } from "../document/selection-chrome/SnapFeedbackLayer.js";
 import { removeVertexAndRefit } from "../document/selection-chrome/vertex-ops.js";
 import { vertexSelection } from "../document/selection-chrome/vertex-selection.js";
@@ -2152,6 +2153,9 @@ function DesignPageBody() {
                           Phase 1 the endpoint-close radial marker; Phase 2 the
                           alignment / spacing / grid guide lines. */}
                             <SnapFeedbackLayer />
+                            {/* WI-074 — rotation snap guide (0/90/180/270 crosshair
+                          + degree badge) for both frame rotate and crop straighten. */}
+                            <RotationSnapLayer />
                             {typeof document !== "undefined" &&
                               layoutChildDrag.dropPreview !== null &&
                               createPortal(

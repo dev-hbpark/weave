@@ -203,6 +203,31 @@ box-shadow가 프레임 경계를 넘어 캔버스 전체를 균일하게 dim함
 검증: crop-geometry 단위 7(정규화/wrap/non-finite/윈도 보존/clamp 유지), e2e 13/13(회전
 핸들 ~120° 아크 → |rotation| > 45° 확인 포함), 343 unit / build green.
 
+## D10 — 회전 스냅 가이드(0/90/180/270) + Shift 10° 스텝 (2026-06-02)
+
+**요청:** 회전 핸들에 0/90/180/270° 스냅 가이드, Shift 누르면 10°씩. **크롭 straighten 핸들과
+일반 frame rotate 핸들 둘 다.**
+
+**설계:** 두 경로가 공유하는 순수 함수 `snapRotation(rad, shiftKey)`(`document/rotation-snap.ts`):
+- Shift O → 10° 스텝으로 양자화(`round(rad/10°)·10°`).
+- Shift X → 최근접 카디널(0/90/180/270)까지 거리 ≤ **5°**면 카디널로 스냅, 아니면 자유.
+- 반환: `{ rotation, cardinalDeg|null }`. `cardinalDeg`가 있으면 가이드 표시.
+
+**가이드:** 전용 transient 스토어 `rotation-snap-feedback.ts`(snap-feedback.ts 패턴) + body-portal
+오버레이 `RotationSnapLayer`(SnapFeedbackLayer 패턴, z47). 카디널 락 중 아이템 중심(뷰포트 px)
+관통 **축 십자선**(스냅된 방향) + `{deg}°` 배지. 커밋/취소 시 clear. DesignPage에서 SnapFeedbackLayer
+옆에 마운트.
+
+**배선(FrameStage onDown rotate 분기):** 크롭 sink + 일반 sink 둘 다 `update(p)`에서
+`snapRotation(raw, p.shiftKey)` → 크롭은 `setStraighten(start, snap.rotation)`, 일반은
+`computeRotate` 결과의 rotation을 snap.rotation으로 교체해 `commitFrame`. `cardinalDeg`면
+`rotationSnapFeedback.set`, 아니면 clear. `HandlePointer.shiftKey`는 handle-gesture-runner가
+이미 전달(DOM→`toHandlePointer`). cover-zoom은 전 각도 커버라 카디널/스텝 모두 갭 없음.
+
+검증: rotation-snap 단위 6(카디널/임계 5°/Shift 10°/스텝-카디널/non-finite), e2e — 프레임
+rotate 3(카디널≈90°+가이드 노출/`data-snap-deg`, Shift 34°→30°, 자유 40°→스냅·가이드 없음) +
+크롭 rotate 스냅 1, 스크린샷으로 십자선+배지 시각 확인. 349 unit / e2e green.
+
 ## Undo
 
 크롭 확정 = `item.attrs` Patch 1개(`cropRatio`만 교체, full ImageAttrs 재구성 —

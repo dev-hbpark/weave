@@ -371,6 +371,46 @@ test("WI-074 — crop rotation allows beyond 45° (full 360°)", async ({ page }
   expect(Math.abs(rotation)).toBeGreaterThan(Math.PI / 4 + 0.05);
 });
 
+test("WI-074 — crop rotate handle snaps to a cardinal (≈90°) and shows the guide", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-crop-snap" });
+  const id = await addImage(page);
+  await page.locator(`[data-frame-id="${id}"]`).click();
+  await page.locator(`[data-frame-id="${id}"]`).dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+
+  const frameBox = await page.locator(`[data-frame-id="${id}"]`).boundingBox();
+  const rot = page
+    .locator(`[data-selection-handle-item-id="${id}"] [data-handle-kind="rotation"]`)
+    .first();
+  await expect.poll(() => rot.count()).toBeGreaterThan(0);
+  const rb = await rot.boundingBox();
+  if (frameBox === null || rb === null) throw new Error("no boxes");
+  const cx = frameBox.x + frameBox.width / 2;
+  const cy = frameBox.y + frameBox.height / 2;
+  const hx = rb.x + rb.width / 2;
+  const hy = rb.y + rb.height / 2;
+  const r = Math.hypot(hx - cx, hy - cy);
+  const a0 = Math.atan2(hy - cy, hx - cx);
+
+  // Arc to ~87° (inside the 5° cardinal threshold of 90°).
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+  const target = (87 * Math.PI) / 180;
+  for (let i = 1; i <= 20; i++) {
+    const a = a0 + (target * i) / 20;
+    await page.mouse.move(cx + r * Math.cos(a), cy + r * Math.sin(a));
+  }
+  await expect(page.getByTestId("rotation-snap-guide")).toBeVisible();
+  await page.mouse.up();
+  await page.keyboard.press("Enter");
+
+  const crop = await readCrop(page, id);
+  expect(Math.abs(Math.abs(crop?.rotation ?? 0) - Math.PI / 2)).toBeLessThan((1 * Math.PI) / 180);
+  await expect(page.getByTestId("rotation-snap-guide")).toHaveCount(0);
+});
+
 test("WI-074 D8b — QuickActionBar shows 완료/취소 during crop; 완료 commits", async ({ page }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-074-qab" });
   const id = await addImage(page);
