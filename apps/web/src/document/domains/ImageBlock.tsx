@@ -26,7 +26,7 @@ import {
 } from "@agocraft/core";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { panCropWindow } from "../crop-geometry.js";
+import { coverZoom, panCropWindow } from "../crop-geometry.js";
 import { croppingState, useCropDraft, useCroppingItemId } from "../interactions/cropping-state.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
@@ -64,22 +64,19 @@ function readCrop(a: ImageAttrs): CropRect {
 const isIdentity = (c: CropRect): boolean =>
   c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1 && c.rotation === 0;
 
-/** Cover-zoom so a θ-rotated element still covers an axis-aligned box of the
- *  given aspect (= width / height). θ = 0 → 1. */
-function coverZoom(theta: number, aspect: number): number {
-  if (theta === 0) return 1;
-  const c = Math.abs(Math.cos(theta));
-  const s = Math.abs(Math.sin(theta));
-  return c + s * Math.max(aspect, 1 / aspect);
-}
-
-function rotationTransform(theta: number, aspect: number): CSSProperties {
-  return theta === 0
-    ? {}
-    : {
-        transform: `rotate(${theta}rad) scale(${coverZoom(theta, aspect)})`,
-        transformOrigin: "center",
-      };
+/** Rotate + cover-zoom the source image, pivoting around the CROP WINDOW center
+ *  (= the frame box center on screen), not the source center. This keeps the frame
+ *  covered and the content spinning in place at ANY pan position (WI-074 D11). The
+ *  origin is given in the img's own box (which spans the source [0,1]); the window
+ *  center in that box is (x + w/2, y + h/2). */
+function rotationTransform(crop: CropRect, aspect: number): CSSProperties {
+  if (crop.rotation === 0) return {};
+  const ox = (crop.x + crop.w / 2) * 100;
+  const oy = (crop.y + crop.h / 2) * 100;
+  return {
+    transform: `rotate(${crop.rotation}rad) scale(${coverZoom(crop.rotation, aspect)})`,
+    transformOrigin: `${ox}% ${oy}%`,
+  };
 }
 
 /** Committed image content for a given crop (window + rotation). */
@@ -127,7 +124,7 @@ function ImageContent(props: {
         draggable={false}
         loading="lazy"
         decoding="async"
-        style={{ ...imgBase, ...rotationTransform(crop.rotation, aspect) }}
+        style={{ ...imgBase, ...rotationTransform(crop, aspect) }}
       />
     </div>
   );
@@ -219,7 +216,7 @@ function CropEditor(props: {
     objectFit,
     filter: filterCss,
     userSelect: "none",
-    ...rotationTransform(win.rotation, aspect),
+    ...rotationTransform(win, aspect),
   };
 
   return (

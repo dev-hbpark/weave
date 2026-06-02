@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  coverZoom,
   MIN_CROP_WINDOW,
   panCropWindow,
   resizeCropWindow,
@@ -57,11 +58,42 @@ describe("resizeCropWindow / panCropWindow stay clamped", () => {
     expect(r.h).toBeGreaterThanOrEqual(MIN_CROP_WINDOW - 1e-9);
   });
 
-  it("pan keeps the window inside [0, 1-w]×[0, 1-h]", () => {
+  it("pan (θ=0) keeps the window inside [0, 1-w]×[0, 1-h]", () => {
     const r = panCropWindow(base, 5, 5);
     expect(r.x).toBeGreaterThanOrEqual(0);
     expect(r.y).toBeGreaterThanOrEqual(0);
     expect(r.x).toBeLessThanOrEqual(1 - r.w + 1e-9);
     expect(r.y).toBeLessThanOrEqual(1 - r.h + 1e-9);
+  });
+});
+
+describe("panCropWindow — window stays in source [0,1] (D11)", () => {
+  const sq: CropDraft = { x: 0.25, y: 0.25, w: 0.5, h: 0.5, rotation: 0 };
+
+  it("clamps to [0, 1-w] / [0, 1-h] regardless of rotation (window is a source region)", () => {
+    expect(panCropWindow(sq, -10, 0).x).toBeCloseTo(0.5, 6); // 1-w
+    expect(panCropWindow(sq, 10, 0).x).toBeCloseTo(0, 6);
+    // Rotation does NOT change the window's source-space bounds (the rotation
+    // pivots the rendered content around the window center instead — see ImageBlock).
+    const rot = { ...sq, rotation: deg(45) };
+    expect(panCropWindow(rot, -10, 0).x).toBeCloseTo(0.5, 6);
+    expect(panCropWindow(rot, 0, 10).y).toBeCloseTo(0, 6);
+  });
+
+  it("a partial drag moves the window the same amount with or without rotation", () => {
+    const a = panCropWindow(sq, 0.2, 0).x;
+    const b = panCropWindow({ ...sq, rotation: deg(45) }, 0.2, 0).x;
+    expect(a).toBeCloseTo(b, 9);
+  });
+});
+
+describe("coverZoom", () => {
+  it("is 1 at θ=0 and max(a, 1/a) at 90°", () => {
+    expect(coverZoom(0, 2)).toBe(1);
+    expect(coverZoom(Math.PI / 2, 2)).toBeCloseTo(2, 6);
+    expect(coverZoom(Math.PI / 2, 0.5)).toBeCloseTo(2, 6);
+  });
+  it("uses |cos|/|sin| so θ and θ+π give the same zoom", () => {
+    expect(coverZoom(deg(30), 1.5)).toBeCloseTo(coverZoom(deg(210), 1.5), 9);
   });
 });

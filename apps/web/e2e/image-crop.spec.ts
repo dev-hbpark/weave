@@ -371,6 +371,37 @@ test("WI-074 — crop rotation allows beyond 45° (full 360°)", async ({ page }
   expect(Math.abs(rotation)).toBeGreaterThan(Math.PI / 4 + 0.05);
 });
 
+test("WI-074 — pan works after rotation (window moves within source, no commit rejection)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-pan-rot" });
+  const id = await addImage(page);
+  await setCrop(page, {
+    itemId: id,
+    crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
+    rotation: (45 * Math.PI) / 180,
+  });
+  await page.locator(`[data-frame-id="${id}"]`).dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+
+  const fb = await page.locator(`[data-frame-id="${id}"]`).boundingBox();
+  if (fb === null) throw new Error("no frame box");
+  const cx = fb.x + fb.width / 2;
+  const cy = fb.y + fb.height / 2;
+  // Drag right → window x decreases. Pan must apply (and commit, staying in [0,1])
+  // even though the content is rotated (regression: the rotation pivot fix).
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(cx + (180 * i) / 12, cy);
+  await page.mouse.up();
+  await page.keyboard.press("Enter");
+
+  const crop = await readCrop(page, id);
+  expect(crop?.x ?? 0.25).toBeLessThan(0.25); // pan moved the window
+  expect(crop?.x ?? 0).toBeGreaterThanOrEqual(0); // stayed in source bounds
+  expect(crop?.rotation ?? 0).toBeCloseTo((45 * Math.PI) / 180, 4); // rotation preserved
+});
+
 test("WI-074 — crop rotate handle snaps to a cardinal (≈90°) and shows the guide", async ({
   page,
 }) => {

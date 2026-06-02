@@ -35,8 +35,20 @@ export function resizeCropWindow(c: CropDraft, dir: string, dx: number, dy: numb
   return { ...c, x: l, y: t, w: r - l, h: b - t };
 }
 
+/** Cover-zoom: scale so a θ-rotated element still covers an axis-aligned box of
+ *  the given aspect (= frame width / height). θ = 0 → 1. Shared with the renderer
+ *  (ImageBlock) — applied AROUND the window center (= frame center) so the frame
+ *  stays covered at any pan position (WI-074 D11). */
+export function coverZoom(theta: number, aspect: number): number {
+  if (theta === 0) return 1;
+  const c = Math.abs(Math.cos(theta));
+  const s = Math.abs(Math.sin(theta));
+  return c + s * Math.max(aspect, 1 / aspect);
+}
+
 /** Pan: move which part of the image fills the frame box. Dragging right reveals
- *  the image's LEFT side, so the window x decreases. dx/dy are frame-box fractions. */
+ *  the image's LEFT side, so the window x decreases. dx/dy are frame-box fractions.
+ *  The window is the crop region in source space, so it stays within [0,1]. */
 export function panCropWindow(c: CropDraft, dx: number, dy: number): CropDraft {
   return {
     ...c,
