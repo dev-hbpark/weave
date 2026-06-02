@@ -301,6 +301,21 @@ test("WI-074 — flip generalizes to shapes; qr is rejected", async ({ page }) =
   expect(await readFlip(page, qrId)).toBeNull();
 });
 
+test("WI-074 — frame flip is display-only (content mirrored + pointer-events:none)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-flip-frame" });
+  const frameId = await addKind(page, "frame");
+
+  expect(await flip(page, frameId, "horizontal")).toBe(true);
+  await expect.poll(() => readFlip(page, frameId)).toEqual({ flipH: true, flipV: false });
+
+  // The frame's content is mirrored AND made non-interactive (display-only).
+  const wrapper = page.locator(`[data-frame-id="${frameId}"] div[style*="scaleX(-1)"]`).first();
+  await expect.poll(() => wrapper.count()).toBeGreaterThan(0);
+  expect(await wrapper.getAttribute("style")).toContain("pointer-events");
+});
+
 test("WI-074 — crop mode suspends editor hotkeys; restored after exit (Step 5 gate)", async ({
   page,
 }) => {

@@ -59,6 +59,7 @@ import {
   updateAll,
   useResolveSharedColor,
 } from "../multi-edit.js";
+import { FlipControls } from "./flip-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 type LayoutKindChoice = "absolute" | "auto-flex" | "auto-grid";
@@ -308,6 +309,11 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
             data-testid="frame-layout-select"
             triggerClassName="min-w-[104px]"
           />
+        </div>
+        {/* WI-074 / DR-029 D7 — frame flip is DISPLAY-ONLY: mirrors content +
+            children, which become non-interactive while flipped (unflip to edit). */}
+        <div className="ml-2 inline-flex items-center">
+          <FlipControls editor={editor} ids={ids} />
         </div>
       </Bar.Quick>
       {homogeneousSpec?.kind === "auto-flex" ? (

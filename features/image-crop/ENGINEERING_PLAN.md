@@ -63,7 +63,9 @@ DR-029의 D1–D5 결정을 구현한다.
 
 ✅ **플립(DR-029 D7) — generic으로 일반화** — kind-무관 `transform.flip` UNIT(weave-local,
 agocraft 변경 0) + **NestedFrame 공통 적용**(frame 중심 mirror) + allow-list(image/video/shape/line;
-qr/text/frame 제외) + `weave.item.flip` 토글 + 공유 `FlipControls`(image/shape/line/video 섹션).
+qr/text 제외; **frame은 표시-전용**) + `weave.item.flip` 토글 + 공유 `FlipControls`(image/shape/
+line/video/frame 섹션). frame 플립: 콘텐츠+자식 미러링 + `pointer-events:none`(자식 편집 불가,
+프레임 box는 편집 가능).
 크롭과 직교(cropRatio 불변 → 크롭 이미지 flip 시 보이는 영역 보존). `ImageCrop.flipH/flipV`(DR-037)는
 deprecated. e2e 8/8(토글·크롭 비간섭·shape 일반화·qr 거부), 유닛 336.
 

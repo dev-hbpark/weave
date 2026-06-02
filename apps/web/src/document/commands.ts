@@ -745,8 +745,9 @@ export function buildWeaveCommands(
 
   // WI-074 / DR-029 D7 — toggle a horizontal / vertical flip on ANY supported item.
   // Stored as a kind-agnostic `transform.flip` UNIT (toggled via setDecoration), so
-  // the same generic mechanism mirrors image / video / shape / line at NestedFrame.
-  // qr/text/frame are excluded (scannability / readability / container coord safety).
+  // the same generic mechanism mirrors image / video / shape / line / frame at
+  // NestedFrame. `frame` is a DISPLAY-ONLY flip (children mirrored + non-interactive);
+  // qr/text are excluded (scannability / readability).
   const flipItem: Command<FlipItemInput, void> = {
     name: "weave.item.flip",
     run: (ctx, input) => {

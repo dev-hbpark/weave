@@ -390,6 +390,60 @@ export function NestedFrame({
         }
       : undefined;
 
+  // WI-074 D7 — content + (for frames) children are mirrored together under a
+  // flip, so extract both so the flip wrapper can enclose them.
+  const frameContentNode = (
+    <ParentFrameHeightContext.Provider value={parentHeightPx}>
+      <FrameCulledContext.Provider value={culled}>
+        <FrameContent
+          item={item as unknown as AgoItem}
+          {...(onUpdateItem
+            ? {
+                onUpdate: (patch: Record<string, unknown>) =>
+                  onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
+              }
+            : {})}
+          {...(onUpdateShape
+            ? {
+                onUpdateShape: (shapeId: string, patch: object) =>
+                  onUpdateShape(itemId, shapeId, patch),
+              }
+            : {})}
+          {...(onRemoveShape
+            ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
+            : {})}
+        />
+      </FrameCulledContext.Provider>
+    </ParentFrameHeightContext.Provider>
+  );
+  const childNodes = childFrames.map((c) => (
+    <NestedFrame
+      key={String(c.id)}
+      item={c}
+      parentWidthPx={widthPx}
+      parentHeightPx={heightPx}
+      editing={editing}
+      selectedId={selectedId}
+      {...(selectedIds !== undefined ? { selectedIds } : {})}
+      {...(dimmedFrameIds !== undefined ? { dimmedFrameIds } : {})}
+      {...(isolatedFrameIds !== undefined ? { isolatedFrameIds } : {})}
+      {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
+      onSelect={onSelect}
+      doc={doc}
+      onContextMenuRequest={onContextMenuRequest}
+      onUpdateItem={onUpdateItem}
+      onUpdateShape={onUpdateShape}
+      onRemoveShape={onRemoveShape}
+      onDropAdd={onDropAdd}
+      onDragOver={onDragOver}
+      renderFrameMenu={renderFrameMenu}
+      onCommitFrame={onCommitFrame}
+      selectedHotspotId={selectedHotspotId}
+      onSelectHotspot={onSelectHotspot}
+      onCommitHotspotRegion={onCommitHotspotRegion}
+    />
+  ));
+
   const inner = (
     <motion.div
       ref={selfRef}
@@ -611,89 +665,27 @@ export function NestedFrame({
       }
       style={style as MotionStyle}
     >
-      {/* Phase 2 (fontSizeSpec) — expose this item's parent-frame height (px)
-          so a text item's `kind:"ratio"` fontSize resolves against it (root =
-          designHeight, which is what `parentHeightPx` carries at the top).
-          WI-074 D7 — a flipped item wraps its content in a frame-centre mirror
-          layer (same region, display flipped). */}
+      {/* WI-074 D7 — a flipped item mirrors its content around the frame centre.
+          Frames mirror their children too; that flip is DISPLAY-ONLY — the mirrored
+          content is pointer-events:none so children aren't mis-edited under the
+          mirror (drag directions would invert), while the frame box itself stays
+          selectable / movable via its own chrome. Leaves keep their content
+          interactive (no children, so the trailing childNodes is empty). */}
       {flipped ? (
-        <div className="absolute inset-0" style={flipTransform(flip)}>
-          <ParentFrameHeightContext.Provider value={parentHeightPx}>
-            <FrameCulledContext.Provider value={culled}>
-              <FrameContent
-                item={item as unknown as AgoItem}
-                {...(onUpdateItem
-                  ? {
-                      onUpdate: (patch: Record<string, unknown>) =>
-                        onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
-                    }
-                  : {})}
-                {...(onUpdateShape
-                  ? {
-                      onUpdateShape: (shapeId: string, patch: object) =>
-                        onUpdateShape(itemId, shapeId, patch),
-                    }
-                  : {})}
-                {...(onRemoveShape
-                  ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
-                  : {})}
-              />
-            </FrameCulledContext.Provider>
-          </ParentFrameHeightContext.Provider>
+        <div
+          className="absolute inset-0"
+          style={{
+            ...flipTransform(flip),
+            ...(kind === "frame" ? { pointerEvents: "none" } : {}),
+          }}
+        >
+          {frameContentNode}
+          {kind === "frame" ? childNodes : null}
         </div>
       ) : (
-        <ParentFrameHeightContext.Provider value={parentHeightPx}>
-          <FrameCulledContext.Provider value={culled}>
-            <FrameContent
-              item={item as unknown as AgoItem}
-              {...(onUpdateItem
-                ? {
-                    onUpdate: (patch: Record<string, unknown>) =>
-                      onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
-                  }
-                : {})}
-              {...(onUpdateShape
-                ? {
-                    onUpdateShape: (shapeId: string, patch: object) =>
-                      onUpdateShape(itemId, shapeId, patch),
-                  }
-                : {})}
-              {...(onRemoveShape
-                ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
-                : {})}
-            />
-          </FrameCulledContext.Provider>
-        </ParentFrameHeightContext.Provider>
+        frameContentNode
       )}
-      {(() => {
-        return childFrames.map((c) => (
-          <NestedFrame
-            key={String(c.id)}
-            item={c}
-            parentWidthPx={widthPx}
-            parentHeightPx={heightPx}
-            editing={editing}
-            selectedId={selectedId}
-            {...(selectedIds !== undefined ? { selectedIds } : {})}
-            {...(dimmedFrameIds !== undefined ? { dimmedFrameIds } : {})}
-            {...(isolatedFrameIds !== undefined ? { isolatedFrameIds } : {})}
-            {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
-            onSelect={onSelect}
-            doc={doc}
-            onContextMenuRequest={onContextMenuRequest}
-            onUpdateItem={onUpdateItem}
-            onUpdateShape={onUpdateShape}
-            onRemoveShape={onRemoveShape}
-            onDropAdd={onDropAdd}
-            onDragOver={onDragOver}
-            renderFrameMenu={renderFrameMenu}
-            onCommitFrame={onCommitFrame}
-            selectedHotspotId={selectedHotspotId}
-            onSelectHotspot={onSelectHotspot}
-            onCommitHotspotRegion={onCommitHotspotRegion}
-          />
-        ));
-      })()}
+      {flipped && kind === "frame" ? null : childNodes}
       {isPrimarySelection && onCommitFrame !== undefined && chromeVisible ? (
         <SelectionLayer
           targetRef={selfRef}

@@ -1862,11 +1862,11 @@ describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
     expect(createdFlipUnit(result)).toEqual({ flipH: false, flipV: true });
   });
 
-  it("rejects unsupported kinds (flip-not-supported) + item-not-found", () => {
-    // `frame-1` is a frame → not flippable.
-    const a = flipCmd().run(makeImageCtx(), { itemId: "frame-1", axis: "horizontal" });
-    expect(a.ok).toBe(false);
-    if (!a.ok) expect(a.error.code).toBe("flip-not-supported");
+  it("allows a frame (display-only flip) and reports item-not-found for unknown ids", () => {
+    // `frame` is allow-listed (display-only flip) → succeeds.
+    const f = flipCmd().run(makeImageCtx(), { itemId: "frame-1", axis: "horizontal" });
+    expect(f.ok).toBe(true);
+    // (qr/text rejection — `flip-not-supported` — is exercised in e2e.)
     const b = flipCmd().run(makeImageCtx(), { itemId: "ghost", axis: "horizontal" });
     expect(b.ok).toBe(false);
     if (!b.ok) expect(b.error.code).toBe("item-not-found");

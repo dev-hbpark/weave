@@ -91,9 +91,13 @@ SelectionLayer 위임은 불필요해짐(향후 다중 아이템/회전된 윈�
   → 이전의 `ImageCrop.flipH/flipV`(DR-037)는 **deprecated**(weave는 더 이상 사용 안 함).
 - **적용:** **NestedFrame**(공통 per-item 래퍼)에서 flip 유닛을 읽어 콘텐츠를 frame 중심 mirror.
   모든 kind에 균일.
-- **allow-list:** `image/video/shape/line`만 허용. **제외**: `qr`(스캔 불가=기능 파손),
-  `text`(거울글씨=가독성0), `frame`(컨테이너 미러링 시 자식 선택/드래그 좌표가 안 뒤집혀
-  hit-testing 깨짐 — 크롭 핸들 인터셉트와 같은 좌표계 문제).
+- **allow-list:** `image/video/shape/line` + **`frame`(표시 전용)**. **제외**: `qr`(스캔 불가),
+  `text`(거울글씨). 
+  - **frame 표시 전용 처리(2026-06-02 추가):** 프레임 플립은 콘텐츠+**자식까지** frame 중심
+    미러링하되, 미러링된 콘텐츠를 **`pointer-events:none`**로 둔다 → 뒤집힌 자식은 편집 불가
+    (그렇지 않으면 자식 move/resize 드래그 방향이 반전됨). **프레임 box 자체는 인터랙티브 유지**
+    (선택/이동/리사이즈 정상 — 핸들은 SelectionLayer 오버레이라 내부 미러와 무관). 자식 편집은
+    플립 해제 후. leaf(image/shape/line/video)는 자식이 없어 인터랙티브 유지.
 - **커맨드:** `weave.item.flip { itemId, axis }` 토글(`transform.flip` 유닛 set/clear via
   setDecoration kit, 가역). allow-list 위반 시 `flip-not-supported`. 에이전트 fold/hidden.
 - **UI:** 공유 `FlipControls`(좌우/상하) — image/shape/line/video 섹션 툴바에 배선.
@@ -101,8 +105,8 @@ SelectionLayer 위임은 불필요해짐(향후 다중 아이템/회전된 윈�
 - **검증:** e2e 8/8 — 플립 토글+Cmd+Z+`scaleX(-1)`, 크롭 이미지 flip 시 cropRatio 불변,
   **shape 일반화 동작 + qr 거부**. 유닛 — 토글/크롭 비간섭/allow-list.
 
-> 크롭(+straighten)은 래스터 의미 전용이라 일반화하지 않음(image 한정 유지). 컨테이너 flip은
-> 편집 좌표 미러링 문제로 보류(표시 전용 필요 시 별도 설계).
+> 크롭(+straighten)은 래스터 의미 전용이라 일반화하지 않음(image 한정 유지). 컨테이너(frame)
+> flip은 **표시 전용으로 구현됨**(위 frame 처리) — 자식 미러링 + 비인터랙티브, 프레임 box는 편집 가능.
 
 ## Undo
 

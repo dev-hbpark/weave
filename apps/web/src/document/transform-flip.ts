@@ -16,12 +16,20 @@ import type { CSSProperties } from "react";
 
 export const FLIP_UNIT_KIND = "transform.flip";
 
-/** Kinds for which a visual flip is meaningful + safe. Excludes:
- *  - `qr`    — flipping breaks scannability (functional damage),
- *  - `text`  — mirror-image text is unreadable,
- *  - `frame` — flipping a container would mirror children visually while their
- *              pointer/selection coords stay un-mirrored → broken hit-testing. */
-export const FLIP_ALLOWED_KINDS: ReadonlySet<string> = new Set(["image", "video", "shape", "line"]);
+/** Kinds for which a visual flip is meaningful. `frame` (container) is included
+ *  as a DISPLAY-ONLY flip: NestedFrame mirrors the frame's content + children but
+ *  marks them pointer-events:none so child manipulation (which would otherwise
+ *  drag in inverted directions under the mirror) is suspended — the frame box
+ *  itself stays editable; unflip to edit children. Excludes:
+ *  - `qr`   — flipping breaks scannability (functional damage),
+ *  - `text` — mirror-image text is unreadable. */
+export const FLIP_ALLOWED_KINDS: ReadonlySet<string> = new Set([
+  "image",
+  "video",
+  "shape",
+  "line",
+  "frame",
+]);
 
 export interface FlipState {
   readonly flipH: boolean;
