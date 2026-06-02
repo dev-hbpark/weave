@@ -231,7 +231,8 @@ function CropEditor(props: {
       onPointerDown={stop}
       onDoubleClick={stop}
     >
-      {/* Draw 1 — the full source, extending beyond the frame box, DIMMED. Pan target. */}
+      {/* Draw 1 — the full source, extending beyond the frame box. Pan target.
+          Drawn bright; the spotlight below dims everything outside the window. */}
       <div
         data-crop-pan
         data-testid="image-crop-pan"
@@ -239,11 +240,16 @@ function CropEditor(props: {
         style={{ ...wrapper, cursor: "move" }}
       >
         <img src={src} alt={alt} draggable={false} decoding="async" style={imgStyle} />
-        <div
-          className="absolute inset-0"
-          style={{ background: "rgba(0,0,0,0.55)", pointerEvents: "none" }}
-        />
       </div>
+      {/* Spotlight dim — a single hole at the frame box (= the crop window). Its
+          huge box-shadow dims the WHOLE canvas around the window in one pass:
+          the cropped-out source, sibling items, everything. No seam, no leak
+          (replaces the old Draw1-local + plane-level two-dim scheme, DR-029 D8c). */}
+      <div
+        data-testid="crop-dim"
+        className="absolute inset-0"
+        style={{ boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)", pointerEvents: "none" }}
+      />
       {/* Draw 2 — the frame-box region drawn again, BRIGHT (the kept crop). */}
       <div className="absolute inset-0" style={{ overflow: "hidden", pointerEvents: "none" }}>
         <div className="absolute" style={wrapper}>

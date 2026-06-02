@@ -366,7 +366,8 @@ export function NestedFrame({
         : 1,
     transition: "opacity 180ms ease",
     ...(frame.rotation ? { transform: `rotate(${frame.rotation}rad)` } : {}),
-    // WI-074 D8b — lift the cropping frame above the full-design dim (z 50).
+    // WI-074 D8c — lift the cropping frame above sibling items so its spotlight
+    // dim (box-shadow hole in ImageBlock) covers them.
     ...(isCroppingThis ? { zIndex: 51 } : {}),
   };
 

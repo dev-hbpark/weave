@@ -212,8 +212,8 @@ test("WI-074 D8b — Enter commits the crop, ESC cancels; whole-design dim shows
   // Enter crop mode by double-clicking the image.
   await page.locator(`[data-frame-id="${id}"]`).dblclick();
   await expect(page.getByTestId("image-crop-editor")).toBeVisible();
-  // The whole-design dim overlay is present.
-  await expect(page.getByTestId("crop-design-dim")).toBeVisible();
+  // The spotlight dim (box-shadow hole at the crop window) is present.
+  await expect(page.getByTestId("crop-dim")).toBeVisible();
 
   // Pan the crop, then ESC → cancel (cropRatio unchanged).
   const fbox = await page.locator(`[data-frame-id="${id}"]`).boundingBox();

@@ -155,6 +155,30 @@ SelectionLayer 위임은 불필요해짐(향후 다중 아이템/회전된 윈�
 exec + exit), **ESC=취소**(exit). 회전 0이면 cropRatio에 rotation 생략. e2e 11/11
 (완료/ESC, 캔버스 dim, QuickActionBar 완료/취소).
 
+## D8c — dim을 spotlight(box-shadow hole)로 교체 (2026-06-02)
+
+**증상(운영자 보고):** "dim 영역이 잘못잡히고 있어" — 크롭 진입 시 잘려나간 원본 영역
+일부(특히 프레임 박스 위쪽 overflow)가 dim되지 않고 밝게 남음.
+
+**근본 원인:** D8b의 2-dim 구조 — (1) Draw1 wrapper 안의 로컬 dim(`inset:0`)과
+(2) FrameStage 평면 레벨 `crop-design-dim`(z50) + 크롭 프레임 z51 상승. cover-zoom/
+overflow로 wrapper 밖으로 삐져나온 원본은 `inset:0` 로컬 dim이 덮지 못하고, 두 dim의
+이음새/스태킹 컨텍스트(중첩 시)가 취약했다. 픽셀 샘플로 상단 teal 밴드 미-dim 확인.
+
+**해결:** 단일 **spotlight** — 크롭 윈도(프레임 박스 = `image-crop-editor` inset:0)에
+`box-shadow: 0 0 0 9999px rgba(0,0,0,0.55)` 한 장을 ImageBlock 안에 그린다. 거대한
+shadow가 윈도를 제외한 캔버스 전체(잘린 원본 + 형제 아이템 + 평면)를 한 번에 균일하게
+dim하고, 구멍(윈도)은 정확히 프레임 박스. Draw1 로컬 dim 제거, Draw2(밝은 크롭) 유지,
+FrameStage `crop-design-dim` 제거. 크롭 프레임 z51 상승은 유지(spotlight가 형제 아이템을
+덮도록). 검증: 픽셀 샘플 teal-top `0,58,58`(=×0.45 dim), 윈도 `255,255,255`(유일 밝음),
+평면 far `115,115,115`(균일 dim). e2e 11/11 / 336 unit / build green. testid:
+`crop-design-dim` → `crop-dim`.
+
+**트레이드오프:** overflow:hidden 프레임(슬라이드) 안에 중첩된 이미지를 크롭하면 shadow가
+그 프레임 경계에서 잘릴 수 있음(평면 전체까지 못 미침). 현 평면-루트 케이스에서는 무관하며
+2-dim 스태킹 방식보다 견고. 추후 중첩 클리핑 케이스는 body-portal projection으로 격상 가능
+(backlog).
+
 ## Undo
 
 크롭 확정 = `item.attrs` Patch 1개(`cropRatio`만 교체, full ImageAttrs 재구성 —

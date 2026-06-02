@@ -47,7 +47,7 @@ import {
 import { isDomainItem } from "../document/agocraft-mirror.js";
 import { resizeCropWindow, setStraighten } from "../document/crop-geometry.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
-import { croppingState, useIsCropping } from "../document/interactions/cropping-state.js";
+import { croppingState } from "../document/interactions/cropping-state.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
 import { useRouterOrNull } from "../document/interactions/router-context.js";
 import { TotalScaleContext } from "../document/interactions/total-scale-context.js";
@@ -232,9 +232,6 @@ export function FrameStage(props: FrameStageProps) {
   // where the existing pan + drill transforms render it at the right
   // viewport position automatically.
   const designPlaneRef = useRef<HTMLDivElement | null>(null);
-  // WI-074 D8b — while a crop is open, dim the whole design; the cropping frame is
-  // raised above this dim (NestedFrame) so its bright crop region stays visible.
-  const cropping = useIsCropping();
   // Viewport → design-pixel coord conversion (depends only on
   // designPlaneRef's current rect + the configured design size).
   // Declared here so any useEffect below can list it in its deps.
@@ -1451,20 +1448,12 @@ export function FrameStage(props: FrameStageProps) {
                   }}
                 >
                   {planeChildren}
-                  {/* WI-074 D8b — full-design dim while cropping. The cropping
-                      frame raises its z above this so the bright crop shows. */}
-                  {cropping ? (
-                    <div
-                      data-testid="crop-design-dim"
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        background: "rgba(0,0,0,0.55)",
-                        pointerEvents: "none",
-                        zIndex: 50,
-                      }}
-                    />
-                  ) : null}
+                  {/* WI-074 D8b — the crop dim is no longer a plane-level overlay.
+                      It is a spotlight (box-shadow hole) rendered inside the
+                      cropping ImageBlock so it dims the whole canvas EXCEPT the
+                      crop window, with no seam against the source image. The
+                      cropping frame still raises its z (NestedFrame) so its
+                      spotlight covers sibling items. */}
                   {/* WI-040 Phase 3 — host-supplied hover overlay
                   (`HoverAffordanceLayer` in DesignPage). Lives inside
                   the camera-transformed subtree so the projector's
