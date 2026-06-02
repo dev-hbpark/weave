@@ -53,6 +53,12 @@ DR-029의 D1–D5 결정을 구현한다.
 
 ## Build status (2026-06-02)
 
+✅ **크롭 UI 재설계 (DR-029 D8)** — **P1**: 이중 렌더(전체 원본 dim + 프레임영역 bright, 프레임 밖
+표시) + 드래그 팬 + straighten. **P2**: 크롭 핸들 SelectionLayer 이관 — 공유 draft 스토어
+(`cropping-state`) + 크롭 중 chrome 유지 + FrameStage 디스패처가 resize→크롭윈도우 / rotate→
+straighten sink로 라우팅(`crop-geometry`). e2e **10/10**. **P3**(원본 image-scale 핸들, 다중선택
+위치) + 핸들 커서-추적 feel 튜닝은 후속.
+
 ✅ Step 0 (agocraft DR-037 재벤더) · 1 (커맨드) · 2 (에이전트 fold) · 3 (크롭 모드 렌더+UI:
 더블클릭·dim 마스크·윈도우 이동/리사이즈 핸들·straighten 슬라이더·완료/취소·History 커밋) ·
 **5 (`useIsCropping` 전역 게이트** — `cropping-state.ts` 작은 구독 스토어; editor-hotkeys 2개

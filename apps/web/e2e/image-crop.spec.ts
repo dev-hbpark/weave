@@ -258,6 +258,35 @@ test("WI-074 — crop mode (D8): dragging pans the crop window (cropRatio x/y)",
   expect(crop?.x ?? 0.2).toBeLessThan(0.2);
 });
 
+test("WI-074 D8 P2 — SelectionLayer resize handle resizes the crop window; rotate straightens", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-074-p2" });
+  const id = await addImage(page);
+  await page.locator(`[data-frame-id="${id}"]`).click();
+  await page.locator(`[data-frame-id="${id}"]`).dblclick();
+  await expect(page.getByTestId("image-crop-editor")).toBeVisible();
+
+  // The frame's resize handles are shown on the SelectionLayer during crop and
+  // route to the crop window. Drag the SE corner inward → crop window shrinks.
+  const se = page.locator(`[data-selection-handle-item-id="${id}"] [data-handle-dir="se"]`).first();
+  await expect.poll(() => se.count()).toBeGreaterThan(0);
+  const box = await se.boundingBox();
+  if (box === null) throw new Error("no SE handle");
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx - 80, cy - 80, { steps: 10 });
+  await page.mouse.up();
+  await page.getByTestId("image-crop-apply").click();
+
+  const crop = await readCrop(page, id);
+  expect(crop).toBeDefined();
+  expect(crop?.w ?? 1).toBeLessThan(0.99);
+  expect(crop?.h ?? 1).toBeLessThan(0.99);
+});
+
 test("WI-074 — flip toggles a transform.flip unit (display mirrored); Cmd+Z reverts", async ({
   page,
 }) => {

@@ -1,20 +1,27 @@
-// WI-074 Step 5 (DR-029 D5) — global "an image crop is active" gate.
+// WI-074 — global crop state.
 //
-// While crop mode is open, the inline crop editor (ImageBlock) owns pointer +
-// keyboard. The editor hotkeys (Delete / R-T-F tools / clipboard) and selection
-// gestures must NOT fire — otherwise dragging the crop window with the straighten
-// slider unfocused would let a stray Delete remove the image, etc.
-//
-// Held in a tiny subscribable store (NOT React state), mirroring
-// `snap-feedback.ts` / `vertex-selection.ts`, so:
-//   • the imperative hotkey gate reads it synchronously via `isCroppingNow()`,
-//   • React surfaces subscribe via `useIsCropping()`.
-// Single active crop at a time (an `activeId`); entering a second crop supersedes
-// the first, exiting only clears when the id matches (StrictMode-safe double-fire).
+// (Step 5) A gate so editor hotkeys / selection gestures suspend while a crop is
+// open. (D8 P2) ALSO holds the in-progress crop draft, so the SAME draft is shared
+// by three surfaces: ImageBlock's CropEditor render, the SelectionLayer crop
+// handles (NestedFrame), and the FrameStage handle dispatcher's crop sink. A tiny
+// subscribable store (snap-feedback / vertex-selection pattern):
+//   • imperative reads (`isCroppingNow`, `cropActiveId`, `getCropDraft`) for the
+//     dispatcher / hotkey gate,
+//   • React reads (`useIsCropping`, `useCroppingItemId`, `useCropDraft`) for UI.
+// Single active crop at a time.
 
 import { useSyncExternalStore } from "react";
 
+export interface CropDraft {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly rotation: number;
+}
+
 let activeId: string | null = null;
+let draft: CropDraft | null = null;
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -22,18 +29,27 @@ function emit(): void {
 }
 
 export const croppingState = {
-  enter: (id: string): void => {
-    if (activeId !== id) {
+  enter: (id: string, initial: CropDraft): void => {
+    if (activeId !== id || draft !== initial) {
       activeId = id;
+      draft = initial;
       emit();
     }
   },
   exit: (id: string): void => {
     if (activeId === id) {
       activeId = null;
+      draft = null;
       emit();
     }
   },
+  setDraft: (next: CropDraft): void => {
+    if (activeId === null) return;
+    draft = next;
+    emit();
+  },
+  getDraft: (): CropDraft | null => draft,
+  activeId: (): string | null => activeId,
   isActive: (): boolean => activeId !== null,
   subscribe: (l: () => void): (() => void) => {
     listeners.add(l);
@@ -48,7 +64,17 @@ export function isCroppingNow(): boolean {
   return activeId !== null;
 }
 
-/** React-reactive read for UI surfaces. */
+/** React-reactive: is ANY crop active. */
 export function useIsCropping(): boolean {
   return useSyncExternalStore(croppingState.subscribe, croppingState.isActive, () => false);
+}
+
+/** React-reactive: the id of the item being cropped (or null). */
+export function useCroppingItemId(): string | null {
+  return useSyncExternalStore(croppingState.subscribe, croppingState.activeId, () => null);
+}
+
+/** React-reactive: the live crop draft (or null). */
+export function useCropDraft(): CropDraft | null {
+  return useSyncExternalStore(croppingState.subscribe, croppingState.getDraft, () => null);
 }

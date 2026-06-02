@@ -26,7 +26,8 @@ import {
 } from "@agocraft/core";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { croppingState } from "../interactions/cropping-state.js";
+import { panCropWindow, setStraighten } from "../crop-geometry.js";
+import { croppingState, useCropDraft } from "../interactions/cropping-state.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
 
@@ -142,8 +143,6 @@ function ImageContent(props: {
 // SelectionLayer overlay in Phase 2/3. The document capture-phase pointerdown
 // bypasses the design-plane gesture controllers that swallow React onPointerDown.
 
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
-
 /** Wrapper that maps the crop window [x,x+w]x[y,y+h] onto the frame box; with the
  *  parent overflow visible, the rest of the (cover-displayed) image extends beyond. */
 function cropWindowWrapperStyle(c: CropRect): CSSProperties {
@@ -167,9 +166,9 @@ function CropEditor(props: {
   readonly onCancel: () => void;
 }): JSX.Element {
   const { src, alt, objectFit, filterCss, initial, aspect, onCommit, onCancel } = props;
-  const [draft, setDraft] = useState<CropRect>(initial);
-  const draftRef = useRef<CropRect>(draft);
-  draftRef.current = draft;
+  // D8 P2 — the crop draft lives in the shared store so the SelectionLayer crop
+  // handles (NestedFrame) + the FrameStage dispatcher edit the SAME draft live.
+  const draft = useCropDraft() ?? initial;
   const boxRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; start: CropRect } | null>(null);
 
@@ -181,12 +180,12 @@ function CropEditor(props: {
         onCancel();
       } else if (e.key === "Enter") {
         e.preventDefault();
-        onCommit(draftRef.current);
+        onCommit(croppingState.getDraft() ?? initial);
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onCancel, onCommit]);
+  }, [onCancel, onCommit, initial]);
 
   // Pan: drag the image to choose which part fills the frame box (cropRatio x/y).
   useEffect(() => {
@@ -198,7 +197,9 @@ function CropEditor(props: {
       if (target.closest("[data-crop-pan]") === null) return;
       e.preventDefault();
       e.stopPropagation();
-      dragRef.current = { startX: e.clientX, startY: e.clientY, start: draftRef.current };
+      const start = croppingState.getDraft();
+      if (start === null) return;
+      dragRef.current = { startX: e.clientX, startY: e.clientY, start };
     };
     const onMove = (e: PointerEvent) => {
       const drag = dragRef.current;
@@ -206,11 +207,9 @@ function CropEditor(props: {
       if (drag === null || box === null) return;
       const r = box.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) return;
-      const s = drag.start;
-      // Dragging right reveals more of the image's LEFT side -> window x decreases.
-      const dx = ((e.clientX - drag.startX) / r.width) * s.w;
-      const dy = ((e.clientY - drag.startY) / r.height) * s.h;
-      setDraft({ ...s, x: clamp(s.x - dx, 0, 1 - s.w), y: clamp(s.y - dy, 0, 1 - s.h) });
+      const dx = (e.clientX - drag.startX) / r.width;
+      const dy = (e.clientY - drag.startY) / r.height;
+      croppingState.setDraft(panCropWindow(drag.start, dx, dy));
     };
     const onUp = () => {
       dragRef.current = null;
@@ -295,7 +294,7 @@ function CropEditor(props: {
           step={1}
           value={deg}
           onChange={(e) =>
-            setDraft((d) => ({ ...d, rotation: (Number(e.target.value) * Math.PI) / 180 }))
+            croppingState.setDraft(setStraighten(draft, (Number(e.target.value) * Math.PI) / 180))
           }
         />
         <span className="w-8 text-center text-xs text-white tabular-nums">{deg}°</span>
@@ -311,7 +310,7 @@ function CropEditor(props: {
           type="button"
           data-testid="image-crop-apply"
           className="rounded bg-white px-2 py-0.5 text-xs text-black hover:bg-white/90"
-          onClick={() => onCommit(draft)}
+          onClick={() => onCommit(croppingState.getDraft() ?? initial)}
         >
           완료
         </button>
@@ -334,9 +333,10 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
   const itemId = String(item.id);
   useEffect(() => {
     if (!cropMode) return;
-    croppingState.enter(itemId);
+    // D8 P2 — seed the shared draft with the current crop so handles/pan edit it.
+    croppingState.enter(itemId, readCrop(item.attrs));
     return () => croppingState.exit(itemId);
-  }, [cropMode, itemId]);
+  }, [cropMode, itemId, item.attrs]);
 
   const objectFit: CSSProperties["objectFit"] =
     a.fit === "fill"

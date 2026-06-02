@@ -28,7 +28,7 @@ import {
 import { isDomainItem } from "../../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
 import { ParentFrameHeightContext } from "../../document/domains/parent-frame-context.js";
-import { useIsCropping } from "../../document/interactions/cropping-state.js";
+import { useCroppingItemId, useIsCropping } from "../../document/interactions/cropping-state.js";
 import { useSelectionChromeOrNull } from "../../document/interactions/selection-chrome-context.js";
 import {
   type ClickIntent,
@@ -172,7 +172,12 @@ export function NestedFrame({
   // image crop is open, so its body-portal handles don't cover the inline crop
   // handles / intercept their pointer events.
   const cropping = useIsCropping();
-  const chromeVisible = useSelectionChromeVisible() && !cropping;
+  // WI-074 D8 P2 — during a crop, keep the chrome (resize + rotate handles) for the
+  // item being cropped — the FrameStage dispatcher routes those handle drags to the
+  // crop draft instead of the frame. Other items' chrome stays hidden mid-crop.
+  const croppingItemId = useCroppingItemId();
+  const isCroppingThis = croppingItemId === itemId;
+  const chromeVisible = useSelectionChromeVisible() && (!cropping || isCroppingThis);
   // DR-018 — selection chrome registry. Cross-cutting providers (plugins,
   // AI selection-actions, future domain extensions) register here; the
   // NestedFrame's `<SelectionLayer>` resolver merges their specs with

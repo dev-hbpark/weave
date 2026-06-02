@@ -45,7 +45,9 @@ import {
   useInteractionMode,
 } from "../document";
 import { isDomainItem } from "../document/agocraft-mirror.js";
+import { resizeCropWindow, setStraighten } from "../document/crop-geometry.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
+import { croppingState } from "../document/interactions/cropping-state.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
 import { useRouterOrNull } from "../document/interactions/router-context.js";
 import { TotalScaleContext } from "../document/interactions/total-scale-context.js";
@@ -1103,18 +1105,40 @@ export function FrameStage(props: FrameStageProps) {
     };
 
     const onDown = (e: PointerEvent): void => {
+      // WI-074 D8 P2 — while an item is being cropped, its (still-shown) resize +
+      // rotate handles edit the crop draft instead of the frame.
+      const cropId = croppingState.activeId();
       // Rotate handle.
       const rot = handleAt(e, "[data-handle-kind='rotation']");
       if (rot !== null) {
         const itemId = handleItemId(rot);
         if (itemId === null) return;
-        const orig = frameAccess.readFrame(itemId);
-        if (orig === undefined) return;
-        e.preventDefault();
-        e.stopPropagation();
         const center = centerOf(itemId);
         const origin = toHandlePointer(e);
         const startVec = { x: origin.clientX - center.x, y: origin.clientY - center.y };
+        e.preventDefault();
+        e.stopPropagation();
+        if (cropId !== null && String(itemId) === cropId) {
+          // Rotate handle → crop straighten (content rotation).
+          const start = croppingState.getDraft();
+          if (start === null) return;
+          const startAng = Math.atan2(startVec.y, startVec.x);
+          startHandleGesture({
+            kind: "frame-rotate",
+            handleId: "crop-rotate",
+            itemId: String(itemId),
+            origin,
+            sink: {
+              update: (p) => {
+                const ang = Math.atan2(p.clientY - center.y, p.clientX - center.x);
+                croppingState.setDraft(setStraighten(start, start.rotation + (ang - startAng)));
+              },
+            },
+          });
+          return;
+        }
+        const orig = frameAccess.readFrame(itemId);
+        if (orig === undefined) return;
         const sessionId = `${String(itemId)}/rotate/${seq++}`;
         startHandleGesture({
           kind: "frame-rotate",
@@ -1143,12 +1167,35 @@ export function FrameStage(props: FrameStageProps) {
       const dir = dirAttr as ResizeDir;
       const itemId = handleItemId(rsz);
       if (itemId === null) return;
-      const orig = frameAccess.readFrame(itemId);
-      if (orig === undefined) return;
       e.preventDefault();
       e.stopPropagation();
-      const parent = frameAccess.parentRectOf(itemId);
       const origin = toHandlePointer(e);
+      if (cropId !== null && String(itemId) === cropId) {
+        // Resize handle → crop window resize (cropRatio). Frame box stays fixed;
+        // deltas are fractions of the frame box's on-screen rect.
+        const start = croppingState.getDraft();
+        const fr = document
+          .querySelector(`[data-frame-id="${CSS.escape(String(itemId))}"]`)
+          ?.getBoundingClientRect();
+        if (start === null || fr === undefined || fr.width === 0 || fr.height === 0) return;
+        startHandleGesture({
+          kind: "frame-resize",
+          handleId: `crop-resize.${dir}`,
+          itemId: String(itemId),
+          origin,
+          sink: {
+            update: (p) => {
+              const dx = (p.clientX - origin.clientX) / fr.width;
+              const dy = (p.clientY - origin.clientY) / fr.height;
+              croppingState.setDraft(resizeCropWindow(start, dir, dx, dy));
+            },
+          },
+        });
+        return;
+      }
+      const orig = frameAccess.readFrame(itemId);
+      if (orig === undefined) return;
+      const parent = frameAccess.parentRectOf(itemId);
       const sessionId = `${String(itemId)}/resize/${seq++}`;
       startHandleGesture({
         kind: "frame-resize",

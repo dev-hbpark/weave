@@ -123,9 +123,15 @@ SelectionLayer 위임은 불필요해짐(향후 다중 아이템/회전된 윈�
 - **P1 ✅ (이 커밋)** — 크롭 모드 이중 렌더(전체 원본 dim, 프레임 밖까지 + 프레임영역 bright) +
   **드래그 팬**(cropRatio x/y) + straighten + 커밋. ImageBlock 루트는 크롭 중 `overflow:visible`.
   인라인 코너 resize 핸들은 제거(P2로 이관). e2e 팬 테스트.
-- **P2 (다음)** — SelectionLayer 크롭 핸들: 크롭 전용 SelectionViewModel 등록(crop-resize 8 +
-  crop-rotate), `data-handle-kind="crop-resize"/"crop-rotate"` + FrameStage body-capture 디스패처
-  분기 → `startHandleGesture`의 sink가 cropRatio 갱신(frame 대신). 크롭 중 기본 chrome은 대체.
+- **P2 ✅** — 크롭 핸들 SelectionLayer 이관(별도 핸들 렌더 없이 **기존 resize/rotate 핸들 재사용**):
+  - **공유 draft 스토어**(`cropping-state`에 draft 추가) — ImageBlock 렌더 · 핸들 · 디스패처 sink가
+    같은 draft를 라이브 편집.
+  - NestedFrame: 크롭 중인 아이템의 **chrome 유지**(resize+rotate 핸들 표시; 타 아이템은 숨김).
+  - FrameStage body-capture 디스패처: 크롭 중(`croppingState.activeId`)이면 **resize→크롭 윈도우
+    resize(`resizeCropWindow`), rotate→straighten(`setStraighten`)** sink로 라우팅(frame 대신).
+    프레임 box는 고정 → 깔끔한 undo(커밋 시 cropRatio만). e2e: SE 핸들 드래그 → 크롭 윈도우 축소.
+  - **알려진 feel 이슈**: 프레임 box 고정이라 resize 핸들이 커서를 1:1 추적하지 않음(코너에 머문 채
+    크롭 콘텐츠가 라이브 재크롭). 추후 튜닝(또는 프레임-resize+보정 모델).
 - **P3 (다음)** — 원본 image-scale/이동 핸들: `data-handle-kind="image-scale"`, 다중선택
   오버레이 핸들 위치(−16px 외곽) 재사용, sink가 cropRatio 스케일/오프셋 갱신.
 
