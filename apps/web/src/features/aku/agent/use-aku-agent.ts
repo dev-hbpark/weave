@@ -24,6 +24,7 @@ import {
 } from "@agocraft/agent-client";
 import type { Document as AgocraftDocument, CommandRegistry, Schema } from "@agocraft/core";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
+import { DEFAULT_THEME, THEMES } from "@weave/design-system";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   clearConversation,
@@ -142,6 +143,19 @@ const CONNECTION_BANNER: Record<ConnectionState, string | null> = {
 
 function toConnection(state: ConnectionState): AkuConnection {
   return { state, banner: CONNECTION_BANNER[state] };
+}
+
+/** Per-task `[현재 테마]` line: the live editor theme (name + dark/light tone),
+ *  read off `<html data-theme>`. The agent uses the tone to keep any LITERAL
+ *  colors readable on the active surface; structural color stays in var(--token)
+ *  so it follows whatever theme the user switches to. Empty string when the DOM
+ *  isn't available (SSR / tests) or the attr is an unknown name. */
+function currentThemeLine(): string {
+  if (typeof document === "undefined") return "";
+  const name = document.documentElement.getAttribute("data-theme") ?? DEFAULT_THEME;
+  const meta = THEMES.find((t) => t.name === name);
+  if (meta === undefined) return "";
+  return `\n\n[현재 테마] ${meta.label} — ${meta.tone === "dark" ? "어두운" : "밝은"} 테마 (${meta.hint}). 구조 색(배경·텍스트·강조)은 var(--token)으로 두면 사용자가 테마를 바꿔도 자동으로 이 팔레트를 따라갑니다.`;
 }
 
 /** Derive the live bubble caption from the reduced agent run-state. A running tool
@@ -488,7 +502,8 @@ export function useAkuAgent(deps: {
       const selectionLine =
         selected.length > 0 ? `\n\n[컨텍스트] 현재 선택된 아이템 id: ${selected.join(", ")}` : "";
       const primer = AKU_ABLATION.taskPrimer ? WEAVE_TASK_PRIMER : "";
-      const task = `${primer}${designLine}${assetLines}${selectionLine}\n\n${text}`;
+      const themeLine = currentThemeLine();
+      const task = `${primer}${designLine}${themeLine}${assetLines}${selectionLine}\n\n${text}`;
 
       try {
         const handle = await getHandle();

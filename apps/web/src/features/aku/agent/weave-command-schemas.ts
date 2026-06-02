@@ -76,6 +76,16 @@ const IMAGE_ATTRS_NOTE =
   "alt is accessibility-only. attrs.fit = cover|contain|fill; attrs.borderRadius = 0..1 of the " +
   "image's OWN min(width,height).";
 
+// Video attrs, incl. the source-less placeholder (mirrors IMAGE_ATTRS_NOTE). The
+// full model lives in WEAVE_CAPABILITIES' `video` itemKind; this is the reminder.
+const VIDEO_ATTRS_NOTE =
+  "For video items: attrs.src is the URL but is OPTIONAL — OMIT it (or '') for a SOURCE-LESS " +
+  "PLACEHOLDER (NOT an empty black player) on wireframe/layout drafts. With no src, it renders " +
+  "either attrs.poster as a static COVER IMAGE + play badge (set poster to a still/thumbnail URL), " +
+  "or — no poster — a neutral box with a play glyph. attrs.alt is a short DESCRIPTION of the clip " +
+  "(e.g. '제품 데모 영상'): drawn as CENTERED CAPTION when src is empty, accessibility text once a " +
+  "src is set — ALWAYS set it. attrs.fit = cover|contain|fill; autoplay/loop/muted/controls boolean.";
+
 // WI-077 — `line` kind attrs (직선 / 자유선 / 곡선 / 자유곡선). The `line` kind is
 // STROKE-ONLY (no fill, distinct from shape); colour/width is a decoration.stroke
 // unit, not an attr. Full model in WEAVE_CAPABILITIES' `line` itemKind.
@@ -263,7 +273,7 @@ const ATTRS_WITH_TEXT_NOTE: Json = {
     },
     subAttrs: SHAPE_SUBATTRS_SCHEMA,
   },
-  description: `${FRAME_BASE_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
+  description: `${FRAME_BASE_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
 };
 
 // WI-063 / WI-078 — units (decoration + transform) attached in ONE call so an item

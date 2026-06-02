@@ -57,7 +57,9 @@ test("Add menu → 텍스트 creates a text item with default attrs", async ({ p
   expect(typeof attrs.fontSize).toBe("number");
   expect(attrs.fontSize as number).toBeGreaterThan(0);
   expect((attrs.fontSizeSpec as { kind?: string } | undefined)?.kind).toBe("ratio");
-  expect(attrs.color).toBe("#1f2933");
+  // D15 — content text defaults to the theme body-ink TOKEN (re-skins per theme
+  // + adapts to canvas bg-tone), not a fixed hex.
+  expect(attrs.color).toBe("var(--text-default)");
   // New text defaults to Auto-width (TEXT_ITEM_SPEC §4.6): layoutChild anchor
   // is scale × scale. Width then auto-fits the text (no fixed default width).
   expect((attrs.layoutChild as { anchor?: { horizontal?: string; vertical?: string } }).anchor).toEqual(

@@ -167,7 +167,15 @@ import type {
   PaintSpec,
 } from "@agocraft/core";
 export type ImageAttrs = AgocraftImageAttrs;
-export type VideoAttrs = AgocraftVideoAttrs;
+/** weave-local extension of agocraft's `VideoAttrs`.
+ *
+ *  `alt` is a short description of the clip — mirroring `ImageAttrs.alt` (which
+ *  core's VideoAttrs lacks). It is drawn as the centered caption inside the
+ *  source-less video placeholder (so a draft slot can say what KIND of video
+ *  belongs there), and serves as the accessibility description once a real src
+ *  is set. Stored as a plain attr; round-trips via the serializer's
+ *  `onUnknown: "preserve"` without a core schema change (agocraft is vendored). */
+export type VideoAttrs = AgocraftVideoAttrs & { readonly alt?: string };
 export type ShapeAttrs = AgocraftShapeAttrs;
 export type LineAttrs = AgocraftLineAttrs;
 /** weave-local extension of agocraft's `TextAttrs`.

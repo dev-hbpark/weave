@@ -69,6 +69,12 @@ export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
         | undefined
     )?.value ?? 1;
 
+  // Source-less video (wireframe / layout draft): show the COVER IMAGE if a
+  // poster is set, otherwise an icon placeholder — never an empty/black <video>
+  // (mirrors the image source-less placeholder, WI-076).
+  const hasSrc = a.src.trim().length > 0;
+  const poster = a.poster?.trim() ?? "";
+
   return (
     <div
       className="relative h-full w-full overflow-hidden"
@@ -78,25 +84,133 @@ export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
         boxShadow: shadow,
       }}
     >
-      <video
-        ref={videoRef}
-        src={a.src}
-        poster={a.poster ?? undefined}
-        controls={a.controls}
-        autoPlay={a.autoplay && a.muted}
-        loop={a.loop}
-        muted={a.muted}
-        playsInline
+      {hasSrc ? (
+        <video
+          ref={videoRef}
+          src={a.src}
+          poster={a.poster ?? undefined}
+          controls={a.controls}
+          autoPlay={a.autoplay && a.muted}
+          loop={a.loop}
+          muted={a.muted}
+          playsInline
+          draggable={false}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit,
+            userSelect: "none",
+          }}
+        />
+      ) : poster ? (
+        <VideoPosterCover poster={poster} alt={a.alt ?? ""} objectFit={objectFit} />
+      ) : (
+        <VideoPlaceholder alt={a.alt ?? ""} />
+      )}
+    </div>
+  );
+}
+
+/** Source-less video with a poster: render the poster as a static COVER IMAGE,
+ *  overlaid with a play badge so it still reads as "a video goes here". The
+ *  outer wrapper already applies borderRadius / shadow / opacity. */
+function VideoPosterCover({
+  poster,
+  alt,
+  objectFit,
+}: {
+  readonly poster: string;
+  readonly alt: string;
+  readonly objectFit: CSSProperties["objectFit"];
+}): JSX.Element {
+  return (
+    <div data-testid="video-poster-cover" className="absolute inset-0">
+      <img
+        src={poster}
+        alt={alt}
         draggable={false}
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit,
-          userSelect: "none",
-        }}
+        loading="lazy"
+        decoding="async"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit }}
       />
+      <PlayBadge />
+    </div>
+  );
+}
+
+/** Placeholder shown when a video item has no `src` and no `poster` — a neutral
+ *  framed surface with a play/film glyph instead of an empty black <video>. When
+ *  `alt` is set it is drawn as a centered caption so the slot can describe what
+ *  KIND of video belongs here (mirrors ImagePlaceholder, WI-076). */
+function VideoPlaceholder({ alt }: { readonly alt: string }): JSX.Element {
+  const caption = alt.trim();
+  return (
+    <div
+      data-testid="video-placeholder"
+      className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center"
+      style={{
+        background: "rgba(148, 163, 184, 0.14)",
+        color: "rgba(71, 85, 105, 0.85)",
+        userSelect: "none",
+      }}
+    >
+      <svg
+        width="36"
+        height="36"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        style={{ opacity: 0.6, flexShrink: 0 }}
+      >
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <path d="m10 9 5 3-5 3z" fill="currentColor" stroke="none" />
+      </svg>
+      {caption ? (
+        <span
+          className="max-w-full text-[12px] leading-snug"
+          style={{
+            display: "-webkit-box",
+            WebkitLineClamp: 4,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            wordBreak: "break-word",
+          }}
+        >
+          {caption}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** Small centered play badge drawn over a poster-only video so the still frame
+ *  still reads as a video placeholder. */
+function PlayBadge(): JSX.Element {
+  return (
+    <div
+      aria-hidden="true"
+      className="absolute inset-0 flex items-center justify-center"
+      style={{ pointerEvents: "none" }}
+    >
+      <div
+        className="flex items-center justify-center rounded-full"
+        style={{
+          width: 56,
+          height: 56,
+          background: "rgba(15, 23, 42, 0.55)",
+          backdropFilter: "blur(2px)",
+        }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      </div>
     </div>
   );
 }

@@ -90,6 +90,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     defaultAttrs: () => ({
       frame: FULL_FRAME,
       src: "",
+      alt: "",
       poster: null,
       autoplay: false,
       loop: false,
@@ -158,7 +159,13 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
       fontSize: 24,
       fontWeight: "normal",
       fontStyle: "normal",
-      color: "#1f2933",
+      // Theme-reactive default (D15): content text reads as the theme's body-ink
+      // token instead of a fixed dark hex, so a freshly-created text box adapts to
+      // the active [data-theme] AND the canvas bg-tone (light → dark ink, dark →
+      // light ink). The agent overrides per role (var(--text-strong) for titles,
+      // var(--accent) for emphasis); this is the safety-net default. Rendered via
+      // TextBlock's inline `style.color` so CSS resolves the var() per theme.
+      color: "var(--text-default)",
       textAlign: "left",
       lineHeight: 1.4,
       letterSpacing: 0,

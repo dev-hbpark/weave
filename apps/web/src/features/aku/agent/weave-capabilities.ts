@@ -19,6 +19,8 @@
 // are 0..1 RATIOS of the parent's box (root parent = the whole design) and
 // rotation is radians about the center. There are no pixel coordinates.
 
+import { THEMES } from "@weave/design-system";
+
 export const WEAVE_CAPABILITIES = {
   layoutKinds: [
     {
@@ -84,7 +86,8 @@ export const WEAVE_CAPABILITIES = {
         // RESIZE — a text box auto-fits its height by default, so the agent only
         // needs to choose width + fontSize; height is derived from wrapped text.
         "RESIZE: keep every text box FIXED — do NOT use auto-height or auto-width. A text box auto-grows its height by default; disable that. Give it an explicit frame (BOTH width and height) and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } } (a non-scale anchor turns off auto-resize).",
-        "STYLE: fontFamily (CSS stack), fontWeight ('normal' | 'bold'), fontStyle ('normal' | 'italic'), color (CSS color), textDecoration ('NONE' | 'UNDERLINE' | 'STRIKETHROUGH'), textCase ('ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE').",
+        "STYLE: fontFamily (CSS stack), fontWeight ('normal' | 'bold'), fontStyle ('normal' | 'italic'), color, textDecoration ('NONE' | 'UNDERLINE' | 'STRIKETHROUGH'), textCase ('ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE').",
+        "COLOR (theme-reactive — set it on EVERY text by ROLE, using a var(--token), so the deck re-skins when the theme changes): title/heading → var(--text-strong); body/paragraph → var(--text-default); secondary/supporting → var(--text-soft); caption/footnote/label → var(--text-muted). For an EMPHASIZED word, number, KPI or highlighted phrase → var(--accent) (or var(--accent-strong)). Only use a literal hex for text whose color is brand/data-bound. If you set NO color, it already defaults to var(--text-default) — never hard-code a dark/light hex that ignores the theme.",
         "LAYOUT: textAlignHorizontal ('LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED'), textAlignVertical ('TOP' | 'CENTER' | 'BOTTOM'), lineHeightSpec ({ value, unit: 'multiplier' | 'px' }, default 1.4×), letterSpacing / paragraphSpacing / paragraphIndent (all design-px).",
         "Edit any of these with weave.item.update { itemId, attrs }.",
       ].join(" "),
@@ -116,7 +119,7 @@ export const WEAVE_CAPABILITIES = {
         fontSizeSpec: { kind: "px", value: 24 },
         fontWeight: "normal",
         fontStyle: "normal",
-        color: "#1f2933",
+        color: "var(--text-default)",
         textAlignHorizontal: "LEFT",
         textAlignVertical: "TOP",
         lineHeightSpec: { value: 1.4, unit: "multiplier" },
@@ -181,8 +184,10 @@ export const WEAVE_CAPABILITIES = {
     {
       kind: "video",
       description:
-        "A video. attrs.src is the URL, attrs.poster the thumbnail; autoplay/loop/muted/controls are booleans. Size/position via attrs.frame.",
-      editableAttrs: ["frame", "src", "poster", "autoplay", "loop", "muted", "controls", "fit"],
+        "A video. attrs.src is the URL; autoplay/loop/muted/controls are booleans; attrs.fit one of cover|contain|fill. Size/position via attrs.frame. " +
+        'attrs.src is OPTIONAL, just like image: OMIT it (or pass "") to create a SOURCE-LESS PLACEHOLDER for wireframe/layout drafts — NOT an empty black player. When src is empty, the placeholder is either (a) attrs.poster rendered as a static COVER IMAGE with a play badge (set attrs.poster to a thumbnail/still URL), or (b) if no poster, a neutral framed box with a play/film glyph. ' +
+        'attrs.alt is a short DESCRIPTION of the clip (e.g. "제품 데모 영상", "드론 항공 b-roll") — like image alt: when src is empty it is drawn as CENTERED CAPTION TEXT inside the placeholder so the slot says what KIND of video belongs there; once a real src is set, alt becomes the accessibility description. ALWAYS set attrs.alt on a video so the intent is clear even before a real clip is dropped in.',
+      editableAttrs: ["frame", "src", "alt", "poster", "autoplay", "loop", "muted", "controls", "fit"],
     },
   ],
   unitKinds: [
@@ -248,9 +253,10 @@ export const WEAVE_CAPABILITIES = {
 export const WEAVE_TASK_PRIMER = [
   "[weave conventions]",
   "- Match the MOOD: infer the document's tone and subject from the request, and put real effort into reflecting that atmosphere through typography, spacing, imagery, shapes, density and contrast (e.g. a finance/market deck → restrained, data-forward; a children's invite → playful, rounded). For COLOR, see the THEME COLORS rule — drive structural color from theme tokens, not a fixed palette. Never apply a generic default LAYOUT; the design should read as 'about this topic' at a glance.",
-  "- THEME COLORS (re-skin on theme switch): for structural color use a `var(--token)` string, NOT a fixed hex — backgrounds var(--bg-page)/var(--bg-page-soft); text var(--text-strong|default|soft|muted); emphasis var(--accent|-strong|-soft); panels var(--surface-1|2) (translucent — page bg shows through); a 4-hue categorical palette via var(--domain-slide|canvas|block|media-accent); theme-reactive gradients put tokens in the stops. Tokens go in any color field (text attrs.color, decoration.fill/.stroke PaintSpec color, frame/slide background). Use a LITERAL hex only when the hue is the meaning: brand colors, data-bound colors, photos, status (green/amber/red).",
+  "- THEME COLORS — DEFAULT to theme tokens, not fixed hex (this is how the deck re-skins when the user switches theme; a literal hex is THEME-INERT and is the #1 reason 'theme isn't applying'). Every structural color is a `var(--token)` STRING: the SLIDE BACKGROUND especially — set each slide-frame's fill to var(--bg-page) (or var(--bg-page-soft) for a raised panel), NOT a hand-picked dark/light hex, because the background is the most visible surface and a literal one makes the whole slide ignore the theme. Then text var(--text-strong|default|soft|muted); emphasis var(--accent|-strong|-soft); panels/cards var(--surface-1|2) (translucent — page bg shows through) or var(--bg-page-soft) for a solid card; a 4-hue categorical palette via var(--domain-slide|canvas|block|media-accent); gradients stay theme-reactive by putting tokens in the stops. Tokens work in any color field — text attrs.color, decoration.fill/.stroke PaintSpec color, and the slide/frame background. Reach for a LITERAL hex ONLY when the hue itself is the meaning: brand/logo colors, data-bound chart values, photographic content, universal status (green/amber/red).",
   "- Markdown input → ONE slide: when the request's content arrives as Markdown, ALWAYS represent that whole Markdown document on a SINGLE slide (one md document = one slide), not a multi-slide deck.",
   "- Infer the best STRUCTURE: reason about which document/layout form most suits the given content and use it deliberately (e.g. title + bullet list, two-column comparison, hero statement, stat/number grid, timeline, step flow, big quote, image + caption) instead of stacking text top-to-bottom. Choose the structure that best communicates this specific content.",
+  "- USE MEDIA & SHAPES to maximize expression — do NOT make text-only slides when a visual would communicate better. Reach for the kind that best fits the content: kind:'image' for any visual subject (hero/background photo, product shot, portrait, scene, illustration); kind:'video' for motion/demo/footage content (a product demo, b-roll, a clip the topic implies); kind:'shape' for diagrams, dividers, color blocks, badges, callouts, icon-like glyphs (poly/path), backdrops; kind:'qr' for a link/URL the audience should scan. When you don't have a real asset URL, STILL place the media as a source-less PLACEHOLDER (image: omit src + set a descriptive alt like '제품 사진 자리'; video: omit src + set alt to the clip description, optionally a poster URL for a cover still) so the layout shows the intended visual slot instead of an empty/text-only slide. Give every image/video a descriptive alt. Match the media to the topic — a travel deck wants photos, a SaaS demo wants a video slot, a process wants a diagram of shapes.",
   "- Coordinates: every attrs.frame is { x, y, width, height, rotation } with x/y/width/height as 0..1 RATIOS of the parent (root parent = the whole design). No pixels. rotation is radians about the center.",
   "- Units split: frame is a ratio (above), but text/typography sizes (fontSize, letterSpacing, paragraph spacing/indent, lineHeightSpec px) are absolute DESIGN-px. The canvas px size is in the [디자인] line below — size text relative to it (e.g. a heading ≈ 5–9% of canvas height).",
   "- Font sizing: size text by RATIO — attrs.fontSizeSpec { kind:'ratio', value:0..1 } (a fraction of the parent frame height; root = design height) so it scales with the slide (heading ~0.06–0.09, body ~0.03). Do NOT use a fixed px size; never put a fraction in the plain fontSize number (renders as sub-pixel text).",
@@ -267,6 +273,29 @@ export const WEAVE_TASK_PRIMER = [
   '- To use an image as a frame/slide background: add a kind "image" item into that frame with attrs.fit "cover" and frame { x: 0, y: 0, width: 1, height: 1 }, then weave.item.sendToBack so it sits behind the other items.',
   "- Issue every edit the request needs (a full deck is many calls) — avoid only redundant ones; if a tool returns an error, read it and adjust.",
 ].join("\n");
+
+/** The registered theme set, formatted for the agent prompt — derived from the
+ *  design-system `THEMES` registry so it can never drift from the real list. One
+ *  line per tone group: "Label (hint) · Label (hint) · …". */
+const THEME_REGISTRY_LINES: readonly string[] = (() => {
+  const byTone = (tone: "dark" | "light") =>
+    THEMES.filter((t) => t.tone === tone)
+      .map((t) => `${t.label} (${t.hint})`)
+      .join(" · ");
+  return [
+    "",
+    "5) AVAILABLE THEMES — the user can switch the editor theme at any time, and a token-built design re-skins to",
+    "   whichever is active. You CANNOT switch it yourself (the user picks it) — but you MAY recommend one that",
+    "   fits the content's mood. Registered themes:",
+    `     • dark  — ${byTone("dark")}`,
+    `     • light — ${byTone("light")}`,
+    "   Mood → theme hints: B2B / finance / data-forward → Mono or Ocean; playful / kids / comic → Vivid or",
+    "   Webtoon; editorial / warm / print → Paper; nature / calm → Forest; premium / hero → Aurora or Sunset.",
+    "   The CURRENTLY-ACTIVE theme (name + light/dark tone) is given in each task's [현재 테마] line — use its",
+    "   tone to keep any LITERAL colors (chart series, status) readable on that surface; structural color stays",
+    "   in var(--token) so it follows whatever theme the user has on.",
+  ];
+})();
 
 /** Stable weave DESIGN-DOMAIN expertise, transferred ONCE at session init (the ctl
  *  hello → server's cached "# weave domain knowledge" prompt block). Unlike
@@ -326,4 +355,5 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   slide/frame background (decoration.fill on the frame or weave.design.setBackground). MOOD is carried by",
   "   LAYOUT, typography, spacing, imagery, density and contrast — NOT by inventing a fixed hex palette; the",
   "   theme supplies the hues, so a token-built deck still reads as 'about this topic' AND re-skins per theme.",
+  ...THEME_REGISTRY_LINES,
 ].join("\n");
