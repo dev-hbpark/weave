@@ -66,6 +66,30 @@ const QR_ATTRS_NOTE =
   "margin (quiet-zone modules, default 4), foreground/background (PaintSpec: " +
   "{type:'solid',color} or a linear/radial gradient; background null = transparent).";
 
+// WI-076 — image attrs, incl. the source-less placeholder. The full model lives
+// in WEAVE_CAPABILITIES' `image` itemKind; this is the reminder on item.add/update.
+const IMAGE_ATTRS_NOTE =
+  "For image items: attrs.src is the URL/data-URL but is OPTIONAL — OMIT it (or '') to create a " +
+  "SOURCE-LESS PLACEHOLDER (neutral framed box with an image glyph, NOT a broken image) for " +
+  "wireframe/layout drafts. When src is empty, attrs.alt is drawn as CENTERED CAPTION TEXT inside " +
+  "the placeholder, so set a short alt (e.g. '제품 사진 자리') to label the slot; with a real src, " +
+  "alt is accessibility-only. attrs.fit = cover|contain|fill; attrs.borderRadius = 0..1 of the " +
+  "image's OWN min(width,height).";
+
+// WI-077 — `line` kind attrs (직선 / 자유선 / 곡선 / 자유곡선). The `line` kind is
+// STROKE-ONLY (no fill, distinct from shape); colour/width is a decoration.stroke
+// unit, not an attr. Full model in WEAVE_CAPABILITIES' `line` itemKind.
+const LINE_ATTRS_NOTE =
+  "For line items (kind:'line', a STROKE-ONLY line/curve with NO fill): attrs.points = array of " +
+  "≥2 {x,y}, each a 0..1 ratio of the line's OWN bbox; attrs.smooth (boolean) draws a Catmull-Rom " +
+  "CURVE through the points (false = straight segments). So 2 points = 직선(straight line); many " +
+  "points = 자유선(freeform polyline); smooth:true = 곡선/자유곡선(curve / freeform curve). " +
+  "For a 자유선 / hand-drawn stroke / curve use this `kind:'line'` — NOT the parametric `shape:'line'` " +
+  "sub-kind (a straight 2-point line-shape with only { thickness }, no freeform points). " +
+  "attrs.heads = { start, end } endpoint markers, each 'none'|'triangle'|'open'|'diamond'|'circle' " +
+  "(default none) — use for arrows/connectors. Stroke colour/width is a decoration.stroke UNIT " +
+  "(set via this add call's `units`), NOT an attr.";
+
 /** Open attrs bag carrying the text + qr field notes in its description — used by
  *  the two attrs-editing commands so the hint rides along on `item.add` /
  *  `item.update` without bloating the shared `ATTRS` used elsewhere. */
@@ -81,7 +105,7 @@ const SHAPE_ATTRS_NOTE =
   "{ cornerRadii }). If you set subAttrs, set subAttrs.shape to the same sub-kind. Fill/shadow/" +
   "stroke/opacity/filter at CREATION go in this add call's `units` (e.g. units:[{ kind:" +
   "'decoration.fill', attrs:<PaintSpec> }]) so the shape is styled in one call; after creation, " +
-  "edit them with weave.shape.setFill / weave.item.setDecoration.";
+  "edit them with weave.item.update `units`.";
 
 // Per-shape valid-field contract advertised to the agent (WI-062). A discriminated
 // union on `shape`: each branch lists exactly the geometry fields that sub-kind
@@ -164,6 +188,10 @@ const SHAPE_SUBATTRS_SCHEMA: Json = {
     },
     {
       type: "object",
+      description:
+        "자유 다각형 (freeform polygon) from explicit vertices. points = each a 0..1 ratio of THIS " +
+        "shape's OWN bbox; closed:true = filled polygon (default), false = open polyline. " +
+        "(For a STROKE-only free line/curve with no fill, use kind:'line' instead.)",
       properties: {
         shape: { const: "poly" },
         points: { type: "array", items: obj({ x: NUM, y: NUM }, ["x", "y"]) },
@@ -235,42 +263,73 @@ const ATTRS_WITH_TEXT_NOTE: Json = {
     },
     subAttrs: SHAPE_SUBATTRS_SCHEMA,
   },
-  description: `${FRAME_BASE_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE}`,
+  description: `${FRAME_BASE_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
 };
 
-// WI-063 — decoration units attached AT CREATION via weave.item.add, so an item
-// is added FULLY STYLED in one call instead of fragmenting create → setFill →
-// setDecoration across tool calls. Each { kind, attrs } overlays the seeded units
-// (replacing any of the same kind). Decoration-only in v1; behaviors still use
-// weave.item.addBehavior. `attrs` holds the spec for that kind (verbatim).
+// WI-063 / WI-078 — units (decoration + transform) attached in ONE call so an item
+// is added/edited FULLY STYLED instead of fragmenting create → setFill → setDecoration
+// across tool calls. Each { kind, attrs } overlays the unit of that kind (replacing it).
+//
+// `UNIT_ATTRS_DESC` is the per-kind spec contract, shared by the creation
+// (weave.item.add) and edit (weave.item.update / weave.items.update) commands so the
+// two never drift. Verified field-for-field against the host Spec types
+// (@agocraft/core visual/types.ts; weave transform-flip.ts).
+const UNIT_ATTRS_DESC =
+  "The spec for `kind`: " +
+  "fill → PaintSpec ({type:'solid',color} | {type:'linear-gradient',angle(deg),stops:[{offset:0..1,color},…]} | " +
+  "{type:'radial-gradient',cx:0..1,cy:0..1,stops} | {type:'image',src,fit?,opacity?} | " +
+  "{type:'video',src,fit?,muted?,loop?,opacity?} | {type:'none'}; paint fit = cover|contain|fill|tile); " +
+  "stroke → { paint:<PaintSpec>, width(px), dashArray?:[number,…], lineCap?:'butt'|'round'|'square', " +
+  "lineJoin?:'miter'|'round'|'bevel' } (stroke is always centered — NO inside/outside option); " +
+  "shadow → { x, y, blur, spread, color, inset? }; " +
+  "filter → { brightness?, contrast?, saturate?, blur?(px), hueRotate?(deg) } (ONLY these 5 — " +
+  "grayscale/sepia/invert are NOT supported); " +
+  "opacity → { value:0..1 }; " +
+  "transform.flip → { flipH?:boolean, flipV?:boolean } (mirror the final composition; " +
+  "image/video/shape/line/frame only — ignored on text/qr).";
+
+const DECORATION_UNIT_KIND_ENUM = [
+  "decoration.fill",
+  "decoration.stroke",
+  "decoration.shadow",
+  "decoration.filter",
+  "decoration.opacity",
+];
+
 const CREATION_UNITS: Json = {
   type: "array",
   description:
     "Decoration units to attach AT CREATION so the new item is fully styled in this one call " +
-    "(do NOT follow up with weave.shape.setFill / weave.item.setDecoration — use those only to " +
-    "EDIT later). Each entry replaces any seeded unit of the same kind.",
+    "(do NOT follow up with weave.item.update right after — set them here). Each entry replaces " +
+    "any seeded unit of the same kind.",
   items: {
     type: "object",
     properties: {
-      kind: {
-        type: "string",
-        enum: [
-          "decoration.fill",
-          "decoration.stroke",
-          "decoration.shadow",
-          "decoration.filter",
-          "decoration.opacity",
-        ],
-      },
+      kind: { type: "string", enum: DECORATION_UNIT_KIND_ENUM },
+      attrs: { type: "object", additionalProperties: true, description: UNIT_ATTRS_DESC },
+    },
+    required: ["kind", "attrs"],
+    additionalProperties: false,
+  },
+};
+
+// Units on the EDIT commands (weave.item.update / weave.items.update): same decoration
+// kinds PLUS transform.flip (mirror), and `attrs: null` CLEARS the unit (e.g. remove a
+// shadow). The host routes each entry through the same setDecoration kit (commands.ts).
+const EDIT_UNITS: Json = {
+  type: "array",
+  description:
+    "Decoration / transform units to set on the item in this call. Each entry replaces the unit " +
+    "of that kind; pass attrs:null to CLEAR it (e.g. remove a shadow, un-flip). Covers fill / " +
+    "gradient / shadow / stroke / filter / opacity AND flip (transform.flip).",
+  items: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: [...DECORATION_UNIT_KIND_ENUM, "transform.flip"] },
       attrs: {
-        type: "object",
+        type: ["object", "null"],
         additionalProperties: true,
-        description:
-          "The spec for `kind`: fill → PaintSpec ({type:'solid',color} | {type:'linear-gradient',angle,stops:[{offset,color},…]} | {type:'radial-gradient',cx,cy,stops} | {type:'image'|'video',src,fit?,opacity?} | {type:'none'}); " +
-          "stroke → { paint:<PaintSpec>, width, dashArray?, lineCap?, lineJoin? }; " +
-          "shadow → { x, y, blur, spread, color, inset? }; " +
-          "filter → { brightness?, contrast?, saturate?, blur?, hueRotate? }; " +
-          "opacity → { value:0..1 }.",
+        description: `${UNIT_ATTRS_DESC} Pass null to remove the unit.`,
       },
     },
     required: ["kind", "attrs"],
@@ -464,7 +523,10 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     // sub-object replaces the whole key. The snapshot gives current values.
     // For text items, `attrs` is the path for fontSize / color / alignment /
     // lineHeightSpec etc. (sizing rules in TEXT_ATTRS_NOTE).
-    inputSchema: obj({ itemId: STR, attrs: ATTRS_WITH_TEXT_NOTE }, ["itemId", "attrs"]),
+    // `units` sets/clears decoration + transform.flip units (fill / shadow / stroke /
+    // filter / opacity / flip) in the SAME call — attrs:null clears a unit.
+    // Provide attrs and/or units (at least one); only `itemId` is required.
+    inputSchema: obj({ itemId: STR, attrs: ATTRS_WITH_TEXT_NOTE, units: EDIT_UNITS }, ["itemId"]),
   },
   // ── rectangle corner radius (WI-055) ──
   // Rectangle-only (`shape` item with `subAttrs.shape === "rectangle"`). The
@@ -649,7 +711,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       {
         itemIds: STR_ARR,
         attrs: ATTRS_WITH_TEXT_NOTE,
-        units: CREATION_UNITS,
+        units: EDIT_UNITS,
         updates: {
           type: "array",
           description: "Per-item explicit frames (0..1 of each item's PARENT). One entry per item.",
@@ -827,7 +889,19 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   "weave.clipboard.paste": {
     label: label("weave.clipboard.paste"),
     inputSchema: obj(
-      { containerId: STR, containerSizePx: obj({ width: NUM, height: NUM }, ["width", "height"]) },
+      {
+        containerId: STR,
+        containerSizePx: obj({ width: NUM, height: NUM }, ["width", "height"]),
+        mode: {
+          type: "string",
+          enum: ["everything", "style", "text", "size", "position"],
+          description:
+            "Paste-special mode (default 'everything' = clone the copied items). 'style' applies " +
+            "the copied item's style/decoration to the current selection (targetIds); 'text' / " +
+            "'size' / 'position' apply just that facet. Non-'everything' modes need a selection.",
+        },
+        targetIds: STR_ARR,
+      },
       ["containerSizePx"],
     ),
   },

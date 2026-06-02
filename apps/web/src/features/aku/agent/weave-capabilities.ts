@@ -65,7 +65,7 @@ export const WEAVE_CAPABILITIES = {
         "A frame. A TOP-LEVEL frame (direct child of the design root) is a presentation SLIDE. A frame holds child items via weave.item.add with containerId = this frame's id; it has no text/image content of its own. Frames MAY be nested: add a frame with containerId = another frame's id to GROUP items into a movable/clippable unit (e.g. a card, a repeated component). Prefer a SHAPE for a plain rectangle (panel / background / divider); use a nested frame when you specifically want to group items. NOTE: a nested frame is itself a slide by default unless the user excludes it from the deck.",
         // SLIDE SEMANTICS — load-bearing for this presentation tool.
         "SLIDE: a top-level frame (a direct child of the design root) IS one presentation slide. The deck = the ordered list of these root frames; Present mode shows them in order. Add each slide-frame with weave.item.add { kind:'frame', frame:{ x: i*1.1, y:0, width:1, height:1 } } (slide index i, 0-based) and NO containerId (→ the design root). Give each slide a DISTINCT x (a left-to-right filmstrip) — do NOT put them all at { x:0, y:0, width:1, height:1 }, which overlaps every slide on one spot. weave.design.setPresentationOrder reorders the deck, and weave.design.reorderChildren reorders siblings. Frames MAY be nested (containerId = another frame's id) to group items as a unit. For a plain rectangular panel, card, box, divider, or coloured block, prefer a SHAPE (kind:'shape', rectangle); reach for a nested frame only when you want those elements grouped/clipped together.",
-        "BACKGROUND/FILL: give a slide-frame a background by setting a decoration.fill unit (weave.item.setDecoration { itemId, kind:'decoration.fill', attrs:<PaintSpec> }) — solid, gradient, or image/video paint (see the shape itemKind for the PaintSpec shape). For a photo background, prefer adding a kind:'image' child at frame {0,0,1,1} then weave.item.sendToBack. attrs.cornerRadius (0..1 ratio of the frame's OWN min(width, height) — not the parent) rounds the frame; decoration.shadow/.stroke also apply (see decoration units).",
+        "BACKGROUND/FILL: give a slide-frame a background by setting a decoration.fill unit — weave.item.add { …, units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } at creation, or weave.item.update { itemId, units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } later — solid, gradient, or image/video paint (see the shape itemKind for the PaintSpec shape). For a photo background, prefer adding a kind:'image' child at frame {0,0,1,1} then weave.item.sendToBack. attrs.cornerRadius (0..1 ratio of the frame's OWN min(width, height) — not the parent) rounds the frame; decoration.shadow/.stroke also apply (see decoration units).",
         "LAYOUT: a frame can auto-arrange its children — set attrs.layout (a LayoutSpec) via weave.frame.setLayout to get a CSS-flex row/column or CSS-grid. See layoutKinds for the full auto-flex / auto-grid spec.",
       ].join(" "),
       editableAttrs: ["frame", "layout", "cornerRadius"],
@@ -128,26 +128,26 @@ export const WEAVE_CAPABILITIES = {
       kind: "shape",
       description: [
         "A vector shape. Create with weave.item.add { kind:'shape', frame, attrsOverride:{ shape:<subKind>, subAttrs:{ shape:<subKind>, …params } } } — the subKind appears in BOTH attrs.shape and attrs.subAttrs.shape (the subAttrs carries the kind's geometry params). Defaults to a rectangle if you omit it.",
-        "PREFER A RECTANGLE SHAPE for a rectangular element inside a slide — panels, cards, backgrounds, coloured blocks, dividers, button shapes — colour it with a decoration.fill unit (weave.item.setDecoration). Use a nested frame ONLY when you want to group several items into one movable/clippable unit (not for a single coloured rectangle).",
+        "PREFER A RECTANGLE SHAPE for a rectangular element inside a slide — panels, cards, backgrounds, coloured blocks, dividers, button shapes — colour it with a decoration.fill unit (weave.item.add/update `units`). Use a nested frame ONLY when you want to group several items into one movable/clippable unit (not for a single coloured rectangle).",
         // SUB-KINDS — the full ShapeSubKind union (builtin-kinds.ts). The params
         // in subAttrs differ per kind; only those listed belong to each.
         "SUB-KINDS and their subAttrs params:",
-        "• rectangle — { cornerRadii:{ tl, tr, br, bl } } (per-corner px; or edit later with weave.shape.setCornerRadius).",
+        "• rectangle — { cornerRadii:{ tl, tr, br, bl } } (per-corner px; set/edit via weave.item.update { attrs:{ subAttrs:{ shape:'rectangle', cornerRadii } } }).",
         "• ellipse — (none).",
         "• line — { thickness? }.",
         "• arrow — { heads:{ start, end } each 'none'|'triangle'|'open'|'diamond'|'circle', headSize }.",
         "• triangle — { variant: 'equilateral'|'isosceles-up'|'isosceles-down'|'right-angle' }.",
         "• star — { points (number of points), innerRatio (0..1 inner/outer radius) }.",
         "• polygon — a REGULAR N-gon: { sides } (e.g. 6 = hexagon).",
-        "• poly — a FREEFORM polygon from explicit vertices: { points:[{x,y},…] each a 0..1 ratio of THIS shape's OWN bbox (NOT the parent frame / design), closed:boolean (true = filled polygon, false = open polyline) }. Edit the vertices later with weave.shape.setVertices.",
+        "• poly — a FREEFORM polygon from explicit vertices: { points:[{x,y},…] each a 0..1 ratio of THIS shape's OWN bbox (NOT the parent frame / design), closed:boolean (true = filled polygon, false = open polyline) }. Edit the vertices later with weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }.",
         "CONVERT shape → line: weave.shape.breakToLine { itemId, vertexIndex? } opens a closed shape at one outline vertex into a stroke-only `line` (works for rectangle/triangle/polygon/star/ellipse/closed poly; the fill becomes the stroke).",
         "• path — opaque raw SVG path: { d:'<svg path data>' }.",
         "• speech-bubble — { tail:{ anchorX, anchorY (0..1 of THIS shape's OWN bbox), direction:'down'|'up'|'left'|'right'|'free' }, cornerRadius (px) }.",
         "• heart — { variant: 'classic'|'rounded' }.",
         // FILL — gradients are first-class, not solid-only.
-        "FILL: set with weave.shape.setFill { itemId, fill } where fill is a PaintSpec discriminated on `type`: { type:'solid', color } | { type:'linear-gradient', angle (deg, 0=up 90=right — not a ratio), stops:[{offset:0..1 along the gradient axis, color},…] (≥2) } | { type:'radial-gradient', cx, cy (0..1 of the shape's OWN bbox — the gradient center), stops:[…] (≥2) } | { type:'image'|'video', src, fit?, opacity? } | { type:'none' } (transparent). color is any CSS color (#rrggbb/#rrggbbaa/rgb()/var(--token)).",
+        "FILL: set a decoration.fill unit via weave.item.add/update { units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] }, where PaintSpec is discriminated on `type`: { type:'solid', color } | { type:'linear-gradient', angle (deg, 0=up 90=right — not a ratio), stops:[{offset:0..1 along the gradient axis, color},…] (≥2) } | { type:'radial-gradient', cx, cy (0..1 of the shape's OWN bbox — the gradient center), stops:[…] (≥2) } | { type:'image', src, fit?, opacity? } | { type:'video', src, fit?, muted?, loop?, opacity? } | { type:'none' } (transparent). Paint fit = cover|contain|fill|tile. color is any CSS color (#rrggbb/#rrggbbaa/rgb()/var(--token)).",
         // DECORATIONS — shadow / stroke / filter / opacity are units, not attrs.
-        "DECORATIONS: stroke, shadow, blur/color filters and layer opacity are decoration UNITS set with weave.item.setDecoration (see the decoration unitKinds) — they are NOT attrs fields. Corner radius for rectangles is weave.shape.setCornerRadius (absolute px). Size/position/rotation via attrs.frame; this shape can also be a layout child or carry its own attrs.layout.",
+        "DECORATIONS: stroke, shadow, blur/color filters and layer opacity are decoration UNITS set via weave.item.add/update `units` (see the decoration unitKinds) — they are NOT attrs fields. Corner radius for rectangles goes in attrs.subAttrs.cornerRadii (absolute px) via weave.item.update. Size/position/rotation via attrs.frame; this shape can also be a layout child or carry its own attrs.layout.",
       ].join(" "),
       editableAttrs: ["frame", "shape", "subAttrs", "layout", "layoutChild"],
       units: [
@@ -164,7 +164,7 @@ export const WEAVE_CAPABILITIES = {
         "A stroke-only LINE / curve — a DISTINCT kind from `shape` (NO fill, no area). Create with weave.item.add { kind:'line', frame, attrsOverride:{ points:[{x,y},…] (≥2, each a 0..1 ratio of the line's OWN bbox), smooth?:boolean, heads?:{ start, end } } }.",
         "`points` define the polyline; `smooth:true` renders a Catmull-Rom curve through them. The bounding box follows the points (vertex / endpoint editing). A 2-point line = 직선; many points = 자유선; smooth = 곡선/자유곡선.",
         "ENDPOINT MARKERS: `heads:{ start, end }` — each 'none'|'triangle'|'open'|'diamond'|'circle' (arrow / dot ends).",
-        "COLOUR / WIDTH: the stroke is a `decoration.stroke` UNIT (weave.item.setDecoration { itemId, kind:'decoration.stroke', attrs:{ paint, width, lineCap?, lineJoin?, dashArray? } }). A line has NO fill.",
+        "COLOUR / WIDTH: the stroke is a `decoration.stroke` UNIT — set via weave.item.add/update { units:[{ kind:'decoration.stroke', attrs:{ paint, width, lineCap?, lineJoin?, dashArray? } }] }. A line has NO fill.",
         "Use `line` for arrows, connectors, underlines, dividers, freeform strokes, and curves. Use a `shape` for filled / area elements (rectangle, ellipse, polygon, …).",
         "CONVERT line → shape: weave.line.closeToShape { itemId } fuses the two endpoints of a free line/curve into ONE vertex and closes it into a filled `poly` shape (needs ≥3 points; the stroke becomes the fill).",
       ].join(" "),
@@ -174,7 +174,8 @@ export const WEAVE_CAPABILITIES = {
     {
       kind: "image",
       description:
-        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius a 0..1 ratio of the image's OWN min(width, height) (not the parent). Size/position via attrs.frame.",
+        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius a 0..1 ratio of the image's OWN min(width, height) (not the parent). Size/position via attrs.frame. " +
+        'attrs.src is OPTIONAL: OMIT it (or pass "") to create a SOURCE-LESS PLACEHOLDER — a neutral framed box with an image glyph, NOT a broken image. Use this for wireframe/layout drafts where the real picture is added later. When src is empty, attrs.alt is rendered as CENTERED CAPTION TEXT inside the placeholder (so set a short alt like "제품 사진 자리" to label the slot); once a real src is set, alt reverts to its accessibility role and is no longer drawn.',
       editableAttrs: ["frame", "src", "alt", "fit", "opacity", "borderRadius"],
     },
     {
@@ -186,13 +187,13 @@ export const WEAVE_CAPABILITIES = {
   ],
   unitKinds: [
     // ── DECORATION units (DR-028) — visual styling attached to ANY visual item
-    //    (shape / image / video / text / frame). Set/replace/clear with
-    //    weave.item.setDecoration { itemId, kind, attrs } (attrs null = clear).
+    //    (shape / image / video / text / frame). Set/replace/clear via the `units`
+    //    arg of weave.item.add / weave.item.update (attrs null = clear on update).
     //    DISTINCT from the behavior units below (those use weave.item.addBehavior).
     {
       kind: "decoration.fill",
       description:
-        "Fill paint of the item (e.g. a shape's interior, a frame's background). attrs is a PaintSpec: { type:'solid', color } | { type:'linear-gradient', angle, stops:[{offset,color},…] } | { type:'radial-gradient', cx, cy, stops } | { type:'image'|'video', src, fit?, opacity? } | { type:'none' }. Shapes also have the weave.shape.setFill shortcut.",
+        "Fill paint of the item (e.g. a shape's interior, a frame's background). attrs is a PaintSpec: { type:'solid', color } | { type:'linear-gradient', angle, stops:[{offset,color},…] } | { type:'radial-gradient', cx, cy, stops } | { type:'image', src, fit?, opacity? } | { type:'video', src, fit?, muted?, loop?, opacity? } | { type:'none' }. Paint fit = cover|contain|fill|tile.",
       editableAttrs: ["type", "color", "angle", "cx", "cy", "stops", "src", "fit", "opacity"],
     },
     {
@@ -258,7 +259,8 @@ export const WEAVE_TASK_PRIMER = [
   "- Multi-selection = TWO commands only, each ONE undo step (prefer over looping a singular command): weave.items.update { itemIds, attrs?, units?, updates?, op? } EDITS many items at once — shared attrs, shared decoration units, per-item frames (updates), and align/distribute (op = align-left|align-horizontal-center|align-right|align-top|align-vertical-center|align-bottom|distribute-horizontal|distribute-vertical, same parent); and weave.items.lifecycle { itemIds, op:'remove'|'duplicate' } for bulk delete/clone. Do NOT use weave.items.align / weave.items.resizeMulti / weave.items.remove / weave.items.duplicate — they are folded into these two.",
   "- Always target existing items by the id shown in the current document (already provided in the prompt — there is no separate fetch step).",
   "- TWO commands only for items: ADD an item with weave.item.add, and CHANGE any attribute/style with weave.item.update — these take attrs AND units (fill/shadow/stroke/cornerRadii/poly-points) in ONE call. Do NOT look for or use weave.shape.setFill, weave.shape.setCornerRadius, weave.shape.setVertices, or weave.item.setDecoration — they are not available; everything they did is done via weave.item.add / weave.item.update.",
-  "- Create FULLY STYLED in ONE call: weave.item.add takes `units` (decoration.fill / .stroke / .shadow / .filter / .opacity) alongside attrsOverride — set fill/gradient/shadow/stroke AT creation in the SAME add call (e.g. units:[{ kind:'decoration.fill', attrs:{ type:'linear-gradient', angle:90, stops:[…] } }, { kind:'decoration.shadow', attrs:{ x:0,y:8,blur:24,spread:0,color:'#0008' } }]). Reach for weave.shape.setFill / weave.item.setDecoration only to EDIT an existing item, not right after adding one.",
+  "- Create FULLY STYLED in ONE call: weave.item.add takes `units` (decoration.fill / .stroke / .shadow / .filter / .opacity) alongside attrsOverride — set fill/gradient/shadow/stroke AT creation in the SAME add call (e.g. units:[{ kind:'decoration.fill', attrs:{ type:'linear-gradient', angle:90, stops:[…] } }, { kind:'decoration.shadow', attrs:{ x:0,y:8,blur:24,spread:0,color:'#0008' } }]). Use weave.item.update (its `units`) only to EDIT an existing item, not right after adding one.",
+  "- FLIP / MIRROR an item via the transform.flip unit: weave.item.update { itemId, units:[{ kind:'transform.flip', attrs:{ flipH:true } }] } (flipH = left/right, flipV = up/down; works on image/video/shape/line/frame, ignored on text/qr). On weave.item.update / weave.items.update, pass a unit's attrs:null to CLEAR it (e.g. remove a shadow: units:[{ kind:'decoration.shadow', attrs:null }], or un-flip with attrs:{ flipH:false }).",
   "- To create inside a frame, pass containerId = that frame's id to weave.item.add. New items default to a full-parent frame; adjust with weave.item.update afterwards.",
   '- Attached-image assets: when the request includes an [첨부 이미지 에셋] URL, USE that URL as a real asset — e.g. weave.item.add { kind: "image", attrs: { src: <url>, fit: "cover" } }. (The raw image is also shown to you for reference.)',
   '- To use an image as a frame/slide background: add a kind "image" item into that frame with attrs.fit "cover" and frame { x: 0, y: 0, width: 1, height: 1 }, then weave.item.sendToBack so it sits behind the other items.',
