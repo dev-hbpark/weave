@@ -506,7 +506,7 @@ export function useAkuAgent(deps: {
       const design = depsRef.current.getDesignInfo?.();
       const designLine =
         design !== undefined
-          ? `\n\n[디자인] 캔버스 ${design.width}×${design.height}px · 배경 ${design.background} · frame 좌표(x/y/width/height)는 부모 프레임 대비 0..1 비율(최상위 아이템의 부모 = 디자인 캔버스 전체), fontSize·letterSpacing 등 타이포 크기는 이 캔버스 기준 절대 px`
+          ? `\n\n[디자인] 캔버스 ${design.width}×${design.height}px · 배경 ${design.background} (타이포 크기는 이 캔버스 px 기준 절대값; frame 좌표는 부모 대비 0..1 비율)`
           : "";
       const selected = depsRef.current.getSelection();
       const selectionLine =

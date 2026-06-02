@@ -39,34 +39,28 @@ const ATTRS: Json = { type: "object", additionalProperties: true };
 // where `frame` is not a typed field — so the base reaches the agent only via
 // this note folded into the bag's description.
 const FRAME_BASE_NOTE =
-  "attrs.frame = { x, y, width, height, rotation }: x/y/width/height are 0..1 ratios of the " +
-  "PARENT frame's box — a top-level item's parent is the whole DESIGN (canvas). x/y = top-left " +
-  "corner (0 = parent's top-left edge, 1 = parent's bottom-right edge), width/height = size as a " +
-  "fraction of the parent; rotation = radians about the box center. NEVER pixels.";
+  "attrs.frame = { x, y, width, height, rotation }: x/y/width/height are 0..1 ratios of the PARENT " +
+  "box (a top-level item's parent = the whole DESIGN); x/y = top-left corner, rotation = radians " +
+  "about the center. NEVER pixels.";
 
 // Frame attrs note. Nested frames are the primary layout tool — but a nested
 // frame is a SLIDE by default, so the agent must opt it out of the deck.
 const FRAME_ATTRS_NOTE =
-  "For frame items: a TOP-LEVEL frame (no containerId) is a presentation SLIDE; a NESTED frame " +
-  "(containerId = another frame's id) is a layout container — give it attrs.layout via " +
-  "weave.frame.setLayout (auto-flex / auto-grid) to auto-arrange children into rows/columns/grids/cards. " +
-  "On EVERY nested frame set attrs.presentable:false so it stays a LAYOUT GROUP, not an extra slide — only " +
-  "the top-level slide frame should be in the deck. attrs.cornerRadius = 0..1 of the frame's own min(w,h).";
+  "For frame items: a TOP-LEVEL frame (no containerId) is a SLIDE; a NESTED frame (containerId set) is a " +
+  "layout container — give it attrs.layout via weave.frame.setLayout (auto-flex / auto-grid) and set " +
+  "attrs.presentable:false so it stays a LAYOUT GROUP, not an extra slide. attrs.cornerRadius = 0..1 of the " +
+  "frame's own min(w,h).";
 
 // Text attrs sizing note, shared by `weave.item.add` (attrsOverride) and
 // `weave.item.update` (attrs). The detailed per-field model (units, defaults,
 // resize modes, role-based fontSize guidance) lives in WEAVE_CAPABILITIES'
 // `text` itemKind; this is the one-line reminder the agent sees on the command.
 const TEXT_ATTRS_NOTE =
-  "For text items, size via EITHER attrs.fontSize (absolute DESIGN-px number) OR " +
-  "attrs.fontSizeSpec — { kind:'px', value } or { kind:'ratio', value } where value " +
-  "is a 0..1 fraction of the parent frame height (root = design height; responsive). " +
-  "NEVER put a fraction in the plain fontSize number (0.07 → sub-pixel); express ratios " +
-  "only via fontSizeSpec {kind:'ratio'}. Roles: heading 48–96px (~ratio 0.05–0.09), " +
-  "body ~24–32px (default 24) — canvas px is in the task's [디자인] line. A text box is " +
-  "AUTO-HEIGHT by default, so set frame.width to control wrapping and let height auto-fit. " +
-  "Other text fields: fontFamily, fontWeight, fontStyle, color, textAlignHorizontal/" +
-  "Vertical, lineHeightSpec, letterSpacing. See the text itemKind capabilities for full detail.";
+  "For text items: size via attrs.fontSizeSpec { kind:'ratio', value } (value = 0..1 of the parent-frame " +
+  "height — responsive, preferred) or { kind:'px', value }; NEVER put a fraction in the plain fontSize " +
+  "number (0.07 → sub-pixel text). Other fields: text, fontFamily, fontWeight, fontStyle, color, " +
+  "textAlignHorizontal/Vertical, lineHeightSpec, letterSpacing. See the text itemKind capabilities for " +
+  "roles, defaults and full detail.";
 
 // WI-058 — data-driven QR. The code regenerates from `data` on every render.
 const QR_ATTRS_NOTE =
@@ -78,36 +72,29 @@ const QR_ATTRS_NOTE =
 // WI-076 — image attrs, incl. the source-less placeholder. The full model lives
 // in WEAVE_CAPABILITIES' `image` itemKind; this is the reminder on item.add/update.
 const IMAGE_ATTRS_NOTE =
-  "For image items: attrs.src is the URL/data-URL but is OPTIONAL — OMIT it (or '') to create a " +
-  "SOURCE-LESS PLACEHOLDER (neutral framed box with an image glyph, NOT a broken image) for " +
-  "wireframe/layout drafts. When src is empty, attrs.alt is drawn as CENTERED CAPTION TEXT inside " +
-  "the placeholder, so set a short alt (e.g. '제품 사진 자리') to label the slot; with a real src, " +
-  "alt is accessibility-only. attrs.fit = cover|contain|fill; attrs.borderRadius = 0..1 of the " +
-  "image's OWN min(width,height).";
+  "For image items: attrs.src (URL/data-URL) is OPTIONAL — OMIT it (or '') for a SOURCE-LESS PLACEHOLDER, " +
+  "and set a short attrs.alt (e.g. '제품 사진 자리') which is then drawn as a centered caption to label the " +
+  "slot. attrs.fit = cover|contain|fill; attrs.borderRadius = 0..1 of the image's OWN min(w,h). See the " +
+  "image itemKind capabilities for full detail.";
 
 // Video attrs, incl. the source-less placeholder (mirrors IMAGE_ATTRS_NOTE). The
 // full model lives in WEAVE_CAPABILITIES' `video` itemKind; this is the reminder.
 const VIDEO_ATTRS_NOTE =
-  "For video items: attrs.src is the URL but is OPTIONAL — OMIT it (or '') for a SOURCE-LESS " +
-  "PLACEHOLDER (NOT an empty black player) on wireframe/layout drafts. With no src, it renders " +
-  "either attrs.poster as a static COVER IMAGE + play badge (set poster to a still/thumbnail URL), " +
-  "or — no poster — a neutral box with a play glyph. attrs.alt is a short DESCRIPTION of the clip " +
-  "(e.g. '제품 데모 영상'): drawn as CENTERED CAPTION when src is empty, accessibility text once a " +
-  "src is set — ALWAYS set it. attrs.fit = cover|contain|fill; autoplay/loop/muted/controls boolean.";
+  "For video items: attrs.src (URL) is OPTIONAL — OMIT it (or '') for a SOURCE-LESS PLACEHOLDER " +
+  "(attrs.poster renders as a cover still + play badge, else a play glyph). attrs.alt = short clip " +
+  "description (e.g. '제품 데모 영상'), drawn as a centered caption when src is empty — ALWAYS set it. " +
+  "attrs.fit = cover|contain|fill; autoplay/loop/muted/controls boolean. See the video itemKind capabilities.";
 
 // WI-077 — `line` kind attrs (직선 / 자유선 / 곡선 / 자유곡선). The `line` kind is
 // STROKE-ONLY (no fill, distinct from shape); colour/width is a decoration.stroke
 // unit, not an attr. Full model in WEAVE_CAPABILITIES' `line` itemKind.
 const LINE_ATTRS_NOTE =
-  "For line items (kind:'line', a STROKE-ONLY line/curve with NO fill): attrs.points = array of " +
-  "≥2 {x,y}, each a 0..1 ratio of the line's OWN bbox; attrs.smooth (boolean) draws a Catmull-Rom " +
-  "CURVE through the points (false = straight segments). So 2 points = 직선(straight line); many " +
-  "points = 자유선(freeform polyline); smooth:true = 곡선/자유곡선(curve / freeform curve). " +
-  "For a 자유선 / hand-drawn stroke / curve use this `kind:'line'` — NOT the parametric `shape:'line'` " +
-  "sub-kind (a straight 2-point line-shape with only { thickness }, no freeform points). " +
-  "attrs.heads = { start, end } endpoint markers, each 'none'|'triangle'|'open'|'diamond'|'circle' " +
-  "(default none) — use for arrows/connectors. Stroke colour/width is a decoration.stroke UNIT " +
-  "(set via this add call's `units`), NOT an attr.";
+  "For line items (kind:'line', a STROKE-ONLY line/curve with NO fill): attrs.points = ≥2 {x,y}, each a " +
+  "0..1 ratio of the line's OWN bbox; attrs.smooth draws a Catmull-Rom curve (2 points = 직선, many = " +
+  "자유선, smooth:true = 곡선/자유곡선) — use this kind for hand-drawn strokes/curves, NOT the parametric " +
+  "shape:'line' sub-kind. attrs.heads = { start, end } endpoint markers ('none'|'triangle'|'open'|'diamond'|" +
+  "'circle'). Stroke colour/width is a decoration.stroke UNIT (this add call's `units`), NOT an attr. See " +
+  "the line itemKind capabilities.";
 
 /** Open attrs bag carrying the text + qr field notes in its description — used by
  *  the two attrs-editing commands so the hint rides along on `item.add` /
@@ -116,15 +103,10 @@ const LINE_ATTRS_NOTE =
 // WEAVE_CAPABILITIES' `shape` itemKind; this is the reminder on item.add/update.
 const SHAPE_ATTRS_NOTE =
   "For shape items: set attrs.shape to the sub-kind " +
-  "(rectangle|ellipse|line|arrow|triangle|star|polygon|poly|path|speech-bubble|heart). " +
-  "Per-kind geometry lives in attrs.subAttrs (see its schema) and every geometry field is " +
-  "OPTIONAL — anything you omit is auto-filled with a sensible default, so you CANNOT create " +
-  "an invalid shape; include only the subAttrs fields you actually want to set (e.g. " +
-  "star { points, innerRatio }, polygon { sides }, poly { points, closed }, rectangle " +
-  "{ cornerRadii }). If you set subAttrs, set subAttrs.shape to the same sub-kind. Fill/shadow/" +
-  "stroke/opacity/filter at CREATION go in this add call's `units` (e.g. units:[{ kind:" +
-  "'decoration.fill', attrs:<PaintSpec> }]) so the shape is styled in one call; after creation, " +
-  "edit them with weave.item.update `units`.";
+  "(rectangle|ellipse|line|arrow|triangle|star|polygon|poly|path|speech-bubble|heart); per-kind geometry " +
+  "goes in attrs.subAttrs and every field is OPTIONAL (omitted ones auto-fill, so you cannot create an " +
+  "invalid shape; if you set subAttrs, set subAttrs.shape to the same sub-kind). Fill/shadow/stroke/opacity/" +
+  "filter at CREATION go in this add call's `units`. See the shape itemKind capabilities for the per-kind params.";
 
 // Per-shape valid-field contract advertised to the agent (WI-062). A discriminated
 // union on `shape`: each branch lists exactly the geometry fields that sub-kind

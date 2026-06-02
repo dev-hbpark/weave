@@ -14,10 +14,16 @@
 //   itemKinds:   { kind; description; editableAttrs?; defaultAttrs?; units?; defaultUnits? }[]
 //   unitKinds?:  { kind; description?; editableAttrs?; defaultAttrs? }[]
 //
-// Coordinate model (load-bearing — stated here AND in the per-task primer): every
-// item's `attrs.frame` is { x, y, width, height, rotation } where x/y/width/height
-// are 0..1 RATIOS of the parent's box (root parent = the whole design) and
-// rotation is radians about the center. There are no pixel coordinates.
+// Coordinate model (load-bearing — stated here AND in the cached WEAVE_DOMAIN_KNOWLEDGE
+// §1): every item's `attrs.frame` is { x, y, width, height, rotation } where
+// x/y/width/height are 0..1 RATIOS of the parent's box (root parent = the whole design)
+// and rotation is radians about the center. There are no pixel coordinates.
+//
+// Token model (WI-078): the per-turn WEAVE_TASK_PRIMER is a COMPACT recall pointer —
+// the full, stable structural/sizing/color/authoring/command rules live ONCE in the
+// CACHED WEAVE_DOMAIN_KNOWLEDGE block (transferred at session init, prompt-cached
+// server-side), not restated on every task. Add a new stable rule to the domain block,
+// not the primer.
 
 import { THEMES } from "@weave/design-system";
 
@@ -257,31 +263,19 @@ export const WEAVE_CAPABILITIES = {
   ],
 } as const;
 
-/** Compact per-task primer for the cross-cutting rules the capabilities block
- *  can't express per-kind. Prepended to each task (small, but guarantees the
- *  coordinate model + id-discipline are seen even before the agent reads tools). */
+/** COMPACT per-task primer (WI-078). The full, stable rules — structure, sizing,
+ *  color tokens, slide layout, command discipline — live ONCE in the cached
+ *  WEAVE_DOMAIN_KNOWLEDGE block (session-init, prompt-cached server-side). This
+ *  per-turn text is only a short recall of the few highest-leverage, most-error-prone
+ *  rules, kept here (in the task message, not the cached prompt) because their recency
+ *  on each task measurably helps adherence. Do NOT re-expand it — add stable rules to
+ *  the domain block instead. */
 export const WEAVE_TASK_PRIMER = [
-  "[weave conventions]",
-  "- Match the MOOD (TOP priority — the content's atmosphere matters MORE than the active theme): infer the document's tone/subject and express it through layout, typography, spacing, imagery, shapes, density, contrast AND color (e.g. finance → restrained, data-forward; children's invite → playful, rounded; luxury → deep, elegant). For COLOR see the THEME COLORS rule; never apply a generic default LAYOUT — the design should read as 'about this topic' at a glance.",
-  "- THEME COLORS — decide the palette from the CONTENT'S MOOD first; the currently-active editor theme must NOT drive how the design looks. Use a `var(--token)` STRING for STRUCTURAL / NEUTRAL roles so they re-skin when the user switches theme — slide background var(--bg-page)/var(--bg-page-soft) (NOT a lazily hand-picked dark/light hex), text var(--text-strong|default|soft|muted), generic panels var(--surface-1|2) (translucent) or var(--bg-page-soft) (solid), a 4-hue categorical palette via var(--domain-slide|canvas|block|media-accent). But do NOT paint the whole design in theme tokens just because they re-skin — that makes every design look like the current theme; let the content's own colors carry its character, with a LITERAL color wherever the mood, brand/logo, data, photography, or status (green/amber/red) calls for one. FILL DEFAULT = SOLID: a gradient is an occasional, deliberate accent (a hero or section backdrop where the mood wants depth), never the default for panels, cards, text, or ordinary backgrounds; when you do use one, token stops keep it re-skinnable (e.g. var(--accent)→var(--accent-strong)). Tokens and literals work in any color field (text attrs.color, decoration.fill/.stroke PaintSpec color, slide/frame background).",
-  "- Markdown input → ONE slide: when the request's content arrives as Markdown, ALWAYS represent that whole Markdown document on a SINGLE slide (one md document = one slide), not a multi-slide deck.",
-  "- Infer the best STRUCTURE: reason about which document/layout form most suits the given content and use it deliberately (e.g. title + bullet list, two-column comparison, hero statement, stat/number grid, timeline, step flow, big quote, image + caption) instead of stacking text top-to-bottom. Choose the structure that best communicates this specific content.",
-  "- USE MEDIA & SHAPES to maximize expression — do NOT make text-only slides when a visual would communicate better. Reach for the kind that best fits the content: kind:'image' for any visual subject (hero/background photo, product shot, portrait, scene, illustration); kind:'video' for motion/demo/footage content (a product demo, b-roll, a clip the topic implies); kind:'shape' for diagrams, dividers, color blocks, badges, callouts, icon-like glyphs (poly/path), backdrops; kind:'qr' for a link/URL the audience should scan. When you don't have a real asset URL, STILL place the media as a source-less PLACEHOLDER (image: omit src + set a descriptive alt like '제품 사진 자리'; video: omit src + set alt to the clip description, optionally a poster URL for a cover still) so the layout shows the intended visual slot instead of an empty/text-only slide. Give every image/video a descriptive alt. Match the media to the topic — a travel deck wants photos, a SaaS demo wants a video slot, a process wants a diagram of shapes.",
-  "- Coordinates: every attrs.frame is { x, y, width, height, rotation } with x/y/width/height as 0..1 RATIOS of the parent (root parent = the whole design). No pixels. rotation is radians about the center.",
-  "- Units split: frame is a ratio (above), but text/typography sizes (fontSize, letterSpacing, paragraph spacing/indent, lineHeightSpec px) are absolute DESIGN-px. The canvas px size is in the [디자인] line below — size text relative to it (e.g. a heading ≈ 5–9% of canvas height).",
-  "- Font sizing: size text by RATIO — attrs.fontSizeSpec { kind:'ratio', value:0..1 } (a fraction of the parent frame height; root = design height) so it scales with the slide (heading ~0.06–0.09, body ~0.03). Do NOT use a fixed px size; never put a fraction in the plain fontSize number (renders as sub-pixel text).",
-  "- Text boxes are FIXED — no auto-height/auto-width. Give each text an explicit frame (width AND height), then pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }.",
-  "- Slides: each slide is its OWN top-level frame (direct child of the design root). Place them at DISTINCT positions — NEVER give every slide { x:0, y:0, width:1, height:1 }; that stacks all slides on the exact same spot. Lay them out LEFT-TO-RIGHT like a filmstrip: slide index i (0-based) at frame { x: i * 1.1, y: 0, width: 1, height: 1, rotation: 0 } — full canvas size, with a 0.1 gap. x is a 0..1 ratio of the design but is NOT capped at 1 (the board extends right), so x = i*1.1 places each slide to the right of the previous one. Create with weave.item.add { kind:'frame', frame:{ x: i*1.1, y:0, width:1, height:1 } } and NO containerId (→ the design root); the call returns the new frame's id — build that slide by adding items with containerId = that id. weave.design.setPresentationOrder reorders the deck.",
-  "- Top-level frames are SLIDES; NESTED frames are the primary LAYOUT tool — nest a frame and give it a layout (weave.frame.setLayout → auto-flex / auto-grid) to build rows / columns / grids / cards / sidebars that auto-arrange their children, instead of hand-placing everything. CRITICAL: a nested frame is a slide by default, so set attrs.presentable:false on EVERY nested (non-top-level) frame (at weave.item.add via attrsOverride, or weave.item.update) so it's a layout group, not an extra slide — only the top-level slide frame belongs in the deck. Still use a plain SHAPE (kind:'shape', rectangle) for a single coloured panel/divider/button; use a nested frame to group + auto-arrange multiple items.",
-  "- Multi-selection = TWO commands only, each ONE undo step (prefer over looping a singular command): weave.items.update { itemIds, attrs?, units?, updates?, op? } EDITS many items at once — shared attrs, shared decoration units, per-item frames (updates), and align/distribute (op = align-left|align-horizontal-center|align-right|align-top|align-vertical-center|align-bottom|distribute-horizontal|distribute-vertical, same parent); and weave.items.lifecycle { itemIds, op:'remove'|'duplicate' } for bulk delete/clone. Do NOT use weave.items.align / weave.items.resizeMulti / weave.items.remove / weave.items.duplicate — they are folded into these two.",
-  "- Always target existing items by the id shown in the current document (already provided in the prompt — there is no separate fetch step).",
-  "- TWO commands only for items: ADD an item with weave.item.add, and CHANGE any attribute/style with weave.item.update — these take attrs AND units (fill/shadow/stroke/cornerRadii/poly-points) in ONE call. Do NOT look for or use weave.shape.setFill, weave.shape.setCornerRadius, weave.shape.setVertices, or weave.item.setDecoration — they are not available; everything they did is done via weave.item.add / weave.item.update.",
-  "- Create FULLY STYLED in ONE call: weave.item.add takes `units` (decoration.fill / .stroke / .shadow / .filter / .opacity) alongside attrsOverride — set fill/gradient/shadow/stroke AT creation in the SAME add call (e.g. units:[{ kind:'decoration.fill', attrs:{ type:'linear-gradient', angle:90, stops:[…] } }, { kind:'decoration.shadow', attrs:{ x:0,y:8,blur:24,spread:0,color:'#0008' } }]). Use weave.item.update (its `units`) only to EDIT an existing item, not right after adding one.",
-  "- FLIP / MIRROR an item via the transform.flip unit: weave.item.update { itemId, units:[{ kind:'transform.flip', attrs:{ flipH:true } }] } (flipH = left/right, flipV = up/down; works on image/video/shape/line/frame, ignored on text/qr). On weave.item.update / weave.items.update, pass a unit's attrs:null to CLEAR it (e.g. remove a shadow: units:[{ kind:'decoration.shadow', attrs:null }], or un-flip with attrs:{ flipH:false }).",
-  "- To create inside a frame, pass containerId = that frame's id to weave.item.add. New items default to a full-parent frame; adjust with weave.item.update afterwards.",
-  '- Attached-image assets: when the request includes an [첨부 이미지 에셋] URL, USE that URL as a real asset — e.g. weave.item.add { kind: "image", attrs: { src: <url>, fit: "cover" } }. (The raw image is also shown to you for reference.)',
-  '- To use an image as a frame/slide background: add a kind "image" item into that frame with attrs.fit "cover" and frame { x: 0, y: 0, width: 1, height: 1 }, then weave.item.sendToBack so it sits behind the other items.',
-  "- Issue every edit the request needs (a full deck is many calls) — avoid only redundant ones; if a tool returns an error, read it and adjust.",
+  "[weave conventions] Your cached weave domain knowledge + capabilities hold the FULL structural, sizing, color and command rules — follow them on every item. Highest-leverage reminders for THIS task:",
+  "- MOOD FIRST (top priority): infer the content's tone/subject and express it through layout, typography, spacing, imagery, shapes, density, contrast AND color — never a generic default layout; the design must read as 'about this topic' at a glance. Color follows the MOOD ahead of the active theme: structural/neutral roles → var(--token) (re-skins), mood/brand/data/status → a literal color.",
+  "- Coordinates are 0..1 RATIOS of the parent, NEVER pixels (the live canvas px is in the [디자인] line below — size typography against it).",
+  "- One slide = its OWN top-level frame; place slides at DISTINCT x (filmstrip: slide i at { x: i*1.1, y:0, width:1, height:1 }), NEVER all at {0,0,1,1}. Use nested frames (presentable:false) + weave.frame.setLayout as the primary layout tool. A Markdown document → ONE slide.",
+  "- Pick the STRUCTURE that best communicates the content, and use MEDIA/SHAPES (source-less placeholders when you lack a real asset) instead of text-only slides.",
 ].join("\n");
 
 /** The registered theme set, formatted for the agent prompt — derived from the
@@ -294,7 +288,7 @@ const THEME_REGISTRY_LINES: readonly string[] = (() => {
       .join(" · ");
   return [
     "",
-    "5) AVAILABLE THEMES — the user can switch the editor theme at any time, and a token-built design re-skins to",
+    "7) AVAILABLE THEMES — the user can switch the editor theme at any time, and a token-built design re-skins to",
     "   whichever is active. You CANNOT switch it yourself (the user picks it) — but you MAY recommend one that",
     "   fits the content's mood. Registered themes:",
     `     • dark  — ${byTone("dark")}`,
@@ -381,5 +375,54 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   `color` (solid or gradient stops), and the slide/frame background. Beyond color, MOOD is ALSO carried by",
   "   LAYOUT, typography, spacing, imagery, density and contrast — so the deck reads as 'about this topic'",
   "   whether you colored it with tokens (re-skins) or with mood-driven literals.",
+  "",
+  "5) AUTHORING — translate content into the right form:",
+  "   • SLIDE PLACEMENT: each slide is its OWN top-level frame (direct child of the design root). Place them at",
+  "     DISTINCT positions — NEVER give every slide { x:0, y:0, width:1, height:1 } (that stacks them all on one",
+  "     spot). Lay them LEFT-TO-RIGHT like a filmstrip: slide index i (0-based) at frame",
+  "     { x: i*1.1, y:0, width:1, height:1, rotation:0 } — full canvas, 0.1 gap. x is a 0..1 ratio of the design",
+  "     but is NOT capped at 1 (the board extends right). Create with weave.item.add { kind:'frame',",
+  "     frame:{ x:i*1.1, y:0, width:1, height:1 } } and NO containerId (→ the design root); the call returns the",
+  "     new frame's id — build that slide by adding items with containerId = that id. weave.design.setPresentationOrder",
+  "     reorders the deck.",
+  "   • STRUCTURE: pick the document/layout form that suits the content (title + bullet list, two-column",
+  "     comparison, hero statement, stat/number grid, timeline, step flow, big quote, image + caption) instead of",
+  "     stacking text top-to-bottom. Choose what communicates THIS content best.",
+  "   • MEDIA & SHAPES — do NOT make text-only slides when a visual communicates better: kind:'image' for any",
+  "     visual subject; kind:'video' for motion/demo/footage; kind:'shape' for diagrams, dividers, color blocks,",
+  "     badges, callouts, icon-like glyphs (poly/path), backdrops; kind:'qr' for a scannable link/URL. When you",
+  "     have no real asset URL, STILL place a source-less PLACEHOLDER (image: omit src + a descriptive alt like",
+  "     '제품 사진 자리'; video: omit src + alt = clip description, optionally a poster URL) so the slot shows",
+  "     instead of an empty/text-only slide. Always give image/video a descriptive alt. Match media to the topic.",
+  "   • MARKDOWN input → ONE slide: when the request's content arrives as Markdown, represent that whole document",
+  "     on a SINGLE slide (one md doc = one slide), not a multi-slide deck.",
+  "   • IMAGE AS BACKGROUND: add a kind:'image' child at frame { x:0, y:0, width:1, height:1 } with fit:'cover',",
+  "     then weave.item.sendToBack so it sits behind the other items. Attached [첨부 이미지 에셋] URLs are real",
+  "     assets — use them as attrs.src.",
+  "",
+  "6) COMMANDS & TOOLING DISCIPLINE:",
+  "   • TWO commands for items: weave.item.add to ADD, weave.item.update to CHANGE any attribute/style — BOTH",
+  "     take attrs AND units (fill/shadow/stroke/cornerRadii/poly-points) in ONE call. Do NOT look for",
+  "     weave.shape.setFill / setCornerRadius / setVertices / weave.item.setDecoration — they do not exist;",
+  "     everything they did is done via weave.item.add / weave.item.update.",
+  "   • CREATE FULLY STYLED in ONE call: weave.item.add takes `units` (decoration.fill/.stroke/.shadow/.filter/",
+  "     .opacity) alongside attrsOverride — set fill/gradient/shadow/stroke AT creation in the same add call",
+  "     (e.g. units:[{ kind:'decoration.fill', attrs:{ type:'linear-gradient', angle:90, stops:[…] } }]). Use",
+  "     update's `units` only to EDIT an existing item, not right after adding one.",
+  "   • CREATE INSIDE A FRAME: pass containerId = that frame's id to weave.item.add (new items default to a",
+  "     full-parent frame; adjust afterwards with weave.item.update).",
+  "   • MULTI-SELECTION = TWO commands, each ONE undo step (prefer over looping a singular command):",
+  "     weave.items.update { itemIds, attrs?, units?, updates?, op? } edits many at once — shared attrs, shared",
+  "     units, per-item frames (updates), and align/distribute (op = align-left|align-horizontal-center|align-right|",
+  "     align-top|align-vertical-center|align-bottom|distribute-horizontal|distribute-vertical, same parent); and",
+  "     weave.items.lifecycle { itemIds, op:'remove'|'duplicate' } for bulk delete/clone. Do NOT use",
+  "     weave.items.align / resizeMulti / remove / duplicate — they are folded into these two.",
+  "   • FLIP / MIRROR via the transform.flip unit: weave.item.update { itemId, units:[{ kind:'transform.flip',",
+  "     attrs:{ flipH:true } }] } (flipH = left/right, flipV = up/down; image/video/shape/line/frame only). On",
+  "     weave.item.update / weave.items.update, pass a unit's attrs:null to CLEAR it (remove a shadow, or un-flip",
+  "     with flipH:false).",
+  "   • Target existing items by the id shown in the current document (already in the prompt — no separate fetch",
+  "     step). Issue every edit the request needs (a full deck is many calls); avoid only redundant ones, and if a",
+  "     tool returns an error, read it and adjust.",
   ...THEME_REGISTRY_LINES,
 ].join("\n");
