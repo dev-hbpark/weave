@@ -26,6 +26,13 @@ import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME, NEW_DESIGN_BACKGROUND } from "./
 //            target positions moved from absolute px → 0..1 ratio of the design.
 
 const KEY_PREFIX_V5 = "weave.design.v5.";
+// Read-only local mirror of the last design successfully loaded from the
+// cloud. DISTINCT from the offline outbox (`weave.design.v5.<id>`): this
+// key is NEVER an unsynced edit and NEVER raises the reconcile prompt — it
+// exists solely so server-first read-only surfaces (present mode) can fall
+// back to the most recent known-good copy when the cloud is unreachable.
+// Written whenever a cloud fetch succeeds; superseded on the next success.
+const KEY_PREFIX_CACHE_V5 = "weave.design.cache.v5.";
 const KEY_PREFIX_V4 = "weave.doc.v4.";
 // WI-032 — pre-migration backup. Saved before `migrateLegacyKindsToFrame`
 // rewrites a legacy 4-domain doc. Kept for `BACKUP_TTL_MS` (1 week), then
@@ -54,10 +61,17 @@ const WI032_MIGRATE_ENABLED = true;
 //
 // Consequences:
 //   • `bootstrapFromCloud` no longer caches cloud designs into LS — a
-//     present LS entry is always an offline edit, never a sync cache.
-//   • Opening a design that HAS an LS entry surfaces a reconcile prompt
+//     `weave.design.v5.<id>` entry is always an offline edit, never a sync
+//     cache.
+//   • Opening a design that HAS such an entry surfaces a reconcile prompt
 //     (save the offline edit to the server, or discard it) instead of
 //     silently using either copy. See `useDesign`'s `localConflict`.
+//
+// The separate `weave.design.cache.v5.<id>` key (see `cacheDesignLocally` /
+// `loadCachedDesign`) is NOT part of the outbox contract: it is a prompt-
+// free read-mirror of the last successful cloud load, consulted ONLY by the
+// read-only present surface as an offline fallback. It never gates a save
+// and never raises the reconcile prompt.
 
 /** True when the browser reports no network connection. The fire-and-
  *  forget save path writes the offline outbox only in this case; the
@@ -363,6 +377,45 @@ export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | unde
   };
 }
 
+// ── Local read-cache (server-first present fallback) ───────────────────────
+//
+// The offline-first model deliberately stops caching cloud designs into the
+// outbox key, so a normally-synced design has NO localStorage copy. That is
+// correct for the editor (the reconcile prompt must only fire for genuine
+// offline edits), but it leaves the read-only present surface with nothing
+// to show when the cloud is unreachable. These two helpers keep a SEPARATE,
+// prompt-free mirror under `weave.design.cache.v5.<id>` so present mode can
+// fall back to the last known-good copy. The cache is refreshed on every
+// successful cloud load and is never treated as an unsynced edit.
+
+/** Mirror a just-fetched cloud blob into the local read-cache. Best-effort:
+ *  quota / serialization failures are swallowed — the cache is a fallback,
+ *  never a correctness dependency. */
+export function cacheDesignLocally(blob: SerializedDesignV5): void {
+  if (typeof window === "undefined") return;
+  if (blob?.meta?.schemaVersion !== 5 || typeof blob.id !== "string") return;
+  try {
+    window.localStorage.setItem(KEY_PREFIX_CACHE_V5 + blob.id, JSON.stringify(blob));
+  } catch {
+    /* localStorage quota — the cache is best-effort, do not fail the load. */
+  }
+}
+
+/** Read the local read-cache for `id` and hydrate it into a runtime Design.
+ *  Returns undefined when no cache exists or the blob fails validation.
+ *  Used by `useDesign` only in `preferCloud` (present) mode as the offline
+ *  fallback after the cloud fetch fails. */
+export function loadCachedDesign(id: string): Design | undefined {
+  if (typeof window === "undefined") return undefined;
+  const raw = window.localStorage.getItem(KEY_PREFIX_CACHE_V5 + id);
+  if (raw === null) return undefined;
+  try {
+    return hydrateSerializedDesign(JSON.parse(raw) as SerializedDesignV5);
+  } catch {
+    return undefined;
+  }
+}
+
 // One-time migration for the offline-first switch (2026-05-29). Before
 // this change, `weave.design.v5.*` was a cloud READ-CACHE that bootstrap
 // populated for every design. Under the offline-first model that key
@@ -653,6 +706,7 @@ export function listAllDesigns(): ReadonlyArray<DesignSummary> {
 export function clearDesign(id: string): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(KEY_PREFIX_V5 + id);
+  window.localStorage.removeItem(KEY_PREFIX_CACHE_V5 + id);
   window.localStorage.removeItem(KEY_PREFIX_V4 + id);
   window.localStorage.removeItem(LEGACY_PREFIX_V3 + id);
   window.localStorage.removeItem(LEGACY_PREFIX_V2 + id);

@@ -21,8 +21,10 @@ import {
 import { fetchDesignCloud } from "./cloud-sync.js";
 import { createDefaultItem } from "./seed.js";
 import {
+  cacheDesignLocally,
   createBlankDesign,
   hydrateSerializedDesign,
+  loadCachedDesign,
   loadDesign,
   removeLocalDesign,
   type SerializedDesignV5,
@@ -140,15 +142,31 @@ function withDocument(design: Design, document: AgocraftDocument): Design {
  *     that is an UNSYNCED OFFLINE EDIT, never a sync cache. We paint it
  *     (so the user sees their unsynced work) and the host prompts to
  *     reconcile it against the server (`localConflict`).
+ *   • "cache" — no offline edit, but a prompt-free local read-cache from a
+ *     previous successful cloud load exists. Only consulted in `preferCloud`
+ *     (present) mode: it paints instantly and is replaced when the cloud
+ *     replies, or KEPT as the fallback when the cloud is unreachable. Never
+ *     raises the reconcile prompt (it is not an unsynced edit).
  *   • "blank" — no local copy. The returned Design is a blank placeholder
  *     and the host fetches the authoritative copy from the cloud (or
  *     keeps the blank for a brand-new design the cloud doesn't have yet). */
-function initialDesign(id: string): {
+function initialDesign(
+  id: string,
+  preferCloud: boolean,
+): {
   readonly design: Design;
-  readonly source: "local" | "blank";
+  readonly source: "local" | "cache" | "blank";
 } {
   const local = loadDesign(id);
   if (local !== undefined) return { design: local, source: "local" };
+  // Present mode falls back to the last cloud copy mirrored locally so a
+  // server-unreachable present still shows the deck instead of an empty
+  // stage. The editor never reads this cache — an offline edit there must
+  // go through the reconcile prompt, not silently adopt a stale mirror.
+  if (preferCloud) {
+    const cached = loadCachedDesign(id);
+    if (cached !== undefined) return { design: cached, source: "cache" };
+  }
   return {
     design: createBlankDesign({ id, title: "Untitled design", width: 1920, height: 1080 }),
     source: "blank",
@@ -165,8 +183,11 @@ interface UseDesignOptions {
 
 export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignResult {
   const preferCloud = opts.preferCloud ?? false;
-  const initial = useRef<{ readonly design: Design; readonly source: "local" | "blank" }>();
-  if (initial.current === undefined) initial.current = initialDesign(id);
+  const initial = useRef<{
+    readonly design: Design;
+    readonly source: "local" | "cache" | "blank";
+  }>();
+  if (initial.current === undefined) initial.current = initialDesign(id, preferCloud);
   const [design, setDesign] = useState<Design>(initial.current.design);
   // Spinner gate. True only when there is nothing to paint yet (= the cloud
   // fetch below will fire and there's no local copy). A local copy — even in
@@ -211,9 +232,17 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
       const raw = await fetchDesignCloud(id);
       if (cancelled) return;
       if (raw === null) {
+        // Cloud unreachable. The initial paint already holds the offline
+        // edit ("local") or the prompt-free read-cache ("cache") when one
+        // exists — present mode keeps showing that instead of going blank.
         setIsLoading(false);
         return;
       }
+      // Refresh the local read-cache so a later server-unreachable open
+      // (present mode) can fall back to this known-good copy. Done before
+      // the race guard so the cache stays current even when an in-progress
+      // edit means we won't swap the live document below.
+      cacheDesignLocally(raw as unknown as SerializedDesignV5);
       if (designRef.current !== designAtMountRef.current) {
         setIsLoading(false);
         return;
