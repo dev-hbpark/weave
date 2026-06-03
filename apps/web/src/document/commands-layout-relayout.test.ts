@@ -145,6 +145,29 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       expect(stagedFrame?.width).toBeCloseTo(0.5, 6);
     });
 
+    it("does not crash when the parent layout was stored WITHOUT padding (DR-048)", () => {
+      // Repro: the agent set an auto-flex layout via weave.frame.setLayout but
+      // OMITTED padding; @agocraft/layout's onParentResize dereferences
+      // spec.padding.left, so the next child add threw "Cannot read properties of
+      // undefined (reading 'left')". weave.item.add now normalizes the parent's
+      // layout (fills the required padding) before the engine reads it.
+      const paddinglessFlex = {
+        kind: "auto-flex",
+        direction: "row",
+        gap: 0,
+        justify: "start",
+        align: "stretch",
+        // padding intentionally ABSENT — the bug trigger.
+      } as unknown as LayoutSpec;
+      const existing = frameItem("c1", { frame: F(0, 0, 0.5, 1) });
+      const ctx = makeCtx(paddinglessFlex, existing);
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("weave.item.add not found");
+      expect(() =>
+        cmd.run(ctx, { kind: "frame", containerId: "parent", frame: F(0, 0, 0.5, 1) }),
+      ).not.toThrow();
+    });
+
     it("emits item.children (add) + sibling item.attrs patches in one transaction", () => {
       const flex: LayoutSpec = createAutoFlexSpec({
         direction: "row",

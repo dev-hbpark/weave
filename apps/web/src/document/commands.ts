@@ -23,11 +23,14 @@ import type {
   Item as AgocraftItem,
   BuiltinItemFrame as AgocraftItemFrame,
   Unit as AgocraftUnit,
+  LayoutSpec,
 } from "@agocraft/core";
 import {
   type ClipboardTransport,
   type Command,
   type CommandContext,
+  createAutoFlexSpec,
+  createAutoGridSpec,
   createBreakShapeToLineCommand,
   createClipboardCommands,
   createCloseLineToShapeCommand,
@@ -360,6 +363,20 @@ const SAMPLE_CHART_DATASET: DatasetPayload = {
   ],
 };
 
+/** Fill the required defaults an auto-flex / auto-grid spec must carry. The
+ *  @agocraft/layout engine reads `spec.padding.left` (and other required fields)
+ *  UNGUARDED in onParentResize — so a layout the agent stored WITHOUT `padding`
+ *  (the schema marks it optional, the engine does not) crashes the next
+ *  onChildAdd with "Cannot read properties of undefined (reading 'left')". The
+ *  core factories overlay caller fields onto the complete DEFAULT spec, so the
+ *  stored layout always has padding/gap/tracks. absolute-constraints needs none. */
+function normalizeLayoutSpec(layout: LayoutSpec | undefined): LayoutSpec | undefined {
+  if (layout === undefined) return undefined;
+  if (layout.kind === "auto-flex") return createAutoFlexSpec(layout);
+  if (layout.kind === "auto-grid") return createAutoGridSpec(layout);
+  return layout;
+}
+
 export function buildWeaveCommands(
   targets: WeaveCommandTargets,
   presetRegistry: PresetRegistry = defaultPresetRegistry(),
@@ -459,7 +476,19 @@ export function buildWeaveCommands(
       let stagedItem: AgocraftItem = agoItem;
       let layoutSiblingPatches: ReadonlyArray<Patch> = [];
       if (LAYOUT_FEATURE_ENABLED && containerItem !== undefined) {
-        const result = getLayoutEngine().onChildAdd({ parent: containerItem, newChild: agoItem });
+        // Normalize the parent's layout for the engine read: @agocraft/layout's
+        // onParentResize dereferences spec.padding.left unguarded, so a parent
+        // whose stored layout lacks padding would crash onChildAdd. This guards
+        // ANY parent (even a layout stored before normalize-on-set landed).
+        const parentLayout = (containerItem.attrs as { layout?: LayoutSpec } | undefined)?.layout;
+        const safeParent =
+          parentLayout !== undefined
+            ? {
+                ...containerItem,
+                attrs: { ...containerItem.attrs, layout: normalizeLayoutSpec(parentLayout) },
+              }
+            : containerItem;
+        const result = getLayoutEngine().onChildAdd({ parent: safeParent, newChild: agoItem });
         stagedItem = result.stagedChild as AgocraftItem;
         layoutSiblingPatches = result.siblingPatches;
       }
@@ -1970,10 +1999,19 @@ export function buildWeaveCommands(
   // `LAYOUT_FEATURE_ENABLED` gate. Same behavior + `item-not-found` error code
   // as the prior inline bodies (setFrameLayout is intentionally ungated).
   const layoutGate = () => LAYOUT_FEATURE_ENABLED;
-  const setFrameLayout = createSetFrameLayoutCommand({
+  // Wrap the kit command so every incoming LayoutSpec is normalized (required
+  // padding/gap/tracks filled) before it is stored — the @agocraft/layout engine
+  // reads spec.padding.left unguarded, so an agent-supplied spec without padding
+  // would otherwise crash the next onChildAdd. See normalizeLayoutSpec.
+  const rawSetFrameLayout = createSetFrameLayoutCommand({
     name: "weave.frame.setLayout",
     getEngine: getLayoutEngine,
   });
+  const setFrameLayout: typeof rawSetFrameLayout = {
+    ...rawSetFrameLayout,
+    run: (ctx, input) =>
+      rawSetFrameLayout.run(ctx, { ...input, layout: normalizeLayoutSpec(input.layout) }),
+  };
   const setItemLayoutChild = createSetItemLayoutChildCommand({
     name: "weave.item.setLayoutChild",
     getEngine: getLayoutEngine,
