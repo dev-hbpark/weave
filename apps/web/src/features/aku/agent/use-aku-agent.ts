@@ -192,10 +192,11 @@ const AGENT_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   "weave.shape.setVertices", // → weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }
   "weave.item.setDecoration", // → weave.item.add/update { units:[{ kind, attrs }] }
   // multi-selection family → weave.items.update (edit) + weave.items.lifecycle (structural)
-  "weave.items.align", // → weave.items.update { itemIds, op }
   "weave.items.resizeMulti", // → weave.items.update { updates:[{ itemId, frame }] }
   "weave.items.remove", // → weave.items.lifecycle { itemIds, op:'remove' }
   "weave.items.duplicate", // → weave.items.lifecycle { itemIds, op:'duplicate' }
+  // destructive / non-generation commands — keep them out of the design agent's reach
+  "weave.doc.reset", // wipes the ENTIRE document; a generation agent must never reset the user's work
 ]);
 
 /** A read-through view of the command registry with preset + subsumed setter
@@ -329,6 +330,22 @@ export function useAkuAgent(deps: {
     () => withoutPresetCommands(editor.container.resolve(CommandRegistryToken)),
     [editor],
   );
+  // DEV diagnostic for the "No command registered with name weave.item.add" class
+  // of runtime errors (stale build / registry mismatch). Logs the command set the
+  // agent is actually given at connect time. If `hasItemAdd` is false or `count` is
+  // tiny here while the source registers the command (commands.ts buildWeaveCommands
+  // → registerWeaveCommands), the running bundle is out of sync with source
+  // (rebuild/restart) OR this resolved CommandRegistry is not the instance
+  // registerWeaveCommands populated. Gated behind DEV so production never logs.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const names = commands.list().map((c) => c.name);
+    console.debug("[aku commands] exposed to agent", {
+      count: names.length,
+      hasItemAdd: commands.has("weave.item.add"),
+      names,
+    });
+  }, [commands]);
   // WI-060 — group each agent ROUND's tool calls into one undo entry. The bridge
   // drives THIS proxy editor (begin/end an async-spanning transaction group per
   // round); history/undo elsewhere keep using the real `editor`. `close()` is

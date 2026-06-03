@@ -471,7 +471,6 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.shape.setVertices": "다각형 정점 편집",
   "weave.items.resizeMulti": "크기 조정",
   "weave.items.update": "여러 아이템 수정",
-  "weave.items.align": "정렬/분배",
   "weave.items.lifecycle": "여러 아이템 삭제/복제",
   "weave.behavior.update": "동작 수정",
   "weave.doc.reset": "문서 초기화",
