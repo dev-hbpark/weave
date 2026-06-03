@@ -25,6 +25,7 @@ import type { JSX } from "react";
 import type { ItemSnapshot } from "./multi-edit.js";
 import { FlexChildSection, GridChildSection } from "./sections/flex-child-section.js";
 import { toolbarSectionRegistry } from "./sections/index.js";
+import { LinkSection } from "./sections/link-section.js";
 
 interface ContextualToolbarProps {
   readonly editor: Editor;
@@ -88,6 +89,8 @@ export function ContextualToolbar({
           renders nothing for the other paradigm (or any non-layout parent). */}
       <FlexChildSection editor={editor} items={selectedItems} document={document} />
       <GridChildSection editor={editor} items={selectedItems} document={document} />
+      {/* WI-090 — cross-kind link unit (URL / slide jump), present-mode behavior. */}
+      <LinkSection editor={editor} items={selectedItems} document={document} />
     </Bar>
   );
 }

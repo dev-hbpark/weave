@@ -6,13 +6,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   type AgoItem,
-  type ButtonTriggerBehavior,
   type CameraTargetBehavior,
   collectNonSlideFrameIds,
   type EntranceAnimationBehavior,
   effectivePresentationOrder,
   FRAME_KINDS,
-  type HotspotAction,
   type HoverEffectBehavior,
   type ItemFrame,
   type PresentContext,
@@ -21,10 +19,7 @@ import {
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { DatasetProvider } from "../document/dataset/dataset-context.js";
 import { ParentFrameHeightContext } from "../document/domains/parent-frame-context.js";
-import {
-  dispatchHotspotAction,
-  openExternalHref,
-} from "../document/interactions/hotspot-action.js";
+import { PresentRuntimeProvider } from "../document/interactions/present-runtime-context.js";
 import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 
@@ -57,7 +52,6 @@ interface PresentSceneProps {
   readonly entryId: string;
   readonly entranceBehavior: EntranceAnimationBehavior | undefined;
   readonly hoverBehavior: HoverEffectBehavior | undefined;
-  readonly buttonBehavior: ButtonTriggerBehavior | undefined;
   readonly isActiveStep: boolean;
   readonly ariaCurrent: "true" | undefined;
   /** Phase 13d-4 — cross-scene visibility effects. */
@@ -66,7 +60,6 @@ interface PresentSceneProps {
   readonly onHoverChange: (
     next: { entryId: string; effect: HoverEffectBehavior } | undefined,
   ) => void;
-  readonly onAction: (action: HotspotAction) => void;
   readonly children: React.ReactNode;
 }
 
@@ -74,13 +67,11 @@ function PresentScene({
   entryId,
   entranceBehavior,
   hoverBehavior,
-  buttonBehavior,
   isActiveStep,
   ariaCurrent,
   isDimmed,
   isRevealedByHover,
   onHoverChange,
-  onAction,
   children,
 }: PresentSceneProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -128,7 +119,6 @@ function PresentScene({
         transform: isHighlight ? "scale(1.04)" : undefined,
         boxShadow: isHighlight ? "var(--shadow-glow)" : undefined,
         ...(revealedVisibility ?? {}),
-        cursor: buttonBehavior !== undefined ? "pointer" : undefined,
       }}
       aria-current={ariaCurrent}
       data-testid="present-scene"
@@ -137,7 +127,6 @@ function PresentScene({
       data-hover-effect={hoverBehavior?.effect}
       data-is-dimmed={isDimmed ? "true" : undefined}
       data-is-hovering={isHovering ? "true" : undefined}
-      data-button-action={buttonBehavior?.action.type}
       onPointerEnter={() => {
         setIsHovering(true);
         if (hoverBehavior !== undefined) {
@@ -149,9 +138,6 @@ function PresentScene({
         if (hoverBehavior !== undefined) {
           onHoverChange(undefined);
         }
-      }}
-      onClick={() => {
-        if (buttonBehavior !== undefined) onAction(buttonBehavior.action);
       }}
     >
       {children}
@@ -346,21 +332,11 @@ export function PresentPage() {
     };
   }, []);
 
-  // Phase 13d-4 — single action dispatcher reused by hotspot + button-trigger.
-  // Dispatch logic itself lives in `dispatchHotspotAction` (declarative lookup,
-  // AUDIT-005 task #6); this only adapts the PresentPage runtime to the four
-  // intrinsic operations.
-  const dispatchAction = useCallback(
-    (action: HotspotAction) => {
-      dispatchHotspotAction(action, {
-        reveal: (id) => reveal(id),
-        nextStep: () => setStep((s) => Math.min(s + 1, totalSteps - 1)),
-        jumpToCamera: (id) => goToCameraId(id),
-        openExternal: openExternalHref,
-      });
-    },
-    [reveal, goToCameraId, totalSteps],
-  );
+  // WI-090 (DR-052 §3) — action dispatch (link / hotspot click) is no longer
+  // wired here. Every behavior overlay (`button-trigger` link surface,
+  // `hotspot` sub-region) is rendered by `ItemInteractionLayer` via the
+  // interaction registry and dispatches through the `PresentContext` below, so
+  // the same path serves root primitives, nested children, AND slide frames.
 
   const ctx = useMemo<PresentContext>(
     () => ({
@@ -574,7 +550,6 @@ export function PresentPage() {
           units.find((u) => u.kind === kind)?.attrs.behavior as T | undefined;
         const entranceBehavior = findBehavior<EntranceAnimationBehavior>("entrance-animation");
         const hoverBehavior = findBehavior<HoverEffectBehavior>("hover-effect");
-        const buttonBehavior = findBehavior<ButtonTriggerBehavior>("button-trigger");
         const isActiveStep = idx === safeStep;
         const entryItemId = String(item.id);
 
@@ -603,7 +578,6 @@ export function PresentPage() {
               entryId={entryItemId}
               entranceBehavior={entranceBehavior}
               hoverBehavior={hoverBehavior}
-              buttonBehavior={buttonBehavior}
               isActiveStep={isActiveStep}
               ariaCurrent={
                 behavior.id === activeCameraId(safeStep, cameraTargets) ? "true" : undefined
@@ -611,14 +585,13 @@ export function PresentPage() {
               isDimmed={isDimmed}
               isRevealedByHover={isRevealedByHover}
               onHoverChange={setHoveredEntry}
-              onAction={dispatchAction}
             >
               {sceneBody}
             </PresentScene>
           ),
         };
       }),
-    [cameraTargets, ctx, safeStep, design.width, design.height, hoveredEntry, dispatchAction],
+    [cameraTargets, safeStep, design.width, design.height, hoveredEntry],
   );
 
   // Combined scenes — root primitives + camera-target frames, sorted by
@@ -744,13 +717,18 @@ export function PresentPage() {
        *  mounts the provider inside DesignPage). */}
       <DocumentForResolutionProvider document={docInAgocraft}>
         <DatasetProvider doc={docInAgocraft}>
-          <Stage
-            designSize={{ width: design.width, height: design.height }}
-            scenes={scenes}
-            activeId={activeId}
-            background={design.background}
-            bgTone={bgTone}
-          />
+          {/* WI-090 — expose the live PresentContext to the scene subtree so
+           *  `ItemInteractionLayer` (rendered deep inside each scene by
+           *  `PresentFrameTree`) can dispatch link / hotspot actions. */}
+          <PresentRuntimeProvider value={ctx}>
+            <Stage
+              designSize={{ width: design.width, height: design.height }}
+              scenes={scenes}
+              activeId={activeId}
+              background={design.background}
+              bgTone={bgTone}
+            />
+          </PresentRuntimeProvider>
         </DatasetProvider>
       </DocumentForResolutionProvider>
       <PresentChrome

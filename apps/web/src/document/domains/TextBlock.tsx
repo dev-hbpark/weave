@@ -398,11 +398,15 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     );
   const linked =
     !editable && a.hyperlink != null && a.hyperlink.url.length > 0 ? (
+      // WI-090 (DR-052 §2) — when a text item carries BOTH an inline hyperlink
+      // and an item-level link (the button-trigger overlay, z-index 1), raise
+      // the inline `<a>` above that overlay so clicking the linked text opens
+      // the inline URL while empty box area still fires the item-level link.
       <a
         href={a.hyperlink.url}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ color: "inherit", textDecoration: "inherit" }}
+        style={{ color: "inherit", textDecoration: "inherit", position: "relative", zIndex: 2 }}
       >
         {inner}
       </a>

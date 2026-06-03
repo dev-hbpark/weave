@@ -32,6 +32,7 @@ import { ParentFrameHeightContext } from "../domains/parent-frame-context.js";
 import { FRAME_KINDS, isPresentableFrame } from "../presentation-order.js";
 import type { AgoItem, ItemFrame } from "../types.js";
 import { FrameContent } from "./FrameContent.js";
+import { ItemInteractionLayer } from "./ItemInteractionLayer.js";
 
 export interface PresentFrameTreeProps {
   readonly item: AgocraftItem;
@@ -45,6 +46,10 @@ export function PresentFrameTree({ item, frameHeightPx }: PresentFrameTreeProps)
   return (
     <>
       <FrameContent item={item as unknown as AgoItem} />
+      {/* WI-090 — link / hotspot behaviors for THIS item. Rendered above the
+       *  item's own content (so a shape / image link reliably catches clicks)
+       *  but before its children (so a child's own link wins). */}
+      <ItemInteractionLayer item={item} />
       <ParentFrameHeightContext.Provider value={frameHeightPx}>
         {item.children.map((child) => {
           if (!isDomainItem(child)) return null;
