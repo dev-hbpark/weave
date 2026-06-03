@@ -68,3 +68,5 @@ Same pass also tightened the **ratio basis** (heavy nesting makes it error-prone
 the parent fills the slide).
 
 Counterpart: small-think DR-020 "Update — 2026-06-03".
+
+> **Refined by DR-039 (2026-06-03):** items now FILL their cell (layout-sized via stretch/grow) instead of hugging content; tables must be auto-grid. Where the "auto-grows its height / do not pin height" wording here conflicts with the fill model, DR-039 governs.

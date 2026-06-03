@@ -54,7 +54,7 @@ export const WEAVE_CAPABILITIES = {
       kind: "auto-grid",
       description: [
         // CSS Grid subset — explicit tracks, no auto-fill / minmax / areas in v1.1.
-        "Auto grid (a subset of CSS Grid). The frame lays children into explicit column/row tracks; each child's own attrs.frame is overridden by the grid.",
+        "Auto grid (a subset of CSS Grid). The frame lays children into explicit column/row tracks; each child's own attrs.frame is overridden by the grid. USE auto-grid for ANY TABLE / matrix / comparison grid / card grid / calendar / spec sheet — do NOT fake a table by nesting auto-flex rows (columns won't align and it is painful to edit). Set justify+align:'stretch' (or per-child alignSelf/justifySelf:'stretch') so each child FILLS its cell instead of hugging its content.",
         "Set with weave.frame.setLayout { itemId, layout }, where layout = { kind:'auto-grid', columns, rows, columnGap, rowGap, justify, align, padding }:",
         "• columns / rows — arrays of TrackSize. Each track is { kind:'fr', value } (fractional share, like CSS fr), { kind:'ratio', value } (fixed 0..1 ratio of the frame), or { kind:'auto' } (fit the track's children). An empty array = a single full-size track. Example 3 equal columns: columns:[{kind:'fr',value:1},{kind:'fr',value:1},{kind:'fr',value:1}].",
         "• columnGap / rowGap — track spacing, 0..1 ratios of the frame.",
@@ -89,9 +89,9 @@ export const WEAVE_CAPABILITIES = {
         // it to pick a size that reads at the canvas scale.
         "SIZING: size the font by RATIO — attrs.fontSizeSpec { kind:'ratio', value:0..1 } where value is a fraction of the height of the frame THIS TEXT IS A DIRECT CHILD OF (its containerId frame), NOT the slide or canvas unless the slide is its direct parent. The ratio resolves against the IMMEDIATE parent frame, so the SAME ratio is bigger in a tall frame and smaller in a short nested frame. Use ratio for ALL text (e.g. heading ~0.06–0.09, subheading ~0.04, body ~0.03) — but those numbers assume the parent FILLS the slide; inside a shorter nested frame, raise the ratio so the rendered px stays right (ratio = target px ÷ the parent frame's px height). Do NOT use a fixed px size (a bare fontSize number or { kind:'px' }). NEVER put a fraction in the plain fontSize number — a 0..1 there renders as sub-pixel text; express ratios only via fontSizeSpec { kind:'ratio' }.",
         "SIZING ROLES (canvas px is in each task's [디자인] line): heading 48–96px (~5–9% of canvas height → ratio ~0.05–0.09), subheading 32–48px, body 24–32px (default 24), caption 14–18px. On 1920×1080 a heading ≈64px; on 800×600 ≈40px. These px→ratio numbers hold ONLY when the text's parent frame fills the slide — inside a nested frame that is only part of the slide, divide the target px by THAT frame's px height instead (e.g. a body line in a half-height card uses about double the body ratio).",
-        // PLACEMENT — a text item is normally a CHILD of an auto-layout frame; the
-        // frame arranges and spaces it, and absorbs its auto-grown height on reflow.
-        "PLACEMENT & SIZING: add text as a CHILD of an auto-layout frame (containerId = a layout frame) and let that frame (auto-flex / auto-grid) position and space it — set the frame's layout properties (direction, gap, padding, align) deliberately rather than hand-placing the text. The box auto-grows its height to fit the wrapped text, which a flex/grid layout absorbs cleanly (the frame re-flows its children), so you do NOT pin a fixed height inside a layout frame — this is what keeps the design easy to edit. ONLY when a text sits directly in an absolute-constraints frame (intentional free-form placement) give it an explicit frame and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }.",
+        // PLACEMENT — a text item is normally a CHILD of an auto-layout frame; its box
+        // is LAYOUT-SIZED (fills its cell via stretch/grow), not self-sized to content.
+        "PLACEMENT & SIZING: add text as a CHILD of an auto-layout frame (containerId = a layout frame) and let that frame (auto-flex / auto-grid) size and position it — set the frame's layout (direction, gap, padding, justify, align) deliberately rather than hand-placing the text. The text box is LAYOUT-SIZED, not self-sized: make it FILL its cell — set the frame's align:'stretch' (auto-flex cross axis) and justify+align:'stretch' (auto-grid both axes), give an auto-flex child grow so it fills the main axis (or equal basis / fr tracks for equal cells), or alignSelf/justifySelf:'stretch' per child — so even a SHORT title occupies its WHOLE cell instead of hugging its text and leaving the cell half-empty. Position the glyphs inside the filled box with textAlignHorizontal / textAlignVertical. Do NOT pin a guessed px height, and do NOT detach a layout child with absolute-constraints (that removes it from the flow). ONLY when a text sits directly in an absolute-constraints frame (intentional free-form placement) give it an explicit frame and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }.",
         "STYLE: fontFamily (CSS stack), fontWeight ('normal' | 'bold'), fontStyle ('normal' | 'italic'), color, textDecoration ('NONE' | 'UNDERLINE' | 'STRIKETHROUGH'), textCase ('ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE').",
         "COLOR — DEFAULT to a theme token by ROLE so text re-skins with the theme: title/heading → var(--text-strong); body/paragraph → var(--text-default); secondary/supporting → var(--text-soft); caption/footnote/label → var(--text-muted); EMPHASIZED word/number/KPI/highlight → var(--accent) (or var(--accent-strong)). If you set NO color it already defaults to var(--text-default) (never lazily hard-code a neutral dark/light hex). Override with a LITERAL color only when the content's MOOD wants a specific text color (mood > theme), or for brand/data-bound text.",
         "LAYOUT: textAlignHorizontal ('LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED'), textAlignVertical ('TOP' | 'CENTER' | 'BOTTOM'), lineHeightSpec ({ value, unit: 'multiplier' | 'px' }, default 1.4×), letterSpacing / paragraphSpacing / paragraphIndent (all design-px).",
@@ -276,6 +276,7 @@ export const WEAVE_TASK_PRIMER = [
   "- Coordinates AND fontSizeSpec ratios are 0..1 of the IMMEDIATE PARENT FRAME (the item's containerId frame), NEVER pixels and NOT relative to the slide/canvas: a font ratio resolves against the frame the text directly sits in, so the SAME ratio is smaller inside a shorter nested frame. Use the canvas px in the [디자인] line to pick the TARGET px, then divide by the parent frame's px height to get the ratio.",
   "- One slide = its OWN top-level frame; place slides at DISTINCT x (filmstrip: slide i at { x: i*1.1, y:0, width:1, height:1 }), NEVER all at {0,0,1,1}. A Markdown document → ONE slide.",
   "- STRUCTURE EVERY SLIDE FROM NESTED LAYOUT FRAMES — REQUIRED, and the #1 rule to get wrong: do NOT hand-place content items on the slide root with absolute x/y. For EACH region (header, body, columns, card grid, stat row) FIRST add a nested frame (containerId = the slide, presentable:false) and give it weave.frame.setLayout (auto-flex row/column or auto-grid: direction, gap, padding, justify, align), THEN add the items as that frame's CHILDREN so the layout positions them. Nest frames inside frames for sub-structure. Absolute x/y on the slide root is ONLY for deliberate free-form composition, never the default.",
+  "- TABLES / matrices → auto-grid with explicit tracks, NEVER nested flex rows. Every layout child FILLS its cell (frame align:'stretch' + grid justify/align:'stretch', flex grow) — a short title still occupies its whole cell; the LAYOUT sizes items, text just aligns inside (textAlign) and never hugs its content.",
   "- Pick the STRUCTURE that best communicates the content, and use MEDIA/SHAPES (source-less placeholders when you lack a real asset) instead of text-only slides.",
 ].join("\n");
 
@@ -325,6 +326,10 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   { presentable:false }) or later (weave.item.update attrs:{ presentable:false }).",
   "   For a single coloured panel / divider / button background, still prefer a SHAPE (kind:'shape',",
   "   rectangle); reach for a nested frame to GROUP and auto-arrange multiple items.",
+  "   TABLES ARE GRIDS: for ANY table / matrix / comparison grid / card grid / calendar / spec sheet, the region",
+  "   frame MUST be auto-grid with explicit column/row tracks (weave.frame.setLayout { kind:'auto-grid', columns,",
+  "   rows }), each cell placed by { column, row, columnSpan?, rowSpan? } — NEVER fake a table with a stack of",
+  "   nested auto-flex rows; columns won't line up and it is painful to edit.",
   "",
   "1) FRAME COORDINATES ARE RATIOS OF THE ITEM'S OWN PARENT FRAME, NEVER PIXELS. attrs.frame = { x, y, width,",
   "   height, rotation } where x / y / width / height are 0..1 RATIOS of the frame the item is a DIRECT CHILD of",
@@ -346,14 +351,19 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   bare fontSize number and avoid fontSizeSpec { kind:'px' }. (Never put a fraction into the plain fontSize",
   "   number — that renders as sub-pixel, invisible text; ratios go ONLY in fontSizeSpec { kind:'ratio' }.)",
   "",
-  "3) PLACE TEXT IN LAYOUT FRAMES — let the layout own fit. A text item is normally a CHILD of an auto-flex /",
-  "   auto-grid frame: add it with containerId = a layout frame and let the frame arrange and space it (set the",
-  "   frame's direction, gap, padding, align deliberately). The box auto-grows its height to the wrapped text,",
-  "   which the flex/grid layout absorbs by re-flowing its children — so do NOT pin a fixed height inside a",
-  "   layout frame; that is what keeps the design easy to edit. ONLY for a text placed directly in an",
-  "   absolute-constraints frame (intentional free-form placement) give it an explicit frame and pin it:",
-  "   weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left',",
-  "   vertical:'top' } } }.",
+  "3) ITEMS ARE LAYOUT-SIZED — FILL THE CELL, DON'T HUG. Text and other items are normally CHILDREN of an",
+  "   auto-flex / auto-grid frame: add them with containerId = a layout frame and the frame sizes + positions",
+  "   them. Make every child FILL its allocated cell — set the frame's align:'stretch' (auto-flex cross axis) and",
+  "   justify+align:'stretch' (auto-grid both axes), give auto-flex children grow (or equal basis / fr tracks for",
+  "   equal cells), or alignSelf/justifySelf:'stretch' per child — so even a SHORT title occupies its WHOLE cell",
+  "   instead of hugging its content and leaving dead space. A text box's size is owned by the LAYOUT, not by the",
+  "   text; place the glyphs inside the filled box with textAlignHorizontal/textAlignVertical. Grid children must",
+  "   follow layout changes the same way (track size, gap, span) — set them via weave.item.setLayoutChild",
+  "   (auto-grid policy: column/row/columnSpan/rowSpan/alignSelf/justifySelf). Do NOT pin a guessed px height and",
+  "   do NOT detach a layout child with absolute-constraints (that removes it from the flow). ONLY for an item",
+  "   placed directly in an absolute-constraints frame (intentional free-form placement) give it an explicit",
+  "   frame and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{",
+  "   horizontal:'left', vertical:'top' } } }.",
   "",
   "4) COLOR — the CONTENT'S MOOD comes FIRST, ahead of the currently-active theme. Read the atmosphere the",
   "   content should convey (finance → restrained/serious; kids → bright/playful; luxury → deep/elegant) and",
