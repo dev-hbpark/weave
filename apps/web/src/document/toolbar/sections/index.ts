@@ -2,6 +2,7 @@
 // create `<new-kind>-section.tsx` + one new `register` line below + nothing
 // else. ContextualToolbar.tsx is NOT edited.
 
+import { ChartSection } from "./chart-section.js";
 import { FrameBackgroundSection } from "./frame-background-section.js";
 import { ImageSection } from "./image-section.js";
 import { LineSection } from "./line-section.js";
@@ -21,6 +22,8 @@ toolbarSectionRegistry.register("line", { Component: LineSection });
 toolbarSectionRegistry.register("text", { Component: TextSection });
 // WI-058 — data-driven QR kind.
 toolbarSectionRegistry.register("qr", { Component: QrSection });
+// WI-077 — data-driven chart kind (chartType + encoding mapping).
+toolbarSectionRegistry.register("chart", { Component: ChartSection });
 // WI-032 Phase 3 — single `frame` kind replaces the legacy 4 (slide /
 // canvas-design / block-doc / media). The same Background section
 // applies; legacy keys are dropped.

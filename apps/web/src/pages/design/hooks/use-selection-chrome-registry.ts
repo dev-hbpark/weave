@@ -54,7 +54,7 @@ export function useSelectionChromeRegistry({
   // through docRef so the VM always sees live attrs.
   useEffect(() => {
     const disposers = [
-      ...(["frame", "image", "video", "qr"] as const).map((k) =>
+      ...(["frame", "image", "video", "qr", "chart"] as const).map((k) =>
         selectionChrome.registerItemViewModel(createFrameDefaultViewModel({ itemKind: k })),
       ),
       selectionChrome.registerItemViewModel(

@@ -40,7 +40,11 @@ export type DomainKind =
   // Phase 15 — WI-023 text primitive (agocraft `text` kind).
   | "text"
   // WI-058 — data-driven QR code (weave-local kind; not an agocraft builtin).
-  | "qr";
+  | "qr"
+  // WI-077 — data-driven chart (weave-local kind; not an agocraft builtin).
+  // References a dataset (root-unit data store) by id; the visual is derived
+  // from the resolved data at render time. See DR-031 / dataset/dataset-store.
+  | "chart";
 
 // ── ItemFrame — universal parent-relative bounding box ──────────────────────
 //
@@ -166,6 +170,9 @@ import type {
   VideoAttrs as AgocraftVideoAttrs,
   PaintSpec,
 } from "@agocraft/core";
+// DR-036 — the generalized chart model (channel encoding + 14-type union). A
+// leaf module (depends only on the dataset store), so this import is acyclic.
+import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
 export type ImageAttrs = AgocraftImageAttrs;
 /** weave-local extension of agocraft's `VideoAttrs`.
  *
@@ -210,6 +217,57 @@ export interface QrAttrs {
   readonly opacity?: number;
 }
 
+/** WI-077 — data-driven chart. The chart owns NO data of its own: `datasetId`
+ *  references a dataset on the document root-unit store (see
+ *  `dataset/dataset-store.ts`), and the visual is derived from the resolved
+ *  rows at render time. A dangling / empty `datasetId` renders a placeholder
+ *  (graceful — DR-031). `encoding` maps dataset columns onto chart roles by
+ *  column NAME (stable across column reorder). */
+export interface ChartAttrs {
+  readonly frame: ItemFrame;
+  /** Referenced dataset id (the root-unit's id). `""` → placeholder. */
+  readonly datasetId: string;
+  /** Visual form — one of the 14 base types (DR-036). Resolved to a builder via
+   *  the chart-type registry (no switch). */
+  readonly chartType: ChartType;
+  /** DR-036 — grammar-of-graphics encoding: visual channels → dataset columns.
+   *  Legacy `{category, values}` charts are migrated on read (`migrateEncoding`).
+   *  An empty / unsatisfied encoding renders a placeholder. */
+  readonly encoding: ChartEncoding;
+  /** Presentation variants (doughnut / stacked / 100% / horizontal / smooth). */
+  readonly variant?: ChartVariant;
+  /** Series colors, cycled by series index. Falls back to a default ramp. */
+  readonly palette?: ReadonlyArray<string>;
+  readonly showLegend?: boolean;
+  readonly showAxis?: boolean;
+  readonly opacity?: number;
+  /** WI-078 (DR-035) — per-element PRESENTATION overrides for emphasis. NOT
+   *  data (data lives in the dataset); these are visual-only and keyed by a
+   *  STABLE name (category), so they survive row add / sort / paste. */
+  readonly overrides?: ChartOverrides;
+}
+
+/** Per-element emphasis style (WI-078). A bar / pie slice the user clicked to
+ *  emphasize: its color, outline thickness, and (pie) pull-out distance from
+ *  the center. All optional — absent fields fall back to the chart default. */
+export interface ChartDatumStyle {
+  readonly color?: string;
+  /** Outline thickness in px ("두께"). */
+  readonly borderWidth?: number;
+  /** Pie only — pull the slice this many px out from the center ("원점 거리"). */
+  readonly offset?: number;
+}
+
+export interface ChartOverrides {
+  /** DR-037 — DATUM (one bar/slice) emphasis, keyed by CATEGORY name. Wins over
+   *  the series-level style. */
+  readonly datum?: Readonly<Record<string, ChartDatumStyle>>;
+  /** DR-037 — SERIES (whole series) emphasis, keyed by SERIES name (matches the
+   *  legend). Applies to every datum in the series unless a `datum` override
+   *  covers it. */
+  readonly series?: Readonly<Record<string, ChartDatumStyle>>;
+}
+
 export type ItemAttrsByKind = {
   frame: FrameAttrs;
   image: ImageAttrs;
@@ -218,6 +276,7 @@ export type ItemAttrsByKind = {
   line: LineAttrs;
   text: TextAttrs;
   qr: QrAttrs;
+  chart: ChartAttrs;
 };
 
 // ── Doc flavor — the "kind" of the top-level document (root.attrs.flavor) ──

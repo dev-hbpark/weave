@@ -82,6 +82,14 @@ import {
   STYLE_ATTRIBUTE_KEYS,
 } from "./clipboard/clipboard-types.js";
 import { type PasteCoordInput, resolvePasteFrame } from "./clipboard/paste-coord.js";
+import {
+  buildDatasetUnit,
+  type DatasetPayload,
+  findDatasetUnit,
+  nextDatasetId,
+  normalizeDatasetPayload,
+  readDatasetPayload,
+} from "./dataset/dataset-store.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import {
   ALIGN_OPS_ORDER,
@@ -90,6 +98,7 @@ import {
   computeAlignedFrames,
 } from "./multi/align-ops.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
+import type { ChartEncoding } from "./domains/chart/chart-model.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
@@ -333,6 +342,23 @@ function normalizeShapeAttrs(
   merged.shape = kind;
   return { ...attrs, shape: kind, subAttrs: merged };
 }
+
+// WI-077 — seed dataset for a freshly-added chart (weave.chart.add). First
+// column = category, the rest = value series. Editable afterwards via the
+// dataset panel (Phase 5) / weave.dataset.update.
+const SAMPLE_CHART_DATASET: DatasetPayload = {
+  name: "샘플 데이터",
+  columns: [
+    { name: "항목", type: "nominal" },
+    { name: "값", type: "quantitative" },
+  ],
+  rows: [
+    { 항목: "A", 값: 30 },
+    { 항목: "B", 값: 80 },
+    { 항목: "C", 값: 45 },
+    { 항목: "D", 값: 60 },
+  ],
+};
 
 export function buildWeaveCommands(
   targets: WeaveCommandTargets,
@@ -1170,6 +1196,170 @@ export function buildWeaveCommands(
     },
   };
 
+  // ─── WI-077 Phase 1 — dataset 데이터 스토어 commands (DR-031) ──────────
+  //
+  // A dataset is the data SOURCE a `chart` item references by id. It is NOT a
+  // DomainKind item — it lives as a Unit on the document ROOT (`doc.root`),
+  // off-canvas, exactly like the `style.provider` Unit. The three commands
+  // emit the same self-contained unit patches the behavior commands use
+  // (`unit.create` / `unit.attrs` / `unit.remove`), targeting `root.id`;
+  // agocraft's `applyPatch` matches the root via `mapItemDeep`, so root-unit
+  // ops behave identically to item-unit ops. All three are undoable.
+
+  const addDataset: Command<
+    { readonly id?: string; readonly dataset?: Partial<DatasetPayload> },
+    string
+  > = {
+    name: "weave.dataset.add",
+    run: (ctx, input) => {
+      const root = ctx.document.root;
+      const id = input.id ?? nextDatasetId();
+      if (findDatasetUnit(ctx.document, id) !== undefined) {
+        return fail("duplicate-id", `weave.dataset.add: dataset "${id}" already exists`);
+      }
+      const payload = normalizeDatasetPayload(input.dataset);
+      const unit = buildDatasetUnit(id, payload);
+      // Self-contained unit.create (carries the Unit body); inverse =
+      // unit.remove. Position appends to root.units.
+      const patch: Patch = {
+        type: "unit.create",
+        itemId: root.id,
+        position: root.units.length,
+        unit: serializeUnitSubtree(unit),
+      };
+      return ok(id, [patch]);
+    },
+  };
+
+  const updateDataset: Command<
+    {
+      readonly id: string;
+      readonly dataset?: Partial<DatasetPayload>;
+      readonly patch?: (prev: DatasetPayload) => DatasetPayload;
+    },
+    void
+  > = {
+    name: "weave.dataset.update",
+    run: (ctx, input) => {
+      const found = findDatasetUnit(ctx.document, input.id);
+      if (found === undefined) {
+        return fail("dataset-not-found", `weave.dataset.update: no dataset "${input.id}"`);
+      }
+      const before = readDatasetPayload(found.unit);
+      if (before === undefined) {
+        return fail(
+          "missing-dataset",
+          `weave.dataset.update: unit "${input.id}" carries no dataset payload`,
+        );
+      }
+      if (input.patch === undefined && input.dataset === undefined) {
+        return fail("invalid-input", "weave.dataset.update: provide `patch` or `dataset`");
+      }
+      // `patch` (UI table edits) or `dataset` (declarative, agent: shallow-merge).
+      const after = input.patch
+        ? input.patch(before)
+        : ({ ...before, ...(input.dataset ?? {}) } as DatasetPayload);
+      // Single `unit.attrs` patch on path ["dataset"] replaces the whole
+      // payload atomically — symmetric with weave.behavior.update's
+      // path ["behavior"]. Referencing charts re-render off the new snapshot.
+      const patch: Patch = {
+        type: "unit.attrs",
+        itemId: ctx.document.root.id,
+        unitId: makeUnitId(input.id),
+        unitKind: found.unit.kind,
+        path: ["dataset"],
+        before,
+        after,
+      };
+      return ok(undefined, [patch]);
+    },
+  };
+
+  const removeDataset: Command<{ readonly id: string }, void> = {
+    name: "weave.dataset.remove",
+    run: (ctx, input) => {
+      const found = findDatasetUnit(ctx.document, input.id);
+      if (found === undefined) {
+        return fail("dataset-not-found", `weave.dataset.remove: no dataset "${input.id}"`);
+      }
+      // Self-contained unit.remove (carries the Unit so its inverse,
+      // unit.create, restores it on undo). Charts referencing this id render a
+      // placeholder once it's gone (graceful dangling ref — DR-031).
+      const patch: Patch = {
+        type: "unit.remove",
+        itemId: ctx.document.root.id,
+        position: found.index,
+        unit: serializeUnitSubtree(found.unit),
+      };
+      return ok(undefined, [patch]);
+    },
+  };
+
+  // WI-077 Phase 4 — one-transaction chart creation: seed a dataset on the
+  // root-unit store AND create the chart that references it, in a single
+  // undoable transaction (one Cmd+Z removes both). Serves both the add-menu
+  // and the agent (datasetId-less chart create → auto-seeded data). The chart
+  // item.create reuses the same seed/serialize path as weave.item.add; the
+  // dataset unit.create mirrors weave.dataset.add.
+  const addChart: Command<
+    {
+      readonly containerId?: string;
+      readonly frame?: ItemFrame;
+      readonly dataset?: Partial<DatasetPayload>;
+      readonly chartType?: "bar" | "line" | "pie";
+    },
+    string
+  > = {
+    name: "weave.chart.add",
+    run: (ctx, input) => {
+      const container = findContainer(ctx.document, input.containerId);
+      if (container === undefined) {
+        return fail(
+          "container-not-found",
+          `weave.chart.add: container ${input.containerId} not in doc`,
+        );
+      }
+      const root = ctx.document.root;
+      const datasetId = nextDatasetId();
+      const payload = normalizeDatasetPayload(input.dataset ?? SAMPLE_CHART_DATASET);
+      const datasetPatch: Patch = {
+        type: "unit.create",
+        itemId: root.id,
+        position: root.units.length,
+        unit: serializeUnitSubtree(buildDatasetUnit(datasetId, payload)),
+      };
+
+      // DR-036 — derive the channel encoding from the seeded columns: first
+      // column = category (key axis), remaining columns = value series.
+      const categoryName = payload.columns[0]?.name;
+      const valueNames = payload.columns.slice(1).map((c) => c.name);
+      const encoding: ChartEncoding = {
+        ...(categoryName !== undefined ? { category: { field: categoryName } } : {}),
+        ...(valueNames.length > 0 ? { value: valueNames.map((field) => ({ field })) } : {}),
+      };
+      let chart = createDefaultItem("chart", container.children.length);
+      chart = {
+        ...chart,
+        attrs: {
+          ...chart.attrs,
+          datasetId,
+          chartType: input.chartType ?? "bar",
+          encoding,
+          ...(input.frame !== undefined ? { frame: input.frame } : {}),
+        } as typeof chart.attrs,
+      };
+      const ts = new Date().toISOString();
+      const chartPatch: Patch = {
+        type: "item.create",
+        parentId: container.id,
+        position: container.children.length,
+        item: serializeItemSubtree(toAgocraftItem(chart, ts)),
+      };
+      // Order: dataset first (the chart's ref resolves immediately on apply).
+      return ok(chart.id, [datasetPatch, chartPatch]);
+    },
+  };
+
   // ─── WI-029 — design-level commands via HANDOFF-007 patch variants ────
   //
   // These produce real Patches (`document.attrs` / `item.children.reorder`)
@@ -1806,6 +1996,12 @@ export function buildWeaveCommands(
     itemsUpdate as Command,
     itemsLifecycle as Command,
     updateBehavior as Command,
+    // WI-077 Phase 1 — dataset 데이터 스토어 (root-unit; chart references by id).
+    addDataset as Command,
+    updateDataset as Command,
+    removeDataset as Command,
+    // WI-077 Phase 4 — one-transaction chart create (seed dataset + chart).
+    addChart as Command,
     reset as Command,
     setBackground as Command,
     setPresentationOrder as Command,

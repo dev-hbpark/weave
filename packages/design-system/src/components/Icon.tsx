@@ -346,6 +346,18 @@ export const IconQr = forwardRef<SVGSVGElement, IconProps>(function IconQr(props
   );
 });
 
+export const IconChart = forwardRef<SVGSVGElement, IconProps>(function IconChart(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      {/* Axis + three ascending bars — the bar-chart glyph. */}
+      <path d="M4 4v16h16" />
+      <rect x="7" y="12" width="3" height="5" rx="0.5" />
+      <rect x="12" y="9" width="3" height="8" rx="0.5" />
+      <rect x="17" y="6" width="3" height="11" rx="0.5" />
+    </SvgRoot>
+  );
+});
+
 export const IconImage = forwardRef<SVGSVGElement, IconProps>(function IconImage(props, ref) {
   return (
     <SvgRoot ref={ref} {...props}>

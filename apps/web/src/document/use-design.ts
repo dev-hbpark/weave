@@ -49,6 +49,16 @@ interface UseDesignResult {
    *  (remote actor edited the shared doc). Bypasses History; see comment in
    *  use-design.ts. */
   readonly replaceDocument: (next: AgocraftDocument) => void;
+  /** WI-078 / DR-035 — apply a DERIVED-STATE projection to the document. The
+   *  `transform` recomputes a regenerable layer (e.g. managed chart category
+   *  labels) from authoritative state and returns the next doc — or the SAME
+   *  reference when nothing drifted (so the convergent controller settles). It
+   *  bypasses History (a projection is not a user action → must not be a
+   *  separate undo step, and re-running it on undo would deadlock) and the
+   *  ChangeStream/sync path (each client regenerates the layer locally from the
+   *  synced authoritative state). NOT a user-mutation channel — only for
+   *  controller-owned derived items. */
+  readonly reconcileDerived: (transform: (doc: AgocraftDocument) => AgocraftDocument) => void;
   /** Phase 10c — overwrite the design's presentation order. Pass the full
    *  next array (use `reorder` / spread to build it). Tree positions are not
    *  touched. */
@@ -443,6 +453,23 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
     setDesign((prev) => withDocument(prev, ensureRootStyleProvider(next)));
   }, []);
 
+  // WI-078 / DR-035 — derived-state projection setter. Managed chart category
+  // labels are REAL text Items materialized by a convergent controller
+  // (useChartLabelSync) from the authoritative dataset. They are NOT user
+  // actions, so they must not enter History (and re-running the controller on
+  // undo would re-add them → undo could never get past the label layer — a
+  // deadlock). They are also derived, so they ride no ChangeStream/sync patch:
+  // every client regenerates them locally from the synced dataset. This setter
+  // swaps the document outside both pipelines; the `=== prev.document` guard
+  // makes the controller converge (idempotent transform → no re-render).
+  const reconcileDerived = useCallback((transform: (doc: AgocraftDocument) => AgocraftDocument) => {
+    setDesign((prev) => {
+      const next = transform(prev.document);
+      if (next === prev.document) return prev;
+      return withDocument(prev, next);
+    });
+  }, []);
+
   const setPresentationOrder = useCallback((next: ReadonlyArray<string>) => {
     setDesign((prev) => ({
       ...prev,
@@ -498,6 +525,7 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
     reset,
     applyChange,
     replaceDocument,
+    reconcileDerived,
     setPresentationOrder,
     reorderRootChildren: reorderRootChildrenCb,
     addBehavior,

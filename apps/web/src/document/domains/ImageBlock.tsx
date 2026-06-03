@@ -27,6 +27,7 @@ import {
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { coverZoom, panCropOffset, panCropWindow } from "../crop-geometry.js";
+import { MediaPlaceholder } from "./MediaPlaceholder.js";
 import { croppingState, useCropDraft, useCroppingItemId } from "../interactions/cropping-state.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import { readCropOffset } from "../transform-crop-offset.js";
@@ -131,51 +132,20 @@ function ImageContent(props: {
 /** Placeholder shown when an image item has no `src` (WI-076). Replaces the
  *  browser's broken-`<img>` glyph with a neutral framed surface; when `alt` is
  *  set it is rendered as a centered caption so the slot can describe what image
- *  belongs here. The outer wrapper already applies borderRadius / shadow /
- *  opacity, so this fills the box with `inset: 0`. */
+ *  belongs here. Glyph + caption scale to the frame size (see MediaPlaceholder). */
 function ImagePlaceholder({ alt }: { readonly alt: string }): JSX.Element {
-  const caption = alt.trim();
   return (
-    <div
-      data-testid="image-placeholder"
-      className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center"
-      style={{
-        background: "rgba(148, 163, 184, 0.14)",
-        color: "rgba(71, 85, 105, 0.85)",
-        userSelect: "none",
-      }}
-    >
-      <svg
-        width="34"
-        height="34"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        style={{ opacity: 0.6, flexShrink: 0 }}
-      >
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
-        <path d="m21 15-4.5-4.5L5 21" />
-      </svg>
-      {caption ? (
-        <span
-          className="max-w-full text-[12px] leading-snug"
-          style={{
-            display: "-webkit-box",
-            WebkitLineClamp: 4,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-            wordBreak: "break-word",
-          }}
-        >
-          {caption}
-        </span>
-      ) : null}
-    </div>
+    <MediaPlaceholder
+      testId="image-placeholder"
+      alt={alt}
+      glyph={
+        <>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <path d="m21 15-4.5-4.5L5 21" />
+        </>
+      }
+    />
   );
 }
 

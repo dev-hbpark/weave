@@ -15,6 +15,7 @@
 // this map generically (no per-kind branch anywhere downstream).
 
 import type { ComponentType } from "react";
+import { ChartBlock } from "./domains/ChartBlock.js";
 import { FrameBlock } from "./domains/FrameBlock.js";
 import { ImageBlock } from "./domains/ImageBlock.js";
 import { LineBlock } from "./domains/LineBlock.js";
@@ -200,6 +201,31 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
       background: { type: "solid", color: "#ffffff" },
       margin: 4,
       moduleStyle: "square",
+      opacity: 1,
+    }),
+  },
+  chart: {
+    kind: "chart",
+    meta: {
+      kind: "chart",
+      label: "Chart",
+      tagline: "Data-driven chart — references a dataset; bar / line / pie",
+      accentVar: "--domain-canvas-accent",
+    },
+    renderer: ChartBlock,
+    // WI-077 — chart participates in z-order like every other visual primitive
+    // (unlike qr). Its referenced dataset is non-visual (root-unit store).
+    participatesInZorder: true,
+    // Empty `datasetId` → placeholder until a dataset is attached. The
+    // add-menu (Phase 4) seeds a dataset and fills this in one step.
+    defaultAttrs: () => ({
+      frame: FULL_FRAME,
+      datasetId: "",
+      chartType: "bar",
+      // DR-036 — channel encoding (empty until a dataset is attached).
+      encoding: {},
+      showLegend: true,
+      showAxis: true,
       opacity: 1,
     }),
   },

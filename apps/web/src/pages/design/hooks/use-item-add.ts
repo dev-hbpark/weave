@@ -150,6 +150,20 @@ export function useItemAdd({
           frame = { ...frame, height: geo.fontSizeRatio * DEFAULT_TEXT_LINE_HEIGHT };
         }
       }
+      // WI-077 — a chart can't be created bare: it references a dataset. Route
+      // to the one-transaction `weave.chart.add` (seeds a sample dataset AND
+      // the chart in a single undoable step) instead of `weave.item.add`. The
+      // container + frame + camera logic above is reused as-is.
+      if (kind === "chart") {
+        const chartRes = editor.exec<unknown, string>("weave.chart.add", { containerId, frame });
+        if (!chartRes.ok) return;
+        setSelectedFrameIdRef.current?.(chartRes.value);
+        if (selIsFrame) {
+          const box = absoluteFrameBox(document, containerId, designWidth, designHeight);
+          if (box !== null) cameraFitBox(box);
+        }
+        return;
+      }
       const result = editor.exec<unknown, string>("weave.item.add", {
         kind,
         containerId,

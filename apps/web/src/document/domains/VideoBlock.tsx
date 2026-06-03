@@ -9,6 +9,7 @@ import type { Item as AgocraftItem, ShadowSpec } from "@agocraft/core";
 import { findUnitInItem, OPACITY_UNIT_KIND, SHADOW_UNIT_KIND, shadowToCss } from "@agocraft/core";
 import { type CSSProperties, useEffect, useRef } from "react";
 import type { AgoItem, VideoAttrs } from "../types.js";
+import { MediaPlaceholder } from "./MediaPlaceholder.js";
 
 interface VideoBlockProps {
   readonly item: AgoItem<"video">;
@@ -143,49 +144,20 @@ function VideoPosterCover({
 /** Placeholder shown when a video item has no `src` and no `poster` — a neutral
  *  framed surface with a play/film glyph instead of an empty black <video>. When
  *  `alt` is set it is drawn as a centered caption so the slot can describe what
- *  KIND of video belongs here (mirrors ImagePlaceholder, WI-076). */
+ *  KIND of video belongs here. Glyph + caption scale to the frame size (mirrors
+ *  ImagePlaceholder via the shared MediaPlaceholder, WI-076). */
 function VideoPlaceholder({ alt }: { readonly alt: string }): JSX.Element {
-  const caption = alt.trim();
   return (
-    <div
-      data-testid="video-placeholder"
-      className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center"
-      style={{
-        background: "rgba(148, 163, 184, 0.14)",
-        color: "rgba(71, 85, 105, 0.85)",
-        userSelect: "none",
-      }}
-    >
-      <svg
-        width="36"
-        height="36"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        style={{ opacity: 0.6, flexShrink: 0 }}
-      >
-        <rect x="2" y="4" width="20" height="16" rx="2" />
-        <path d="m10 9 5 3-5 3z" fill="currentColor" stroke="none" />
-      </svg>
-      {caption ? (
-        <span
-          className="max-w-full text-[12px] leading-snug"
-          style={{
-            display: "-webkit-box",
-            WebkitLineClamp: 4,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-            wordBreak: "break-word",
-          }}
-        >
-          {caption}
-        </span>
-      ) : null}
-    </div>
+    <MediaPlaceholder
+      testId="video-placeholder"
+      alt={alt}
+      glyph={
+        <>
+          <rect x="2" y="4" width="20" height="16" rx="2" />
+          <path d="m10 9 5 3-5 3z" fill="currentColor" stroke="none" />
+        </>
+      }
+    />
   );
 }
 

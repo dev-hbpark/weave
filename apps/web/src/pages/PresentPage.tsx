@@ -18,6 +18,7 @@ import {
   useDesign,
 } from "../document";
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
+import { DatasetProvider } from "../document/dataset/dataset-context.js";
 import {
   dispatchHotspotAction,
   openExternalHref,
@@ -658,13 +659,15 @@ export function PresentPage() {
        *  present mode while looking fine in edit mode (which already
        *  mounts the provider inside DesignPage). */}
       <DocumentForResolutionProvider document={docInAgocraft}>
-        <Stage
-          designSize={{ width: design.width, height: design.height }}
-          scenes={scenes}
-          activeId={activeId}
-          background={design.background}
-          bgTone={bgTone}
-        />
+        <DatasetProvider doc={docInAgocraft}>
+          <Stage
+            designSize={{ width: design.width, height: design.height }}
+            scenes={scenes}
+            activeId={activeId}
+            background={design.background}
+            bgTone={bgTone}
+          />
+        </DatasetProvider>
       </DocumentForResolutionProvider>
       <PresentChrome
         step={safeStep}

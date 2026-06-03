@@ -116,6 +116,7 @@ export {
   IconArrowUp,
   IconBold,
   IconCamera,
+  IconChart,
   IconCheck,
   IconChevronDown,
   IconChevronLeft,

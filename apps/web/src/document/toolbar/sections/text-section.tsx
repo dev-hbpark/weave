@@ -53,6 +53,7 @@ import {
 } from "../../style/resolver-context.js";
 // weave-extended TextAttrs (adds `textOverflow`) — not the agocraft re-export.
 import type { TextAttrs } from "../../types.js";
+import { FONT_FAMILY_PRESETS, fontFamilyLabel } from "../font-presets.js";
 import {
   batchPerItem,
   isMixed,
@@ -84,41 +85,6 @@ function parentHeightPxOf(
   const fh = (item?.attrs as { frame?: { height?: number } } | undefined)?.frame?.height;
   if (box !== null && fh !== undefined && fh > 0) return box.h / fh;
   return dims.height;
-}
-
-/** Curated font-family presets. */
-const FONT_FAMILY_PRESETS = [
-  {
-    value: "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-    label: "Inter",
-  },
-  {
-    value: "'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif",
-    label: "Noto Sans KR",
-  },
-  {
-    value: "'Playfair Display', Georgia, 'Times New Roman', Times, serif",
-    label: "Playfair",
-  },
-  {
-    value: "'Noto Serif KR', 'Source Han Serif K', Georgia, 'Apple SD Gothic Neo', serif",
-    label: "Noto Serif KR",
-  },
-  {
-    value: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-    label: "JetBrains Mono",
-  },
-  {
-    value: "'Caveat', 'Comic Sans MS', cursive",
-    label: "Caveat",
-  },
-] as const;
-
-function fontFamilyLabel(stack: string): string {
-  const hit = FONT_FAMILY_PRESETS.find((p) => p.value === stack);
-  if (hit !== undefined) return hit.label;
-  const first = stack.split(",")[0]?.replace(/['"]/g, "").trim() ?? stack;
-  return first;
 }
 
 export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => {

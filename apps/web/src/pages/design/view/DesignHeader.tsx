@@ -12,6 +12,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   IconButton,
+  IconChart,
   IconCloudCheck,
   IconCloudOff,
   IconCloudUpload,
@@ -433,6 +434,19 @@ export function DesignHeader({
               }}
             >
               QR 코드
+            </DropdownMenuItem>
+            <DropdownMenuLabel>데이터</DropdownMenuLabel>
+            <DropdownMenuItem
+              icon={<IconChart size={16} />}
+              onSelect={() => onAddItem("chart")}
+              data-testid="add-chart"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/x-weave-add-kind", "chart");
+                e.dataTransfer.effectAllowed = "copy";
+              }}
+            >
+              차트
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
