@@ -31,6 +31,7 @@ export {
   useTooltipsAllowed,
 } from "./interactions/index.js";
 export {
+  collectNonSlideFrameIds,
   collectPresentationIds,
   effectivePresentationOrder,
   FRAME_KINDS,

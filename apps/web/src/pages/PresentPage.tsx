@@ -8,6 +8,7 @@ import {
   type AgoItem,
   type ButtonTriggerBehavior,
   type CameraTargetBehavior,
+  collectNonSlideFrameIds,
   type EntranceAnimationBehavior,
   effectivePresentationOrder,
   FRAME_KINDS,
@@ -19,6 +20,7 @@ import {
 } from "../document";
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { DatasetProvider } from "../document/dataset/dataset-context.js";
+import { ParentFrameHeightContext } from "../document/domains/parent-frame-context.js";
 import {
   dispatchHotspotAction,
   openExternalHref,
@@ -471,7 +473,74 @@ export function PresentPage() {
                 : {}),
             }}
           >
-            <PresentFrameTree item={child} />
+            {/* A root-level primitive's container is the design itself, so a
+             *  `ratio` fontSize on a root text resolves against the design
+             *  height (WI-059). `frameHeightPx` then carries this primitive's
+             *  own height down to any nested children. */}
+            <ParentFrameHeightContext.Provider value={design.height}>
+              <PresentFrameTree item={child} frameHeightPx={absH} />
+            </ParentFrameHeightContext.Provider>
+          </div>
+        ),
+      });
+    }
+    return out;
+  }, [docInAgocraft, design.width, design.height]);
+
+  // WI-072 — frames the user opted OUT of the deck (`presentable: false`).
+  // Excluding a frame from the slide deck removes it from the *navigation
+  // step list* (`cameraTargets` / `effectivePresentationOrder` already skip
+  // it, so it is never a slide page) — it is NOT a visibility toggle. Such a
+  // frame must still render on the presentation screen as visual content.
+  //
+  // Only TOP-LEVEL excluded frames (no frame ancestor) get their own scene
+  // here. An excluded frame nested inside another frame is rendered INLINE by
+  // that ancestor's scene (`PresentFrameTree` recurses into non-presentable
+  // children), so giving it a second scene would (a) paint it twice and
+  // (b) drop it under the visibility classifier as if it were a peer of its
+  // own parent — which hid it whenever the parent slide was the active scene.
+  const nonSlideFrameScenes = useMemo<LocalScene[]>(() => {
+    const out: LocalScene[] = [];
+    for (const frameId of collectNonSlideFrameIds(docInAgocraft.root)) {
+      const found = findItemDeep(docInAgocraft, frameId);
+      if (found === undefined) continue;
+      const trail = findTrailDeep(docInAgocraft, frameId) ?? [];
+      // Ancestors = the trail without the target itself (last element). If any
+      // ancestor is a frame, this excluded frame is drawn inline by that
+      // ancestor's scene — skip its standalone scene.
+      const hasFrameAncestor = trail.slice(0, -1).some((node) => FRAME_KINDS.has(node.kind));
+      if (hasFrameAncestor) continue;
+      let absX = 0;
+      let absY = 0;
+      let absW = 1;
+      let absH = 1;
+      for (const node of trail) {
+        const f = (node.attrs as { frame?: ItemFrame }).frame;
+        if (f === undefined) continue;
+        absX = absX + f.x * absW;
+        absY = absY + f.y * absH;
+        absW = absW * f.width;
+        absH = absH * f.height;
+      }
+      out.push({
+        id: `present-nonslide-${frameId}`,
+        __docOrderId: frameId,
+        position: {
+          x: (absX + absW / 2) * design.width,
+          y: (absY + absH / 2) * design.height,
+        },
+        size: { width: absW * design.width, height: absH * design.height },
+        scale: 1, // never the active scene; scale unused
+        children: (
+          <div
+            data-testid="present-nonslide-frame"
+            data-item-id={frameId}
+            style={{ position: "absolute", inset: 0 }}
+          >
+            <PresentFrameTree
+              item={found as unknown as AgocraftItem}
+              frameHeightPx={absH * design.height}
+            />
           </div>
         ),
       });
@@ -487,7 +556,11 @@ export function PresentPage() {
         // at their relative position within the frame's bbox. Nested frames
         // skip themselves — they have their own scene.
         const sceneBody = (
-          <PresentFrameTree key={String(item.id)} item={item as unknown as AgocraftItem} />
+          <PresentFrameTree
+            key={String(item.id)}
+            item={item as unknown as AgocraftItem}
+            frameHeightPx={absH * design.height}
+          />
         );
         // Phase 13d-3 — entrance-animation behavior (if any) drives a Web
         // Animations API call when this entry becomes the active step.
@@ -560,7 +633,11 @@ export function PresentPage() {
   //   • doc-order rank *lower* than active AND not in subtree → "blur" so
   //     the scene reads as soft background context behind the active frame.
   const scenes = useMemo<StageScene[]>(() => {
-    const combined: LocalScene[] = [...rootPrimitiveScenes, ...cameraTargetScenes];
+    const combined: LocalScene[] = [
+      ...rootPrimitiveScenes,
+      ...nonSlideFrameScenes,
+      ...cameraTargetScenes,
+    ];
     combined.sort((a, b) => {
       const ra = docOrderRank.get(a.__docOrderId);
       const rb = docOrderRank.get(b.__docOrderId);
@@ -579,7 +656,14 @@ export function PresentPage() {
         ? { ...rest, visibility: "hidden" as const }
         : { ...rest, visibility: "blur" as const };
     });
-  }, [rootPrimitiveScenes, cameraTargetScenes, docOrderRank, activeFrameId, activeSubtreeIds]);
+  }, [
+    rootPrimitiveScenes,
+    nonSlideFrameScenes,
+    cameraTargetScenes,
+    docOrderRank,
+    activeFrameId,
+    activeSubtreeIds,
+  ]);
 
   // Match FrameStage's tone heuristic so document-scope tokens stay aligned
   // between edit and present. Same helper as in FrameStage — inline here to
