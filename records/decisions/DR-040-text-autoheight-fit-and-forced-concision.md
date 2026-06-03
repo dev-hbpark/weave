@@ -49,3 +49,5 @@ Prompt-rule change only; no editor/runtime change; no deterministic gate.
   DR-038/DR-039 carry "Refined by DR-040" pointers.
 
 > **Refined by DR-041 (2026-06-03):** the "prefer non-stretch for text" wording is corrected (cross-axis stretch in a column bounds text WIDTH so it WRAPS), and the host now derives layout-child text to HEIGHT (auto-height wrap) instead of auto-width. Adds role-based slide content.
+
+> **Refined by DR-050 (2026-06-03):** "fit the font" is sharpened with the SHARED-FRAME BUDGET — items in one frame share its height, so each text is sized against its OWN share (Σ children + gaps + padding ≤ ~85%), and the ratio is a px-target unit conversion, NOT a cue to fill the frame. `text` SIZING + `WEAVE_DOMAIN_KNOWLEDGE` rule 2 updated.

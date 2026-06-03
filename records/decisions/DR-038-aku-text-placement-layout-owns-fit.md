@@ -70,3 +70,5 @@ the parent fills the slide).
 Counterpart: small-think DR-020 "Update — 2026-06-03".
 
 > **Refined by DR-039 (2026-06-03):** items now FILL their cell (layout-sized via stretch/grow) instead of hugging content; tables must be auto-grid. Where the "auto-grows its height / do not pin height" wording here conflicts with the fill model, DR-039 governs.
+
+> **Relaxed by DR-049 (2026-06-03):** the "NESTED LAYOUT FRAMES ARE MANDATORY / PRIMARY LAYOUT TOOL / build EVERY slide's structure from them" mandate is narrowed to multi-item grouping — frames are used WHERE THEY EARN THEIR PLACE (2+ items, or a region that reflows). A single item is placed directly; single-child wrapper frames are over-framing. `frame` itemKind + `WEAVE_DOMAIN_KNOWLEDGE` rule 0 carry the relaxed wording.
