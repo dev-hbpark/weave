@@ -13,6 +13,7 @@ import {
 } from "@agocraft/core";
 import { EditorProvider } from "@agocraft/editor/react";
 import {
+  Banner,
   CommandHostProvider,
   CommandIconButton,
   ContextMenu,
@@ -107,6 +108,7 @@ import {
   designToHostPx,
   type RatioFrame,
 } from "../document/coordinate-projection.js";
+import { useExportImport } from "../document/export-import/use-export-import.js";
 import {
   croppingState,
   isCroppingNow,
@@ -1170,6 +1172,57 @@ function DesignPageBody() {
     return pid === String(docInAgocraft.root.id) ? undefined : pid;
   };
 
+  // WI-072 — paste/import destination container: into the selected frame (or
+  // the selected item's parent frame), not always the root. Shared verbatim
+  // by the clipboard paste command (WI-041) and the file-import paste
+  // (WI-089) so a Cmd+V and an "Import" land an item the same way.
+  const resolvePasteContainerSizePx = (): { width: number; height: number } | null => {
+    // FrameStage's host element is the live design plane — its bounding
+    // box (in CSS pixels) is the conversion factor we need to project
+    // pointer/offset into the parent's 0..1 ratio space (D5).
+    const host = canvasHostRef.current;
+    if (host === null) return null;
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    // WI-072 — when pasting INTO a frame, the container's px size is that
+    // frame's rendered footprint, not the whole design plane — otherwise the
+    // pasted item's 0..1 ratio is mis-scaled. Scale the absolute frame box
+    // (design units) by the host's px-per-design-unit.
+    const cid = pasteTargetContainerId();
+    if (cid !== undefined) {
+      const box = absoluteFrameBox(docInAgocraft, cid, design.width, design.height);
+      if (box !== null && box.w > 0 && box.h > 0) {
+        return {
+          width: (box.w / design.width) * rect.width,
+          height: (box.h / design.height) * rect.height,
+        };
+      }
+    }
+    return { width: rect.width, height: rect.height };
+  };
+  // HoverContext (v1) does not track pixel coordinates yet — only the hovered
+  // surface id. The paste resolver therefore takes its offset path, placing
+  // the new item at sourceFrame + 8px * N (D5 keyboard-paste fallback).
+  const resolvePastePointer = (): { x: number; y: number } | undefined => undefined;
+
+  // WI-089 — ephemeral export/import feedback. A single transient line
+  // (reuses the design-system `Banner`, auto-clears) so an empty selection,
+  // a bad file, or a successful round-trip is acknowledged without a
+  // standing toast subsystem.
+  const [exportImportInfo, setExportImportInfo] = useState<string | null>(null);
+  const exportImportInfoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showExportImportInfo = useCallback((message: string) => {
+    setExportImportInfo(message);
+    if (exportImportInfoTimer.current !== null) clearTimeout(exportImportInfoTimer.current);
+    exportImportInfoTimer.current = setTimeout(() => setExportImportInfo(null), 3200);
+  }, []);
+  useEffect(
+    () => () => {
+      if (exportImportInfoTimer.current !== null) clearTimeout(exportImportInfoTimer.current);
+    },
+    [],
+  );
+
   // WI-041 Phase 2/3 — register the clipboard command host slot. The
   // hook subscribes to `clipboardStore` so `hasItems` flips reactively
   // on copy/cut/paste, driving the paste button's enabled state.
@@ -1201,39 +1254,30 @@ function DesignPageBody() {
       // every selected id.
       return Array.from(selectedIds);
     },
-    resolveContainerSizePx: () => {
-      // FrameStage's host element is the live design plane — its bounding
-      // box (in CSS pixels) is the conversion factor we need to project
-      // pointer/offset into the parent's 0..1 ratio space (D5).
-      const host = canvasHostRef.current;
-      if (host === null) return null;
-      const rect = host.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
-      // WI-072 — when pasting INTO a frame, the container's px size is that
-      // frame's rendered footprint, not the whole design plane — otherwise the
-      // pasted item's 0..1 ratio is mis-scaled. Scale the absolute frame box
-      // (design units) by the host's px-per-design-unit.
-      const cid = pasteTargetContainerId();
-      if (cid !== undefined) {
-        const box = absoluteFrameBox(docInAgocraft, cid, design.width, design.height);
-        if (box !== null && box.w > 0 && box.h > 0) {
-          return {
-            width: (box.w / design.width) * rect.width,
-            height: (box.h / design.height) * rect.height,
-          };
-        }
-      }
-      return { width: rect.width, height: rect.height };
-    },
-    resolvePointerInContainer: () => {
-      // HoverContext (v1) does not track pixel coordinates yet — only the
-      // hovered surface id. The paste resolver therefore takes its
-      // offset path, placing the new item at sourceFrame + 8px * N
-      // (D5 keyboard-paste fallback). Future PR can wire a pointer
-      // tracker if user feedback wants Figma's "paste at cursor".
-      return undefined;
-    },
+    resolveContainerSizePx: resolvePasteContainerSizePx,
+    resolvePointerInContainer: resolvePastePointer,
   });
+
+  // WI-089 — design-selection export / import. EXPORT serialises the current
+  // selection to a downloadable `.json`; IMPORT validates a picked file and
+  // pastes its items through the SAME `weave.clipboard.paste` verb (single
+  // Cmd+Z, remapIds, MAX_PASTE_NODES cap). The hidden file input + ephemeral
+  // feedback banner are rendered below.
+  const exportImport = useExportImport({
+    editor,
+    getDocument: () => docInAgocraft,
+    resolveExportItemIds: () => Array.from(selectedIds),
+    designTitle: design.title,
+    resolveContainerId: () => pasteTargetContainerId(),
+    resolveContainerSizePx: resolvePasteContainerSizePx,
+    resolvePointerInContainer: resolvePastePointer,
+    onPasted: (ids) => {
+      if (ids.length === 1) setSelectedFrameId(ids[0]);
+      else if (ids.length > 1) selectFrames(ids);
+    },
+    onInfo: (message) => showExportImportInfo(message),
+  });
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   // DR-027 / WI-071 Phase 1 — command-host derivation (commandContext +
   // dispatchCommand), the multi-same-parent invariant, and command-palette
@@ -1957,6 +2001,25 @@ function DesignPageBody() {
                                   onSetBackground={setDesignBackgroundViaEditor}
                                   onSave={() => void handleManualSave()}
                                   saveStatus={saveStatus}
+                                  canExportSelection={selectedIds.size > 0}
+                                  onExportSelection={exportImport.exportSelection}
+                                  onImport={() => importInputRef.current?.click()}
+                                />
+                                {/* WI-089 — hidden importer. The File menu's
+                            "가져오기" item triggers this; the change handler
+                            reads + pastes the file then resets `value` so the
+                            same file can be re-imported. */}
+                                <input
+                                  ref={importInputRef}
+                                  type="file"
+                                  accept="application/json,.json"
+                                  className="hidden"
+                                  data-testid="import-file-input"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file !== undefined) void exportImport.importFile(file);
+                                    e.target.value = "";
+                                  }}
                                 />
 
                                 {/* WI-029 R5 + WI-033 P3 — text item v1 +
@@ -1973,6 +2036,15 @@ function DesignPageBody() {
                                   <TextV1LaunchBanner />
                                   <FigmaSelectionLaunchBanner />
                                   <MigrationResultBanner status={migrationStatus} />
+                                  {exportImportInfo !== null && (
+                                    <Banner
+                                      tone="info"
+                                      headline={exportImportInfo}
+                                      onDismiss={() => setExportImportInfo(null)}
+                                      dismissLabel="닫기"
+                                      data-testid="export-import-info"
+                                    />
+                                  )}
                                 </div>
 
                                 {/* LS-miss cloud-fetch spinner. Covers the

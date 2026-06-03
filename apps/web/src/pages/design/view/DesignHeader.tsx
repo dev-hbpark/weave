@@ -11,17 +11,20 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  IconArrowUp,
   IconButton,
   IconChart,
   IconCloudCheck,
   IconCloudOff,
   IconCloudUpload,
   IconCursor,
+  IconDocLines,
   IconFrame,
   IconHand,
   IconImage,
   IconLayers,
   IconLayoutGrid,
+  IconMore,
   IconPencil,
   IconPlay,
   IconPlus,
@@ -106,6 +109,12 @@ export interface DesignHeaderProps {
   readonly onSetBackground: (color: string) => void;
   readonly onSave: () => void;
   readonly saveStatus: SaveStatus;
+  /** WI-089 — export the current selection to a `.json` file. Disabled
+   *  when nothing is selected (`canExportSelection === false`). */
+  readonly onExportSelection: () => void;
+  readonly canExportSelection: boolean;
+  /** WI-089 — open the file picker to import a selection file. */
+  readonly onImport: () => void;
 }
 
 export function DesignHeader({
@@ -124,6 +133,9 @@ export function DesignHeader({
   onSetBackground,
   onSave,
   saveStatus,
+  onExportSelection,
+  canExportSelection,
+  onImport,
 }: DesignHeaderProps): React.ReactNode {
   // WI-073 — grid-snap toggle state (global store; no prop threading needed).
   const grid = useGridSnap();
@@ -463,6 +475,40 @@ export function DesignHeader({
       </div>
 
       <div className="flex items-center justify-end gap-2">
+        {/* WI-089 — File menu: export the current selection / import a
+            selection file. Lives in the right (file-level) group next to
+            Save/Present since both are document-scoped actions. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <IconButton
+              aria-label="File menu"
+              size="sm"
+              data-testid="toolbar-file-menu"
+              data-tip="파일"
+              data-tip-kbd="내보내기 · 가져오기"
+            >
+              <IconMore />
+            </IconButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={6}>
+            <DropdownMenuLabel>파일</DropdownMenuLabel>
+            <DropdownMenuItem
+              icon={<IconArrowUp size={16} />}
+              onSelect={onExportSelection}
+              disabled={!canExportSelection}
+              data-testid="file-export-selection"
+            >
+              선택 영역 내보내기
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={<IconDocLines size={16} />}
+              onSelect={onImport}
+              data-testid="file-import"
+            >
+              가져오기…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {/* Design 배경색 — file-level 속성이라 selection 과 무관한 영구 chrome.
             `onSetBackground` routes through weave.design.setBackground so Cmd+Z
             works. ColorPicker doesn't forward data-testid to its trigger, so a
