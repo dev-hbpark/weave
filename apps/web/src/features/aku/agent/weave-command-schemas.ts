@@ -433,11 +433,11 @@ const LAYOUT_SPEC: Json = {
     "• { kind:'auto-flex', direction:'row'|'column', gap, justify, align, padding } — single-axis flow. " +
     "gap = child spacing as a 0..1 ratio of the frame's MAIN axis; " +
     "justify (main-axis) = 'start'|'center'|'end'|'space-between'|'space-around'; " +
-    "align (cross-axis) = 'start'|'center'|'end'|'stretch' — 'stretch' makes a child FILL the cross axis (good for a background panel or equal-width columns; for a TEXT child prefer start/center so it keeps its natural auto-height); " +
+    "align (cross-axis) = 'start'|'center'|'end'|'stretch' — 'stretch' makes a child FILL the cross axis; for a TEXT child in a COLUMN this is what BOUNDS its WIDTH so it WRAPS (use 'stretch' for text) and it does NOT change the text's height (the main axis); " +
     "padding = { top, right, bottom, left } each a 0..1 ratio of the frame (top/bottom of its height, left/right of its width).\n" +
     "• { kind:'auto-grid', columns, rows, columnGap, rowGap, justify, align, padding } — track grid; the right layout for ANY table / matrix / comparison or card grid (NOT a stack of nested auto-flex rows). " +
-    "columns/rows = arrays of TrackSize, each { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the frame's track axis) | { kind:'auto' } (fit children — use for a row of auto-height text); empty array = one full track. " +
-    "columnGap/rowGap = 0..1 ratios of the frame (columnGap of its width, rowGap of its height); justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch' — 'stretch' makes a child fill the cell (use for backgrounds / equal cells; for TEXT cells prefer non-stretch with an 'auto' row track so the text stays auto-height); padding as above.",
+    "columns/rows = arrays of TrackSize, each { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the frame's track axis) | { kind:'auto' } (fit children — use for a row of auto-height text so the row follows the wrapped height); empty array = one full track. " +
+    "columnGap/rowGap = 0..1 ratios of the frame (columnGap of its width, rowGap of its height); justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch' — for a TEXT cell the column track bounds the WIDTH (text wraps to it) so leave justifySelf at the cell width, and keep an 'auto' row track so the HEIGHT follows content; 'stretch' fills the cell — handy for backgrounds/panels; padding as above.",
 };
 
 /** Child policy inside a parent's layout (LayoutChildPolicy). `kind` SHOULD
@@ -451,10 +451,10 @@ const LAYOUT_CHILD_POLICY: Json = {
     "• { kind:'absolute-constraints', anchor:{ horizontal, vertical } } — pin within the parent.\n" +
     "• { kind:'auto-flex', grow, shrink, basis, alignSelf? } — grow/shrink are flex weights (≥0): grow ≥1 makes the child EXPAND to fill free space on the main axis (use on FRAMES for equal-size regions, NOT on auto-height text — text keeps its content height); " +
     "basis = main-axis base size (a 0..1 ratio of the parent frame's main axis, or 'auto' = use the child's own size — the default for auto-height text); " +
-    "alignSelf overrides the parent's cross-axis align for this child ('start'|'center'|'end'|'stretch'; 'stretch' = fill the cross axis).\n" +
+    "alignSelf overrides the parent's cross-axis align for this child ('start'|'center'|'end'|'stretch'; 'stretch' = fill the cross axis — for TEXT in a COLUMN this bounds its WIDTH so it wraps).\n" +
     "• { kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf? } — " +
     "column/row are 1-based cell indices; columnSpan/rowSpan (≥1) merge cells; " +
-    "alignSelf (row-axis) / justifySelf (column-axis) override the parent align/justify for this child ('stretch' fills the cell — for backgrounds/panels; leave text non-stretch so it stays auto-height).",
+    "alignSelf (row-axis) / justifySelf (column-axis) override the parent align/justify for this child. The column track bounds a TEXT cell's WIDTH (text wraps to it); keep an 'auto' row track so its HEIGHT follows content — don't vertically stretch text. 'stretch' fully fills the cell — handy for backgrounds/panels.",
 };
 
 /** Human labels for the transcript edit-chips (command name → Korean verb).

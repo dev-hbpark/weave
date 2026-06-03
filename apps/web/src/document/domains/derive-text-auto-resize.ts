@@ -33,10 +33,14 @@ export function deriveTextAutoResize(
   layoutChild: LayoutChildPolicy | undefined,
 ): LegacyTextAutoResize {
   if (layoutChild === undefined) return "HEIGHT";
-  // WI-020 v1.1: LayoutChildPolicy union expanded — auto-flex / auto-grid
-  // children don't carry anchor. Treat them as "WIDTH_AND_HEIGHT" (default
-  // free-flow) since their layout is parent-driven, not anchor-driven.
-  if (layoutChild.kind !== "absolute-constraints") return "WIDTH_AND_HEIGHT";
+  // WI-020 v1.1 / DR-041: a laid-out child (auto-flex / auto-grid) gets its
+  // WIDTH from the parent layout (cross-axis stretch, a grid column track, or a
+  // flex basis), so the text must WRAP to that width and auto-fit its HEIGHT —
+  // i.e. "HEIGHT" (auto-height). Returning "WIDTH_AND_HEIGHT" (auto-width) here
+  // made layout-child text hug its content (max-content + `white-space: pre`,
+  // no soft-wrap) and OVERFLOW its cell horizontally. Auto-width is only for
+  // free placement (an absolute-constraints scale×scale anchor), below.
+  if (layoutChild.kind !== "absolute-constraints") return "HEIGHT";
   const h = layoutChild.anchor.horizontal;
   const v = layoutChild.anchor.vertical;
   if (h === "scale" && v === "scale") return "WIDTH_AND_HEIGHT";

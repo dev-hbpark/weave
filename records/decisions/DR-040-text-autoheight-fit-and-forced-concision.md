@@ -47,3 +47,5 @@ Prompt-rule change only; no editor/runtime change; no deterministic gate.
 - Slides pushed toward one focused point with cut prose.
 - Supersedes DR-039's *text*-fill rule (its tables-are-grids and frame-level fill stand).
   DR-038/DR-039 carry "Refined by DR-040" pointers.
+
+> **Refined by DR-041 (2026-06-03):** the "prefer non-stretch for text" wording is corrected (cross-axis stretch in a column bounds text WIDTH so it WRAPS), and the host now derives layout-child text to HEIGHT (auto-height wrap) instead of auto-width. Adds role-based slide content.
