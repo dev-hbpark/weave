@@ -39,9 +39,9 @@ const ATTRS: Json = { type: "object", additionalProperties: true };
 // where `frame` is not a typed field — so the base reaches the agent only via
 // this note folded into the bag's description.
 const FRAME_BASE_NOTE =
-  "attrs.frame = { x, y, width, height, rotation }: x/y/width/height are 0..1 ratios of the PARENT " +
-  "box (a top-level item's parent = the whole DESIGN); x/y = top-left corner, rotation = radians " +
-  "about the center. NEVER pixels.";
+  "attrs.frame = { x, y, width, height, rotation }: x/y/width/height are 0..1 ratios of the item's OWN " +
+  "PARENT box (a top-level item's parent = the whole DESIGN; a nested item's parent = its containing " +
+  "frame, NOT the slide/design); x/y = top-left corner, rotation = radians about the center. NEVER pixels.";
 
 // Frame attrs note. Nested frames are the primary layout tool — but a nested
 // frame is a SLIDE by default, so the agent must opt it out of the deck.
@@ -56,8 +56,9 @@ const FRAME_ATTRS_NOTE =
 // resize modes, role-based fontSize guidance) lives in WEAVE_CAPABILITIES'
 // `text` itemKind; this is the one-line reminder the agent sees on the command.
 const TEXT_ATTRS_NOTE =
-  "For text items: size via attrs.fontSizeSpec { kind:'ratio', value } (value = 0..1 of the parent-frame " +
-  "height — responsive, preferred) or { kind:'px', value }; NEVER put a fraction in the plain fontSize " +
+  "For text items: size via attrs.fontSizeSpec { kind:'ratio', value } (value = 0..1 of the height of the " +
+  "text's IMMEDIATE parent frame — its containerId frame, NOT the slide/canvas; responsive, preferred) or " +
+  "{ kind:'px', value }; NEVER put a fraction in the plain fontSize " +
   "number (0.07 → sub-pixel text). Other fields: text, fontFamily, fontWeight, fontStyle, color, " +
   "textAlignHorizontal/Vertical, lineHeightSpec, letterSpacing. See the text itemKind capabilities for " +
   "roles, defaults and full detail.";
@@ -68,6 +69,32 @@ const QR_ATTRS_NOTE =
   "Optional: ecLevel ('L'|'M'|'Q'|'H', default M), moduleStyle ('square'|'dot'|'rounded'), " +
   "margin (quiet-zone modules, default 4), foreground/background (PaintSpec: " +
   "{type:'solid',color} or a linear/radial gradient; background null = transparent).";
+
+// WI-077 — chart items are DATA-DRIVEN and reference a dataset by id; they own
+// no data inline. Creation is its own tool (weave.chart.add), so the note steers
+// the agent away from the empty-placeholder footgun of weave.item.add+kind:chart.
+const CHART_ATTRS_NOTE =
+  "For chart items (data-driven bar/line/pie): a chart REFERENCES a dataset by attrs.datasetId — " +
+  "it owns NO data inline. To CREATE a chart use weave.chart.add (it seeds a dataset AND the chart in " +
+  "ONE step — pass dataset:{columns,rows} for your data and chartType); do NOT use weave.item.add with " +
+  "kind 'chart' (that yields an empty placeholder). attrs.chartType is 'bar'|'line'|'pie'; " +
+  "attrs.encoding = { category: <one column name>, values: [<one or more numeric column names>] }. " +
+  "Edit the chart's look with weave.item.update (chartType / encoding); edit its DATA with " +
+  "weave.dataset.update.";
+
+// WI-077 — tabular dataset payload, shared by weave.chart.add / weave.dataset.*.
+const DATASET_PAYLOAD: Json = {
+  type: "object",
+  description:
+    "Tabular data. `columns` = ordered column names; `rows` = array of row objects keyed by column " +
+    "name (cell value string or number). The first column is typically the category/label; numeric " +
+    "columns become the chart series. `name` is an optional human label.",
+  properties: {
+    name: STR,
+    columns: STR_ARR,
+    rows: { type: "array", items: { type: "object", additionalProperties: true } },
+  },
+};
 
 // WI-076 — image attrs, incl. the source-less placeholder. The full model lives
 // in WEAVE_CAPABILITIES' `image` itemKind; this is the reminder on item.add/update.
@@ -264,7 +291,7 @@ const ATTRS_WITH_TEXT_NOTE: Json = {
     },
     subAttrs: SHAPE_SUBATTRS_SCHEMA,
   },
-  description: `${FRAME_BASE_NOTE} ${FRAME_ATTRS_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
+  description: `${FRAME_BASE_NOTE} ${FRAME_ATTRS_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${CHART_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
 };
 
 // WI-063 / WI-078 — units (decoration + transform) attached in ONE call so an item
@@ -406,11 +433,11 @@ const LAYOUT_SPEC: Json = {
     "• { kind:'auto-flex', direction:'row'|'column', gap, justify, align, padding } — single-axis flow. " +
     "gap = child spacing as a 0..1 ratio of the frame's MAIN axis; " +
     "justify (main-axis) = 'start'|'center'|'end'|'space-between'|'space-around'; " +
-    "align (cross-axis) = 'start'|'center'|'end'|'stretch'; " +
+    "align (cross-axis) = 'start'|'center'|'end'|'stretch' — 'stretch' makes each child FILL the cross axis, so a short item occupies its whole cell instead of hugging its content; " +
     "padding = { top, right, bottom, left } each a 0..1 ratio of the frame (top/bottom of its height, left/right of its width).\n" +
-    "• { kind:'auto-grid', columns, rows, columnGap, rowGap, justify, align, padding } — track grid. " +
+    "• { kind:'auto-grid', columns, rows, columnGap, rowGap, justify, align, padding } — track grid; the right layout for ANY table / matrix / comparison or card grid (NOT a stack of nested auto-flex rows). " +
     "columns/rows = arrays of TrackSize, each { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the frame's track axis) | { kind:'auto' } (fit children); empty array = one full track. " +
-    "columnGap/rowGap = 0..1 ratios of the frame (columnGap of its width, rowGap of its height); justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch'; padding as above.",
+    "columnGap/rowGap = 0..1 ratios of the frame (columnGap of its width, rowGap of its height); justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch' — set BOTH to 'stretch' so each child FILLS its whole cell (the usual choice for tables/grids); padding as above.",
 };
 
 /** Child policy inside a parent's layout (LayoutChildPolicy). `kind` SHOULD
@@ -422,12 +449,12 @@ const LAYOUT_CHILD_POLICY: Json = {
   description:
     "A LayoutChildPolicy, discriminated on `kind` (match the parent frame's layout kind). One of:\n" +
     "• { kind:'absolute-constraints', anchor:{ horizontal, vertical } } — pin within the parent.\n" +
-    "• { kind:'auto-flex', grow, shrink, basis, alignSelf? } — grow/shrink are flex weights (≥0); " +
+    "• { kind:'auto-flex', grow, shrink, basis, alignSelf? } — grow/shrink are flex weights (≥0): grow ≥1 makes the child EXPAND to fill free space on the main axis (give siblings equal grow for equal-size cells); " +
     "basis = main-axis base size (a 0..1 ratio of the parent frame's main axis, or 'auto' = use the child's own size); " +
-    "alignSelf overrides the parent's cross-axis align for this child ('start'|'center'|'end'|'stretch').\n" +
+    "alignSelf overrides the parent's cross-axis align for this child ('start'|'center'|'end'|'stretch'; 'stretch' = fill the cross axis).\n" +
     "• { kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf? } — " +
     "column/row are 1-based cell indices; columnSpan/rowSpan (≥1) merge cells; " +
-    "alignSelf (row-axis) / justifySelf (column-axis) override the parent align/justify for this child.",
+    "alignSelf (row-axis) / justifySelf (column-axis) override the parent align/justify for this child ('stretch' on both = the child FILLS its cell).",
 };
 
 /** Human labels for the transcript edit-chips (command name → Korean verb).
@@ -461,6 +488,10 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.frame.removeKeepingChildren": "프레임 해제(자식 유지)",
   "weave.item.addBehavior": "동작 추가",
   "weave.item.removeBehavior": "동작 제거",
+  "weave.chart.add": "차트 추가",
+  "weave.dataset.add": "데이터셋 추가",
+  "weave.dataset.update": "데이터셋 수정",
+  "weave.dataset.remove": "데이터셋 삭제",
   "weave.preset.insertSlide": "슬라이드 추가",
   "weave.clipboard.copy": "복사",
   "weave.clipboard.cut": "잘라내기",
@@ -501,6 +532,41 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     label: label("weave.item.remove"),
     destructive: true,
     inputSchema: obj({ itemId: STR, containerId: STR }, ["itemId"]),
+  },
+  // ── WI-077 — data-driven chart + dataset (데이터 관리 아이템) ──
+  // weave.chart.add is the PRIMARY chart-creation tool: it seeds a dataset AND
+  // the chart in one undoable step (NOT weave.item.add+kind:chart, which makes
+  // an empty placeholder). `dataset` is optional — omit it for sample data.
+  "weave.chart.add": {
+    label: label("weave.chart.add"),
+    inputSchema: obj(
+      {
+        containerId: STR,
+        frame: FRAME,
+        chartType: { type: "string", enum: ["bar", "line", "pie"] },
+        dataset: DATASET_PAYLOAD,
+      },
+      [],
+    ),
+  },
+  // Datasets are the data SOURCE charts reference by id. Create a shared one
+  // explicitly only when several charts must read the same data; otherwise
+  // weave.chart.add's seeded dataset is enough.
+  "weave.dataset.add": {
+    label: label("weave.dataset.add"),
+    inputSchema: obj({ id: STR, dataset: DATASET_PAYLOAD }, []),
+  },
+  // Declarative form only (the UI's `patch` function is not agent-reachable).
+  // `dataset` is shallow-merged over the current payload — pass just the fields
+  // you change (e.g. only `rows`). Every referencing chart reflows.
+  "weave.dataset.update": {
+    label: label("weave.dataset.update"),
+    inputSchema: obj({ id: STR, dataset: DATASET_PAYLOAD }, ["id"]),
+  },
+  "weave.dataset.remove": {
+    label: label("weave.dataset.remove"),
+    destructive: true,
+    inputSchema: obj({ id: STR }, ["id"]),
   },
   /* WI-064 — absorbed into weave.items.lifecycle { op:'remove' }; hidden from the
      agent (AGENT_HIDDEN_COMMANDS). Registered for UI use.

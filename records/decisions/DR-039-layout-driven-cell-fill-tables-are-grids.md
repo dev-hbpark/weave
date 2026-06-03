@@ -54,3 +54,18 @@ Prompt-rule change only (no editor/runtime change); no deterministic gate.
 - Refines DR-038: the layout still owns fit, now by FILLING cells (stretch) rather than the
   hug-and-absorb model. DR-038's "auto-grows / do not pin height" is superseded by this fill
   model where they conflict.
+
+## Update — 2026-06-03 (schema descriptions made self-sufficient)
+
+Verified the agent/MCP tool schema (`weave-command-schemas.ts`) can express these rules from the
+schema alone, and closed the gaps found:
+
+- `LAYOUT_SPEC` — `align`/`justify` `'stretch'` now states it FILLS the cross axis / whole cell;
+  `auto-grid` flagged as the table tool (not nested flex rows).
+- `LAYOUT_CHILD_POLICY` — `grow` ≥1 = expand to fill the main axis; `alignSelf`/`justifySelf`
+  `'stretch'` = fill the cell.
+- `TEXT_ATTRS_NOTE` / frame-geometry note — ratio basis is the item's IMMEDIATE parent frame
+  (its `containerId` frame), not the slide/canvas.
+
+Mechanisms (tracks, span, grow, alignSelf, fontSizeSpec, containerId, presentable) were already
+present; only the FILL semantics and immediate-parent precision needed documenting.
