@@ -74,13 +74,22 @@ const QR_ATTRS_NOTE =
 // no data inline. Creation is its own tool (weave.chart.add), so the note steers
 // the agent away from the empty-placeholder footgun of weave.item.add+kind:chart.
 const CHART_ATTRS_NOTE =
-  "For chart items (data-driven bar/line/pie): a chart REFERENCES a dataset by attrs.datasetId — " +
-  "it owns NO data inline. To CREATE a chart use weave.chart.add (it seeds a dataset AND the chart in " +
-  "ONE step — pass dataset:{columns,rows} for your data and chartType); do NOT use weave.item.add with " +
-  "kind 'chart' (that yields an empty placeholder). attrs.chartType is 'bar'|'line'|'pie'; " +
-  "attrs.encoding = { category: <one column name>, values: [<one or more numeric column names>] }. " +
-  "Edit the chart's look with weave.item.update (chartType / encoding); edit its DATA with " +
-  "weave.dataset.update.";
+  "For chart items (data-driven): a chart REFERENCES a dataset by attrs.datasetId — it owns NO data inline. " +
+  "To CREATE use weave.chart.add (seeds a dataset AND the chart in ONE step — pass dataset:{columns,rows}, " +
+  "chartType, and for non-category/value types an explicit encoding + variant); do NOT use weave.item.add with " +
+  "kind 'chart' (empty placeholder). " +
+  "14 CHART TYPES (attrs.chartType): bar · line · area · pie · funnel · gauge · scatter · bubble · radar · " +
+  "heatmap · candlestick · boxplot · treemap · sankey — pick the one that fits the data, not just bar/line/pie. " +
+  "ENCODING (attrs.encoding) maps visual channels → dataset columns, each { field:<column>, aggregate? } (value " +
+  "may be an ARRAY for multi-series): category+value[] for bar/line/area/pie/funnel/radar; x+y(+size) for " +
+  "scatter/bubble; x+y+value for heatmap; category+open/high/low/close for candlestick; category+lower/q1/median/" +
+  "q3/upper for boxplot; id+parent(+value) for treemap; source+target(+value) for sankey. " +
+  "VARIANT (attrs.variant): { stacked, normalized (100%), horizontal, smooth, innerRadius (pie→doughnut) }. " +
+  "STYLE detail, all via weave.item.update { itemId, attrs:{…} }: attrs.palette (series colors, string[]), " +
+  "attrs.showLegend / attrs.showAxis (boolean), attrs.opacity (0..1), and attrs.overrides for per-element emphasis " +
+  "— { datum:{ '<category>':{ color?, borderWidth?, offset? } }, series:{ '<series>':{ color?, borderWidth? } } } " +
+  "(highlight one bar/slice or a whole series). Edit the look/type/encoding/variant/style with weave.item.update; " +
+  "edit the DATA with weave.dataset.update.";
 
 // WI-077 — tabular dataset payload, shared by weave.chart.add / weave.dataset.*.
 const DATASET_PAYLOAD: Json = {
@@ -542,7 +551,37 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       {
         containerId: STR,
         frame: FRAME,
-        chartType: { type: "string", enum: ["bar", "line", "pie"] },
+        chartType: {
+          type: "string",
+          enum: [
+            "bar",
+            "line",
+            "area",
+            "pie",
+            "funnel",
+            "gauge",
+            "scatter",
+            "bubble",
+            "radar",
+            "heatmap",
+            "candlestick",
+            "boxplot",
+            "treemap",
+            "sankey",
+          ],
+        },
+        encoding: {
+          type: "object",
+          additionalProperties: true,
+          description:
+            "Channel→column map (DR-036). Each channel is { field:<dataset column name>, aggregate? }; `value` may be an ARRAY for multiple wide-format series. Provide the channels the chartType needs: bar/line/area/pie/funnel/radar → category + value[]; scatter/bubble → x + y (+ size for bubble); heatmap → x + y + value; candlestick → category + open/high/low/close; boxplot → category + lower/q1/median/q3/upper; treemap → id + parent (+ value); sankey → source + target (+ value). OMIT only for category/value types (then category = first column, value = the rest is auto-derived); REQUIRED for scatter/bubble/heatmap/candlestick/boxplot/treemap/sankey or they render a placeholder.",
+        },
+        variant: {
+          type: "object",
+          additionalProperties: true,
+          description:
+            "Presentation flags: { stacked?, normalized? (100% stacked), horizontal? (bar), smooth? (line/area), innerRadius? (0..1 → turns a pie into a doughnut) }.",
+        },
         dataset: DATASET_PAYLOAD,
       },
       [],

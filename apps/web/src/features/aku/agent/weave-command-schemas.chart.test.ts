@@ -37,9 +37,32 @@ describe("agent schemas — chart + dataset commands", () => {
   it("weave.chart.add advertises chartType + dataset, all optional", () => {
     const p = props("weave.chart.add");
     expect(Object.keys(p)).toEqual(
-      expect.arrayContaining(["containerId", "frame", "chartType", "dataset"]),
+      expect.arrayContaining([
+        "containerId",
+        "frame",
+        "chartType",
+        "encoding",
+        "variant",
+        "dataset",
+      ]),
     );
-    expect((p.chartType as { enum: string[] }).enum).toEqual(["bar", "line", "pie"]);
+    // DR-036 — all 14 chart types are advertised (was bar/line/pie only).
+    expect((p.chartType as { enum: string[] }).enum).toEqual([
+      "bar",
+      "line",
+      "area",
+      "pie",
+      "funnel",
+      "gauge",
+      "scatter",
+      "bubble",
+      "radar",
+      "heatmap",
+      "candlestick",
+      "boxplot",
+      "treemap",
+      "sankey",
+    ]);
     expect(required("weave.chart.add")).toEqual([]); // sample data seeded when omitted
   });
 

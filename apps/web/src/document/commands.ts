@@ -98,7 +98,7 @@ import {
   computeAlignedFrames,
 } from "./multi/align-ops.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
-import type { ChartEncoding } from "./domains/chart/chart-model.js";
+import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
@@ -1306,7 +1306,15 @@ export function buildWeaveCommands(
       readonly containerId?: string;
       readonly frame?: ItemFrame;
       readonly dataset?: Partial<DatasetPayload>;
-      readonly chartType?: "bar" | "line" | "pie";
+      readonly chartType?: ChartType;
+      /** Optional explicit channel encoding. REQUIRED for non-category/value
+       *  types (scatter/bubble → x/y[/size], heatmap → x/y/value, candlestick →
+       *  OHLC, boxplot → 5-number, treemap → id/parent, sankey → source/target).
+       *  When omitted, derived as category = first column, value = the rest. */
+      readonly encoding?: ChartEncoding;
+      /** Presentation variant flags (stacked / normalized / horizontal / smooth /
+       *  innerRadius for a doughnut). */
+      readonly variant?: ChartVariant;
     },
     string
   > = {
@@ -1330,13 +1338,16 @@ export function buildWeaveCommands(
       };
 
       // DR-036 — derive the channel encoding from the seeded columns: first
-      // column = category (key axis), remaining columns = value series.
+      // column = category (key axis), remaining columns = value series. An
+      // explicit `input.encoding` wins (REQUIRED for non-category/value types
+      // like scatter/heatmap/candlestick/treemap/sankey).
       const categoryName = payload.columns[0]?.name;
       const valueNames = payload.columns.slice(1).map((c) => c.name);
-      const encoding: ChartEncoding = {
-        ...(categoryName !== undefined ? { category: { field: categoryName } } : {}),
-        ...(valueNames.length > 0 ? { value: valueNames.map((field) => ({ field })) } : {}),
-      };
+      const encoding: ChartEncoding =
+        input.encoding ?? {
+          ...(categoryName !== undefined ? { category: { field: categoryName } } : {}),
+          ...(valueNames.length > 0 ? { value: valueNames.map((field) => ({ field })) } : {}),
+        };
       let chart = createDefaultItem("chart", container.children.length);
       chart = {
         ...chart,
@@ -1345,6 +1356,7 @@ export function buildWeaveCommands(
           datasetId,
           chartType: input.chartType ?? "bar",
           encoding,
+          ...(input.variant !== undefined ? { variant: input.variant } : {}),
           ...(input.frame !== undefined ? { frame: input.frame } : {}),
         } as typeof chart.attrs,
       };
