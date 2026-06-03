@@ -45,3 +45,26 @@ for* changed.
   agree (previously they contradicted).
 - The factual code comment in `weave-command-schemas.ts` ("the box is AUTO-HEIGHT, height
   auto-fits") remains accurate and is now leaned into rather than disabled.
+
+## Update — 2026-06-03 (nested-layout rule hardened)
+
+The agent kept hand-placing content items on the slide root instead of nesting layout frames.
+The structure rule was hardened from a preference to a **mandatory, procedural** requirement
+(no schema gate — strengthened prompt only):
+
+- `WEAVE_TASK_PRIMER` (per-turn, recency aids adherence) — nesting is now its own dedicated
+  bullet: "STRUCTURE EVERY SLIDE FROM NESTED LAYOUT FRAMES — REQUIRED, the #1 rule to get
+  wrong", with the FIRST-add-nested-frame-+-setLayout-→-THEN-add-children procedure and a ban
+  on absolute hand-placement on the slide root.
+- `WEAVE_DOMAIN_KNOWLEDGE` rule 0 — "NESTED FRAMES ARE THE PRIMARY LAYOUT TOOL" → "NESTED
+  LAYOUT FRAMES ARE MANDATORY", with an explicit (a)/(b)/(c) per-slide procedure and the same
+  prohibition.
+
+Same pass also tightened the **ratio basis** (heavy nesting makes it error-prone): a
+`fontSizeSpec { kind:'ratio' }` value and `attrs.frame` coordinates resolve against the item's
+**immediate parent frame** (its `containerId` frame), not the slide/canvas. Rules 1 & 2, the
+`text` itemKind SIZING/SIZING-ROLES bullets, and the `WEAVE_TASK_PRIMER` now state this and the
+`ratio = target px ÷ parent-frame px height` conversion (the px→ratio role hints only hold when
+the parent fills the slide).
+
+Counterpart: small-think DR-020 "Update — 2026-06-03".
