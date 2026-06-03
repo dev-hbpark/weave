@@ -140,8 +140,13 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
       try {
         const cloud = await uploadResourceCloud(kind, localSrc, file.name);
         if (cloud === null) {
-          setUploadWarning("서버 업로드에 실패했어요. 이번에는 로컬 사본으로 추가됩니다.");
-          addResource(kind, localSrc, file.name); // existing fire-and-forget retry path
+          setUploadWarning(
+            "서버 업로드에 실패했어요. 로컬에 보관했다가 연결되면 자동으로 업로드할게요.",
+          );
+          // addResource queues the bytes in the IndexedDB outbox when its
+          // own cloud mirror also fails; flushResourceOutbox re-uploads them
+          // once the server is reachable again.
+          addResource(kind, localSrc, file.name);
         } else {
           setValue(cloud.src);
           addResource(kind, cloud.src, file.name, {

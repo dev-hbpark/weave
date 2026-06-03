@@ -10,6 +10,7 @@ import "./document/agocraft-augmentation.js";
 // unreachable branch and drops the demo entry from the bundle.
 import { HoverAffordanceLayerDemo } from "./dev/HoverAffordanceLayerDemo.js";
 import { bootstrapFromCloud } from "./document/cloud-sync.js";
+import { flushResourceOutbox } from "./document/resource-storage.js";
 import { DesignPage } from "./pages/DesignPage.js";
 import { LandingPage } from "./pages/LandingPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
@@ -26,6 +27,19 @@ export function App() {
   // keeps the app functional.
   useEffect(() => {
     void bootstrapFromCloud();
+    // Drain the image-upload outbox: any image whose upload failed offline is
+    // re-pushed once the server is reachable, then deleted from IndexedDB.
+    // Boot covers "started online with a queue from a prior session"; the
+    // `online` event covers "connection came back mid-session".
+    void flushResourceOutbox();
+    if (typeof window === "undefined") return undefined;
+    const onOnline = () => {
+      void flushResourceOutbox();
+    };
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+    };
   }, []);
 
   return (
