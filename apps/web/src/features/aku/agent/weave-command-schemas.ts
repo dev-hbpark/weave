@@ -433,11 +433,11 @@ const LAYOUT_SPEC: Json = {
     "• { kind:'auto-flex', direction:'row'|'column', gap, justify, align, padding } — single-axis flow. " +
     "gap = child spacing as a 0..1 ratio of the frame's MAIN axis; " +
     "justify (main-axis) = 'start'|'center'|'end'|'space-between'|'space-around'; " +
-    "align (cross-axis) = 'start'|'center'|'end'|'stretch' — 'stretch' makes each child FILL the cross axis, so a short item occupies its whole cell instead of hugging its content; " +
+    "align (cross-axis) = 'start'|'center'|'end'|'stretch' — 'stretch' makes a child FILL the cross axis (good for a background panel or equal-width columns; for a TEXT child prefer start/center so it keeps its natural auto-height); " +
     "padding = { top, right, bottom, left } each a 0..1 ratio of the frame (top/bottom of its height, left/right of its width).\n" +
     "• { kind:'auto-grid', columns, rows, columnGap, rowGap, justify, align, padding } — track grid; the right layout for ANY table / matrix / comparison or card grid (NOT a stack of nested auto-flex rows). " +
-    "columns/rows = arrays of TrackSize, each { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the frame's track axis) | { kind:'auto' } (fit children); empty array = one full track. " +
-    "columnGap/rowGap = 0..1 ratios of the frame (columnGap of its width, rowGap of its height); justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch' — set BOTH to 'stretch' so each child FILLS its whole cell (the usual choice for tables/grids); padding as above.",
+    "columns/rows = arrays of TrackSize, each { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the frame's track axis) | { kind:'auto' } (fit children — use for a row of auto-height text); empty array = one full track. " +
+    "columnGap/rowGap = 0..1 ratios of the frame (columnGap of its width, rowGap of its height); justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch' — 'stretch' makes a child fill the cell (use for backgrounds / equal cells; for TEXT cells prefer non-stretch with an 'auto' row track so the text stays auto-height); padding as above.",
 };
 
 /** Child policy inside a parent's layout (LayoutChildPolicy). `kind` SHOULD
@@ -449,12 +449,12 @@ const LAYOUT_CHILD_POLICY: Json = {
   description:
     "A LayoutChildPolicy, discriminated on `kind` (match the parent frame's layout kind). One of:\n" +
     "• { kind:'absolute-constraints', anchor:{ horizontal, vertical } } — pin within the parent.\n" +
-    "• { kind:'auto-flex', grow, shrink, basis, alignSelf? } — grow/shrink are flex weights (≥0): grow ≥1 makes the child EXPAND to fill free space on the main axis (give siblings equal grow for equal-size cells); " +
-    "basis = main-axis base size (a 0..1 ratio of the parent frame's main axis, or 'auto' = use the child's own size); " +
+    "• { kind:'auto-flex', grow, shrink, basis, alignSelf? } — grow/shrink are flex weights (≥0): grow ≥1 makes the child EXPAND to fill free space on the main axis (use on FRAMES for equal-size regions, NOT on auto-height text — text keeps its content height); " +
+    "basis = main-axis base size (a 0..1 ratio of the parent frame's main axis, or 'auto' = use the child's own size — the default for auto-height text); " +
     "alignSelf overrides the parent's cross-axis align for this child ('start'|'center'|'end'|'stretch'; 'stretch' = fill the cross axis).\n" +
     "• { kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf? } — " +
     "column/row are 1-based cell indices; columnSpan/rowSpan (≥1) merge cells; " +
-    "alignSelf (row-axis) / justifySelf (column-axis) override the parent align/justify for this child ('stretch' on both = the child FILLS its cell).",
+    "alignSelf (row-axis) / justifySelf (column-axis) override the parent align/justify for this child ('stretch' fills the cell — for backgrounds/panels; leave text non-stretch so it stays auto-height).",
 };
 
 /** Human labels for the transcript edit-chips (command name → Korean verb).

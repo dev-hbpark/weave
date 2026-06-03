@@ -69,3 +69,5 @@ schema alone, and closed the gaps found:
 
 Mechanisms (tracks, span, grow, alignSelf, fontSizeSpec, containerId, presentable) were already
 present; only the FILL semantics and immediate-parent precision needed documenting.
+
+> **Refined by DR-040 (2026-06-03):** the *text*-fill rule here is reversed — text is now AUTO-HEIGHT (layout sets width, content sets height; no stretch/grow/pinned height on text) and fonts are sized to FIT. tables-are-grids and frame-level fill (stretch/grow on frames/backgrounds/equal regions) still stand.
