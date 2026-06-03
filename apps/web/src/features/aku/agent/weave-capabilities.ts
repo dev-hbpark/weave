@@ -89,9 +89,9 @@ export const WEAVE_CAPABILITIES = {
         // it to pick a size that reads at the canvas scale.
         "SIZING: size the font by RATIO — attrs.fontSizeSpec { kind:'ratio', value:0..1 } where value is a fraction of the PARENT FRAME's height (root = design height), so the text scales with the frame. Use ratio for ALL text (e.g. heading ~0.06–0.09, subheading ~0.04, body ~0.03). Do NOT use a fixed px size (a bare fontSize number or { kind:'px' }). NEVER put a fraction in the plain fontSize number — a 0..1 there renders as sub-pixel text; express ratios only via fontSizeSpec { kind:'ratio' }.",
         "SIZING ROLES (canvas px is in each task's [디자인] line): heading 48–96px (~5–9% of canvas height → ratio ~0.05–0.09), subheading 32–48px, body 24–32px (default 24), caption 14–18px. On 1920×1080 a heading ≈64px; on 800×600 ≈40px.",
-        // RESIZE — a text box auto-fits its height by default, so the agent only
-        // needs to choose width + fontSize; height is derived from wrapped text.
-        "RESIZE: keep every text box FIXED — do NOT use auto-height or auto-width. A text box auto-grows its height by default; disable that. Give it an explicit frame (BOTH width and height) and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } } (a non-scale anchor turns off auto-resize).",
+        // PLACEMENT — a text item is normally a CHILD of an auto-layout frame; the
+        // frame arranges and spaces it, and absorbs its auto-grown height on reflow.
+        "PLACEMENT & SIZING: add text as a CHILD of an auto-layout frame (containerId = a layout frame) and let that frame (auto-flex / auto-grid) position and space it — set the frame's layout properties (direction, gap, padding, align) deliberately rather than hand-placing the text. The box auto-grows its height to fit the wrapped text, which a flex/grid layout absorbs cleanly (the frame re-flows its children), so you do NOT pin a fixed height inside a layout frame — this is what keeps the design easy to edit. ONLY when a text sits directly in an absolute-constraints frame (intentional free-form placement) give it an explicit frame and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }.",
         "STYLE: fontFamily (CSS stack), fontWeight ('normal' | 'bold'), fontStyle ('normal' | 'italic'), color, textDecoration ('NONE' | 'UNDERLINE' | 'STRIKETHROUGH'), textCase ('ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE').",
         "COLOR — DEFAULT to a theme token by ROLE so text re-skins with the theme: title/heading → var(--text-strong); body/paragraph → var(--text-default); secondary/supporting → var(--text-soft); caption/footnote/label → var(--text-muted); EMPHASIZED word/number/KPI/highlight → var(--accent) (or var(--accent-strong)). If you set NO color it already defaults to var(--text-default) (never lazily hard-code a neutral dark/light hex). Override with a LITERAL color only when the content's MOOD wants a specific text color (mood > theme), or for brand/data-bound text.",
         "LAYOUT: textAlignHorizontal ('LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED'), textAlignVertical ('TOP' | 'CENTER' | 'BOTTOM'), lineHeightSpec ({ value, unit: 'multiplier' | 'px' }, default 1.4×), letterSpacing / paragraphSpacing / paragraphIndent (all design-px).",
@@ -332,10 +332,14 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   fontSizeSpec { kind:'px' }. (Never put a fraction into the plain fontSize number — that renders as",
   "   sub-pixel, invisible text; ratios go ONLY in fontSizeSpec { kind:'ratio' }.)",
   "",
-  "3) TEXT BOXES ARE FIXED — NO AUTO-RESIZE. A text box auto-grows its height by default; turn that OFF. Give",
-  "   every text item an explicit frame with BOTH width and height, then PIN it fixed:",
+  "3) PLACE TEXT IN LAYOUT FRAMES — let the layout own fit. A text item is normally a CHILD of an auto-flex /",
+  "   auto-grid frame: add it with containerId = a layout frame and let the frame arrange and space it (set the",
+  "   frame's direction, gap, padding, align deliberately). The box auto-grows its height to the wrapped text,",
+  "   which the flex/grid layout absorbs by re-flowing its children — so do NOT pin a fixed height inside a",
+  "   layout frame; that is what keeps the design easy to edit. ONLY for a text placed directly in an",
+  "   absolute-constraints frame (intentional free-form placement) give it an explicit frame and pin it:",
   "   weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left',",
-  "   vertical:'top' } } }. A non-scale anchor disables auto-height/auto-width. Never rely on auto-sizing.",
+  "   vertical:'top' } } }.",
   "",
   "4) COLOR — the CONTENT'S MOOD comes FIRST, ahead of the currently-active theme. Read the atmosphere the",
   "   content should convey (finance → restrained/serious; kids → bright/playful; luxury → deep/elegant) and",
