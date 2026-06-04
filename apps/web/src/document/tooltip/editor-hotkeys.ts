@@ -1097,14 +1097,30 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
       const action = findAction(cmd.id);
       if (action === undefined) return [];
       const koLabel = cmd.label.ko;
+      // WI-090 follow-up — clipboard shortcuts (Cmd+C / X / V / Opt+V) double as
+      // the browser's NATIVE text clipboard. The agocraft registry calls
+      // `preventDefault()` on a matched binding BEFORE the action runs (see
+      // input-bus `onBusEvent`), so binding paste with the default would cancel
+      // the native paste into a focused <input> (e.g. the link URL field) while
+      // the action's `isTextEditingTarget` guard then skips the canvas paste —
+      // the user ends up unable to paste text at all. Opt these out of the
+      // registry's auto-preventDefault and preventDefault MANUALLY only when
+      // focus is NOT a text surface (mirrors the Backspace window-listener
+      // carve-out above). Every registry action already early-returns for text
+      // targets, so the canvas path is unchanged.
+      const isClipboard = cmd.category === "clipboard";
       return [
         hotkeys.register({
           keys: cmd.hotkey.binding,
           scope: cmd.hotkey.scope ?? "editor",
           label: koLabel,
+          ...(isClipboard ? { preventDefault: false } : {}),
           action: (ctx) => {
             // WI-074 — while an image crop is open, the inline editor owns input.
             if (isTextEditingTarget(ctx.event.target) || isCroppingNow()) return;
+            // Clipboard bindings opted out of auto-preventDefault — replicate it
+            // for the non-text (canvas) path so the browser default stays suppressed.
+            if (isClipboard) ctx.event.raw.preventDefault();
             action({ editor: editorRef.current });
           },
         }),

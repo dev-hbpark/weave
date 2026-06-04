@@ -138,3 +138,40 @@ test("removing the link (mode → None) deletes the behavior", async ({ page }) 
   await page.getByTestId("link-mode-select-option-none").click();
   await expect.poll(() => readLinkAction(page, shapeId)).toBeNull();
 });
+
+// Regression for the clipboard-hotkey carve-out: Cmd+V while the link URL input
+// is focused must paste text natively, not be swallowed by the editor's global
+// paste binding (which preventDefault'd before its text-target guard ran).
+test("link URL input accepts native paste (Cmd+V)", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareDesign(page, { flavor: "mixed", title: "link-paste" });
+
+  await page.getByTestId("toolbar-add").click();
+  await page.getByTestId("add-shape").click();
+  await page.getByTestId("add-shape-rectangle").click();
+  const shapeId = await firstKindId(page, "shape");
+  expect(shapeId).not.toBe("");
+
+  await page.getByTestId("link-mode-select").click();
+  await page.getByTestId("link-mode-select-option-url").click();
+
+  // Seed the OS clipboard, focus + select the default "https://", paste over it.
+  await page.evaluate(() => navigator.clipboard.writeText("https://pasted.example.com/x"));
+  const url = page.getByTestId("link-url-input");
+  await url.click();
+  await url.selectText();
+  await page.keyboard.press("ControlOrMeta+v");
+
+  // Native paste replaced the selection (the value would be unchanged if the
+  // global paste binding had preventDefault'd the keystroke).
+  await expect(url).toHaveValue("https://pasted.example.com/x");
+  // And it committed to the behavior on blur.
+  await url.blur();
+  await expect
+    .poll(() => readLinkAction(page, shapeId))
+    .toEqual({
+      type: "external",
+      href: "https://pasted.example.com/x",
+    });
+});

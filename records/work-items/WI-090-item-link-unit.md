@@ -121,12 +121,23 @@ button-trigger 행도 **`external`은 URL 입력 없음·`jump-camera`는 슬라
   WI가 만든 것이 아니라 기존 레거시 → Decommission은 별도 판단(그 행들의 저작 surface를 살릴지
   결정 후 일괄 정리/삭제).
 
+## 후속 수정 — URL 입력 붙여넣기 (2026-06-04, DR-054)
+
+증상: 링크 URL 입력칸에서 Cmd+V 붙여넣기가 동작 안 함. 원인: agocraft 핫키 레지스트리가
+매치된 바인딩에 대해 **action 실행 전에 `preventDefault()`** 를 호출(`onBusEvent`)하므로,
+입력 포커스 시 Cmd+V의 네이티브 붙여넣기가 먼저 차단되고 클립보드 action은 `isTextEditingTarget`로
+스킵 → 아무것도 안 붙음(Backspace가 이미 같은 사유로 window 리스너로 우회한 전례). 수정:
+클립보드 커맨드(`category === "clipboard"`)는 `preventDefault: false`로 등록하고, **텍스트
+surface가 아닐 때만** action 내부에서 수동 `ctx.event.raw.preventDefault()`(`editor-hotkeys.ts`
+등록 루프). 캔버스 클립보드는 불변. 검증: `link-authoring.spec.ts` "native paste" 추가
+(3/3 pass), 회귀 `clipboard-items`/`clipboard-paste-special` **7/7**.
+
 ## 검증 요약 (SVL)
 
 - `pnpm typecheck` green · `pnpm biome check`(변경/신규 파일) 무결(경고는 기존 수용 패턴) · Rule 6 무결.
 - `pnpm test` **530 green**(신규 15: 런타임 4 + 정책 10 + z-index 계약 1).
-- e2e: 저작 `link-authoring.spec.ts` **2/2 pass**(라이브). 런타임 `present-link-unit.spec.ts`는
-  하니스 영속 게이트로 `test.skip`(컴포넌트 테스트로 대체 검증).
+- e2e: 저작 `link-authoring.spec.ts` **3/3 pass**(라이브, 붙여넣기 포함). 런타임
+  `present-link-unit.spec.ts`는 하니스 영속 게이트로 `test.skip`(컴포넌트 테스트로 대체 검증).
 
 ## Cross-refs
 
