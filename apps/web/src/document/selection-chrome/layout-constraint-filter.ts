@@ -28,7 +28,15 @@ export interface LayoutChildConstraints {
 export function applyLayoutConstraintFilter(
   specs: ReadonlyArray<SelectionHandleSpec>,
   constraints: LayoutChildConstraints | undefined,
+  // DR-061 — a LOCKED item exposes no transform handles at all (resize + rotate
+  // are gated; hiding the handles communicates the protected state). Non-
+  // transform specs (e.g. vertex handles) are also removed since a locked item
+  // is fully protected.
+  locked = false,
 ): ReadonlyArray<SelectionHandleSpec> {
+  if (locked) {
+    return specs.filter((spec) => spec.id !== "rotate" && !spec.id.startsWith("resize-"));
+  }
   if (constraints === undefined) return specs;
   if (constraints.canResizeWidth && constraints.canResizeHeight && constraints.canRotate) {
     return specs;

@@ -169,6 +169,7 @@ import type {
   TextAttrs as AgocraftTextAttrs,
   VideoAttrs as AgocraftVideoAttrs,
   PaintSpec,
+  PartialTextStyle,
 } from "@agocraft/core";
 // DR-036 — the generalized chart model (channel encoding + 14-type union). A
 // leaf module (depends only on the dataset store), so this import is acyclic.
@@ -193,8 +194,27 @@ export type LineAttrs = AgocraftLineAttrs;
  *  shows); this field decouples it. It is an unknown field to agocraft and
  *  survives serialization via the serializer's `onUnknown: "preserve"` policy.
  *  When unset, the renderer derives the legacy default from the mode. */
+/** DR-060 — weave-local widening of a `TextRun`'s per-run style. agocraft's
+ *  `PartialTextStyle` has no outline; these extra fields carry a PER-RANGE
+ *  outline (외곽선) authored in the editor (`-webkit-text-stroke` on the node,
+ *  extracted by `readSnapshot`). `outlineWidth` is the VISIBLE halo px. Unknown
+ *  to agocraft; survives serialization via `onUnknown: "preserve"`. */
+export type WeaveRunStyle = PartialTextStyle & {
+  readonly outlineColor?: string;
+  readonly outlineWidth?: number;
+};
+
 export type TextAttrs = AgocraftTextAttrs & {
   readonly textOverflow?: "VISIBLE" | "HIDDEN";
+  /** DR-059 — text outline (외곽선) drawn as a layered duplicate: a thick
+   *  stroked back layer in `color` behind the normal fill. `color` is a hex or
+   *  a `StyleRef` token (resolved via the color cascade); `width` is the VISIBLE
+   *  halo thickness in design-px. Unset / `width <= 0` → no outline. Whole-item
+   *  (v1). Unknown to agocraft; survives `onUnknown: "preserve"`. */
+  readonly textOutline?: {
+    readonly color: string;
+    readonly width: number;
+  };
 };
 
 /** WI-058 — data-driven QR code. The module matrix is generated from `data` at
@@ -241,6 +261,11 @@ export interface ChartAttrs {
   readonly showLegend?: boolean;
   readonly showAxis?: boolean;
   readonly opacity?: number;
+  /** WI-092 — bar series thickness as a FRACTION (0..1) of the category band
+   *  (rendered as ECharts `barWidth: "<pct>%"`). Chart-level: ECharts `barWidth`
+   *  is per-series, so this widens / narrows every bar together. Adjusted by the
+   *  side width-handle (DR-055). Unset → ECharts' auto width. bar only. */
+  readonly barWidth?: number;
   /** WI-078 (DR-035) — per-element PRESENTATION overrides for emphasis. NOT
    *  data (data lives in the dataset); these are visual-only and keyed by a
    *  STABLE name (category), so they survive row add / sort / paste. */
@@ -256,6 +281,11 @@ export interface ChartDatumStyle {
   readonly borderWidth?: number;
   /** Pie only — pull the slice this many px out from the center ("원점 거리"). */
   readonly offset?: number;
+  /** WI-092 — PER-BAR thickness as a fraction (0..1) of the category band. bar
+   *  only; set by the side width-handle. ECharts bar `barWidth` is per-series, so
+   *  a single-series bar chart is rendered via a custom series (renderItem) to
+   *  honor per-datum widths — only THIS bar changes, the rest stay. */
+  readonly barWidth?: number;
 }
 
 export interface ChartOverrides {
@@ -268,16 +298,31 @@ export interface ChartOverrides {
   readonly series?: Readonly<Record<string, ChartDatumStyle>>;
 }
 
+/** DR-061 — weave-local fields present on EVERY item kind.
+ *  `locked` protects an item from move / resize / rotate / delete / text-edit /
+ *  reparent (it stays SELECTABLE so it can be re-selected and unlocked — weave
+ *  has no layers panel). Unknown to agocraft; survives serialization via the
+ *  serializer's `onUnknown: "preserve"` policy. */
+export interface WeaveCommonAttrs {
+  readonly locked?: boolean;
+}
+
 export type ItemAttrsByKind = {
-  frame: FrameAttrs;
-  image: ImageAttrs;
-  video: VideoAttrs;
-  shape: ShapeAttrs;
-  line: LineAttrs;
-  text: TextAttrs;
-  qr: QrAttrs;
-  chart: ChartAttrs;
+  frame: FrameAttrs & WeaveCommonAttrs;
+  image: ImageAttrs & WeaveCommonAttrs;
+  video: VideoAttrs & WeaveCommonAttrs;
+  shape: ShapeAttrs & WeaveCommonAttrs;
+  line: LineAttrs & WeaveCommonAttrs;
+  text: TextAttrs & WeaveCommonAttrs;
+  qr: QrAttrs & WeaveCommonAttrs;
+  chart: ChartAttrs & WeaveCommonAttrs;
 };
+
+/** DR-061 — kind-agnostic read of the weave-local `locked` flag. Accepts any
+ *  item shape (per-kind attrs aren't assignable to a `Record` index signature). */
+export function isItemLocked(item: { readonly attrs: unknown }): boolean {
+  return (item.attrs as { locked?: boolean } | null)?.locked === true;
+}
 
 // ── Doc flavor — the "kind" of the top-level document (root.attrs.flavor) ──
 //

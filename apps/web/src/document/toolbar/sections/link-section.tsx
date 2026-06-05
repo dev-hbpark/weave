@@ -113,7 +113,7 @@ export function LinkSection({
       data-testid="link-controls"
       className="inline-flex items-end gap-2 ml-1 pl-2 border-l border-l-[color:var(--surface-overlay-border)]"
     >
-      <Bar.Field label="Link">
+      <Bar.Field label="링크">
         <Select<LinkMode>
           value={mode}
           onValueChange={onModeChange}
@@ -125,7 +125,7 @@ export function LinkSection({
       </Bar.Field>
 
       {mode === "url" ? (
-        <Bar.Field label="URL">
+        <Bar.Field label="주소">
           <input
             type="url"
             value={urlValue}
@@ -144,7 +144,7 @@ export function LinkSection({
       ) : null}
 
       {mode === "slide" ? (
-        <Bar.Field label="Slide">
+        <Bar.Field label="슬라이드">
           {slides.length === 0 ? (
             <span className="text-[11px] text-[color:var(--text-muted)] italic">슬라이드 없음</span>
           ) : (

@@ -118,6 +118,9 @@ HANDLE_INTERACTIONS.register({ kind: "vertex-drag", buildStates: dragGestureStat
 HANDLE_INTERACTIONS.register({ kind: "vertex-insert", buildStates: dragGestureStates });
 HANDLE_INTERACTIONS.register({ kind: "frame-resize", buildStates: dragGestureStates });
 HANDLE_INTERACTIONS.register({ kind: "frame-rotate", buildStates: dragGestureStates });
+// WI-092 — dragging a chart datum's value handle (bar height / line point / pie
+// sweep). Same drag FSM; the sink maps the pointer to a new dataset value.
+HANDLE_INTERACTIONS.register({ kind: "chart-value-drag", buildStates: dragGestureStates });
 HANDLE_INTERACTIONS.register({ kind: "discrete-action", buildStates: discreteActionStates });
 
 // ───── Dispatcher ─────────────────────────────────────────────────────────────

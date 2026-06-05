@@ -49,6 +49,7 @@ import {
 import { useEffect, useMemo, useRef } from "react";
 import * as Y from "yjs";
 import { registerWeaveCommands, type WeaveCommandTargets } from "./commands.js";
+import { noteAppliedChangeOrigin } from "./history-replay-state.js";
 // WI-032 Phase 3b — canvas-shape capability + agocraft-bridge removed
 // alongside the legacy `canvas-design` kind.
 import { attachIndexedDbPersistence } from "./sync/offline-persistence.js";
@@ -410,6 +411,11 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       (change) => {
         const apply = applyChangeRef.current;
         if (apply === undefined) return;
+        // DR-058 — record the origin BEFORE applying so the reflow this change
+        // triggers (e.g. a text item's auto-fit ResizeObserver, which fires
+        // async after React re-renders) reads the correct kind and skips
+        // re-committing during an undo/redo ("system") replay.
+        noteAppliedChangeOrigin(change.origin.kind);
         apply(change);
       },
       { origins: ["user-command", "system"] },

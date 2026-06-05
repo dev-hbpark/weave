@@ -79,5 +79,6 @@ export {
   DOMAIN_KINDS,
   FLAVOR_REGISTRY,
   FULL_FRAME,
+  isItemLocked,
 } from "./types.js";
 export { useDesign } from "./use-design.js";

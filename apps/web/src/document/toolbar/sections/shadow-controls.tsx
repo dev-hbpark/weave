@@ -294,9 +294,13 @@ export function FillControl({
 export function StrokeControl({
   editor,
   ids,
+  compact = false,
 }: {
   readonly editor: Editor;
   readonly ids: ReadonlyArray<string>;
+  /** DR-design-016 — Quick row variant: only the color swatch (enables stroke
+   *  at width 1 if off); the width slider stays in the More panel. */
+  readonly compact?: boolean;
 }): JSX.Element {
   const doc = useDocumentForResolution();
   const stroke = firstItemValue<StrokeSpec>(
@@ -323,20 +327,25 @@ export function StrokeControl({
       });
     }
   };
+  const swatch = (
+    <ColorPicker
+      aria-label="외곽선 색"
+      value={stroke.paint.type === "solid" ? (resolved ?? "#000000") : "#000000"}
+      onValueChange={() => {}}
+      onValueCommit={(v) =>
+        setStroke({
+          ...stroke,
+          paint: paintFromEmit(v),
+          width: stroke.width > 0 ? stroke.width : 1,
+        })
+      }
+    />
+  );
+  // Quick row: swatch only (picking a color turns the stroke on at width 1).
+  if (compact) return swatch;
   return (
     <div className="grid gap-1.5">
-      <ColorPicker
-        aria-label="외곽선 색"
-        value={stroke.paint.type === "solid" ? (resolved ?? "#000000") : "#000000"}
-        onValueChange={() => {}}
-        onValueCommit={(v) =>
-          setStroke({
-            ...stroke,
-            paint: paintFromEmit(v),
-            width: stroke.width > 0 ? stroke.width : 1,
-          })
-        }
-      />
+      {swatch}
       <NumberSlider
         aria-label="외곽선 두께"
         value={draftW}

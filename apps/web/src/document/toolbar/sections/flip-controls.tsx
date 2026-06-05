@@ -3,7 +3,7 @@
 // generic `transform.flip` unit via `weave.item.flip` per selected item.
 
 import type { Editor } from "@agocraft/editor";
-import { Button } from "@weave/design-system";
+import { IconButton, IconFlipHorizontal, IconFlipVertical } from "@weave/design-system";
 import type { JSX } from "react";
 
 interface FlipControlsProps {
@@ -15,14 +15,25 @@ export function FlipControls({ editor, ids }: FlipControlsProps): JSX.Element {
   const flip = (axis: "horizontal" | "vertical") => {
     for (const id of ids) editor.exec("weave.item.flip", { itemId: id, axis });
   };
+  // DR-design-016 — compact flip icons instead of the wide 좌우 / 상하 text pills.
   return (
-    <div className="flex gap-1">
-      <Button variant="ghost" size="md" aria-label="좌우 반전" onClick={() => flip("horizontal")}>
-        좌우
-      </Button>
-      <Button variant="ghost" size="md" aria-label="상하 반전" onClick={() => flip("vertical")}>
-        상하
-      </Button>
+    <div className="flex gap-0.5">
+      <IconButton
+        size="sm"
+        aria-label="좌우 반전"
+        data-tip="좌우 반전"
+        onClick={() => flip("horizontal")}
+      >
+        <IconFlipHorizontal size={16} />
+      </IconButton>
+      <IconButton
+        size="sm"
+        aria-label="상하 반전"
+        data-tip="상하 반전"
+        onClick={() => flip("vertical")}
+      >
+        <IconFlipVertical size={16} />
+      </IconButton>
     </div>
   );
 }

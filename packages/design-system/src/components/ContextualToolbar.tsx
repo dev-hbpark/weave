@@ -183,7 +183,10 @@ function ToolbarField({ label, children, className }: ToolbarFieldProps): JSX.El
     <div role="group" aria-label={label} className={cn("flex flex-col gap-1", className)}>
       <span
         aria-hidden
-        className="font-mono uppercase leading-none text-[color:var(--text-overlay-muted)] text-[10px] tracking-[1.2px]"
+        // DR-design-016 — Korean-friendly label: clean sentence-case at a
+        // readable size, not the prior mono-uppercase dev-console style (which
+        // forced Korean labels into a monospace fallback at a cramped 10px).
+        className="leading-none text-[color:var(--text-overlay-muted)] text-[11px] font-medium"
       >
         {label}
       </span>

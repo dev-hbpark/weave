@@ -16,7 +16,14 @@ const p = (x: number, y: number, alt = false): HandlePointer => ({
 describe("HANDLE_INTERACTIONS registry (WI-067)", () => {
   it("registers every built-in handle interaction kind", () => {
     expect([...HANDLE_INTERACTIONS.list()].sort()).toEqual(
-      ["discrete-action", "frame-resize", "frame-rotate", "vertex-drag", "vertex-insert"].sort(),
+      [
+        "chart-value-drag",
+        "discrete-action",
+        "frame-resize",
+        "frame-rotate",
+        "vertex-drag",
+        "vertex-insert",
+      ].sort(),
     );
   });
 

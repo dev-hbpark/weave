@@ -9,7 +9,13 @@
 // user can pick several columns → several series. Adding a chart type needs NO
 // edit here.
 
-import { ContextualToolbar as Bar, Button, IconChart, Select } from "@weave/design-system";
+import {
+  ContextualToolbar as Bar,
+  Button,
+  ColorPicker,
+  IconChart,
+  Select,
+} from "@weave/design-system";
 import { type JSX, useState } from "react";
 import { DatasetEditorDialog } from "../../dataset/DatasetEditorDialog.js";
 import { useResolveDataset } from "../../dataset/dataset-context.js";
@@ -193,9 +199,28 @@ export const ChartSection: ToolbarSectionComponent = ({ editor, items, ids }) =>
       };
     });
 
+  // WI-092 — CHART-level colour (ALL chart types): the parent-selection
+  // counterpart to the per-element colour in ChartElementEditor. Writes the
+  // chart's `palette` to a single colour — the UNIVERSAL colour source every
+  // builder cycles, so every mark (bar / line / slice / polygon …) takes it with
+  // no per-builder change, while a per-element override still wins on top
+  // (default + exception, same shape as the width model). Shown when no element
+  // is drilled in.
+  const attrs0 = items[0]?.attrs as unknown as ChartAttrs | undefined;
+  const showChartColor = ids.length === 1 && !isMixed(chartType);
+  // Current swatch: the set palette colour if it's a literal (not a CSS var).
+  const paletteColor = attrs0?.palette?.[0];
+  const chartColorValue =
+    paletteColor !== undefined && !paletteColor.startsWith("var(") ? paletteColor : "#64748b";
+  const setChartColor = (color: string): void => {
+    const chartId = ids[0];
+    if (chartId === undefined) return;
+    editor.exec("weave.item.update", { itemId: chartId, attrs: { palette: [color] } });
+  };
+
   return (
     <>
-      <Bar.Kind icon={<IconChart size={18} />} label="Chart" />
+      <Bar.Kind icon={<IconChart size={18} />} label="차트" />
       <Bar.Quick>
         <Select<ChartType>
           value={curType}
@@ -231,6 +256,24 @@ export const ChartSection: ToolbarSectionComponent = ({ editor, items, ids }) =>
             isMultiSeries={isMultiSeries}
             onDeselect={() => select(null)}
           />
+        ) : showChartColor ? (
+          // No element drilled in → set the colour of ALL marks (parent level).
+          // The ColorPicker is a custom control (own aria-label), so this is a
+          // plain wrapper, not a <label>.
+          <span
+            className="flex items-center gap-1 pl-2 ml-1 border-l border-[color:var(--surface-2-border)] text-[11px] text-[color:var(--text-soft)]"
+            data-testid="chart-color"
+          >
+            색상
+            <ColorPicker
+              aria-label="전체 색상"
+              value={chartColorValue}
+              onValueCommit={setChartColor}
+              onValueChange={() => {
+                /* commit-only */
+              }}
+            />
+          </span>
         ) : null}
       </Bar.Quick>
       <Bar.More>
@@ -266,7 +309,7 @@ export const ChartSection: ToolbarSectionComponent = ({ editor, items, ids }) =>
             />
           </Bar.Field>
         ) : null}
-        <Bar.Field label="Opacity">
+        <Bar.Field label="불투명도">
           <OpacityControl editor={editor} ids={ids} />
         </Bar.Field>
       </Bar.More>

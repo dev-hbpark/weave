@@ -1,26 +1,24 @@
 // WI-078 (DR-035) — ChartElementSelection context. Bridges an intra-chart mark
 // click (deep inside FrameSurface, in ChartBlock) to the editing surface
-// (ChartSection in the contextual toolbar) without prop-drilling — the same
-// React-context pattern as DatasetContext. The selection is NOT a weave item;
-// it's a transient "which bar/slice is being emphasis-edited" pointer, keyed by
-// the chart item id + the category (stable key for overrides).
+// (ChartSection in the contextual toolbar) without prop-drilling.
+//
+// WI-092 — the source of truth MOVED to the module-level `chartElementStore` so
+// the (non-React) SelectionLayer view-model that draws per-datum drag handles
+// reads the SAME selection the props panel does. This context is now a thin
+// React adapter over that store (useSyncExternalStore), preserving the existing
+// `{ selected, select }` API for ChartSection / ChartBlock.
 
-import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
+import { type ChartElementRef, chartElementStore } from "./chart-element-store.js";
 
-export interface ChartElementRef {
-  readonly chartItemId: string;
-  /** DR-037 — selection level. `datum` = one bar/slice (mark click). `series` =
-   *  a whole series (legend click) → edits apply to all its datums. (Category
-   *  labels are NOT selected here — they are real text Items; see DR-035.) */
-  readonly role: "series" | "datum";
-  /** Series name (legend / series-override key). Set for both roles. */
-  readonly seriesName?: string | undefined;
-  /** Datum category (per-datum override key). Set for `datum`. */
-  readonly category?: string | undefined;
-  /** Dataset row index of the clicked mark. Set for `datum`. */
-  readonly rowIndex?: number | undefined;
-  readonly value?: number | undefined;
-}
+export type { ChartElementRef } from "./chart-element-store.js";
 
 export interface ChartElementSelection {
   readonly selected: ChartElementRef | null;
@@ -29,14 +27,26 @@ export interface ChartElementSelection {
 
 const NULL_SELECTION: ChartElementSelection = { selected: null, select: () => undefined };
 
-const ChartElementSelectionContext = createContext<ChartElementSelection>(NULL_SELECTION);
+const ChartElementSelectionContext = createContext<ChartElementSelection | null>(null);
 
 export function ChartElementSelectionProvider({ children }: { readonly children: ReactNode }) {
-  const [selected, setSelected] = useState<ChartElementRef | null>(null);
+  const selected = useSyncExternalStore(
+    chartElementStore.subscribe,
+    chartElementStore.get,
+    () => null,
+  );
   const value = useMemo<ChartElementSelection>(
-    () => ({ selected, select: setSelected }),
+    () => ({ selected, select: chartElementStore.set }),
     [selected],
   );
+  // DEV / e2e — expose the element-selection store (same gating as the other
+  // `window.__weave*` diagnostics; stripped from production bundles) so a test
+  // can drive the exact selection a real mark click produces.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __weaveChartElement?: typeof chartElementStore }).__weaveChartElement =
+      chartElementStore;
+  }, []);
   return (
     <ChartElementSelectionContext.Provider value={value}>
       {children}
@@ -44,7 +54,14 @@ export function ChartElementSelectionProvider({ children }: { readonly children:
   );
 }
 
-/** Safe outside a provider (returns the null selection). */
+/** Safe outside a provider — reads the shared store directly so the toolbar and
+ *  the view-model always agree even if a consumer mounts without the provider. */
 export function useChartElementSelection(): ChartElementSelection {
-  return useContext(ChartElementSelectionContext);
+  const ctx = useContext(ChartElementSelectionContext);
+  const selected = useSyncExternalStore(
+    chartElementStore.subscribe,
+    chartElementStore.get,
+    () => null,
+  );
+  return ctx ?? { ...NULL_SELECTION, selected, select: chartElementStore.set };
 }

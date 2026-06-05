@@ -128,7 +128,7 @@ export function FlexChildSection({
           aria-label="Flex child grow"
         />
       </Bar.Field>
-      <Bar.Field label="Align self">
+      <Bar.Field label="자기 정렬">
         <Select<FlexAlign>
           value={alignSelf}
           onValueChange={(v) => apply({ alignSelf: v })}
@@ -205,7 +205,7 @@ export function GridChildSection({
       data-testid="grid-child-controls"
       className="inline-flex items-end gap-2 ml-1 pl-2 border-l border-l-[color:var(--surface-overlay-border)]"
     >
-      <Bar.Field label="Justify self">
+      <Bar.Field label="가로 정렬">
         <Select<GridJustify>
           value={justifySelf}
           onValueChange={(v) => apply({ justifySelf: v })}
@@ -214,7 +214,7 @@ export function GridChildSection({
           triggerClassName="min-w-[88px]"
         />
       </Bar.Field>
-      <Bar.Field label="Align self">
+      <Bar.Field label="자기 정렬">
         <Select<GridAlign>
           value={alignSelf}
           onValueChange={(v) => apply({ alignSelf: v })}

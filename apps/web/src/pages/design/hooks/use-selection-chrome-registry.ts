@@ -2,6 +2,8 @@ import type { Document as AgocraftDocument, LayoutChildPolicy } from "@agocraft/
 import type { Editor, SelectionChromeRegistry } from "@agocraft/editor";
 import { useEffect, useRef } from "react";
 import { findItemDeep } from "../../../document/agocraft-mirror.js";
+import { migrateEncoding, valueFields } from "../../../document/domains/chart/chart-model.js";
+import { createChartElementViewModel } from "../../../document/selection-chrome/chart-element-view-model.js";
 import { createFrameDefaultViewModel } from "../../../document/selection-chrome/frame-default-view-model.js";
 import { createPolyVertexHandleViewModel } from "../../../document/selection-chrome/poly-vertex-handle.js";
 import { createShapeSelectionViewModel } from "../../../document/selection-chrome/shape-selection-view-model.js";
@@ -74,11 +76,32 @@ export function useSelectionChromeRegistry({
           },
         }),
       ),
+      // WI-092 — chart datum value handle (bar height / line point / pie sweep).
+      // Merges with the chart frame-default chrome; reads the live dataset
+      // binding so the drag writes back to the right column.
+      selectionChrome.registerItemViewModel(
+        createChartElementViewModel({
+          editor,
+          getBinding: (itemId) => {
+            const item = findItemDeep(docRef.current, itemId);
+            if (item?.kind !== "chart") return null;
+            const attrs = item.attrs as {
+              datasetId?: string;
+              encoding?: Parameters<typeof migrateEncoding>[0];
+            };
+            const enc = migrateEncoding(attrs.encoding);
+            return {
+              datasetId: attrs.datasetId ?? "",
+              valueColumn: valueFields(enc)[0] ?? "",
+            };
+          },
+        }),
+      ),
     ];
     return () => {
       for (const dispose of disposers) dispose();
     };
-  }, [selectionChrome, docRef]);
+  }, [selectionChrome, docRef, editor]);
 
   // WI-065 / DR-031 — re-select helper held in a ref so the vertex-handle VM
   // (registered once, deps [selectionChrome, editor]) never closes over a stale

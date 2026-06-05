@@ -78,7 +78,7 @@ export const QrSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
         <MixedBadge visible={isMixed(data)} />
       </Bar.Quick>
       <Bar.More>
-        <Bar.Field label="Color">
+        <Bar.Field label="색상">
           <ColorPicker
             aria-label="QR 전경색"
             value={isMixed(fgColor) ? "#cccccc" : (fgColor ?? "#111827")}
@@ -97,7 +97,7 @@ export const QrSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
           />
           <MixedBadge visible={isMixed(fgColor) || isMixed(bgColor)} />
         </Bar.Field>
-        <Bar.Field label="Error level">
+        <Bar.Field label="오류 보정">
           <Select<string>
             value={isMixed(ecLevel) ? "" : ecLevel}
             onValueChange={(v) => setAttr({ ecLevel: v as "L" | "M" | "Q" | "H" })}
@@ -108,7 +108,7 @@ export const QrSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
           />
           <MixedBadge visible={isMixed(ecLevel)} />
         </Bar.Field>
-        <Bar.Field label="Module">
+        <Bar.Field label="모듈">
           <Select<string>
             value={isMixed(moduleStyle) ? "" : moduleStyle}
             onValueChange={(v) => setAttr({ moduleStyle: v as "square" | "dot" | "rounded" })}

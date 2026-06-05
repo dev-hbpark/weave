@@ -429,6 +429,52 @@ export const IconLinkOff = forwardRef<SVGSVGElement, IconProps>(function IconLin
   );
 });
 
+// DR-061 — item lock. IconLock = closed padlock (protected); IconLockOpen =
+// open shackle (unlocked / click to lock).
+export const IconLock = forwardRef<SVGSVGElement, IconProps>(function IconLock(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </SvgRoot>
+  );
+});
+
+export const IconLockOpen = forwardRef<SVGSVGElement, IconProps>(function IconLockOpen(props, ref) {
+  return (
+    <SvgRoot ref={ref} {...props}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 7.5-2" />
+    </SvgRoot>
+  );
+});
+
+// DR-design-016 — compact flip glyphs (replace the 좌우 / 상하 text buttons).
+// Dashed mirror axis + two arrowheads pointing across it.
+export const IconFlipHorizontal = forwardRef<SVGSVGElement, IconProps>(
+  function IconFlipHorizontal(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M12 4v16" strokeDasharray="2 3" />
+        <path d="M8 9l-4 3 4 3" />
+        <path d="M16 9l4 3-4 3" />
+      </SvgRoot>
+    );
+  },
+);
+
+export const IconFlipVertical = forwardRef<SVGSVGElement, IconProps>(
+  function IconFlipVertical(props, ref) {
+    return (
+      <SvgRoot ref={ref} {...props}>
+        <path d="M4 12h16" strokeDasharray="2 3" />
+        <path d="M9 8l3-4 3 4" />
+        <path d="M9 16l3 4 3-4" />
+      </SvgRoot>
+    );
+  },
+);
+
 // WI-020 / WI-043 RISK-002 C2.4 — 3 layout-type icons for the
 // ContextualToolbar SegmentedControl + Option+drag popup toggle. Each
 // glyph evokes the paradigm visually:

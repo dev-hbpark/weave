@@ -30,7 +30,8 @@
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { findDescendantSet } from "../agocraft-mirror.js";
+import { findDescendantSet, findItemDeep } from "../agocraft-mirror.js";
+import { isItemLocked } from "../types.js";
 
 const REPARENT_ACTIVE_ATTR = "data-reparent-drop-target";
 const REPARENT_INVALID_ATTR = "data-reparent-drop-invalid";
@@ -157,6 +158,9 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
       if (hitFrameId === null) return;
       const doc = getDocumentRef.current();
       if (doc === null) return;
+      // DR-061 — a locked item cannot be reparented (its position is protected).
+      const hit = findItemDeep(doc, hitFrameId);
+      if (hit !== undefined && isItemLocked(hit)) return;
       const selected = getSelectedIdsRef.current();
       // Selection must include the pressed frame — otherwise the press
       // wouldn't have been on a draggable item. Tolerate single-frame

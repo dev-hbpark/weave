@@ -7,10 +7,12 @@
 // More popover.
 
 import type {
+  PartialTextStyle,
   TextAlign,
   TextAlignVertical,
   TextCase,
   TextDecoration,
+  TextRun,
   TextStyle,
   TextTruncation,
   TextWeight,
@@ -18,7 +20,6 @@ import type {
 import {
   Accordion,
   AccordionItem,
-  AlignmentPad,
   ContextualToolbar as Bar,
   Button,
   ColorPicker,
@@ -26,6 +27,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  IconAlignBottom,
+  IconAlignHorizontalCenter,
+  IconAlignLeft,
+  IconAlignRight,
+  IconAlignTop,
+  IconAlignVerticalCenter,
   IconBold,
   IconButton,
   IconClose,
@@ -34,12 +41,12 @@ import {
   IconUnderline,
   NumberSlider,
   SegmentedControl,
-  Switch,
   Tooltip,
 } from "@weave/design-system";
 import { useState } from "react";
 import { TextOnboardingHint } from "../../../launch/TextOnboardingHint.js";
 import { fontSizeTooltipCopy } from "../../../launch/text-v1-copy.js";
+import { EMPTY_READOUT, useActiveTextStyle } from "../../active-text-style.js";
 import { absoluteFrameBox, findItemDeep } from "../../agocraft-mirror.js";
 import {
   deriveTextAutoResize,
@@ -87,6 +94,28 @@ function parentHeightPxOf(
   return dims.height;
 }
 
+/** DR-057 — when a text item is run-driven (`textRuns` present), a whole-box
+ *  toolbar toggle must rewrite EVERY run so `textRuns` stays the single source
+ *  of truth (the read-only container neutralizes its own inline toggleables, so
+ *  setting only the item-level attr would be invisible). Sets the attribute on
+ *  each text run, or DELETES it when `value` is undefined — absence is the
+ *  neutral/off state the container renders. Paragraph-break runs are untouched. */
+function setRunsInlineAttr(
+  runs: ReadonlyArray<TextRun>,
+  key: "fontWeight" | "fontStyle" | "textDecoration",
+  value: string | undefined,
+): ReadonlyArray<TextRun> {
+  return runs.map((run) => {
+    if (run.insert === "\n") return run;
+    const attrs = { ...(run.attributes ?? {}) } as Record<string, unknown>;
+    if (value === undefined) delete attrs[key];
+    else attrs[key] = value;
+    return Object.keys(attrs).length > 0
+      ? { insert: run.insert, attributes: attrs as unknown as PartialTextStyle }
+      : { insert: run.insert };
+  });
+}
+
 export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
   // px↔% conversion needs the renderer's parent-height denominator (design-px).
   const doc = useDocumentForResolution();
@@ -120,6 +149,16 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
   const background = useResolveSharedColor(
     items,
     (it) => (it.attrs as unknown as TextAttrs).background,
+  );
+  // DR-059 — text outline (외곽선). Color resolves through the cascade like
+  // fill/background; width is design-px (0 / unset = off).
+  const outlineColor = useResolveSharedColor(
+    items,
+    (it) => (it.attrs as unknown as TextAttrs).textOutline?.color,
+  );
+  const outlineWidth = sharedValue<number>(
+    items,
+    (it) => (it.attrs as unknown as TextAttrs).textOutline?.width ?? 0,
   );
   const textAlign = sharedValue<TextAlign>(
     items,
@@ -180,18 +219,101 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
   const linkValue = linkDraft ?? (isMixed(hyperlink) ? "" : hyperlink);
   const bgHasValue = !isMixed(background) && background !== undefined;
+  // DR-059 — outline is "on" when width > 0. Picking a color while off enables
+  // it at a sensible default thickness; clearing / width 0 removes it.
+  const outlineWidthValue = isMixed(outlineWidth) ? 0 : outlineWidth;
+  const outlineOn = outlineWidthValue > 0;
+  const DEFAULT_OUTLINE_WIDTH = 2;
+  // DR-062 — when a single text item is being edited, its editor registers a
+  // per-range STYLE applier; every routed control then targets the live
+  // SELECTION (per-range) instead of the whole item, and DISPLAYS the
+  // selection's current style (multi vs single) from the live readout.
+  const activeEntry = useActiveTextStyle(ids.length === 1 ? (ids[0] ?? null) : null);
+  const activeStyle = activeEntry?.applier ?? null;
+  const readout = activeEntry?.readout ?? EMPTY_READOUT;
+  const editing = activeStyle !== null;
 
   // Quick toggle helpers. `!isMixed(x) && x === ...` is the toggled state;
   // when mixed, the toggle reads as off and clicking sets the asserted
-  // value for every selected item.
-  const isBold = !isMixed(fontWeight) && fontWeight === "bold";
-  const isItalic = !isMixed(fontStyle) && fontStyle === "italic";
-  const isUnderline = !isMixed(textDecoration) && textDecoration === "UNDERLINE";
+  // value for every selected item. While editing, the per-range readout's
+  // selection format wins so the toggles reflect the SELECTION.
+  const isBold = editing ? readout.bold : !isMixed(fontWeight) && fontWeight === "bold";
+  const isItalic = editing ? readout.italic : !isMixed(fontStyle) && fontStyle === "italic";
+  const isUnderline = editing
+    ? readout.underline
+    : !isMixed(textDecoration) && textDecoration === "UNDERLINE";
+
+  // DR-062 — per-range display helpers. While editing, a control shows the
+  // selection's value: a single value when the sub-range is uniform, the Mixed
+  // badge when it spans differing values (Lexical's "" → `mixed`).
+  const itemColorStr = isMixed(color) ? "#1f2933" : (color ?? "#1f2933");
+  const editColor = editing ? readout.props.color : undefined;
+  const editFontSize = editing ? readout.props.fontSize : undefined;
+  const editFontFamily = editing ? readout.props.fontFamily : undefined;
+  const editLetterSpacing = editing ? readout.props.letterSpacing : undefined;
+  const editTextCase = editing ? readout.props.textCase : undefined;
+  // The decoration the SELECTION currently carries (꾸밈 segmented control).
+  const editDecoration: TextDecoration | undefined = editing
+    ? readout.underline
+      ? "UNDERLINE"
+      : readout.strikethrough
+        ? "STRIKETHROUGH"
+        : "NONE"
+    : undefined;
+  /** Normalize the selection's decoration to `target` via format toggles
+   *  (a SegmentedControl SETS one of three; Lexical only TOGGLES). */
+  const applyRangeDecoration = (target: TextDecoration): void => {
+    if (activeStyle === null) return;
+    if (target === "UNDERLINE") {
+      if (!readout.underline) activeStyle.toggleFormat("underline");
+      if (readout.strikethrough) activeStyle.toggleFormat("strikethrough");
+    } else if (target === "STRIKETHROUGH") {
+      if (!readout.strikethrough) activeStyle.toggleFormat("strikethrough");
+      if (readout.underline) activeStyle.toggleFormat("underline");
+    } else {
+      if (readout.underline) activeStyle.toggleFormat("underline");
+      if (readout.strikethrough) activeStyle.toggleFormat("strikethrough");
+    }
+  };
 
   return (
     <>
-      <Bar.Kind icon={<IconText size={18} />} label="Text" />
+      <Bar.Kind icon={<IconText size={18} />} label="텍스트" />
       <Bar.Quick>
+        {/* DR-design-016 — font size promoted to Quick (the most frequent text
+            edit after B/I/U); writes px (fine-grained px/% unit toggle stays in
+            More 크기). */}
+        <NumberSlider
+          value={
+            editing
+              ? editFontSize?.mixed
+                ? 24
+                : ((editFontSize?.value as number | undefined) ??
+                  (isMixed(fontSize) ? 24 : fontSize))
+              : isMixed(fontSize)
+                ? 24
+                : fontSize
+          }
+          onValueChange={(v) => {
+            if (activeStyle !== null) {
+              activeStyle.setStyleProp("fontSize", v, { continuous: true }); // per-range px (slider)
+              return;
+            }
+            updateAll(editor, ids, (prev) => ({
+              attrs: {
+                ...prev.attrs,
+                fontSize: v,
+                fontSizeSpec: { kind: "px", value: v },
+              },
+            }));
+          }}
+          min={8}
+          max={200}
+          step={1}
+          format={(v) => `${Math.round(v)}`}
+          aria-label="글자 크기"
+          className="w-[88px]"
+        />
         <IconButton
           aria-label="굵게"
           aria-pressed={isMixed(fontWeight) ? "mixed" : isBold}
@@ -199,14 +321,31 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
           data-tip-kbd="⌘ B"
           size="sm"
           data-testid="text-quick-bold"
-          onClick={() =>
-            updateAll(editor, ids, (prev) => ({
-              attrs: {
-                ...prev.attrs,
-                fontWeight: (isBold ? "normal" : "bold") as TextWeight,
-              },
-            }))
-          }
+          onClick={() => {
+            if (activeStyle !== null) {
+              activeStyle.toggleFormat("bold");
+              return;
+            }
+            updateAll(editor, ids, (prev) => {
+              const next = (isBold ? "normal" : "bold") as TextWeight;
+              const runs = (prev.attrs as { textRuns?: ReadonlyArray<TextRun> }).textRuns;
+              return {
+                attrs: {
+                  ...prev.attrs,
+                  fontWeight: next,
+                  ...(runs && runs.length > 0
+                    ? {
+                        textRuns: setRunsInlineAttr(
+                          runs,
+                          "fontWeight",
+                          next === "bold" ? "bold" : undefined,
+                        ),
+                      }
+                    : {}),
+                },
+              };
+            });
+          }}
         >
           <IconBold size={16} />
         </IconButton>
@@ -217,14 +356,31 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
           data-tip-kbd="⌘ I"
           size="sm"
           data-testid="text-quick-italic"
-          onClick={() =>
-            updateAll(editor, ids, (prev) => ({
-              attrs: {
-                ...prev.attrs,
-                fontStyle: (isItalic ? "normal" : "italic") as TextStyle,
-              },
-            }))
-          }
+          onClick={() => {
+            if (activeStyle !== null) {
+              activeStyle.toggleFormat("italic");
+              return;
+            }
+            updateAll(editor, ids, (prev) => {
+              const next = (isItalic ? "normal" : "italic") as TextStyle;
+              const runs = (prev.attrs as { textRuns?: ReadonlyArray<TextRun> }).textRuns;
+              return {
+                attrs: {
+                  ...prev.attrs,
+                  fontStyle: next,
+                  ...(runs && runs.length > 0
+                    ? {
+                        textRuns: setRunsInlineAttr(
+                          runs,
+                          "fontStyle",
+                          next === "italic" ? "italic" : undefined,
+                        ),
+                      }
+                    : {}),
+                },
+              };
+            });
+          }}
         >
           <IconItalic size={16} />
         </IconButton>
@@ -235,25 +391,56 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
           data-tip-kbd="⌘ U"
           size="sm"
           data-testid="text-quick-underline"
-          onClick={() =>
-            updateAll(editor, ids, (prev) => ({
-              attrs: {
-                ...prev.attrs,
-                textDecoration: (isUnderline ? "NONE" : "UNDERLINE") as TextDecoration,
-              },
-            }))
-          }
+          onClick={() => {
+            if (activeStyle !== null) {
+              activeStyle.toggleFormat("underline");
+              return;
+            }
+            updateAll(editor, ids, (prev) => {
+              const next = (isUnderline ? "NONE" : "UNDERLINE") as TextDecoration;
+              const runs = (prev.attrs as { textRuns?: ReadonlyArray<TextRun> }).textRuns;
+              return {
+                attrs: {
+                  ...prev.attrs,
+                  textDecoration: next,
+                  ...(runs && runs.length > 0
+                    ? {
+                        textRuns: setRunsInlineAttr(
+                          runs,
+                          "textDecoration",
+                          next === "UNDERLINE" ? "UNDERLINE" : undefined,
+                        ),
+                      }
+                    : {}),
+                },
+              };
+            });
+          }}
         >
           <IconUnderline size={16} />
         </IconButton>
         <ColorPicker
           aria-label="글자 색상"
-          value={isMixed(color) ? "#cccccc" : (color ?? "#1f2933")}
-          onValueCommit={(v) =>
+          value={
+            editing
+              ? editColor?.mixed
+                ? "#cccccc"
+                : ((editColor?.value as string | undefined) ?? itemColorStr)
+              : isMixed(color)
+                ? "#cccccc"
+                : (color ?? "#1f2933")
+          }
+          onValueCommit={(v) => {
+            if (activeStyle !== null) {
+              // Per-range: a literal CSS color (theme tokens don't apply to a
+              // Lexical node style); routes to the editor selection.
+              activeStyle.setStyleProp("color", v);
+              return;
+            }
             updateAll(editor, ids, (prev) => ({
               attrs: { ...prev.attrs, color: pickerValueToStored(v) },
-            }))
-          }
+            }));
+          }}
           onValueChange={() => {
             /* commit-only */
           }}
@@ -262,28 +449,47 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
       <Bar.More>
         <Accordion>
           <AccordionItem label="타이포" defaultOpen data-testid="text-typo-group">
-            <Bar.Field label="Family">
+            <Bar.Field label="글꼴">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="md"
                     data-testid="text-font-family-trigger"
-                    style={{ fontFamily: isMixed(fontFamily) ? undefined : fontFamily }}
+                    style={{
+                      fontFamily: editing
+                        ? (editFontFamily?.value as string | undefined)
+                        : isMixed(fontFamily)
+                          ? undefined
+                          : fontFamily,
+                    }}
                     className="w-full justify-between"
                   >
-                    {isMixed(fontFamily) ? "여러 폰트" : fontFamilyLabel(fontFamily)}
+                    {editing
+                      ? editFontFamily?.mixed
+                        ? "여러 폰트"
+                        : fontFamilyLabel(
+                            (editFontFamily?.value as string | undefined) ??
+                              (isMixed(fontFamily) ? "" : fontFamily),
+                          )
+                      : isMixed(fontFamily)
+                        ? "여러 폰트"
+                        : fontFamilyLabel(fontFamily)}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" sideOffset={6}>
                   {FONT_FAMILY_PRESETS.map((p) => (
                     <DropdownMenuItem
                       key={p.value}
-                      onSelect={() =>
+                      onSelect={() => {
+                        if (activeStyle !== null) {
+                          activeStyle.setStyleProp("fontFamily", p.value);
+                          return;
+                        }
                         updateAll(editor, ids, (prev) => ({
                           attrs: { ...prev.attrs, fontFamily: p.value },
-                        }))
-                      }
+                        }));
+                      }}
                       data-testid={`text-font-family-${p.label.replace(/\s+/g, "-")}`}
                     >
                       <span style={{ fontFamily: p.value }}>{p.label}</span>
@@ -291,9 +497,9 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <MixedBadge visible={isMixed(fontFamily)} />
+              <MixedBadge visible={editing ? !!editFontFamily?.mixed : isMixed(fontFamily)} />
             </Bar.Field>
-            <Bar.Field label="Size">
+            <Bar.Field label="크기">
               {(() => {
                 const tip = fontSizeTooltipCopy();
                 return (
@@ -352,16 +558,29 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                       />
                       {sizeMode === "px" ? (
                         <NumberSlider
-                          value={isMixed(fontSize) ? 24 : fontSize}
-                          onValueChange={(v) =>
+                          value={
+                            editing
+                              ? editFontSize?.mixed
+                                ? 24
+                                : ((editFontSize?.value as number | undefined) ??
+                                  (isMixed(fontSize) ? 24 : fontSize))
+                              : isMixed(fontSize)
+                                ? 24
+                                : fontSize
+                          }
+                          onValueChange={(v) => {
+                            if (activeStyle !== null) {
+                              activeStyle.setStyleProp("fontSize", v, { continuous: true }); // per-range px (slider)
+                              return;
+                            }
                             updateAll(editor, ids, (prev) => ({
                               attrs: {
                                 ...prev.attrs,
                                 fontSize: v,
                                 fontSizeSpec: { kind: "px", value: v },
                               },
-                            }))
-                          }
+                            }));
+                          }}
                           min={8}
                           // Expand the scale so a resize-produced size beyond the
                           // normal editing ceiling keeps the thumb in sync with
@@ -407,56 +626,71 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                   </Tooltip>
                 );
               })()}
-              <MixedBadge visible={isMixed(fontSize) || isMixed(fontSizeKind)} />
+              <MixedBadge
+                visible={
+                  editing ? !!editFontSize?.mixed : isMixed(fontSize) || isMixed(fontSizeKind)
+                }
+              />
             </Bar.Field>
           </AccordionItem>
           <AccordionItem label="정렬" data-testid="text-align-group">
-            <Bar.Field label="정렬">
-              {/* 2D align pad — horizontal (left/center/right) × vertical
-                  (top/center/bottom). "양쪽 맞춤"(justify) is a 4th horizontal
-                  mode handled by the toggle beside the pad. */}
-              <div className="flex items-start gap-3">
-                <AlignmentPad<"left" | "center" | "right", TextAlignVertical>
-                  horizontal={isMixed(textAlign) ? "" : textAlign}
-                  vertical={isMixed(textAlignVertical) ? "" : textAlignVertical}
-                  hValues={["left", "center", "right"]}
-                  vValues={["TOP", "CENTER", "BOTTOM"]}
-                  onChange={(h, v) =>
-                    updateAll(editor, ids, (prev) => ({
-                      attrs: {
-                        ...prev.attrs,
-                        textAlign: h,
-                        textAlignHorizontal:
-                          h === "left" ? "LEFT" : h === "center" ? "CENTER" : "RIGHT",
-                        textAlignVertical: v,
-                      },
-                    }))
-                  }
-                  aria-label="텍스트 정렬"
-                  data-testid="text-align-pad"
-                />
-                <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
-                  <Switch
-                    checked={!isMixed(textAlign) && textAlign === "justify"}
-                    onCheckedChange={(on) =>
-                      updateAll(editor, ids, (prev) => ({
-                        attrs: {
-                          ...prev.attrs,
-                          textAlign: on ? "justify" : "left",
-                          textAlignHorizontal: on ? "JUSTIFIED" : "LEFT",
-                        },
-                      }))
-                    }
-                    aria-label="양쪽 맞춤"
-                  />
-                  양쪽 맞춤
-                </span>
-                <MixedBadge visible={isMixed(textAlign) || isMixed(textAlignVertical)} />
-              </div>
+            {/* DR-design-016 — the wide 2D AlignmentPad + separate justify switch
+                replaced by two compact icon SegmentedControls (가로 / 세로). */}
+            <Bar.Field label="가로">
+              <SegmentedControl<"left" | "center" | "right" | "justify">
+                value={isMixed(textAlign) ? "left" : textAlign}
+                onValueChange={(h) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: {
+                      ...prev.attrs,
+                      textAlign: h,
+                      textAlignHorizontal:
+                        h === "left"
+                          ? "LEFT"
+                          : h === "center"
+                            ? "CENTER"
+                            : h === "right"
+                              ? "RIGHT"
+                              : "JUSTIFIED",
+                    },
+                  }))
+                }
+                options={[
+                  { value: "left", label: "왼쪽", icon: <IconAlignLeft size={14} /> },
+                  {
+                    value: "center",
+                    label: "가운데",
+                    icon: <IconAlignHorizontalCenter size={14} />,
+                  },
+                  { value: "right", label: "오른쪽", icon: <IconAlignRight size={14} /> },
+                  { value: "justify", label: "양쪽" },
+                ]}
+                aria-label="가로 정렬"
+                data-testid="text-align-h"
+              />
+              <MixedBadge visible={isMixed(textAlign)} />
+            </Bar.Field>
+            <Bar.Field label="세로">
+              <SegmentedControl<TextAlignVertical>
+                value={isMixed(textAlignVertical) ? "TOP" : textAlignVertical}
+                onValueChange={(v) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: { ...prev.attrs, textAlignVertical: v },
+                  }))
+                }
+                options={[
+                  { value: "TOP", label: "위", icon: <IconAlignTop size={14} /> },
+                  { value: "CENTER", label: "가운데", icon: <IconAlignVerticalCenter size={14} /> },
+                  { value: "BOTTOM", label: "아래", icon: <IconAlignBottom size={14} /> },
+                ]}
+                aria-label="세로 정렬"
+                data-testid="text-align-v"
+              />
+              <MixedBadge visible={isMixed(textAlignVertical)} />
             </Bar.Field>
           </AccordionItem>
           <AccordionItem label="스타일" data-testid="text-style-group">
-            <Bar.Field label="Mode">
+            <Bar.Field label="크기 조절">
               <TextOnboardingHint
                 anchor={
                   <div data-testid="text-mode-toggle">
@@ -485,14 +719,24 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               />
               <MixedBadge visible={isMixed(textAutoResize)} />
             </Bar.Field>
-            <Bar.Field label="Decoration">
+            <Bar.Field label="꾸밈">
               <SegmentedControl<TextDecoration>
-                value={isMixed(textDecoration) ? "NONE" : textDecoration}
-                onValueChange={(v) =>
+                value={
+                  editing
+                    ? (editDecoration ?? "NONE")
+                    : isMixed(textDecoration)
+                      ? "NONE"
+                      : textDecoration
+                }
+                onValueChange={(v) => {
+                  if (activeStyle !== null) {
+                    applyRangeDecoration(v); // per-range via Lexical format toggles
+                    return;
+                  }
                   updateAll(editor, ids, (prev) => ({
                     attrs: { ...prev.attrs, textDecoration: v },
-                  }))
-                }
+                  }));
+                }}
                 options={[
                   { value: "NONE", label: "없음" },
                   { value: "UNDERLINE", label: "밑줄" },
@@ -500,16 +744,33 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 ]}
                 aria-label="Text decoration"
               />
-              <MixedBadge visible={isMixed(textDecoration)} />
+              <MixedBadge visible={editing ? false : isMixed(textDecoration)} />
             </Bar.Field>
-            <Bar.Field label="Case">
+            <Bar.Field label="대소문자">
               <SegmentedControl<TextCase>
-                value={isMixed(textCase) ? "ORIGINAL" : textCase}
-                onValueChange={(v) =>
+                value={
+                  editing
+                    ? editTextCase?.mixed
+                      ? "ORIGINAL"
+                      : ((editTextCase?.value as TextCase | undefined) ?? "ORIGINAL")
+                    : isMixed(textCase)
+                      ? "ORIGINAL"
+                      : textCase
+                }
+                onValueChange={(v) => {
+                  if (activeStyle !== null) {
+                    // ORIGINAL clears the per-range transform (base applies);
+                    // SMALL_CAPS has no plain text-transform → treat as ORIGINAL.
+                    activeStyle.setStyleProp(
+                      "textCase",
+                      v === "ORIGINAL" || v === "SMALL_CAPS" ? undefined : v,
+                    );
+                    return;
+                  }
                   updateAll(editor, ids, (prev) => ({
                     attrs: { ...prev.attrs, textCase: v },
-                  }))
-                }
+                  }));
+                }}
                 options={[
                   { value: "ORIGINAL", label: "Aa" },
                   { value: "UPPER", label: "AA" },
@@ -518,11 +779,109 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 ]}
                 aria-label="Text case"
               />
-              <MixedBadge visible={isMixed(textCase)} />
+              <MixedBadge visible={editing ? !!editTextCase?.mixed : isMixed(textCase)} />
+            </Bar.Field>
+            {/* DR-059 / DR-060 / DR-062 — 외곽선: a thick stroked back layer
+                behind the fill. While EDITING a text item, the control targets
+                the live SELECTION (per-range) via the active-style bridge and
+                DISPLAYS the selection's outline; otherwise it sets the
+                WHOLE-ITEM outline (DR-059). */}
+            <Bar.Field label="외곽선">
+              <div className="flex items-center gap-1.5" data-testid="text-outline-field">
+                <ColorPicker
+                  aria-label="외곽선 색상"
+                  value={
+                    editing
+                      ? readout.outline.mixed
+                        ? "#cccccc"
+                        : (readout.outline.color ?? "#000000")
+                      : isMixed(outlineColor)
+                        ? "#cccccc"
+                        : (outlineColor ?? "#000000")
+                  }
+                  onValueCommit={(v) => {
+                    if (activeStyle !== null) {
+                      // Per-range: a literal CSS color (theme tokens don't apply
+                      // to a Lexical node style); routes to the editor selection.
+                      activeStyle.setOutlineColor(v);
+                      return;
+                    }
+                    updateAll(editor, ids, (prev) => {
+                      const prevW = (prev.attrs as unknown as TextAttrs).textOutline?.width ?? 0;
+                      return {
+                        attrs: {
+                          ...prev.attrs,
+                          textOutline: {
+                            color: pickerValueToStored(v),
+                            width: prevW > 0 ? prevW : DEFAULT_OUTLINE_WIDTH,
+                          },
+                        },
+                      };
+                    });
+                  }}
+                  onValueChange={() => {
+                    /* commit-only */
+                  }}
+                />
+                {outlineOn || editing ? (
+                  <Button
+                    variant="subtle"
+                    size="md"
+                    onClick={() => {
+                      if (activeStyle !== null) {
+                        activeStyle.clearOutline();
+                        return;
+                      }
+                      updateAll(editor, ids, (prev) => {
+                        const next = { ...prev.attrs } as Record<string, unknown>;
+                        delete next.textOutline;
+                        return { attrs: next as Readonly<Record<string, unknown>> };
+                      });
+                    }}
+                    data-testid="text-outline-clear"
+                    aria-label="외곽선 비우기"
+                    data-tip={editing ? "선택 외곽선 비우기" : "외곽선 비우기"}
+                  >
+                    <IconClose size={14} />
+                  </Button>
+                ) : null}
+                <MixedBadge
+                  visible={
+                    editing ? readout.outline.mixed : isMixed(outlineWidth) || isMixed(outlineColor)
+                  }
+                />
+              </div>
+              <NumberSlider
+                value={editing ? (readout.outline.width ?? 0) : outlineWidthValue}
+                onValueChange={(v) => {
+                  if (activeStyle !== null) {
+                    activeStyle.setOutlineWidth(v); // per-range; <=0 clears the selection
+                    return;
+                  }
+                  updateAll(editor, ids, (prev) => {
+                    if (v <= 0) {
+                      const next = { ...prev.attrs } as Record<string, unknown>;
+                      delete next.textOutline;
+                      return { attrs: next as Readonly<Record<string, unknown>> };
+                    }
+                    const prevColor =
+                      (prev.attrs as unknown as TextAttrs).textOutline?.color ?? "#000000";
+                    return {
+                      attrs: { ...prev.attrs, textOutline: { color: prevColor, width: v } },
+                    };
+                  });
+                }}
+                min={0}
+                max={12}
+                step={0.5}
+                format={(v) => (v <= 0 ? "없음" : `${v}px`)}
+                aria-label="외곽선 두께"
+                className="w-full"
+              />
             </Bar.Field>
           </AccordionItem>
           <AccordionItem label="배경·간격" data-testid="text-spacing-group">
-            <Bar.Field label="Background">
+            <Bar.Field label="배경">
               <div className="flex items-center gap-1.5">
                 <ColorPicker
                   aria-label="텍스트 배경"
@@ -559,7 +918,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 ) : null}
               </div>
             </Bar.Field>
-            <Bar.Field label="Line height">
+            <Bar.Field label="줄 간격">
               <NumberSlider
                 value={isMixed(lineHeight) ? 1.4 : lineHeight}
                 onValueChange={(v) =>
@@ -580,14 +939,27 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               />
               <MixedBadge visible={isMixed(lineHeight)} />
             </Bar.Field>
-            <Bar.Field label="Letter spacing">
+            <Bar.Field label="자간">
               <NumberSlider
-                value={isMixed(letterSpacing) ? 0 : letterSpacing}
-                onValueChange={(v) =>
+                value={
+                  editing
+                    ? editLetterSpacing?.mixed
+                      ? 0
+                      : ((editLetterSpacing?.value as number | undefined) ??
+                        (isMixed(letterSpacing) ? 0 : letterSpacing))
+                    : isMixed(letterSpacing)
+                      ? 0
+                      : letterSpacing
+                }
+                onValueChange={(v) => {
+                  if (activeStyle !== null) {
+                    activeStyle.setStyleProp("letterSpacing", v, { continuous: true }); // per-range (slider)
+                    return;
+                  }
                   updateAll(editor, ids, (prev) => ({
                     attrs: { ...prev.attrs, letterSpacing: v },
-                  }))
-                }
+                  }));
+                }}
                 min={-5}
                 max={20}
                 step={0.5}
@@ -595,11 +967,11 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                 aria-label="Letter spacing"
                 className="w-full"
               />
-              <MixedBadge visible={isMixed(letterSpacing)} />
+              <MixedBadge visible={editing ? !!editLetterSpacing?.mixed : isMixed(letterSpacing)} />
             </Bar.Field>
           </AccordionItem>
           <AccordionItem label="넘침" data-testid="text-wrap-group">
-            <Bar.Field label="Overflow">
+            <Bar.Field label="넘침 처리">
               <SegmentedControl<"VISIBLE" | "HIDDEN">
                 value={isMixed(textOverflow) ? "VISIBLE" : textOverflow}
                 onValueChange={(v) =>
@@ -616,7 +988,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               <MixedBadge visible={isMixed(textOverflow)} />
             </Bar.Field>
             {isOverflowHidden ? (
-              <Bar.Field label="Truncate">
+              <Bar.Field label="줄임">
                 <SegmentedControl<TextTruncation>
                   value={isMixed(textTruncation) ? "DISABLED" : textTruncation}
                   onValueChange={(v) =>
@@ -634,7 +1006,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               </Bar.Field>
             ) : null}
             {isTruncateEnding ? (
-              <Bar.Field label="Max lines">
+              <Bar.Field label="최대 줄 수">
                 <NumberSlider
                   value={isMixed(maxLines) || maxLines == null ? 3 : maxLines}
                   onValueChange={(v) =>
@@ -654,7 +1026,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             ) : null}
           </AccordionItem>
           <AccordionItem label="링크·기타" data-testid="text-link-group">
-            <Bar.Field label="Hyperlink">
+            <Bar.Field label="링크">
               <div className="flex items-center gap-1.5 w-full">
                 <input
                   type="url"
@@ -697,7 +1069,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               </div>
             </Bar.Field>
             {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
-            <Bar.Field label="Opacity">
+            <Bar.Field label="불투명도">
               <OpacityControl editor={editor} ids={ids} />
             </Bar.Field>
           </AccordionItem>

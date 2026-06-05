@@ -6,6 +6,8 @@
 
 import type { VideoAttrs, VideoFit } from "@agocraft/core";
 import {
+  Accordion,
+  AccordionItem,
   ContextualToolbar as Bar,
   Button,
   IconButton,
@@ -42,7 +44,7 @@ export const VideoSection: ToolbarSectionComponent = ({
   const src = sharedValue<string>(items, (it) => (it.attrs as unknown as VideoAttrs).src);
   return (
     <>
-      <Bar.Kind icon={<IconVideo size={18} />} label="Video" />
+      <Bar.Kind icon={<IconVideo size={18} />} label="비디오" />
       <Bar.Quick>
         <IconButton
           aria-label="비디오 교체"
@@ -68,78 +70,74 @@ export const VideoSection: ToolbarSectionComponent = ({
         >
           <IconVolume size={16} />
         </IconButton>
+        {/* DR-design-016 — 맞춤 · 뒤집기 surfaced in Quick (원본 = replace icon,
+            음소거 toggle). 반복 · 음량 · 그림자 · 불투명도 stay in More. */}
+        <Select<VideoFit>
+          value={isMixed(fit) ? "" : fit}
+          onValueChange={(v) =>
+            updateAll(editor, ids, (prev) => ({ attrs: { ...prev.attrs, fit: v } }))
+          }
+          options={FIT_OPTIONS as unknown as ReadonlyArray<{ value: VideoFit; label: string }>}
+          aria-label="맞춤"
+          placeholder="여러 맞춤"
+          triggerClassName="w-[92px]"
+        />
+        <FlipControls editor={editor} ids={ids} />
       </Bar.Quick>
       <Bar.More>
-        <Bar.Field label="Flip">
-          <FlipControls editor={editor} ids={ids} />
-        </Bar.Field>
-        <Bar.Field label="Source">
-          <Button
-            variant="ghost"
-            size="md"
-            onClick={() => onEditMediaSrc?.("video", isMixed(src) ? "" : src)}
-            disabled={multi && isMixed(src)}
-            className="w-full justify-start"
-          >
-            {isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
-          </Button>
-          <MixedBadge visible={isMixed(src)} />
-        </Bar.Field>
-        <Bar.Field label="Fit">
-          <Select<VideoFit>
-            value={isMixed(fit) ? "" : fit}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, fit: v },
-              }))
-            }
-            options={
-              FIT_OPTIONS as unknown as ReadonlyArray<{
-                value: VideoFit;
-                label: string;
-              }>
-            }
-            aria-label="Video fit"
-            placeholder="여러 맞춤"
-            triggerClassName="w-full"
-          />
-          <MixedBadge visible={isMixed(fit)} />
-        </Bar.Field>
-        <Bar.Field label="Loop">
-          <Switch
-            checked={isMixed(loop) ? false : loop}
-            onCheckedChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, loop: v },
-              }))
-            }
-          />
-          <MixedBadge visible={isMixed(loop)} />
-        </Bar.Field>
-        <Bar.Field label="Volume">
-          <NumberSlider
-            value={isMixed(volume) ? 1 : volume}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: { ...prev.attrs, volume: v },
-              }))
-            }
-            min={0}
-            max={1}
-            step={0.01}
-            format={(v) => `${Math.round(v * 100)}%`}
-            className="w-full"
-          />
-          <MixedBadge visible={isMixed(volume)} />
-        </Bar.Field>
-        {/* DR-028 — shadow decoration unit (shared control). */}
-        <Bar.Field label="Shadow">
-          <ShadowControls editor={editor} ids={ids} />
-        </Bar.Field>
-        {/* DR-028 — opacity decoration unit (video has no legacy attr control). */}
-        <Bar.Field label="Opacity">
-          <OpacityControl editor={editor} ids={ids} />
-        </Bar.Field>
+        <Accordion>
+          <AccordionItem label="비디오" defaultOpen data-testid="video-content-group">
+            <Bar.Field label="원본">
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => onEditMediaSrc?.("video", isMixed(src) ? "" : src)}
+                disabled={multi && isMixed(src)}
+                className="w-full justify-start"
+              >
+                {isMixed(src) ? "여러 소스" : src ? truncateUrl(src) : "URL 입력…"}
+              </Button>
+              <MixedBadge visible={isMixed(src)} />
+            </Bar.Field>
+            <Bar.Field label="반복">
+              <Switch
+                checked={isMixed(loop) ? false : loop}
+                onCheckedChange={(v) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: { ...prev.attrs, loop: v },
+                  }))
+                }
+              />
+              <MixedBadge visible={isMixed(loop)} />
+            </Bar.Field>
+            <Bar.Field label="음량">
+              <NumberSlider
+                value={isMixed(volume) ? 1 : volume}
+                onValueChange={(v) =>
+                  updateAll(editor, ids, (prev) => ({
+                    attrs: { ...prev.attrs, volume: v },
+                  }))
+                }
+                min={0}
+                max={1}
+                step={0.01}
+                format={(v) => `${Math.round(v * 100)}%`}
+                className="w-full"
+              />
+              <MixedBadge visible={isMixed(volume)} />
+            </Bar.Field>
+          </AccordionItem>
+          <AccordionItem label="스타일" data-testid="video-style-group">
+            {/* DR-028 — shadow decoration unit (shared control). */}
+            <Bar.Field label="그림자">
+              <ShadowControls editor={editor} ids={ids} />
+            </Bar.Field>
+            {/* DR-028 — opacity decoration unit (video has no legacy attr control). */}
+            <Bar.Field label="불투명도">
+              <OpacityControl editor={editor} ids={ids} />
+            </Bar.Field>
+          </AccordionItem>
+        </Accordion>
       </Bar.More>
     </>
   );

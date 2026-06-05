@@ -11,6 +11,8 @@ import {
   type ShapeSubKind,
 } from "@agocraft/core";
 import {
+  Accordion,
+  AccordionItem,
   ContextualToolbar as Bar,
   Button,
   CornerRadiusControl,
@@ -141,168 +143,172 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
 
   return (
     <>
-      <Bar.Kind icon={<IconShape size={18} />} label="Shape" />
+      <Bar.Kind icon={<IconShape size={18} />} label="도형" />
+      {/* DR-design-016 — identifying shape props in Quick: 모양(종류) · 채우기 ·
+          테두리. 뒤집기 · 불투명도 · 모서리 · 곡선 · 그림자 stay in More. */}
       <Bar.Quick>
-        {/* DR-028 — fill is a decoration UNIT (FillControl). Stroke editing lives
-            in the More panel's Stroke field (StrokeControl). */}
+        <Select<ShapeSubKind>
+          value={isMixed(shape) ? "" : shape}
+          onValueChange={(v) =>
+            updateAll(editor, ids, (prev) => {
+              const prevAttrs = prev.attrs as unknown as ShapeAttrs;
+              return {
+                attrs: {
+                  ...prev.attrs,
+                  shape: v,
+                  subAttrs: defaultSubAttrsForKind(v, prevAttrs.subAttrs),
+                } as unknown as Readonly<Record<string, unknown>>,
+              };
+            })
+          }
+          options={
+            SHAPE_SUB_KIND_OPTIONS as unknown as ReadonlyArray<{
+              value: ShapeSubKind;
+              label: string;
+              icon?: ReactNode;
+            }>
+          }
+          aria-label="모양"
+          placeholder="여러 모양"
+          triggerClassName="w-[108px]"
+        />
+        {/* DR-028 — fill + stroke color swatches (high-frequency). Stroke width
+            stays in the More 테두리 field. */}
         <FillControl editor={editor} ids={ids} />
+        <StrokeControl editor={editor} ids={ids} compact />
       </Bar.Quick>
       <Bar.More>
-        <Bar.Field label="Flip">
-          <FlipControls editor={editor} ids={ids} />
-        </Bar.Field>
-        <Bar.Field label="Shape">
-          <Select<ShapeSubKind>
-            value={isMixed(shape) ? "" : shape}
-            onValueChange={(v) =>
-              updateAll(editor, ids, (prev) => {
-                const prevAttrs = prev.attrs as unknown as ShapeAttrs;
-                return {
-                  attrs: {
-                    ...prev.attrs,
-                    shape: v,
-                    subAttrs: defaultSubAttrsForKind(v, prevAttrs.subAttrs),
-                  } as unknown as Readonly<Record<string, unknown>>,
-                };
-              })
-            }
-            options={
-              SHAPE_SUB_KIND_OPTIONS as unknown as ReadonlyArray<{
-                value: ShapeSubKind;
-                label: string;
-                icon?: ReactNode;
-              }>
-            }
-            aria-label="Shape sub-kind"
-            placeholder="여러 모양"
-            triggerClassName="w-full"
-          />
-          <MixedBadge visible={isMixed(shape)} />
-        </Bar.Field>
-        <Bar.Field label="Fill">
-          {fillIsMediaUniform ? (
-            <div className="flex items-center gap-1.5 w-full">
-              <Button
-                variant="ghost"
-                size="md"
-                onClick={() => onEditShapeFill?.(fillType as "image" | "video", fillMediaSrc)}
-                data-testid="shape-fill-media-edit"
-                aria-label={fillType === "image" ? "이미지 채우기 편집" : "비디오 채우기 편집"}
-                className="flex-1 justify-start gap-1.5"
-              >
-                {fillType === "image" ? <IconImage size={14} /> : <IconVideo size={14} />}
-                <span>{truncateUrl(fillMediaSrc)}</span>
-              </Button>
-              <Button
-                variant="subtle"
-                size="md"
-                onClick={() => {
-                  // DR-028 — clear media fill = reset the decoration.fill unit to
-                  // the default solid paint.
-                  for (const id of ids) {
-                    editor.exec("weave.item.setDecoration", {
-                      itemId: id,
-                      kind: FILL_UNIT_KIND,
-                      attrs: { type: "solid", color: "#cbd5f5" },
-                    });
+        <Accordion>
+          <AccordionItem label="스타일" defaultOpen data-testid="shape-style-group">
+            <Bar.Field label="뒤집기">
+              <FlipControls editor={editor} ids={ids} />
+            </Bar.Field>
+            <Bar.Field label="채우기">
+              {fillIsMediaUniform ? (
+                <div className="flex items-center gap-1.5 w-full">
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    onClick={() => onEditShapeFill?.(fillType as "image" | "video", fillMediaSrc)}
+                    data-testid="shape-fill-media-edit"
+                    aria-label={fillType === "image" ? "이미지 채우기 편집" : "비디오 채우기 편집"}
+                    className="flex-1 justify-start gap-1.5"
+                  >
+                    {fillType === "image" ? <IconImage size={14} /> : <IconVideo size={14} />}
+                    <span>{truncateUrl(fillMediaSrc)}</span>
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    size="md"
+                    onClick={() => {
+                      // DR-028 — clear media fill = reset the decoration.fill unit to
+                      // the default solid paint.
+                      for (const id of ids) {
+                        editor.exec("weave.item.setDecoration", {
+                          itemId: id,
+                          kind: FILL_UNIT_KIND,
+                          attrs: { type: "solid", color: "#cbd5f5" },
+                        });
+                      }
+                    }}
+                    data-testid="shape-fill-clear"
+                    aria-label="채우기 비우기"
+                    data-tip="채우기 비우기"
+                  >
+                    <IconClose size={14} />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  {/* DR-028 — solid/gradient fill via the decoration.fill unit. */}
+                  <FillControl editor={editor} ids={ids} />
+                  <Button
+                    variant="subtle"
+                    size="md"
+                    onClick={() => onEditShapeFill?.("image", "")}
+                    data-testid="shape-fill-image"
+                    aria-label="이미지로 채우기"
+                    data-tip="이미지로 채우기"
+                  >
+                    <IconImage size={14} />
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    size="md"
+                    onClick={() => onEditShapeFill?.("video", "")}
+                    data-testid="shape-fill-video"
+                    aria-label="비디오로 채우기"
+                    data-tip="비디오로 채우기"
+                  >
+                    <IconVideo size={14} />
+                  </Button>
+                </div>
+              )}
+            </Bar.Field>
+            {/* DR-028 — stroke is a decoration unit (color + width). */}
+            <Bar.Field label="테두리">
+              <StrokeControl editor={editor} ids={ids} />
+            </Bar.Field>
+            {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
+            <Bar.Field label="불투명도">
+              <OpacityControl editor={editor} ids={ids} />
+            </Bar.Field>
+            {isRectangleUniform && (
+              <Bar.Field label="모서리 둥글기">
+                <CornerRadiusControl
+                  value={isMixed(cornerRadii) ? { tl: 0, tr: 0, br: 0, bl: 0 } : cornerRadii}
+                  mixed={isMixed(cornerRadii)}
+                  onChange={(next) =>
+                    updateAll(editor, ids, (prev) => {
+                      const prevAttrs = prev.attrs as unknown as ShapeAttrs;
+                      // Rebuild the COMPLETE subAttrs — the item.attrs reducer
+                      // replaces the whole attrs map, so a partial would drop
+                      // `shape`. Guard keeps non-rectangles untouched.
+                      if (prevAttrs.subAttrs.shape !== "rectangle") {
+                        return { attrs: prev.attrs };
+                      }
+                      return {
+                        attrs: {
+                          ...prev.attrs,
+                          subAttrs: { shape: "rectangle", cornerRadii: next },
+                        } as unknown as Readonly<Record<string, unknown>>,
+                      };
+                    })
                   }
-                }}
-                data-testid="shape-fill-clear"
-                aria-label="채우기 비우기"
-                data-tip="채우기 비우기"
-              >
-                <IconClose size={14} />
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              {/* DR-028 — solid/gradient fill via the decoration.fill unit. */}
-              <FillControl editor={editor} ids={ids} />
-              <Button
-                variant="subtle"
-                size="md"
-                onClick={() => onEditShapeFill?.("image", "")}
-                data-testid="shape-fill-image"
-                aria-label="이미지로 채우기"
-                data-tip="이미지로 채우기"
-              >
-                <IconImage size={14} />
-              </Button>
-              <Button
-                variant="subtle"
-                size="md"
-                onClick={() => onEditShapeFill?.("video", "")}
-                data-testid="shape-fill-video"
-                aria-label="비디오로 채우기"
-                data-tip="비디오로 채우기"
-              >
-                <IconVideo size={14} />
-              </Button>
-            </div>
-          )}
-        </Bar.Field>
-        {/* DR-028 — stroke is a decoration unit (color + width). */}
-        <Bar.Field label="Stroke">
-          <StrokeControl editor={editor} ids={ids} />
-        </Bar.Field>
-        {/* DR-028 — opacity is a decoration unit (was attrs.opacity). */}
-        <Bar.Field label="Opacity">
-          <OpacityControl editor={editor} ids={ids} />
-        </Bar.Field>
-        {isRectangleUniform && (
-          <Bar.Field label="Corner radius">
-            <CornerRadiusControl
-              value={isMixed(cornerRadii) ? { tl: 0, tr: 0, br: 0, bl: 0 } : cornerRadii}
-              mixed={isMixed(cornerRadii)}
-              onChange={(next) =>
-                updateAll(editor, ids, (prev) => {
-                  const prevAttrs = prev.attrs as unknown as ShapeAttrs;
-                  // Rebuild the COMPLETE subAttrs — the item.attrs reducer
-                  // replaces the whole attrs map, so a partial would drop
-                  // `shape`. Guard keeps non-rectangles untouched.
-                  if (prevAttrs.subAttrs.shape !== "rectangle") {
-                    return { attrs: prev.attrs };
+                />
+                <MixedBadge visible={isMixed(cornerRadii)} />
+              </Bar.Field>
+            )}
+            {isPolyUniform && (
+              <Bar.Field label="곡선">
+                <Switch
+                  checked={isMixed(smooth) ? false : smooth}
+                  onCheckedChange={(next) =>
+                    updateAll(editor, ids, (prev) => {
+                      const prevAttrs = prev.attrs as unknown as ShapeAttrs;
+                      // Guard non-polys; preserve points + closed, flip only smooth.
+                      if (prevAttrs.subAttrs.shape !== "poly") {
+                        return { attrs: prev.attrs };
+                      }
+                      return {
+                        attrs: {
+                          ...prev.attrs,
+                          subAttrs: { ...prevAttrs.subAttrs, smooth: next },
+                        } as unknown as Readonly<Record<string, unknown>>,
+                      };
+                    })
                   }
-                  return {
-                    attrs: {
-                      ...prev.attrs,
-                      subAttrs: { shape: "rectangle", cornerRadii: next },
-                    } as unknown as Readonly<Record<string, unknown>>,
-                  };
-                })
-              }
-            />
-            <MixedBadge visible={isMixed(cornerRadii)} />
-          </Bar.Field>
-        )}
-        {isPolyUniform && (
-          <Bar.Field label="곡선">
-            <Switch
-              checked={isMixed(smooth) ? false : smooth}
-              onCheckedChange={(next) =>
-                updateAll(editor, ids, (prev) => {
-                  const prevAttrs = prev.attrs as unknown as ShapeAttrs;
-                  // Guard non-polys; preserve points + closed, flip only smooth.
-                  if (prevAttrs.subAttrs.shape !== "poly") {
-                    return { attrs: prev.attrs };
-                  }
-                  return {
-                    attrs: {
-                      ...prev.attrs,
-                      subAttrs: { ...prevAttrs.subAttrs, smooth: next },
-                    } as unknown as Readonly<Record<string, unknown>>,
-                  };
-                })
-              }
-              aria-label="곡선 (smooth)"
-            />
-            <MixedBadge visible={isMixed(smooth)} />
-          </Bar.Field>
-        )}
-        {/* DR-028 — shadow is a decoration UNIT, edited via weave.item.setDecoration. */}
-        <Bar.Field label="Shadow">
-          <ShadowControls editor={editor} ids={ids} />
-        </Bar.Field>
+                  aria-label="곡선 (smooth)"
+                />
+                <MixedBadge visible={isMixed(smooth)} />
+              </Bar.Field>
+            )}
+            {/* DR-028 — shadow is a decoration UNIT, edited via weave.item.setDecoration. */}
+            <Bar.Field label="그림자">
+              <ShadowControls editor={editor} ids={ids} />
+            </Bar.Field>
+          </AccordionItem>
+        </Accordion>
       </Bar.More>
     </>
   );

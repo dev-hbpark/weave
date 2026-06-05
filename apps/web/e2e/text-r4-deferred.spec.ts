@@ -121,10 +121,13 @@ test("Korean character (Hangul) commits into textRuns via Lexical input pipeline
 // NOT emit the matching `beforeinput`, so Lexical's RichTextPlugin sees
 // the keyboard event but the format command never runs. This is a known
 // Playwright + Lexical interaction gotcha; the three tests below stay
-// `test.fixme` with the resume condition pinned. The user-visible
-// behaviour itself is verified manually + via the "rich text per-range"
-// PropertiesPanel control set, which exercises the same internal
-// FORMAT_TEXT_COMMAND through a different (mouse-click) trigger.
+// `test.fixme` with the resume condition pinned.
+//
+// The COMMIT path these would exercise (a format-only change persisting into
+// textRuns even with no text delta) is unit-covered headlessly by
+// `src/document/domains/LexicalTextEditor.test.ts` after the C1 fix — it drives
+// `TextNode.format` directly (the same bitmask FORMAT_TEXT_COMMAND flips) and
+// asserts the snapshot signature changes so onChange commits.
 test.fixme("Cmd+B inside Lexical formats the selected range and persists into textRuns", async ({
   page,
 }) => {

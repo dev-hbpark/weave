@@ -91,6 +91,25 @@ export function setFrameSlideToggler(fn: (frameId: string) => void): () => void 
     if (frameSlideToggler === fn) frameSlideToggler = undefined;
   };
 }
+/** DR-061 — toggle the selected item's `locked` flag. Selection-scope slot; the
+ *  host impl reads the item's current `locked` and flips it via
+ *  `weave.item.update`. The QuickActionBar `renderItem` shows lock vs unlock. */
+let lockToggler: ((itemId: string) => void) | undefined;
+export function setLockToggler(fn: (itemId: string) => void): () => void {
+  lockToggler = fn;
+  return () => {
+    if (lockToggler === fn) lockToggler = undefined;
+  };
+}
+/** DR-design-016 Phase 2 — duplicate the current selection (single OR multi).
+ *  Host dispatches `weave.item.duplicate` / `weave.items.duplicate`. */
+let itemDuplicator: (() => void) | undefined;
+export function setItemDuplicator(fn: () => void): () => void {
+  itemDuplicator = fn;
+  return () => {
+    if (itemDuplicator === fn) itemDuplicator = undefined;
+  };
+}
 export function setMediaSrcOpener(
   fn: (kind: "image" | "video", frameId: string) => void,
 ): () => void {
@@ -893,6 +912,47 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       multiAligner?.("distribute-vertical");
     },
   },
+  // DR-design-016 Phase 2 — duplicate the selection (single OR multi). The most
+  // frequent missing bar action; placed near the end so it sits just left of
+  // lock + the pinned delete. A real copy (weave.item.duplicate), not the blank
+  // add stub.
+  {
+    id: "item.duplicate",
+    label: { en: "Duplicate", ko: "복제" },
+    hint: {
+      en: "Duplicate this item.",
+      ko: "이 항목을 복제합니다.",
+    },
+    category: "item",
+    visibleWhen: (ctx) =>
+      (typeof ctx.selectedKind === "string" && KNOWN_DOMAIN_KINDS.has(ctx.selectedKind)) ||
+      ctx.selectedKind === "multi",
+    enabledWhen: (ctx) => typeof ctx.selectedId === "string",
+    action: () => {
+      // Dispatched via itemDuplicator slot.
+    },
+  },
+  // DR-061 / DR-design-016 Phase 2 — lock / unlock. Registered near the END so
+  // the bar (registry-ordered) places lock AFTER the kind/multi primary actions
+  // and just before the pinned ✕ delete. Works for a single item OR a
+  // multi-selection (the host's `lockToggler` flips every selected item). The
+  // state-aware glyph (lock vs unlock) is rendered by the host's `renderItem`.
+  {
+    id: "item.toggleLock",
+    label: { en: "Lock", ko: "잠금" },
+    hint: {
+      en: "Protect this item from being moved, resized, or deleted.",
+      ko: "이 항목을 이동·크기조절·삭제로부터 보호합니다.",
+    },
+    category: "item",
+    visibleWhen: (ctx) =>
+      (typeof ctx.selectedKind === "string" && KNOWN_DOMAIN_KINDS.has(ctx.selectedKind)) ||
+      ctx.selectedKind === "multi",
+    enabledWhen: (ctx) => typeof ctx.selectedId === "string",
+    action: () => {
+      // Dispatched via lockToggler slot.
+    },
+  },
   // WI-074 D8b — crop apply / cancel. Visible ONLY while a crop is open; the
   // QuickActionBar shows them (category "crop") in place of the normal actions.
   {
@@ -979,6 +1039,14 @@ function tryHostSlot(id: string, ctx: Readonly<Record<string, unknown>> | undefi
     selectedKind === "frame"
   ) {
     frameSlideToggler(selectedId);
+    return true;
+  }
+  if (id === "item.toggleLock" && lockToggler !== undefined && selectedId !== undefined) {
+    lockToggler(selectedId);
+    return true;
+  }
+  if (id === "item.duplicate" && itemDuplicator !== undefined && selectedId !== undefined) {
+    itemDuplicator();
     return true;
   }
   if (id === "multi.delete" && multiDeleter !== undefined) {

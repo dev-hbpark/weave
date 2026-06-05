@@ -2,8 +2,14 @@
 // the config object the renderer hands to setOption.
 
 import { describe, expect, it } from "vitest";
+import { datumOverrideKey } from "./chart-overrides.js";
 import { buildChartOption } from "./chart-types.js";
-import { type ChartRenderInput, type EChartsOptionLike, toNumber } from "./echarts-option.js";
+import {
+  barFracFor,
+  type ChartRenderInput,
+  type EChartsOptionLike,
+  toNumber,
+} from "./echarts-option.js";
 
 function input(over: Partial<ChartRenderInput>): ChartRenderInput {
   return {
@@ -28,6 +34,17 @@ function enc(category: string, values: ReadonlyArray<string>): ChartRenderInput[
 // Narrow helper for reading the loose option object in tests.
 function series(opt: EChartsOptionLike): ReadonlyArray<Record<string, unknown>> {
   return opt.series as ReadonlyArray<Record<string, unknown>>;
+}
+
+/** Series 0's magnitudes, normalizing the THREE bar data shapes: a bare number,
+ *  a `{ value }` (override) datum, or the WI-092 custom-bar `{ value: [i, v] }`. */
+function seriesValues(opt: EChartsOptionLike): number[] {
+  const data = (series(opt)[0]?.data ?? []) as ReadonlyArray<unknown>;
+  return data.map((d) => {
+    if (typeof d === "number") return d;
+    const v = (d as { value?: unknown }).value;
+    return Array.isArray(v) ? Number(v[v.length - 1]) : Number(v);
+  });
 }
 
 describe("toNumber", () => {
@@ -69,7 +86,7 @@ describe("buildChartOption — bar / line (cartesian)", () => {
       }),
     );
     expect((sum.xAxis as { data: string[] }).data).toEqual(["A", "B"]);
-    expect(series(sum)[0]?.data).toEqual([30, 30]); // A: 10+20, B: 30
+    expect(seriesValues(sum)).toEqual([30, 30]); // A: 10+20, B: 30
 
     const mean = buildChartOption(
       input({
@@ -78,7 +95,7 @@ describe("buildChartOption — bar / line (cartesian)", () => {
         encoding: { category: { field: "c" }, value: [{ field: "v", aggregate: "mean" }] },
       }),
     );
-    expect(series(mean)[0]?.data).toEqual([15, 30]); // A: mean(10,20)
+    expect(seriesValues(mean)).toEqual([15, 30]); // A: mean(10,20)
   });
 
   it("aggregate: per-field — each value column uses its OWN aggregate", () => {
@@ -363,5 +380,98 @@ describe("buildChartOption — unknown type", () => {
   it("falls back to bar", () => {
     const opt = buildChartOption(input({ chartType: "weird" as unknown as "bar" }));
     expect(series(opt)[0]).toMatchObject({ type: "bar" });
+  });
+});
+
+describe("withStaticInteraction (WI-092) — weave owns interaction", () => {
+  it("disables the ECharts tooltip on every built option", () => {
+    for (const chartType of ["bar", "line", "area", "pie"] as const) {
+      const opt = buildChartOption(input({ chartType }));
+      expect(opt.tooltip).toEqual({ show: false });
+    }
+  });
+
+  it("disables hover emphasis + pointer cursor + select-explode on every series", () => {
+    const opt = buildChartOption(input({ chartType: "bar", encoding: enc("q", ["a", "b"]) }));
+    for (const s of series(opt)) {
+      expect(s.emphasis).toEqual({ disabled: true });
+      expect(s.cursor).toBe("default");
+      expect(s.selectedMode).toBe(false);
+    }
+  });
+
+  it("keeps the marks themselves (data) intact — only interaction is stripped", () => {
+    const opt = buildChartOption(input({ chartType: "bar" }));
+    expect((series(opt)[0]?.data as unknown[]).length).toBe(2);
+  });
+});
+
+describe("bar width (WI-092)", () => {
+  it("a single-series bar stays a NORMAL bar series until a per-datum width exists", () => {
+    // No per-bar override → fast path (normal bar series), explicit default width.
+    const opt = buildChartOption(input({ chartType: "bar" }));
+    expect(series(opt)[0]?.type).toBe("bar");
+    expect(series(opt)[0]?.barWidth).toBe("60.00%"); // DEFAULT_BAR_FRAC, so the handle is accurate
+  });
+
+  it("switches to a CUSTOM series once any datum carries a per-bar width override", () => {
+    const opt = buildChartOption(
+      input({ chartType: "bar", overrides: { datum: { Q1: { barWidth: 0.9 } } } }),
+    );
+    expect(series(opt)[0]?.type).toBe("custom");
+  });
+
+  it("a GROUPED (multi value column) bar keeps the normal series + shared barWidth", () => {
+    const opt = buildChartOption(
+      input({ chartType: "bar", encoding: enc("q", ["a", "b"]), barWidth: 0.4 }),
+    );
+    for (const s of series(opt)) {
+      expect(s.type).toBe("bar");
+      expect(s.barWidth).toBe("40.00%");
+    }
+  });
+
+  it("custom bars bake each datum's resolved width — override wins over the chart default", () => {
+    const opt = buildChartOption(
+      input({ chartType: "bar", barWidth: 0.5, overrides: { datum: { Q1: { barWidth: 0.9 } } } }),
+    );
+    const data = series(opt)[0]?.data as ReadonlyArray<{ name: string; frac: number }>;
+    expect(data.find((d) => d.name === "Q1")?.frac).toBeCloseTo(0.9, 9); // per-datum override
+    expect(data.find((d) => d.name === "Q2")?.frac).toBeCloseTo(0.5, 9); // chart-wide default
+  });
+
+  it("does not set barWidth for non-bar types (line has no thickness)", () => {
+    expect(series(buildChartOption(input({ chartType: "line", barWidth: 0.4 })))[0]?.barWidth).toBe(
+      undefined,
+    );
+  });
+});
+
+describe("barFracFor (WI-092) — per-datum width precedence", () => {
+  it("per-datum override > chart default > DEFAULT_BAR_FRAC", () => {
+    expect(barFracFor("s", "A", { datum: { A: { barWidth: 0.8 } } }, 0.5)).toBeCloseTo(0.8, 9);
+    expect(barFracFor("s", "A", undefined, 0.5)).toBeCloseTo(0.5, 9);
+    expect(barFracFor("s", "A", { datum: { B: { barWidth: 0.8 } } }, 0.3)).toBeCloseTo(0.3, 9);
+  });
+
+  it("reads the composite (series, category) key before the bare category", () => {
+    // datumOverrideKey joins with a NUL byte (WI-088).
+    const ov = { datum: { [datumOverrideKey("s", "A")]: { barWidth: 0.7 }, A: { barWidth: 0.2 } } };
+    expect(barFracFor("s", "A", ov, 0.5)).toBeCloseTo(0.7, 9); // composite wins
+  });
+});
+
+describe("pie innerRadius (WI-092) — donut", () => {
+  it("renders [inner, outer] radius when innerRadius is set (fraction of outer)", () => {
+    const opt = buildChartOption(input({ chartType: "pie", innerRadius: 0.5 }));
+    // outer 70%, inner = 0.5 × 70% = 35%
+    expect(series(opt)[0]?.radius).toEqual(["35.00%", "70.00%"]);
+  });
+
+  it("renders a solid 70% radius when innerRadius is unset / 0", () => {
+    expect(series(buildChartOption(input({ chartType: "pie" })))[0]?.radius).toBe("70.00%");
+    expect(series(buildChartOption(input({ chartType: "pie", innerRadius: 0 })))[0]?.radius).toBe(
+      "70.00%",
+    );
   });
 });

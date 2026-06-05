@@ -69,8 +69,10 @@ function _SegmentedControl<V extends string>(
             "disabled:opacity-50 disabled:pointer-events-none",
           )}
         >
-          {o.icon !== undefined ? <span aria-hidden>{o.icon}</span> : null}
-          {o.label}
+          {/* DR-design-016 — an option WITH an icon shows the icon only (compact;
+              the label is still the accessible name via `aria-label`). Text-only
+              options render their label as before. */}
+          {o.icon !== undefined ? <span aria-hidden>{o.icon}</span> : o.label}
         </ToggleGroupPrimitive.Item>
       ))}
     </ToggleGroupPrimitive.Root>

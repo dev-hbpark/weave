@@ -30,6 +30,7 @@ import {
   sankeyOption,
   scatterOption,
   treemapOption,
+  withStaticInteraction,
 } from "./echarts-option.js";
 
 /** One encoding slot a chart type consumes — drives BOTH validation and the
@@ -252,7 +253,11 @@ export function chartTypeSpec(type: ChartType): ChartTypeSpec | undefined {
  *  to bar for a type without a builder yet, so the chart still renders. */
 export function buildChartOption(input: ChartRenderInput): EChartsOptionLike {
   const spec = CHART_TYPE_REGISTRY[input.chartType] ?? CHART_TYPE_REGISTRY.bar;
-  return (spec ?? CHART_TYPE_REGISTRY.bar)?.buildOption(input) ?? cartesianOption("bar", input);
+  const option =
+    (spec ?? CHART_TYPE_REGISTRY.bar)?.buildOption(input) ?? cartesianOption("bar", input);
+  // WI-092 — weave owns interaction; ECharts renders statically (no hover
+  // emphasis / tooltip / cursor / select-explode). One central strip (Rule 6).
+  return withStaticInteraction(option);
 }
 
 /** The chart types the UI can currently offer (those with a registered spec). */

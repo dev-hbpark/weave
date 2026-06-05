@@ -101,9 +101,22 @@ export interface PopoverContentProps extends PopoverPrimitive.PopoverContentProp
   readonly children: ReactNode;
 }
 
+/** DR-062 — extend the DR-design-013 `data-dismiss-exempt` escape hatch to
+ *  Radix's OWN outside-interaction dismissal (`onInteractOutside` covers both
+ *  `onPointerDownOutside` and `onFocusOutside`). The capture-phase backstop in
+ *  `useDismissOnOutsidePointer` already exempts the marker for raw pointerdowns;
+ *  this closes the FOCUS path: when a consumer (e.g. weave's text editor)
+ *  receives focus back while the popover is open, the popover must NOT dismiss.
+ *  Returns true when the interaction's origin lies inside an exempt element. */
+function interactionIsExempt(event: { target: EventTarget | null; detail?: unknown }): boolean {
+  const detail = event.detail as { originalEvent?: { target?: EventTarget | null } } | undefined;
+  const origin = detail?.originalEvent?.target ?? event.target;
+  return origin instanceof Element && origin.closest('[data-dismiss-exempt="true"]') !== null;
+}
+
 export const PopoverContent = forwardRef<HTMLDivElement, PopoverContentProps>(
   function PopoverContent(
-    { className, children, sideOffset = 8, collisionPadding = 16, ...rest },
+    { className, children, sideOffset = 8, collisionPadding = 16, onInteractOutside, ...rest },
     ref,
   ) {
     const reduced = useReducedMotion();
@@ -115,6 +128,13 @@ export const PopoverContent = forwardRef<HTMLDivElement, PopoverContentProps>(
           ref={ref}
           sideOffset={sideOffset}
           collisionPadding={collisionPadding}
+          onInteractOutside={(event) => {
+            if (interactionIsExempt(event)) {
+              event.preventDefault();
+              return;
+            }
+            onInteractOutside?.(event);
+          }}
           {...rest}
           className={cn(
             "z-50 min-w-[200px] max-w-[360px]",

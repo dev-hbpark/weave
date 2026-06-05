@@ -141,7 +141,7 @@ function PaddingFields({
   readonly onSideChange: (side: (typeof PADDING_SIDES)[number], value: number) => void;
 }): ReactElement {
   return (
-    <Bar.Field label="Padding">
+    <Bar.Field label="여백">
       <div className="flex flex-col gap-1 w-full" data-testid="frame-layout-padding">
         {PADDING_SIDES.map((side) => (
           <div key={side} className="flex items-center gap-2">
@@ -252,7 +252,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
 
   return (
     <>
-      <Bar.Kind icon={<IconFrame size={18} />} label="Frame" />
+      <Bar.Kind icon={<IconFrame size={18} />} label="프레임" />
       <Bar.Quick>
         <div className="inline-flex items-center gap-1">
           <ColorPicker
@@ -320,7 +320,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
         <Bar.More>
           <Accordion>
             <AccordionItem label="레이아웃" defaultOpen data-testid="frame-flex-layout-group">
-              <Bar.Field label="Direction">
+              <Bar.Field label="방향">
                 <SegmentedControl<FlexDirection>
                   value={homogeneousSpec.direction}
                   onValueChange={(v) => onFlexFieldChange("direction", v)}
@@ -328,7 +328,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                   aria-label="Flex direction"
                 />
               </Bar.Field>
-              <Bar.Field label="Gap">
+              <Bar.Field label="간격">
                 <NumberSlider
                   value={homogeneousSpec.gap}
                   onValueChange={(v) => onFlexFieldChange("gap", v)}
@@ -404,7 +404,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                   aria-label="그리드 행 열 개수"
                 />
               </Bar.Field>
-              <Bar.Field label="Column gap">
+              <Bar.Field label="열 간격">
                 <NumberSlider
                   value={homogeneousSpec.columnGap}
                   onValueChange={(v) => onGridFieldChange("columnGap", v)}
@@ -415,7 +415,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                   className="w-full"
                 />
               </Bar.Field>
-              <Bar.Field label="Row gap">
+              <Bar.Field label="행 간격">
                 <NumberSlider
                   value={homogeneousSpec.rowGap}
                   onValueChange={(v) => onGridFieldChange("rowGap", v)}
@@ -465,7 +465,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
               </Bar.Field>
             </AccordionItem>
             <AccordionItem label="트랙 세부" data-testid="frame-grid-tracksize-group">
-              <Bar.Field label="Columns">
+              <Bar.Field label="열">
                 <TrackSizeEditor
                   value={homogeneousSpec.columns as ReadonlyArray<DSTrackSize>}
                   onValueChange={(next) =>
@@ -474,7 +474,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                   aria-label="Grid columns"
                 />
               </Bar.Field>
-              <Bar.Field label="Rows">
+              <Bar.Field label="행">
                 <TrackSizeEditor
                   value={homogeneousSpec.rows as ReadonlyArray<DSTrackSize>}
                   onValueChange={(next) => onGridFieldChange("rows", next as AutoGridSpec["rows"])}

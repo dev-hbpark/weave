@@ -20,6 +20,7 @@ import {
   findUnitInItem,
   OPACITY_UNIT_KIND,
   resolveFontSize,
+  type TextDecoration,
   type TextRun,
 } from "@agocraft/core";
 import {
@@ -32,9 +33,16 @@ import {
   useRef,
   useState,
 } from "react";
+import { isHistoryReplaying } from "../history-replay-state.js";
 import { useSelection } from "../interactions/selection-context.js";
 import { useResolveColor } from "../style/resolver-context.js";
-import type { AgoItem, ItemFrame, TextAttrs } from "../types.js";
+import {
+  type AgoItem,
+  type ItemFrame,
+  isItemLocked,
+  type TextAttrs,
+  type WeaveRunStyle,
+} from "../types.js";
 import { deriveTextAutoResize } from "./derive-text-auto-resize.js";
 import { ParentFrameHeightContext } from "./parent-frame-context.js";
 
@@ -54,6 +62,13 @@ interface TextBlockProps {
 export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const a = item.attrs;
   const editable = onUpdate !== undefined;
+  // DR-057 — once `textRuns` exists it is the SINGLE SOURCE OF TRUTH for inline
+  // formatting (bold / italic / underline). The container then neutralizes its
+  // own inline toggleables so per-run <span>s are the sole authority — a run
+  // with no bold attr renders normal (the explicit un-bold that the inherited
+  // item-level weight previously made impossible). With no runs (plain /
+  // legacy) the container keeps applying the item-level attrs unchanged.
+  const hasRuns = a.textRuns !== undefined && a.textRuns.length > 0;
 
   // Phase 2 (fontSizeSpec) — resolve the font size to design-px. A `ratio`
   // spec scales with the parent frame's height (provided via context by the
@@ -70,6 +85,12 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const itemRef = item as unknown as AgocraftItem;
   const resolvedColor = useResolveColor(a.color, itemRef, undefined);
   const resolvedBg = useResolveColor(a.background, itemRef, undefined);
+  // DR-059 — text outline. Resolve the outline color through the same cascade
+  // as fill/background so a theme token works. The outline renders as a thick
+  // stroked back layer behind the fill (see the two-layer render below).
+  const resolvedOutlineColor = useResolveColor(a.textOutline?.color, itemRef, undefined);
+  const hasOutline =
+    a.textOutline !== undefined && a.textOutline.width > 0 && resolvedOutlineColor !== undefined;
 
   // Auto-height plumbing. The OUTER container fills the frame box; the
   // INNER content div is what we measure. We must use the inner div (not
@@ -116,6 +137,11 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       const mode = autoResizeRef.current;
       // Fixed mode: user controls width + height. Do not auto-update.
       if (mode === "NONE") return;
+      // DR-058 — during an undo/redo replay the frame was already restored by
+      // the replayed patch; re-committing the fitted size here would spawn a
+      // fresh user-command entry and CLEAR the redo stack. Skip while a history
+      // replay is the most-recent applied change.
+      if (isHistoryReplaying()) return;
       const frameEl = el.closest("[data-frame-id]");
       const parent = frameEl?.parentElement ?? null;
       if (parent === null) return;
@@ -320,15 +346,17 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     flexShrink: 0,
     fontFamily: a.fontFamily,
     fontSize: `${resolvedFontSizePx}px`,
-    fontWeight: a.fontWeight,
-    fontStyle: a.fontStyle,
+    // DR-057 — neutralize inline toggleables when runs drive them; otherwise
+    // apply the item-level base (legacy / plain text).
+    fontWeight: hasRuns ? "normal" : a.fontWeight,
+    fontStyle: hasRuns ? "normal" : a.fontStyle,
     color: resolvedColor,
     textAlign: horizontalAlign,
     lineHeight: lineHeightValue,
     letterSpacing: `${a.letterSpacing}px`,
     whiteSpace: isAutoWidth ? "pre" : "pre-wrap",
     wordBreak: "break-word",
-    textDecoration: decoration,
+    textDecoration: hasRuns ? "none" : decoration,
     textTransform,
     ...(a.textCase === "SMALL_CAPS" ? { fontVariantCaps: "small-caps" } : {}),
     // Don't allow the rendered content to be narrower than one character
@@ -382,6 +410,43 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       document.removeEventListener("keydown", onKey);
     };
   }, [isEditing, isFrameSelected]);
+  // DR-057 — WYSIWYG: the editor surface renders in the item's resolved base
+  // typography. Inline toggleables are forced NEUTRAL here so the seeded
+  // per-node formats (and Lexical's `font-bold`/`italic`/`underline` theme
+  // classes) are the sole authority — matching the read-only container above.
+  const editorContentStyle: CSSProperties = {
+    fontFamily: a.fontFamily,
+    fontSize: `${resolvedFontSizePx}px`,
+    color: resolvedColor,
+    textAlign: horizontalAlign,
+    lineHeight: lineHeightValue,
+    letterSpacing: `${a.letterSpacing}px`,
+    fontWeight: "normal",
+    fontStyle: "normal",
+    textDecoration: "none",
+  };
+  // DR-062 — the item-level BASE for each per-range CSS property, keyed by CSS
+  // prop name. Passed to the editor so the selection readout reads a non-
+  // overriding sub-range as that single base value (not "mixed").
+  const baseRangeStyle: Readonly<Record<string, string>> = {
+    color: resolvedColor ?? a.color,
+    "font-size": `${resolvedFontSizePx}px`,
+    "font-family": a.fontFamily,
+    "letter-spacing": `${a.letterSpacing}px`,
+    "text-transform": textTransform,
+  };
+  // The item-level inline toggleables, expressed as the BLOCK BASE the editor
+  // seed projects into the plain-text fallback (so a toolbar-bolded box with no
+  // runs yet opens already bold). Undefined when nothing is set → seed stays
+  // un-styled. STRIKETHROUGH wins only when UNDERLINE is absent (single slot).
+  const baseInlineFormat = (() => {
+    const base: { fontWeight?: "bold"; fontStyle?: "italic"; textDecoration?: TextDecoration } = {};
+    if (a.fontWeight === "bold") base.fontWeight = "bold";
+    if (a.fontStyle === "italic") base.fontStyle = "italic";
+    if (a.textDecoration === "UNDERLINE" || a.textDecoration === "STRIKETHROUGH")
+      base.textDecoration = a.textDecoration;
+    return Object.keys(base).length > 0 ? base : undefined;
+  })();
   const inner =
     editable && isEditing ? (
       <Suspense fallback={renderReadOnly(a.text, a.textRuns)}>
@@ -389,6 +454,9 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
           anchorId={String(item.id)}
           value={a.text}
           {...(a.textRuns !== undefined ? { initialTextRuns: a.textRuns } : {})}
+          {...(baseInlineFormat !== undefined ? { baseInlineFormat } : {})}
+          contentStyle={editorContentStyle}
+          baseRangeStyle={baseRangeStyle}
           onChange={(snapshot) => onUpdate?.({ text: snapshot.text, textRuns: snapshot.textRuns })}
           editable={editable}
         />
@@ -414,6 +482,55 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       inner
     );
 
+  // DR-059 — layered text outline. Render the same glyphs TWICE inside the
+  // measured `[data-text-content]` box: a thick stroked back layer (outline
+  // color, absolute, behind) and the normal fill on top. Only in read-only /
+  // present (not while the single-layer Lexical editor is mounted). The back is
+  // absolute so it never affects the auto-fit measurement (front defines the
+  // box); `-webkit-text-stroke` is paint, not layout. Inherits font / align /
+  // wrap from the container so the two layers register exactly.
+  // DR-060 — per-range outline: a run may carry its own outline. The back layer
+  // shows when the item has a whole-item outline OR any run does.
+  const anyRunOutline =
+    a.textRuns?.some((r) => {
+      const w = (r.attributes as { outlineWidth?: number } | undefined)?.outlineWidth;
+      return w !== undefined && w > 0;
+    }) ?? false;
+  const showOutline = (hasOutline || anyRunOutline) && !(editable && isEditing);
+  const outlineLayerStyle: CSSProperties | null = showOutline
+    ? {
+        position: "absolute",
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: "none",
+        userSelect: "none",
+        // The whole-item outline (DR-059) is applied at the container so runs
+        // without a per-run outline inherit it; per-run outlines override on
+        // their own span (DR-060). When there is NO whole-item outline, the
+        // container forces nothing — non-outlined runs render transparent.
+        ...(hasOutline
+          ? {
+              color: resolvedOutlineColor,
+              // 2× the visible halo: the stroke is centered on the glyph
+              // outline, so half extends outside; the same-color fill makes the
+              // inside solid and the front fill covers it. paint-order coherent.
+              WebkitTextStroke: `${(a.textOutline?.width ?? 0) * 2}px ${resolvedOutlineColor}`,
+              paintOrder: "stroke",
+            }
+          : {}),
+      }
+    : null;
+  const contentNode = showOutline ? (
+    <>
+      <span aria-hidden="true" data-text-outline style={outlineLayerStyle ?? undefined}>
+        {renderReadOnly(a.text, a.textRuns, "outline", hasOutline)}
+      </span>
+      <span style={{ position: "relative", zIndex: 1 }}>{linked}</span>
+    </>
+  ) : (
+    linked
+  );
+
   return (
     <div
       ref={wrapRef}
@@ -422,8 +539,20 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       // `textOverflow` — the chrome tracks the live content via FrameStage.
       style={isEditing ? { ...containerStyle, overflow: "visible" } : containerStyle}
       data-testid="text-block"
+      // DR-062 — while editing, the text surface is an extension of the open
+      // contextual toolbar: a pointerdown / focus bounce here (Lexical returns
+      // DOM focus to the contentEditable when a per-range style is applied) must
+      // NOT dismiss the More popover. The design-system Popover honors this
+      // marker for both its capture-phase backstop and Radix's interact-outside.
+      {...(isEditing ? { "data-dismiss-exempt": "true", "data-weave-text-editor": "true" } : {})}
       onDoubleClick={(e) => {
         if (!editable) return;
+        // DR-061 — a locked text item is selectable but not editable.
+        if (isItemLocked(item)) {
+          e.stopPropagation();
+          selectFrame(selfId);
+          return;
+        }
         e.stopPropagation();
         // Select this item first so the `isFrameSelected` gate (which keeps
         // edit mode alive) passes on the same interaction — works whether or
@@ -437,8 +566,14 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       {/* `data-text-content` marks the live, content-sized element the
           selection chrome measures on the auto axis (FrameStage `boundsOf`),
           so the rubber band/handles track typing without the model lag. */}
-      <div ref={innerRef} data-text-content style={textStyle}>
-        {linked}
+      <div
+        ref={innerRef}
+        data-text-content
+        // DR-059 — positioning context for the absolute outline back layer
+        // (only when outlined, to leave the non-outline DOM untouched).
+        style={showOutline ? { ...textStyle, position: "relative" } : textStyle}
+      >
+        {contentNode}
       </div>
     </div>
   );
@@ -452,26 +587,54 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
  *  UNDERLINE wins over STRIKETHROUGH when both attributes are applied
  *  (CSS `text-decoration` slot is shared). The block-level `textDecoration`
  *  on TextAttrs is applied at the container; per-run overrides win locally. */
-function renderReadOnly(text: string, textRuns: ReadonlyArray<TextRun> | undefined): ReactNode {
+function renderReadOnly(
+  text: string,
+  textRuns: ReadonlyArray<TextRun> | undefined,
+  // "outline" produces the back layer of the layered-outline render: GLYPH-SHAPE
+  // props (family / size / weight / style / spacing / case) plus the outline
+  // stroke; `color` / `textDecoration` are dropped. "fill" is the normal render.
+  mode: "fill" | "outline" = "fill",
+  // DR-060 — whether the ITEM carries a whole-item outline. In outline mode, a
+  // run WITHOUT its own per-run outline inherits the container's whole-item
+  // outline when this is true, else renders transparent (paints no halo).
+  itemHasOutline = false,
+): ReactNode {
   if (textRuns === undefined || textRuns.length === 0) return text;
+  const outline = mode === "outline";
   return textRuns.map((run, i) => {
     if (run.insert === "\n") return <br key={`br-${i}`} />;
-    const attrs = run.attributes;
-    if (attrs === undefined) {
-      return <span key={i}>{run.insert}</span>;
-    }
+    const attrs = run.attributes as WeaveRunStyle | undefined;
     const style: CSSProperties = {};
-    if (attrs.fontWeight === "bold") style.fontWeight = "bold";
-    if (attrs.fontStyle === "italic") style.fontStyle = "italic";
-    if (attrs.color !== undefined) style.color = attrs.color;
-    if (attrs.fontSize !== undefined) style.fontSize = `${attrs.fontSize}px`;
-    if (attrs.fontFamily !== undefined) style.fontFamily = attrs.fontFamily;
-    if (attrs.letterSpacing !== undefined) style.letterSpacing = `${attrs.letterSpacing}px`;
-    if (attrs.textDecoration === "UNDERLINE") style.textDecoration = "underline";
-    else if (attrs.textDecoration === "STRIKETHROUGH") style.textDecoration = "line-through";
-    if (attrs.textCase === "UPPER") style.textTransform = "uppercase";
-    else if (attrs.textCase === "LOWER") style.textTransform = "lowercase";
-    else if (attrs.textCase === "TITLE") style.textTransform = "capitalize";
+    if (attrs !== undefined) {
+      if (attrs.fontWeight === "bold") style.fontWeight = "bold";
+      if (attrs.fontStyle === "italic") style.fontStyle = "italic";
+      if (attrs.fontSize !== undefined) style.fontSize = `${attrs.fontSize}px`;
+      if (attrs.fontFamily !== undefined) style.fontFamily = attrs.fontFamily;
+      if (attrs.letterSpacing !== undefined) style.letterSpacing = `${attrs.letterSpacing}px`;
+      if (attrs.textCase === "UPPER") style.textTransform = "uppercase";
+      else if (attrs.textCase === "LOWER") style.textTransform = "lowercase";
+      else if (attrs.textCase === "TITLE") style.textTransform = "capitalize";
+    }
+    if (!outline) {
+      // Fill-only: per-run color + decoration.
+      if (attrs?.color !== undefined) style.color = attrs.color;
+      if (attrs?.textDecoration === "UNDERLINE") style.textDecoration = "underline";
+      else if (attrs?.textDecoration === "STRIKETHROUGH") style.textDecoration = "line-through";
+    } else {
+      // DR-060 — back layer. A run with its own outline strokes itself (2× the
+      // visible halo, as DR-059); a run without one inherits the item-level
+      // outline when present, else paints nothing (transparent).
+      const ow = attrs?.outlineWidth;
+      if (ow !== undefined && ow > 0) {
+        const oc = attrs?.outlineColor ?? "#000000";
+        style.color = oc;
+        style.WebkitTextStroke = `${ow * 2}px ${oc}`;
+        style.paintOrder = "stroke";
+      } else if (!itemHasOutline) {
+        style.color = "transparent";
+        style.WebkitTextStroke = "0";
+      }
+    }
     return (
       <span key={i} style={style}>
         {run.insert}

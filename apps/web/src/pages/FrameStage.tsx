@@ -38,13 +38,14 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ItemFrame } from "../document";
 import {
+  type ItemFrame,
+  isItemLocked,
   useFrameDragBindingsAllowed,
   useFrameSelectionAllowed,
   useInteractionMode,
 } from "../document";
-import { isDomainItem } from "../document/agocraft-mirror.js";
+import { findItemDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { resizeCropWindow, setStraighten } from "../document/crop-geometry.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
 import { croppingState } from "../document/interactions/cropping-state.js";
@@ -612,6 +613,13 @@ export function FrameStage(props: FrameStageProps) {
   onUpdateItemRef.current = props.onUpdateItem;
   const docRef = useRef(doc);
   docRef.current = doc;
+  // DR-061 — is the item with `id` locked (protected from resize / rotate)?
+  const isLockedItemId = (id: string): boolean => {
+    const d = docRef.current;
+    if (d === undefined) return false;
+    const it = findItemDeep(d, id);
+    return it !== undefined && isItemLocked(it);
+  };
   // Selection-follows-move: the FrameMoveBinding runs with
   // `disableSelectionSet: true` so plain clicks keep selectFromHit's
   // parent-first model, and after a drag its onPointerUp swallows the
@@ -682,6 +690,13 @@ export function FrameStage(props: FrameStageProps) {
       }
       return cur;
     }
+    /** DR-061 — the movable target for `id`, or null when that target is LOCKED
+     *  (decline the move gesture). */
+    function movableTargetOrNull(id: ItemId): ItemId | null {
+      const moved = climbToMovable(id);
+      const it = findItem(moved);
+      return it !== undefined && isItemLocked(it) ? null : moved;
+    }
     return {
       resolveTarget(target) {
         // Accept any Element (HTML or SVG). SVG elements appear when the
@@ -716,7 +731,7 @@ export function FrameStage(props: FrameStageProps) {
                 : [];
           for (const sid of selIds) {
             if (target.closest(`[data-frame-id="${CSS.escape(sid)}"]`) !== null) {
-              return climbToMovable(sid as ItemId);
+              return movableTargetOrNull(sid as ItemId);
             }
           }
         }
@@ -730,7 +745,7 @@ export function FrameStage(props: FrameStageProps) {
         if (frameEl === null) return null;
         const raw = frameEl.getAttribute("data-frame-id");
         if (raw === null) return null;
-        return climbToMovable(raw as ItemId);
+        return movableTargetOrNull(raw as ItemId);
       },
       readFrame(itemId) {
         const item = findItem(itemId);
@@ -1115,6 +1130,7 @@ export function FrameStage(props: FrameStageProps) {
       if (rot !== null) {
         const itemId = handleItemId(rot);
         if (itemId === null) return;
+        if (isLockedItemId(String(itemId))) return; // DR-061 — locked: no rotate
         const center = centerOf(itemId);
         const origin = toHandlePointer(e);
         const startVec = { x: origin.clientX - center.x, y: origin.clientY - center.y };
@@ -1201,6 +1217,7 @@ export function FrameStage(props: FrameStageProps) {
       const dir = dirAttr as ResizeDir;
       const itemId = handleItemId(rsz);
       if (itemId === null) return;
+      if (isLockedItemId(String(itemId))) return; // DR-061 — locked: no resize
       e.preventDefault();
       e.stopPropagation();
       const origin = toHandlePointer(e);

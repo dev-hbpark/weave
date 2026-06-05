@@ -42,16 +42,16 @@ export const LineSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
 
   return (
     <>
-      <Bar.Kind icon={<IconShapeLine size={18} />} label="Line" />
+      <Bar.Kind icon={<IconShapeLine size={18} />} label="선" />
       <Bar.Quick>
         {/* Stroke is the line's primary (and only) paint. */}
         <StrokeControl editor={editor} ids={ids} />
       </Bar.Quick>
       <Bar.More>
-        <Bar.Field label="Flip">
+        <Bar.Field label="뒤집기">
           <FlipControls editor={editor} ids={ids} />
         </Bar.Field>
-        <Bar.Field label="Stroke">
+        <Bar.Field label="테두리">
           <StrokeControl editor={editor} ids={ids} />
         </Bar.Field>
         <Bar.Field label="시작 마커">
@@ -73,7 +73,7 @@ export const LineSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
             triggerClassName="w-full"
           />
         </Bar.Field>
-        <Bar.Field label="Opacity">
+        <Bar.Field label="불투명도">
           <OpacityControl editor={editor} ids={ids} />
         </Bar.Field>
       </Bar.More>

@@ -1,0 +1,133 @@
+// WI-092 — unit tests for the PURE chart geometry kernel (the echarts-free
+// algebra behind the weave-owned chart drag handles).
+
+import { describe, expect, it } from "vitest";
+import {
+  angleFromCenter,
+  type ContainerBox,
+  clientToContainer,
+  containerToClient,
+  distanceFromCenter,
+  PIE_START_ANGLE_DEG,
+  pieLayout,
+  pieValueFromAngle,
+  pointOnPie,
+} from "./chart-geometry.js";
+
+/** A box at client (100, 50), rendered at 2× zoom (200px client / 100px layout). */
+const ZOOMED: ContainerBox = {
+  left: 100,
+  top: 50,
+  width: 200,
+  height: 200,
+  offsetWidth: 100,
+  offsetHeight: 100,
+};
+
+const UNIT: ContainerBox = {
+  left: 0,
+  top: 0,
+  width: 400,
+  height: 300,
+  offsetWidth: 400,
+  offsetHeight: 300,
+};
+
+describe("container ↔ client transform", () => {
+  it("maps an internal pixel to client coords applying the zoom factor", () => {
+    // internal (10, 20) at 2× → client (100 + 20, 50 + 40)
+    expect(containerToClient(ZOOMED, 10, 20)).toEqual({ x: 120, y: 90 });
+  });
+
+  it("is the exact inverse of clientToContainer (round-trips under zoom)", () => {
+    const internal = { x: 37, y: 81 };
+    const client = containerToClient(ZOOMED, internal.x, internal.y);
+    const back = clientToContainer(ZOOMED, client.x, client.y);
+    expect(back.x).toBeCloseTo(internal.x, 9);
+    expect(back.y).toBeCloseTo(internal.y, 9);
+  });
+
+  it("is identity (minus offset) at 1× zoom", () => {
+    expect(clientToContainer(UNIT, 40, 30)).toEqual({ x: 40, y: 30 });
+  });
+});
+
+describe("pieLayout", () => {
+  it("starts the first sector at the configured start angle (12 o'clock)", () => {
+    const layout = pieLayout([1, 1], 200, 200);
+    expect(layout.sectors[0]?.startDeg).toBe(PIE_START_ANGLE_DEG);
+  });
+
+  it("splits two equal values into two 180° sweeps, going clockwise", () => {
+    const layout = pieLayout([1, 1], 200, 200);
+    // sector 0: 90° → -90° ; sector 1: -90° → -270°
+    expect(layout.sectors[0]?.endDeg).toBeCloseTo(-90, 9);
+    expect(layout.sectors[1]?.startDeg).toBeCloseTo(-90, 9);
+    expect(layout.sectors[1]?.endDeg).toBeCloseTo(-270, 9);
+    expect(layout.total).toBe(2);
+  });
+
+  it("computes center + radius from the un-zoomed layout size (radius 70%)", () => {
+    const layout = pieLayout([1], 200, 160);
+    expect(layout.cx).toBe(100);
+    expect(layout.cy).toBe(80);
+    expect(layout.r).toBeCloseTo((160 / 2) * 0.7, 9); // min side / 2 × 0.7
+  });
+
+  it("treats negative / non-finite values as 0", () => {
+    const layout = pieLayout([3, -5, Number.NaN], 200, 200);
+    expect(layout.total).toBe(3);
+  });
+});
+
+describe("pointOnPie / angleFromCenter round-trip", () => {
+  it("places the start angle at the top of the circle (screen-y down)", () => {
+    const layout = pieLayout([1], 200, 200);
+    const top = pointOnPie(layout, 90, layout.r);
+    expect(top.x).toBeCloseTo(layout.cx, 9);
+    expect(top.y).toBeCloseTo(layout.cy - layout.r, 9); // above center
+  });
+
+  it("recovers the angle of a placed point", () => {
+    const layout = pieLayout([1], 200, 200);
+    for (const deg of [90, 0, -45, -90, -179]) {
+      const p = pointOnPie(layout, deg, layout.r);
+      expect(angleFromCenter(layout, p.x, p.y)).toBeCloseTo(deg, 6);
+    }
+  });
+});
+
+describe("pieValueFromAngle (sweep → value inverse)", () => {
+  it("returns the value that makes this sector occupy the swept fraction", () => {
+    // Two equal slices (total 2, each 50%). Drag slice 0's trailing edge so its
+    // sweep becomes 270° (75%): with restTotal = 1, v' = 0.75·1/0.25 = 3.
+    const layout = pieLayout([1, 1], 200, 200);
+    const sector = layout.sectors[0]!;
+    const cursorDeg = sector.startDeg - 270; // 270° clockwise from the start edge
+    const v = pieValueFromAngle(sector, layout.total - sector.value, cursorDeg);
+    expect(v).toBeCloseTo(3, 6);
+  });
+
+  it("clamps tiny sweeps to a minimum fraction (slice never vanishes)", () => {
+    const layout = pieLayout([1, 1], 200, 200);
+    const sector = layout.sectors[0]!;
+    const cursorDeg = sector.startDeg - 0.0001; // essentially zero sweep
+    const v = pieValueFromAngle(sector, 1, cursorDeg, { minFrac: 0.05 });
+    // f = 0.05 → v = 0.05·1/0.95
+    expect(v).toBeCloseTo(0.05 / 0.95, 6);
+  });
+
+  it("returns null when there is no rest mass to proportion against", () => {
+    const layout = pieLayout([5], 200, 200);
+    const sector = layout.sectors[0]!;
+    expect(pieValueFromAngle(sector, 0, sector.startDeg - 90)).toBeNull();
+  });
+});
+
+describe("distanceFromCenter", () => {
+  it("measures radial pixel distance from the pie center", () => {
+    const layout = pieLayout([1], 200, 200); // center (100,100)
+    expect(distanceFromCenter(layout, 100, 100)).toBeCloseTo(0, 9);
+    expect(distanceFromCenter(layout, 130, 140)).toBeCloseTo(50, 9); // 3-4-5
+  });
+});
