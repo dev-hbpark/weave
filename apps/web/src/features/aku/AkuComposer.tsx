@@ -19,6 +19,8 @@ import {
   useRef,
   useState,
 } from "react";
+import type { AkuSettings } from "./agent/aku-settings.js";
+import { AKU_STYLES } from "./agent/aku-styles.js";
 import { type SlashCommandItem, SlashCommandMenu } from "./SlashCommandMenu.js";
 import type { AkuImage } from "./types.js";
 
@@ -71,22 +73,62 @@ async function filesToImages(files: ReadonlyArray<File>): Promise<AkuImage[]> {
   );
 }
 
+/** A small toggle pill for the design-tone picker. */
+function StyleChip({
+  label,
+  active,
+  onClick,
+  title,
+}: {
+  readonly label: string;
+  readonly active: boolean;
+  readonly onClick: () => void;
+  readonly title?: string;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors ${
+        active
+          ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)] border-[color:var(--accent)]"
+          : "bg-[color:var(--surface-1)] text-[color:var(--text-soft)] border-[color:var(--surface-2-border)] hover:text-[color:var(--text-strong)]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function AkuComposer({
   onSend,
+  settings,
   onStop,
   streaming,
   seed,
 }: {
-  readonly onSend: (text: string, images: ReadonlyArray<AkuImage>) => void;
+  readonly onSend: (
+    text: string,
+    images: ReadonlyArray<AkuImage>,
+    opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+  ) => void;
+  readonly settings: AkuSettings;
   readonly onStop: () => void;
   readonly streaming: boolean;
   readonly seed: AkuComposerSeed | null;
 }): JSX.Element {
   const [text, setText] = useState("");
   const [images, setImages] = useState<ReadonlyArray<AkuImage>>([]);
+  // Design tone — null = AUTO (the hook rotates tones so generations differ).
+  const [styleId, setStyleId] = useState<string | null>(null);
+  // Style-reference images (mimic palette/tone) — separate from content images.
+  const [styleRefImages, setStyleRefImages] = useState<ReadonlyArray<AkuImage>>([]);
   const [dragging, setDragging] = useState(false);
   const [slashActive, setSlashActive] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const styleRefFileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputId = useId();
 
@@ -138,9 +180,13 @@ export function AkuComposer({
 
   const submit = (): void => {
     if (!canSend || streaming) return;
-    onSend(text, images);
+    onSend(text, images, {
+      styleId: settings.designTone ? styleId : null,
+      ...(settings.styleReference && styleRefImages.length > 0 ? { styleRefImages } : {}),
+    });
     setText("");
     setImages([]);
+    setStyleRefImages([]);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -190,6 +236,12 @@ export function AkuComposer({
   const onPickFiles = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
     await addImages(Array.from(e.target.files ?? []));
     e.target.value = ""; // allow re-selecting the same file
+  };
+
+  const onPickStyleRef = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const read = await filesToImages(Array.from(e.target.files ?? []));
+    if (read.length > 0) setStyleRefImages((prev) => [...prev, ...read]);
+    e.target.value = "";
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
@@ -272,6 +324,71 @@ export function AkuComposer({
           ))}
         </div>
       ) : null}
+
+      {/* Design-tone picker — the variety lever. "자동" (null) lets the agent
+          rotate tones each generation; picking one commits every generation to
+          that mood (literal palette / typography / shapes). Gated by settings. */}
+      {settings.designTone ? (
+        <div className="flex flex-wrap gap-1" data-testid="aku-style-picker">
+          <StyleChip
+            label="자동"
+            active={styleId === null}
+            onClick={() => setStyleId(null)}
+            title="매 생성마다 다른 톤으로 다양하게"
+          />
+          {AKU_STYLES.map((s) => (
+            <StyleChip
+              key={s.id}
+              label={s.label}
+              active={styleId === s.id}
+              onClick={() => setStyleId((cur) => (cur === s.id ? null : s.id))}
+              title={s.prompt}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {/* Style-reference attach — images whose palette/tone/layout the agent
+          mimics (not content). Gated by settings. */}
+      {settings.styleReference ? (
+        <div className="flex flex-wrap items-center gap-1.5" data-testid="aku-style-ref">
+          <input
+            ref={styleRefFileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="sr-only"
+            onChange={(e) => void onPickStyleRef(e)}
+          />
+          <button
+            type="button"
+            onClick={() => styleRefFileRef.current?.click()}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-[color:var(--surface-2-border)] px-2 py-0.5 text-[11px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)]"
+            data-testid="aku-style-ref-add"
+          >
+            <IconImage size={12} />
+            스타일 참고
+          </button>
+          {styleRefImages.map((img, i) => (
+            <div key={img.dataUrl} className="relative">
+              <img
+                src={img.dataUrl}
+                alt={img.name ?? "스타일 참고 이미지"}
+                className="w-9 h-9 rounded-[var(--radius-sm)] object-cover border border-[color:var(--accent)]"
+              />
+              <button
+                type="button"
+                aria-label="스타일 참고 제거"
+                onClick={() => setStyleRefImages((prev) => prev.filter((_, j) => j !== i))}
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 inline-flex items-center justify-center rounded-full bg-[color:var(--surface-1)] border border-[color:var(--surface-2-border)] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)]"
+              >
+                <IconClose size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <div className="flex items-end gap-1.5">
         <input
           ref={fileRef}

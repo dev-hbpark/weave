@@ -12,9 +12,10 @@
 // paradigms ARE the recommendations — no second toggle, no image/text/shape
 // (those are added afterwards via the QuickActionBar "+" inside the frame).
 
-import { createAutoFlexSpec, createAutoGridSpec, type LayoutSpec, trackFr } from "@agocraft/core";
+import { createAutoFlexSpec, type LayoutSpec } from "@agocraft/core";
 import { IconLayoutAbsolute, IconLayoutFlex, IconLayoutGrid } from "@weave/design-system";
 import { createElement, type ReactNode } from "react";
+import { gridSpecForChildCount } from "../layout/grid-spec.js";
 import type { InsertableCapability, InsertableRecommendation } from "./types.js";
 
 type FrameLayoutId = "frame-absolute" | "frame-flex" | "frame-grid";
@@ -37,9 +38,11 @@ function pickDefaultLayoutSpec(
     return createAutoFlexSpec({ align: "start" });
   }
   if (layoutType === "auto-grid") {
-    // One full-axis column + row (one fr each). Users grow the grid via the
-    // ContextualToolbar's GridSizePicker.
-    return createAutoGridSpec({ columns: [trackFr(1)], rows: [trackFr(1)] });
+    // A fresh grid frame defaults to 2×2 (matches the skeleton preview and
+    // gives "drop a few items in" room). Children added later fan out one per
+    // cell; the grid auto-grows when more children join (gridSpecForChildCount
+    // also runs on layout-type switch). Users fine-tune via the GridSizePicker.
+    return gridSpecForChildCount(0);
   }
   return undefined;
 }

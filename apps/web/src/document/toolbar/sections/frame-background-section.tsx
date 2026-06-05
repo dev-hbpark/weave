@@ -22,6 +22,7 @@ import {
   type AutoGridSpec,
   createAutoFlexSpec,
   createAutoGridSpec,
+  FILL_UNIT_KIND,
   type FlexAlign,
   type FlexDirection,
   type FlexJustify,
@@ -36,7 +37,6 @@ import {
   AlignmentPad,
   ContextualToolbar as Bar,
   Button,
-  ColorPicker,
   type TrackSize as DSTrackSize,
   GridSizePicker,
   IconClose,
@@ -51,15 +51,9 @@ import {
   TrackSizeEditor,
 } from "@weave/design-system";
 import type { ReactElement } from "react";
-import {
-  batchPerItem,
-  isMixed,
-  MixedBadge,
-  pickerValueToStored,
-  updateAll,
-  useResolveSharedColor,
-} from "../multi-edit.js";
+import { batchPerItem } from "../multi-edit.js";
 import { FlipControls } from "./flip-controls.js";
+import { FillControl, StrokeControl } from "./shadow-controls.js";
 import type { ToolbarSectionComponent } from "./types.js";
 
 type LayoutKindChoice = "absolute" | "auto-flex" | "auto-grid";
@@ -166,15 +160,16 @@ function PaddingFields({
 }
 
 export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
-  // WI-040 — `attrs.background` may be a `StyleRef` (theme token) after
-  // the user picked a theme swatch. `useResolveSharedColor` runs the
-  // cascade walker per item before comparing values, so the picker sees
-  // a CSS string and "Mixed" detection works on semantic equality.
-  const background = useResolveSharedColor(
-    items,
-    (it) => (it.attrs as unknown as { background?: unknown }).background,
-  );
-  const bgHasValue = !isMixed(background) && background !== undefined;
+  // WI-095 follow-up — a frame's background is a `decoration.fill` UNIT now
+  // (DR-028 parity with shapes), not `attrs.background`. The same FillControl /
+  // StrokeControl shapes use edit it, so frames get solid / gradient fills and
+  // borders through one machinery. A clear (×) resets the fill unit to
+  // transparent.
+  const clearFill = () => {
+    for (const id of ids) {
+      editor.exec("weave.item.setDecoration", { itemId: id, kind: FILL_UNIT_KIND, attrs: null });
+    }
+  };
 
   // Mixed-aware layout-type detection. Walk each selected item's
   // `attrs.layout` and compare derived choice. If they disagree → Mixed.
@@ -255,42 +250,21 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
       <Bar.Kind icon={<IconFrame size={18} />} label="프레임" />
       <Bar.Quick>
         <div className="inline-flex items-center gap-1">
-          <ColorPicker
-            aria-label="Frame background"
-            value={isMixed(background) ? "#cccccc" : (background ?? "#ffffff")}
-            onValueCommit={(v) =>
-              updateAll(editor, ids, (prev) => ({
-                attrs: {
-                  ...prev.attrs,
-                  background: pickerValueToStored(v),
-                } as unknown as Readonly<Record<string, unknown>>,
-              }))
-            }
-            onValueChange={() => {
-              /* commit-only */
-            }}
-          />
-          <MixedBadge visible={isMixed(background)} />
-          {bgHasValue ? (
-            <Button
-              variant="subtle"
-              size="md"
-              onClick={() =>
-                updateAll(editor, ids, (prev) => {
-                  const next = { ...prev.attrs } as Record<string, unknown>;
-                  delete next.background;
-                  return {
-                    attrs: next as Readonly<Record<string, unknown>>,
-                  };
-                })
-              }
-              data-testid="frame-bg-clear"
-              aria-label="배경 비우기"
-              data-tip="배경 비우기 (투명)"
-            >
-              <IconClose size={14} />
-            </Button>
-          ) : null}
+          {/* DR-028 parity — fill + stroke as decoration UNITS (solid /
+              gradient via the ColorPicker; image/video fill lands via the
+              agent or a child media item). Same controls shapes use. */}
+          <FillControl editor={editor} ids={ids} />
+          <StrokeControl editor={editor} ids={ids} compact />
+          <Button
+            variant="subtle"
+            size="md"
+            onClick={clearFill}
+            data-testid="frame-bg-clear"
+            aria-label="배경 비우기"
+            data-tip="배경 비우기 (투명)"
+          >
+            <IconClose size={14} />
+          </Button>
         </div>
         <div
           className="inline-flex items-center gap-1 ml-2"

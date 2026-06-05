@@ -5,12 +5,15 @@
 // Body = transcript; Footer = composer.
 
 import type { ClarifyRequest, ServerInfo } from "@agocraft/agent-client";
-import { Banner, IconButton, IconClose, IconPlus, Panel } from "@weave/design-system";
+import { Banner, IconButton, IconClose, Panel } from "@weave/design-system";
 import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { AkuMascot } from "./AkuMascot.js";
 import { AkuServerInfoChip } from "./AkuServerInfoChip.js";
+import { AkuSettingsMenu } from "./AkuSettingsMenu.js";
+import { AkuThemeSuggestion } from "./AkuThemeSuggestion.js";
 import { AkuTokenSetup } from "./AkuTokenSetup.js";
+import type { AkuSettings, SetAkuSetting } from "./agent/aku-settings.js";
 import { ClarifyPicker } from "./ClarifyPicker.js";
 import { MessageList } from "./MessageList.js";
 import type {
@@ -33,6 +36,8 @@ export function AkuPanel({
   pendingClarify,
   onResolveClarify,
   onSend,
+  settings,
+  onSetSetting,
   onStop,
   onClose,
   onRegenerate,
@@ -59,7 +64,14 @@ export function AkuPanel({
   readonly pendingClarify: { readonly req: ClarifyRequest } | null;
   /** Answer the pending clarify question with the selected item-type names. */
   readonly onResolveClarify: (types: readonly string[]) => void;
-  readonly onSend: (text: string, images: ReadonlyArray<AkuImage>) => void;
+  readonly onSend: (
+    text: string,
+    images: ReadonlyArray<AkuImage>,
+    opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+  ) => void;
+  /** Behavior flags (gear menu) + a single-setting setter. */
+  readonly settings: AkuSettings;
+  readonly onSetSetting: SetAkuSetting;
   readonly onStop: () => void;
   readonly onClose: () => void;
   readonly onRegenerate: () => void;
@@ -108,26 +120,14 @@ export function AkuPanel({
           {/* Server config chip — outside the drag handle so hover/focus isn't
               captured by the move gesture. Renders nothing until serverInfo arrives. */}
           <AkuServerInfoChip serverInfo={serverInfo} />
-          {hasToken ? (
-            <button
-              type="button"
-              onClick={onResetToken}
-              data-testid="aku-token-reset"
-              className="text-[11px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] px-1.5 py-1 rounded-[var(--radius-sm)] hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
-            >
-              토큰 재설정
-            </button>
-          ) : null}
-          <IconButton
-            aria-label="새 대화"
-            variant="ghost"
-            size="sm"
-            onClick={onClear}
-            data-testid="aku-new-conversation"
-            disabled={messages.length === 0}
-          >
-            <IconPlus size={16} />
-          </IconButton>
+          <AkuSettingsMenu
+            settings={settings}
+            onSetSetting={onSetSetting}
+            onClear={onClear}
+            canClear={messages.length > 0}
+            onResetToken={onResetToken}
+            hasToken={hasToken}
+          />
           <IconButton aria-label="아쿠 닫기" variant="ghost" size="sm" onClick={onClose}>
             <IconClose size={16} />
           </IconButton>
@@ -163,6 +163,7 @@ export function AkuPanel({
         </Panel.Body>
         {hasToken ? (
           <Panel.Footer>
+            <AkuThemeSuggestion messages={messages} enabled={settings.themeAdvice} />
             {pendingClarify !== null ? (
               <div className="pb-2">
                 <ClarifyPicker request={pendingClarify.req} onSubmit={onResolveClarify} />
@@ -170,6 +171,7 @@ export function AkuPanel({
             ) : null}
             <AkuComposer
               onSend={onSend}
+              settings={settings}
               onStop={onStop}
               streaming={status === "streaming"}
               seed={seed}

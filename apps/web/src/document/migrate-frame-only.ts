@@ -18,11 +18,14 @@
 import {
   type Document as AgocraftDocument,
   type Item as AgocraftItem,
+  FILL_UNIT_KIND,
   type BuiltinItemFrame as ItemFrame,
   type ItemMeta,
   itemId as makeItemId,
+  unitId as makeUnitId,
   type PaintSpec,
   paintSolid,
+  type Unit,
 } from "@agocraft/core";
 
 /** Keep in sync with `agocraft-mirror.ts:31` `SCHEMA_VERSION`. */
@@ -53,8 +56,10 @@ function migrateItem(item: AgocraftItem): AgocraftItem {
 
   const kind = item.kind;
   if (!isLegacyKind(kind)) {
-    if (!childrenChanged) return item;
-    return { ...item, children: nextChildren };
+    const base = childrenChanged ? { ...item, children: nextChildren } : item;
+    // WI-095 follow-up — an already-`frame` item that still carries a legacy
+    // `attrs.background` gets it lifted to a decoration.fill unit on load.
+    return kind === "frame" ? liftFrameBackground(base) : base;
   }
 
   // Compose the new frame + primitive children from the legacy attrs.
@@ -69,14 +74,48 @@ function migrateItem(item: AgocraftItem): AgocraftItem {
   // are preserved alongside the seeded primitive children. Recursion above
   // already migrated them.
   const allChildren = [...seeded, ...nextChildren];
-  return {
+  // Legacy units (camera-target etc.) are dropped during v1 migration.
+  // The legacy `attrs.background` is lifted to a decoration.fill unit
+  // (frame backgrounds are units now, not an attr) by `liftFrameBackground`.
+  return liftFrameBackground({
     id: item.id, // preserve id so undo / sync / refs stay valid
     kind: "frame",
     attrs: frameAttrs,
-    units: [], // legacy units (camera-target etc.) are dropped during v1
-    // migration. Re-attach via behavior commands as needed.
+    units: [],
     children: allChildren,
     meta: item.meta as ItemMeta,
+  });
+}
+
+/** WI-095 follow-up — frame backgrounds are `decoration.fill` UNITS, not
+ *  `attrs.background`. Lift any legacy `attrs.background` (a CSS string OR a
+ *  `StyleRef` theme token) on a frame into a solid `decoration.fill` unit and
+ *  strip the attr. Idempotent: a frame with no background is returned as-is;
+ *  a frame that already has a fill unit keeps it (the unit wins) and only the
+ *  dead attr is removed. */
+function liftFrameBackground(item: AgocraftItem): AgocraftItem {
+  const attrs = item.attrs as Readonly<Record<string, unknown>>;
+  const background = attrs.background;
+  if (background === undefined) return item;
+  const rest = { ...attrs };
+  delete (rest as Record<string, unknown>).background;
+  const hasFill = item.units.some((u) => u.kind === FILL_UNIT_KIND);
+  const units = hasFill ? item.units : [...item.units, makeBackgroundFillUnit(item, background)];
+  return { ...item, attrs: rest, units };
+}
+
+/** Build the solid `decoration.fill` unit for a lifted frame background. The
+ *  value (CSS string or `StyleRef`) lives in the PaintSpec `color` slot — the
+ *  StyleResolver cascade reads it at render time, same as a shape fill. The
+ *  unit id is deterministic from the frame id so re-running the migration is
+ *  idempotent. */
+function makeBackgroundFillUnit(item: AgocraftItem, color: unknown): Unit {
+  const paint = { type: "solid", color } as unknown as PaintSpec;
+  return {
+    id: makeUnitId(`${String(item.id)}--bgfill`),
+    kind: FILL_UNIT_KIND,
+    attrs: paint as unknown as Readonly<Record<string, unknown>>,
+    meta: { schemaVersion: SCHEMA_VERSION },
   };
 }
 

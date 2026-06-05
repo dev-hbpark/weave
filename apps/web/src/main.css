@@ -131,6 +131,101 @@ body {
   }
 }
 
+/* WI-103 — 아쿠 expression layer. Mood → motion on the launcher's inner wrapper
+ * (the button box stays put for anchor stability). transform/opacity ONLY
+ * (compositor-cheap, RPR-pure); every keyframe is disabled under
+ * prefers-reduced-motion. Discrete sprite-sheet frames (blink/mouth) hook in
+ * here later via background steps() once per-pose art lands (DR-design-024);
+ * today the single placeholder PNG reads via the transform register + glyph. */
+.aku-expr {
+  will-change: transform;
+  transform-origin: 50% 80%;
+}
+
+@keyframes aku-think {
+  0%, 100% { transform: rotate(-3deg) translateY(0); }
+  50% { transform: rotate(3deg) translateY(-3%); }
+}
+@keyframes aku-work {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  40% { transform: translateY(-9%) scale(0.97, 1.03); }
+  70% { transform: translateY(-2%) scale(1.03, 0.97); }
+}
+@keyframes aku-finalize {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(4deg) translateY(-2%); }
+}
+@keyframes aku-celebrate {
+  0% { transform: translateY(0) scale(1, 1); }
+  30% { transform: translateY(-18%) scale(1.06, 0.94); }
+  55% { transform: translateY(-22%) scale(0.96, 1.06); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes aku-confused {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-7deg); }
+  40% { transform: rotate(6deg); }
+  60% { transform: rotate(-4deg); }
+  80% { transform: rotate(3deg); }
+}
+@keyframes aku-look {
+  0% { transform: translateY(0) scale(1, 1); }
+  35% { transform: translateY(-6%) scale(1.04, 1.04); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+
+.aku-expr--idle { animation: aku-bob 1.2s ease-in-out infinite; }
+.aku-expr--thinking { animation: aku-think 2.4s ease-in-out infinite; }
+.aku-expr--working { animation: aku-work 0.7s ease-in-out infinite; }
+.aku-expr--finalizing { animation: aku-finalize 1.6s ease-in-out infinite; }
+.aku-expr--celebrating { animation: aku-celebrate 0.9s ease-out 2; }
+.aku-expr--confused { animation: aku-confused 0.6s ease-in-out 2; }
+.aku-expr--sleeping { animation: aku-bob 3.4s ease-in-out infinite; }
+.aku-expr--looking { animation: aku-look 1.4s ease-out 1; }
+
+/* Decorative mood glyph (…/z/✨/?) — opacity-only motion (compositor-cheap). */
+.aku-expr-glyph {
+  position: absolute;
+  top: -2%;
+  right: -2%;
+  font-size: 26px;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  animation: aku-glyph-pulse 1.6s ease-in-out infinite;
+}
+.aku-expr-glyph[data-glyph="celebrating"] { animation: aku-glyph-pop 0.9s ease-out 2; }
+.aku-expr-glyph[data-glyph="sleeping"] { animation: aku-glyph-drift 2.6s ease-in-out infinite; }
+
+@keyframes aku-glyph-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+@keyframes aku-glyph-pop {
+  0% { opacity: 0; transform: scale(0.4); }
+  40% { opacity: 1; transform: scale(1.2); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes aku-glyph-drift {
+  0% { opacity: 0.3; transform: translateY(2px); }
+  50% { opacity: 0.9; transform: translateY(-3px); }
+  100% { opacity: 0.3; transform: translateY(2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aku-expr--idle,
+  .aku-expr--thinking,
+  .aku-expr--working,
+  .aku-expr--finalizing,
+  .aku-expr--celebrating,
+  .aku-expr--confused,
+  .aku-expr--sleeping,
+  .aku-expr--looking,
+  .aku-expr-glyph {
+    animation: none;
+  }
+}
+
 /* WI-043 — grid drop-cell preview. The controller positions this fixed
  * overlay (viewport px) over the cell the dragged grid child would land in —
  * works for EMPTY cells (which have no element of their own to outline). */

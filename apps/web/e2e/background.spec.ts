@@ -36,21 +36,18 @@ async function clearSelectionViaVm(page: Page): Promise<void> {
 }
 
 async function setFrameBackground(page: Page, id: string, color: string): Promise<void> {
-  // Drive the multi-aware updater directly — same code path the toolbar's
-  // ColorPicker onValueCommit fires. Avoids the visual ColorPicker dance.
+  // WI-095 follow-up — a frame's background is a `decoration.fill` UNIT now
+  // (DR-028 parity with shapes), not `attrs.background`. Same path the
+  // toolbar's FillControl fires (`weave.item.setDecoration`).
   await page.evaluate(
     ({ fid, c }) => {
       const w = window as unknown as {
         __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
       };
-      w.__weaveEditor?.exec("weave.item.update", {
+      w.__weaveEditor?.exec("weave.item.setDecoration", {
         itemId: fid,
-        patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
-          attrs: {
-            ...prev.attrs,
-            background: c,
-          } as unknown as Readonly<Record<string, unknown>>,
-        }),
+        kind: "decoration.fill",
+        attrs: { type: "solid", color: c },
       });
     },
     { fid: id, c: color },
@@ -74,13 +71,13 @@ test("toolbar mounts a Background section when a slide is selected", async ({ pa
   const toolbar = page.getByTestId("contextual-toolbar");
   await expect(toolbar).toBeVisible();
   await expect(toolbar).toHaveAttribute("data-kind", "frame");
-  // DR-design-015 — Tier-2 layout: frame's Background lives inside
-  // `Bar.Quick` as a ColorPicker. The picker is the trigger button
-  // (Radix Popover.Trigger) and carries its `aria-label`.
-  await expect(toolbar.getByLabel("Frame background")).toBeVisible();
+  // WI-095 follow-up — frame fill/stroke are decoration UNITS, edited by the
+  // shared FillControl / StrokeControl (same as shapes). The fill swatch
+  // carries the "채우기" aria-label.
+  await expect(toolbar.getByLabel("채우기")).toBeVisible();
 });
 
-test("setting attrs.background paints the frame", async ({ page }) => {
+test("setting a frame fill unit paints the frame", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "BG-B" });
   await addFrame(page, "slide", {
@@ -94,17 +91,15 @@ test("setting attrs.background paints the frame", async ({ page }) => {
   });
 
   await setFrameBackground(page, id, "rgb(255, 0, 0)");
-  // Read the rendered slide card's computed background. The Card sits one
-  // level inside the frame's NestedFrame wrapper.
-  const cardBg = await page.evaluate((fid) => {
-    const frame = document.querySelector(`[data-frame-id="${fid}"]`) as HTMLElement | null;
-    if (frame === null) return null;
-    // First child carrying inline background — that's the Card.
-    const card = frame.querySelector('[style*="background"]') as HTMLElement | null;
-    if (card === null) return null;
-    return getComputedStyle(card).backgroundColor;
+  // WI-095 follow-up — the frame paints its decoration.fill unit as an SVG
+  // <rect fill="…"> inside FrameBlock (gradient/image/video parity with
+  // shapes). Read that rect's fill.
+  const rectFill = await page.evaluate((fid) => {
+    const frame = document.querySelector(`[data-frame-id="${fid}"]`);
+    const rect = frame?.querySelector('[data-testid="frame-block"] rect') as SVGRectElement | null;
+    return rect?.getAttribute("fill") ?? null;
   }, id);
-  expect(cardBg).toContain("255, 0, 0");
+  expect(rectFill).toContain("255, 0, 0");
 });
 
 // WI-032 Phase 3c — `frame-bg-clear` 버튼 클릭 후 attrs.background 가

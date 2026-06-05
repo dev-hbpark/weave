@@ -16,7 +16,10 @@ import { AkuLauncher } from "./AkuLauncher.js";
 import { AkuMascot } from "./AkuMascot.js";
 import { AkuPanel } from "./AkuPanel.js";
 import { AkuTipBubble } from "./AkuTipBubble.js";
+import { useAkuSettings } from "./agent/aku-settings.js";
 import { useAkuAgent } from "./agent/use-aku-agent.js";
+import { cssSpriteRenderer } from "./expression/css-sprite-renderer.js";
+import { useAkuExpression } from "./expression/use-aku-expression.js";
 import { useAkuGeometry } from "./useAkuGeometry.js";
 import { useAkuTips } from "./useAkuTips.js";
 
@@ -65,6 +68,8 @@ export function AkuAssistant({
   const designInfoRef = useRef(designInfo);
   designInfoRef.current = designInfo;
 
+  const { settings, setSetting } = useAkuSettings();
+
   const {
     messages,
     status,
@@ -88,6 +93,7 @@ export function AkuAssistant({
     getSelection: () => [...selRef.current],
     getDesignInfo: () => designInfoRef.current,
     designId,
+    settings,
     ...(onFramesAdded !== undefined ? { onFramesAdded } : {}),
   });
   const { geometry, beginMove, beginResize } = useAkuGeometry();
@@ -103,12 +109,26 @@ export function AkuAssistant({
     setSeed({ text: draft.text, images: draft.images, nonce: seedNonce.current });
   };
 
+  // Expression layer (WI-103) — derive the mascot's mood from the run-state the
+  // UI already has (status / connection / live `activity` / selection); the
+  // producer (useAkuAgent) is untouched. The concrete renderer is injected here
+  // (composition root) so the consumer layer stays renderer-agnostic (DR-070).
+  const expression = useAkuExpression({
+    status,
+    connection,
+    messages,
+    selectionKey: [...selectedIds].join(","),
+  });
+
   // The collapsed launcher sits at the persisted position and is itself
-  // draggable (tap-vs-drag): a tap opens the panel, a drag relocates it.
+  // draggable (tap-vs-drag): a tap opens the panel, a drag relocates it. The
+  // mascot is mood-aware; `caption` shows the live work말풍선 while streaming.
   const launcherProps = {
     style: { left: geometry.x, top: geometry.y },
     onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) =>
       beginMove(e, { onTap: () => setOpen(true) }),
+    mascot: cssSpriteRenderer.render({ mood: expression.mood, intensity: expression.intensity }),
+    caption: expression.caption,
   };
 
   // Floating-mascot tips (요정처럼 둥둥 + 말풍선) — only after the first-run
@@ -133,6 +153,8 @@ export function AkuAssistant({
         pendingClarify={pendingClarify}
         onResolveClarify={resolveClarify}
         onSend={send}
+        settings={settings}
+        onSetSetting={setSetting}
         onStop={stop}
         onClose={() => setOpen(false)}
         onRegenerate={regenerate}

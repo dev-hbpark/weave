@@ -95,6 +95,7 @@ import {
   readDatasetPayload,
 } from "./dataset/dataset-store.js";
 import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
+import { gridSpecForChildCount } from "./layout/grid-spec.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import {
   ALIGN_OPS_ORDER,
@@ -2112,8 +2113,19 @@ export function buildWeaveCommands(
   });
   const setFrameLayout: typeof rawSetFrameLayout = {
     ...rawSetFrameLayout,
-    run: (ctx, input) =>
-      rawSetFrameLayout.run(ctx, { ...input, layout: normalizeLayoutSpec(input.layout) }),
+    run: (ctx, input) => {
+      let layout = normalizeLayoutSpec(input.layout);
+      // When a frame BECOMES a grid, size the grid to its child count so every
+      // child lands in its own cell (min 2×2), non-overlapping. The toolbar's
+      // "Grid" pick sends a fresh ≤1×1 default spec — that's the trigger. A
+      // deliberately-configured grid (GridSizePicker sends explicit multi-track
+      // arrays) is left untouched so track edits aren't clobbered.
+      if (layout?.kind === "auto-grid" && layout.columns.length <= 1 && layout.rows.length <= 1) {
+        const frame = findChild(ctx.document, String(input.itemId));
+        layout = gridSpecForChildCount(frame?.children.length ?? 0, layout);
+      }
+      return rawSetFrameLayout.run(ctx, { ...input, layout });
+    },
   };
   const setItemLayoutChild = createSetItemLayoutChildCommand({
     name: "weave.item.setLayoutChild",

@@ -9,6 +9,7 @@ import {
   type Document as AgocraftDocument,
   type Item as AgocraftItem,
   createSchema,
+  FILL_UNIT_KIND,
   itemId,
 } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
@@ -236,5 +237,77 @@ describe("migrateLegacyKindsToFrame — semantics", () => {
     if (innerAfter === undefined) throw new Error("missing inner");
     expect(innerAfter.kind).toBe("frame"); // slide rewritten
     expect((innerAfter.children[0]?.attrs as { text: string }).text).toBe("Deep");
+  });
+});
+
+describe("migrateLegacyKindsToFrame — frame background → decoration.fill unit (WI-095)", () => {
+  function fillUnitOf(item: AgocraftItem): { type?: string; color?: string } | undefined {
+    return item.units.find((u) => u.kind === FILL_UNIT_KIND)?.attrs as
+      | { type?: string; color?: string }
+      | undefined;
+  }
+
+  it("lifts an already-`frame` item's legacy attrs.background into a solid fill unit", () => {
+    const frame = makeItem("frame-bg", "frame", { frame: FULL_FRAME, background: "#ff0000" });
+    const migrated = migrateLegacyKindsToFrame(makeDoc([frame]));
+    const out = migrated.root.children[0];
+    if (out === undefined) throw new Error("missing frame");
+    // attr stripped, fill unit added.
+    expect((out.attrs as { background?: unknown }).background).toBeUndefined();
+    expect(fillUnitOf(out)).toEqual({ type: "solid", color: "#ff0000" });
+  });
+
+  it("preserves a StyleRef background value in the fill unit's color slot", () => {
+    const ref = { $ref: "color.accent" };
+    const frame = makeItem("frame-ref", "frame", { frame: FULL_FRAME, background: ref });
+    const migrated = migrateLegacyKindsToFrame(makeDoc([frame]));
+    const out = migrated.root.children[0];
+    if (out === undefined) throw new Error("missing frame");
+    expect(fillUnitOf(out)?.color).toEqual(ref);
+  });
+
+  it("lifts a legacy slide's background onto the converted frame as a fill unit", () => {
+    const slide = makeItem("slide-bg", "slide", {
+      frame: SLIDE_FRAME,
+      title: "T",
+      bullets: [],
+      background: "rgb(0, 128, 255)",
+    });
+    const migrated = migrateLegacyKindsToFrame(makeDoc([slide]));
+    const out = migrated.root.children[0];
+    if (out === undefined) throw new Error("missing frame");
+    expect(out.kind).toBe("frame");
+    expect((out.attrs as { background?: unknown }).background).toBeUndefined();
+    expect(fillUnitOf(out)).toEqual({ type: "solid", color: "rgb(0, 128, 255)" });
+  });
+
+  it("does not add a fill unit when one already exists (the unit wins, attr dropped)", () => {
+    const frame: AgocraftItem = {
+      id: itemId("frame-has-fill"),
+      kind: "frame",
+      attrs: { frame: FULL_FRAME, background: "#ff0000" },
+      units: [
+        {
+          id: itemId("frame-has-fill--existing") as unknown as AgocraftItem["units"][number]["id"],
+          kind: FILL_UNIT_KIND,
+          attrs: { type: "solid", color: "#00ff00" },
+          meta: { schemaVersion: 3 },
+        },
+      ],
+      children: [],
+      meta: { createdAt: NOW, updatedAt: NOW, schemaVersion: 3 },
+    };
+    const migrated = migrateLegacyKindsToFrame(makeDoc([frame]));
+    const out = migrated.root.children[0];
+    if (out === undefined) throw new Error("missing frame");
+    expect((out.attrs as { background?: unknown }).background).toBeUndefined();
+    expect(out.units).toHaveLength(1);
+    expect(fillUnitOf(out)).toEqual({ type: "solid", color: "#00ff00" });
+  });
+
+  it("leaves a frame without a background untouched (same reference)", () => {
+    const frame = makeItem("frame-plain", "frame", { frame: FULL_FRAME });
+    const doc = makeDoc([frame]);
+    expect(migrateLegacyKindsToFrame(doc)).toBe(doc);
   });
 });

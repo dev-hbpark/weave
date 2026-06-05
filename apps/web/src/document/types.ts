@@ -95,10 +95,10 @@ export const DOMAIN_KINDS: ReadonlyArray<DomainKind> = ["frame"];
 // image / video / nested frame).
 export interface FrameAttrs {
   readonly frame: ItemFrame;
-  /** Frame background — any CSS color string (`#hex`, `rgb(…)`, `var(--…)`).
-   *  `undefined` = transparent. Plain string for v1; full `PaintSpec` is v2
-   *  (a gradient / image fill makes sense once the toolbar adopts it). */
-  readonly background?: string;
+  // WI-095 follow-up — a frame's background is a `decoration.fill` UNIT
+  // (DR-028 parity with shapes; supports solid / gradient / image / video),
+  // not an `attrs.background` field. Legacy docs are migrated on load by
+  // `migrate-frame-only.ts` (`liftFrameBackground`).
   /** Optional border-radius as 0..1 ratio of `min(width, height)`. Default 0
    *  = sharp corners. Mirrors `image.attrs.borderRadius` so WI-031's corner
    *  radius direct-drag works uniformly. */

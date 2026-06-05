@@ -150,6 +150,15 @@ test("transcript auto-scrolls to the bottom when opened with a long history", as
 });
 
 test("typing in the composer does not trigger canvas hotkeys", async ({ page }) => {
+  // The composer is gated behind a configured agent token (token-setup gate,
+  // WI-054 / commit 6abe632): with no token the panel shows AkuTokenSetup and
+  // HIDES the composer. Seed a token before navigation (addInitScript runs
+  // before prepareDesign's goto, and the token is read once at hook mount) so
+  // the composer renders. Without this the panel opens but the composer never
+  // appears — the gate was added after this test and it wasn't migrated.
+  await page.addInitScript(() => {
+    window.localStorage.setItem("weave.aku.token", "e2e-token");
+  });
   await openAku(page);
   // Seed a child directly via the editor (NOT via Aku — this suite is backend-free)
   // so there's something a stray Delete could remove.
@@ -166,4 +175,32 @@ test("typing in the composer does not trigger canvas hotkeys", async ({ page }) 
   await composer(page).press("Backspace");
   await composer(page).press("Delete");
   await expect(childCount(page)).resolves.toBe(seeded);
+});
+
+test("token gate: no token shows the setup view (composer hidden); saving reveals it", async ({
+  page,
+}) => {
+  // No token seeded → the panel body must show AkuTokenSetup and HIDE the
+  // composer (token-setup gate, WI-054 / AkuPanel hasToken branch). This is the
+  // regression that left aku-chat.spec.ts:152 silently red for months — covered
+  // here so a gate regression fails loudly.
+  await prepareDesign(page, { flavor: "mixed", title: "Aku-Token" });
+  await page.locator("[data-aku-launcher]").click();
+  await expect(page.locator("[data-aku-panel]")).toBeVisible();
+
+  // Gate closed: setup view shown, composer absent, save disabled until input.
+  await expect(page.locator("[data-aku-token-setup]")).toBeVisible();
+  await expect(composer(page)).toHaveCount(0);
+  await expect(page.getByTestId("aku-token-save")).toBeDisabled();
+
+  // Enter + save a token → gate opens: composer appears, setup view gone, and
+  // the token persists to localStorage (so the next session connects normally).
+  await page.getByTestId("aku-token-input").fill("e2e-token");
+  await expect(page.getByTestId("aku-token-save")).toBeEnabled();
+  await page.getByTestId("aku-token-save").click();
+
+  await expect(composer(page)).toBeVisible();
+  await expect(page.locator("[data-aku-token-setup]")).toHaveCount(0);
+  const saved = await page.evaluate(() => window.localStorage.getItem("weave.aku.token"));
+  expect(saved).toBe("e2e-token");
 });

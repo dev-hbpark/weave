@@ -41,6 +41,12 @@ import type {
   AkuMessage,
   AkuStatus,
 } from "../types.js";
+import {
+  type AkuSettings,
+  DEFAULT_AKU_SETTINGS,
+  temperatureForCreativity,
+} from "./aku-settings.js";
+import { type AkuStyle, nextAutoStyle, styleById, styleTaskLine } from "./aku-styles.js";
 import { makeRoundGroupingEditor } from "./round-grouping-editor.js";
 import {
   WEAVE_CAPABILITIES,
@@ -63,7 +69,14 @@ export interface UseAkuAgent {
   readonly pendingClarify: { readonly req: ClarifyRequest } | null;
   /** Answer the pending clarify question with the selected item-type names. */
   resolveClarify(types: readonly string[]): void;
-  send(text: string, images?: ReadonlyArray<AkuImage>): void;
+  /** `opts.styleId` picks a design tone (see AKU_STYLES); omit → AUTO (rotates
+   *  tones so consecutive generations differ, when that setting is on).
+   *  `opts.styleRefImages` are style-reference images (mimic palette/tone). */
+  send(
+    text: string,
+    images?: ReadonlyArray<AkuImage>,
+    opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+  ): void;
   stop(): void;
   /** Re-run the most recent user turn (drops its response first). */
   regenerate(): void;
@@ -155,6 +168,9 @@ function toConnection(state: ConnectionState): AkuConnection {
  *  colors readable on the active surface; structural color stays in var(--token)
  *  so it follows whatever theme the user switches to. Empty string when the DOM
  *  isn't available (SSR / tests) or the attr is an unknown name. */
+/** All theme names, for the optional `[테마 추천]` instruction's choice list. */
+const THEME_NAME_LIST = THEMES.map((t) => t.name).join(" / ");
+
 function currentThemeLine(): string {
   if (typeof document === "undefined") return "";
   const name = document.documentElement.getAttribute("data-theme") ?? DEFAULT_THEME;
@@ -200,6 +216,8 @@ export function useAkuAgent(deps: {
    *  editor.exec and never trigger the UI's add-time fit, so without this an
    *  agent-built deck stays at the base ~100% view instead of the shared 70%). */
   readonly onFramesAdded?: () => void;
+  /** User-toggleable behavior flags (gear panel). Optional → defaults applied. */
+  readonly settings?: AkuSettings;
   readonly url?: string;
   readonly token?: string;
 }): UseAkuAgent {
@@ -254,10 +272,15 @@ export function useAkuAgent(deps: {
     readonly resolve: (types: readonly string[]) => void;
   } | null>(null);
   // Stable handler (a ref → reconnects don't re-create it). Returns a promise the
-  // server's onClarify awaits; resolved by the picker via resolveClarify.
+  // server's onClarify awaits; resolved by the picker via resolveClarify. When
+  // "생성 전 질문 받기" is off, skip the picker and answer "none" immediately.
+  // Settings are read off `depsRef.current` (DR-030) — the closure runs at
+  // clarify time, well after `depsRef` is initialised.
   const onClarifyRef = useRef(
     (req: ClarifyRequest): Promise<readonly string[]> =>
-      new Promise<readonly string[]>((resolve) => setPendingClarify({ req, resolve })),
+      (depsRef.current.settings ?? DEFAULT_AKU_SETTINGS).askBeforeGenerate
+        ? new Promise<readonly string[]>((resolve) => setPendingClarify({ req, resolve }))
+        : Promise.resolve([]),
   );
   const resolveClarify = useCallback((types: readonly string[]): void => {
     setPendingClarify((cur) => {
@@ -287,6 +310,12 @@ export function useAkuAgent(deps: {
   // The in-flight task id (captured via submit's onSubmit) so stop() can cancel it
   // server-side, not just locally supersede it (small-think DR-011).
   const activeTaskIdRef = useRef<string | null>(null);
+  // AUTO design-tone rotation cursor (when the user picks no style). Seeded once
+  // with a random start so a session doesn't always open on the same tone; each
+  // auto pick advances it so consecutive generations / regenerations differ.
+  const autoStyleCursorRef = useRef<{ value: number }>({
+    value: Math.floor(Math.random() * 997),
+  });
   // Supersession token: stop / clear / a new send invalidate an in-flight submit
   // (the server keeps running unless we also cancel; we ignore its late resolution).
   const genRef = useRef(0);
@@ -335,9 +364,11 @@ export function useAkuAgent(deps: {
     setMessages(next);
   }, []);
 
-  // Persist on every change (best-effort, designId-keyed).
+  // Persist on every change (best-effort, designId-keyed) — unless the user
+  // turned "대화 기록 저장" off.
   useEffect(() => {
-    persistConversation(designId, messages);
+    if ((depsRef.current.settings ?? DEFAULT_AKU_SETTINGS).persistHistory)
+      persistConversation(designId, messages);
   }, [designId, messages]);
 
   // Close the link on unmount.
@@ -443,7 +474,15 @@ export function useAkuAgent(deps: {
   );
 
   const runTurn = useCallback(
-    async (text: string, images: ReadonlyArray<AkuImage>): Promise<void> => {
+    async (
+      text: string,
+      images: ReadonlyArray<AkuImage>,
+      opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+    ): Promise<void> => {
+      const s = depsRef.current.settings ?? DEFAULT_AKU_SETTINGS;
+      const styleId = opts?.styleId;
+      const styleRefImages =
+        s.styleReference && opts?.styleRefImages !== undefined ? opts.styleRefImages : [];
       genRef.current += 1;
       const gen = genRef.current;
       const now = Date.now();
@@ -496,8 +535,28 @@ export function useAkuAgent(deps: {
       const selectionLine =
         selected.length > 0 ? `\n\n[컨텍스트] 현재 선택된 아이템 id: ${selected.join(", ")}` : "";
       const primer = AKU_ABLATION.taskPrimer ? WEAVE_TASK_PRIMER : "";
-      const themeLine = currentThemeLine();
-      const task = `${primer}${designLine}${themeLine}${assetLines}${selectionLine}\n\n${text}`;
+      // [현재 테마] — off frees the agent to commit to the content's own palette.
+      const themeLine = s.sendTheme ? currentThemeLine() : "";
+      // Design VARIETY lever — inject an explicit tone. The user's pick wins;
+      // with no pick and auto-rotation on we ROTATE the catalog so back-to-back
+      // generations (and "regenerate") land on different tones. Off → no tone.
+      const style: AkuStyle | undefined = s.designTone
+        ? (styleById(styleId) ??
+          (s.autoRotateTone ? nextAutoStyle(autoStyleCursorRef.current) : undefined))
+        : undefined;
+      const styleLine = styleTaskLine(style);
+      // [테마 추천] — ask the agent to name a fitting theme in a parseable line
+      // so the panel can offer one-click apply.
+      const themeAdviceLine = s.themeAdvice
+        ? `\n\n[테마 추천] 콘텐츠 무드에 가장 잘 맞는 테마를 하나 골라, 응답의 맨 끝에 정확히 \`추천 테마: <이름>\` 형식 한 줄로 적어주세요. 선택지: ${THEME_NAME_LIST}.`
+        : "";
+      // [스타일 레퍼런스] — the trailing N vision images are a style guide.
+      const styleRefLines =
+        styleRefImages.length > 0
+          ? `\n\n[스타일 레퍼런스] 첨부된 마지막 ${styleRefImages.length}장은 스타일 참고용입니다 — 색감·톤·타이포·여백·레이아웃의 느낌만 모사하고, 그 이미지의 내용(텍스트/사물)을 그대로 옮기지는 마세요.`
+          : "";
+      const task = `${primer}${designLine}${themeLine}${styleLine}${themeAdviceLine}${assetLines}${styleRefLines}${selectionLine}\n\n${text}`;
+      const visionImages = styleRefImages.length > 0 ? [...images, ...styleRefImages] : images;
 
       try {
         const handle = await getHandle();
@@ -509,8 +568,11 @@ export function useAkuAgent(deps: {
         let runState: AgentRunState = INITIAL_AGENT_STATE;
         const res = await handle.submit(task, {
           // Attached images go to the server for vision (data URLs; the server
-          // parses media-type + bytes into the model's first turn).
-          ...(images.length > 0 ? { images } : {}),
+          // parses media-type + bytes into the model's first turn). Style-
+          // reference images (when enabled) ride along after the content images.
+          ...(visionImages.length > 0 ? { images: visionImages } : {}),
+          // Per-request creativity → sampling temperature (server clamps 0..1).
+          temperature: temperatureForCreativity(s.creativity),
           // Capture the server-assigned task id so stop() can cancel THIS run.
           onSubmit: (id) => {
             activeTaskIdRef.current = id;
@@ -584,7 +646,11 @@ export function useAkuAgent(deps: {
         // content at the shared 70%, so an agent-built deck lands like every other
         // fit instead of staying at the base ~100% view. Gated on a frame-count
         // increase so pure edits don't yank the camera.
-        if (succeeded && depsRef.current.getDocument().root.children.length > rootFramesBefore) {
+        if (
+          succeeded &&
+          s.autoFitCamera &&
+          depsRef.current.getDocument().root.children.length > rootFramesBefore
+        ) {
           depsRef.current.onFramesAdded?.();
         }
       } catch (err) {
@@ -611,11 +677,15 @@ export function useAkuAgent(deps: {
   );
 
   const send = useCallback(
-    (text: string, images: ReadonlyArray<AkuImage> = []): void => {
+    (
+      text: string,
+      images: ReadonlyArray<AkuImage> = [],
+      opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+    ): void => {
       const trimmed = text.trim();
       if (trimmed === "" && images.length === 0) return;
       if (status === "streaming") return;
-      void runTurn(trimmed, images);
+      void runTurn(trimmed, images, opts);
     },
     [runTurn, status],
   );
