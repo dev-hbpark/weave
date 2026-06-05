@@ -6,7 +6,7 @@
 
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
 import { resolveAnchor } from "@agocraft/editor";
-import { SelectionLayer } from "@weave/design-system";
+import { IconLock, SelectionLayer } from "@weave/design-system";
 import { type MotionStyle, motion, useMotionValue, useMotionValueEvent } from "motion/react";
 import type React from "react";
 import {
@@ -21,6 +21,7 @@ import {
 } from "react";
 import type { AgoItem, DomainKind, ItemFrame } from "../../document";
 import {
+  isItemLocked,
   useFrameSelectionAllowed,
   useInteractionMode,
   useSelectionChromeVisible,
@@ -29,6 +30,7 @@ import { isDomainItem } from "../../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
 import { ParentFrameHeightContext } from "../../document/domains/parent-frame-context.js";
 import { useCroppingItemId, useIsCropping } from "../../document/interactions/cropping-state.js";
+import { useIsFrameHovered } from "../../document/interactions/frame-hover-store.js";
 import { useSelectionChromeOrNull } from "../../document/interactions/selection-chrome-context.js";
 import {
   type ClickIntent,
@@ -178,6 +180,10 @@ export function NestedFrame({
   const croppingItemId = useCroppingItemId();
   const isCroppingThis = croppingItemId === itemId;
   const chromeVisible = useSelectionChromeVisible() && (!cropping || isCroppingThis);
+  // Multi-selection chrome reveals per item on hover (mirrors the chart's
+  // per-bar width handles). Subscribed so only the frame whose hover boolean
+  // flips re-renders on a pointer transition. Used by the chrome gate below.
+  const isFrameHovered = useIsFrameHovered(itemId);
   // DR-018 — selection chrome registry. Cross-cutting providers (plugins,
   // AI selection-actions, future domain extensions) register here; the
   // NestedFrame's `<SelectionLayer>` resolver merges their specs with
@@ -304,11 +310,13 @@ export function NestedFrame({
   // level, layered above. So a frame's handles surface whenever it
   // is part of the selection.
   const isPrimarySelection = isSelected;
-  // WI-036 follow-up v3 — multi-selection visual cleanup. When two or
-  // more frames are selected, the host-level dashed marquee owns the
-  // "selected" indicator; per-frame solid outlines would draw a
-  // redundant second line over the same boundary. Suppress them.
-  const _isMultiSelection = selectedIds !== undefined && selectedIds.size > 1;
+  // Multi-selection chrome reveal. When two or more frames are selected, the
+  // host-level dashed marquee owns the group "selected" indicator and each
+  // item's own outline + handles surface ONLY while that item is hovered —
+  // the chart-bar interaction the user asked for. Single-select keeps its
+  // always-on chrome.
+  const isMultiSelection = selectedIds !== undefined && selectedIds.size > 1;
+  const chromeForThisItem = !isMultiSelection || isFrameHovered;
   const childFrames = item.children.filter(isDomainItem);
 
   // WI-033 P2 — Phase 13e drill-in opacity / dim chain removed
@@ -694,7 +702,7 @@ export function NestedFrame({
         frameContentNode
       )}
       {flipped && kind === "frame" ? null : childNodes}
-      {isPrimarySelection && onCommitFrame !== undefined && chromeVisible ? (
+      {isPrimarySelection && onCommitFrame !== undefined && chromeVisible && chromeForThisItem ? (
         <SelectionLayer
           targetRef={selfRef}
           // Auto-width/height text: track the live content on the auto axis so
@@ -725,9 +733,11 @@ export function NestedFrame({
               LAYOUT_FEATURE_ENABLED && doc !== undefined
                 ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
                 : undefined;
-            return applyLayoutConstraintFilter(
+            const locked = isItemLocked(item);
+            const handles = applyLayoutConstraintFilter(
               selectionChromeRef.current?.resolve(info) ?? [],
               constraints,
+              locked, // DR-061 — locked → no transform handles
             ).map((spec) => {
               const pos = resolveAnchor(spec.anchor, bounds);
               return {
@@ -738,6 +748,28 @@ export function NestedFrame({
                 node: spec.render({ bounds, selection: info }),
               };
             });
+            // DR-061 — locked: a small lock badge at the top-left corner marks
+            // the protected state (handles are already hidden above).
+            if (locked) {
+              const lp = resolveAnchor({ type: "corner", corner: "nw" }, bounds);
+              handles.push({
+                id: "lock-badge",
+                itemId,
+                x: lp.x,
+                y: lp.y,
+                node: (
+                  <span
+                    aria-hidden
+                    data-lock-badge
+                    className="flex items-center justify-center rounded-full bg-[color:var(--surface-overlay)] text-[color:var(--text-overlay)] shadow-[var(--shadow-overlay)]"
+                    style={{ width: 18, height: 18 }}
+                  >
+                    <IconLock size={11} />
+                  </span>
+                ),
+              });
+            }
+            return handles;
           }}
         />
       ) : null}

@@ -41,6 +41,7 @@ import {
   IconAlignVerticalCenter,
   IconCheck,
   IconClose,
+  IconCopy,
   IconDistributeHorizontal,
   IconDistributeVertical,
   IconFrame,
@@ -49,6 +50,8 @@ import {
   IconLayoutAbsolute,
   IconLayoutFlex,
   IconLayoutGrid,
+  IconLock,
+  IconLockOpen,
   IconPencil,
   IconPlus,
   IconRefresh,
@@ -81,6 +84,7 @@ import {
   firstChildOf,
   InteractionModeProvider,
   type ItemFrame,
+  isItemLocked,
   nextSiblingOf,
   PeekActiveProvider,
   parentOf,
@@ -124,6 +128,7 @@ import {
 } from "../document/interactions/frame-tree.js";
 import { ReparentGhostOverlay } from "../document/interactions/ReparentGhostOverlay.js";
 import { RouterProvider } from "../document/interactions/router-context.js";
+import { frameHoverStore } from "../document/interactions/frame-hover-store.js";
 import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
@@ -141,6 +146,7 @@ import "../document/selection-chrome/endpoint-snap-provider.js";
 import { DatasetProvider } from "../document/dataset/dataset-context.js";
 import { type DatasetPayload, setCell, setCells } from "../document/dataset/dataset-store.js";
 import { ChartElementSelectionProvider } from "../document/domains/chart/chart-element-context.js";
+import { chartElementStore } from "../document/domains/chart/chart-element-store.js";
 import type { ChartLabelRef } from "../document/domains/chart/chart-label-sync.js";
 import {
   type ChartEncoding,
@@ -168,6 +174,8 @@ import {
   setFrameDuplicator,
   setFrameSlideToggler,
   setHoverFrameChildAdder,
+  setItemDuplicator,
+  setLockToggler,
   setMediaSrcOpener,
   setMultiAligner,
   setMultiDeleter,
@@ -1034,6 +1042,13 @@ function DesignPageBody() {
     const v = vertexSelection.get();
     if (v !== null && !selectedIds.has(v.itemId)) vertexSelection.clear();
   }, [selectedIds]);
+  // WI-092 — drop the selected chart DATUM (bar/slice) when its chart item is no
+  // longer selected (deselect / switch to another item), so its drag handles
+  // don't linger or reappear on a different chart. Mirrors the vertex cleanup.
+  useEffect(() => {
+    const c = chartElementStore.get();
+    if (c !== null && !selectedIds.has(c.chartItemId)) chartElementStore.set(null);
+  }, [selectedIds]);
   const selectedFrameId = selection?.kind === "frame" ? selection.id : undefined;
   const _isMultiSelect = selectedIds.size > 1;
   // WI-038 Phase 2 — derive peek container from selection. Selecting any
@@ -1156,6 +1171,27 @@ function DesignPageBody() {
   // surfaces the active hover surface in React state. Mounted on the
   // canvas host so only that subtree triggers updates.
   const hoverContext = useHoverContext(canvasHostRef);
+
+  // Bridge the hovered item into `frameHoverStore` so a MULTI-selection
+  // reveals each item's chrome on hover (chart-bar parity). This DERIVES from
+  // `hoverContext` rather than adding a second pointermove listener —
+  // `useHoverContext` is the single source of truth for "what's under the
+  // pointer", and the two systems stay distinct in purpose: `hoverContext`
+  // drives the unselected-item hover affordance (which excludes selected ids),
+  // while `frameHoverStore` only gates the SELECTED item's chrome. They never
+  // paint the same item. A "handle" hover KEEPS the current item (so the
+  // chrome and the handle under the cursor don't vanish mid-resize); a real
+  // document item sets it; anything else (bare canvas, a non-item surface)
+  // clears it.
+  useEffect(() => {
+    const { hoveredKind, hoveredId } = hoverContext;
+    if (hoveredKind === "handle") return; // over a handle — keep current item
+    frameHoverStore.set(
+      hoveredId !== undefined && findItemDeep(docInAgocraftRef.current, hoveredId) !== undefined
+        ? hoveredId
+        : null,
+    );
+  }, [hoverContext]);
 
   // WI-072 — paste target container: paste INTO the selected frame, or (for a
   // selected non-frame item) into THAT item's parent so the clone lands beside
@@ -1349,9 +1385,45 @@ function DesignPageBody() {
   // the appropriate weave action (delete / duplicate / open media src
   // picker). The slots persist for the lifetime of this component.
   useEffect(() => {
-    return setFrameDeleter((frameId) => removeItem(frameId));
+    return setFrameDeleter((frameId) => {
+      // DR-061 — a locked item is protected from deletion.
+      const it = findItemDeep(docInAgocraftRef.current, frameId);
+      if (it !== undefined && isItemLocked(it)) return;
+      removeItem(frameId);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- removeItem
     // closes over `rawRemoveItem` from useDesign which is stable.
+  }, []);
+  // DR-061 — lock/unlock toggle slot. Operates on the WHOLE current selection
+  // (single OR multi): lock ALL if any is unlocked, else unlock all. Batched so
+  // a multi-toggle is one undo step. Undoable via the generic attr command.
+  useEffect(() => {
+    return setLockToggler(() => {
+      const ids = Array.from(selectedIdsRef.current);
+      if (ids.length === 0) return;
+      const anyUnlocked = ids.some((id) => {
+        const it = findItemDeep(docInAgocraftRef.current, id);
+        return !(it !== undefined && isItemLocked(it));
+      });
+      const nextLocked = anyUnlocked;
+      editor.runBatch(() => {
+        for (const id of ids) {
+          editor.exec("weave.item.update", { itemId: id, attrs: { locked: nextLocked } });
+        }
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- editor is stable.
+  }, []);
+  // DR-design-016 Phase 2 — duplicate slot. Real copy of the current selection
+  // (single → weave.item.duplicate, multi → weave.items.duplicate).
+  useEffect(() => {
+    return setItemDuplicator(() => {
+      const ids = Array.from(selectedIdsRef.current);
+      if (ids.length === 0) return;
+      if (ids.length === 1) editor.exec("weave.item.duplicate", { itemId: ids[0] });
+      else editor.exec("weave.items.duplicate", { itemIds: ids });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- editor is stable.
   }, []);
   // WI-050 — "delete frame, keep children". Reparent the frame's children
   // to the root design and remove the frame in one transaction. Live design
@@ -1412,7 +1484,12 @@ function DesignPageBody() {
   selectedIdsRef.current = selectedIds;
   useEffect(() => {
     return setMultiDeleter(() => {
-      const ids = Array.from(selectedIdsRef.current);
+      const all = Array.from(selectedIdsRef.current);
+      // DR-061 — never delete locked items; only the unlocked ones go.
+      const ids = all.filter((id) => {
+        const it = findItemDeep(docInAgocraftRef.current, id);
+        return !(it !== undefined && isItemLocked(it));
+      });
       if (ids.length === 0) return;
       // Single batch command → one undo step restores every deleted item.
       editor.exec("weave.items.remove", { itemIds: ids });
@@ -1552,9 +1629,16 @@ function DesignPageBody() {
           return;
         }
         // Otherwise remove every selected item in ONE batch (single undo).
-        const ids = Array.from(selectedIdsRef.current);
-        if (ids.length === 0) return;
+        const all = Array.from(selectedIdsRef.current);
+        if (all.length === 0) return;
+        // DR-061 — locked items are protected from deletion; delete only the
+        // unlocked ones. Always preventDefault so Backspace never navigates.
+        const ids = all.filter((id) => {
+          const it = findItemDeep(docInAgocraftRef.current, id);
+          return !(it !== undefined && isItemLocked(it));
+        });
         e.preventDefault();
+        if (ids.length === 0) return; // all locked → consume the key, delete nothing
         editor.exec("weave.items.remove", { itemIds: ids });
         selectFrame(null);
         return;
@@ -1564,8 +1648,13 @@ function DesignPageBody() {
       // still compose. Bail when there's nothing selected so those
       // handlers see the key untouched.
       if (e.key === "Escape") {
-        // WI-069 — layered Escape: a selected vertex clears FIRST (item stays
-        // selected); only with no vertex selected does Escape deselect the item.
+        // WI-092 / WI-069 — layered Escape, deepest level first: a selected chart
+        // DATUM (bar) clears before a vertex; either clears before the item.
+        // (bar / vertex selections imply the chart / shape item stays selected.)
+        if (chartElementStore.get() !== null) {
+          chartElementStore.set(null);
+          return;
+        }
         if (vertexSelection.get() !== null) {
           vertexSelection.clear();
           return;
@@ -2447,6 +2536,10 @@ function DesignPageBody() {
                                     });
                                   }}
                                   onArrangeHover={setArrangePreview}
+                                  isLocked={(id) => {
+                                    const it = findItemDeep(docInAgocraft, id);
+                                    return it !== undefined && isItemLocked(it);
+                                  }}
                                 />
                                 {/* WI-048 — ghost preview of the Flex / Grid
                               arrangement while the bar button is hovered. */}
@@ -2904,6 +2997,8 @@ interface QuickActionBarAnchoredProps {
    *  arrangement. `null` clears the preview. The host renders the ghost
    *  overlay (it owns the doc + projection). */
   readonly onArrangeHover: (layout: ArrangeLayout | null) => void;
+  /** DR-061 — live `locked` read for the lock/unlock toggle glyph. */
+  readonly isLocked: (itemId: string) => boolean;
 }
 
 function QuickActionBarAnchored({
@@ -2911,6 +3006,7 @@ function QuickActionBarAnchored({
   selectedIds,
   onInsertInFrame,
   onArrangeHover,
+  isLocked,
 }: QuickActionBarAnchoredProps): React.ReactElement | null {
   // WI-040 — affordance gate. The QuickActionBar is a hover/selection
   // affordance and must stand down whenever something else owns the
@@ -3061,6 +3157,23 @@ function QuickActionBarAnchored({
                   {layout === "flex" ? <IconLayoutFlex size={15} /> : <IconLayoutGrid size={15} />}
                 </CommandIconButton>
               </span>
+            );
+          }
+          // DR-design-016 Phase 2 — duplicate the selection.
+          if (id === "item.duplicate") {
+            return (
+              <CommandIconButton commandId={id} size="sm">
+                <IconCopy size={14} />
+              </CommandIconButton>
+            );
+          }
+          // DR-061 — lock / unlock toggle; glyph reflects the live state.
+          if (id === "item.toggleLock") {
+            const locked = isLocked(anchor.frameId);
+            return (
+              <CommandIconButton commandId={id} size="sm">
+                {locked ? <IconLock size={14} /> : <IconLockOpen size={14} />}
+              </CommandIconButton>
             );
           }
           const glyphNode =

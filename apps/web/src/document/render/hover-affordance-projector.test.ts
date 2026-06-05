@@ -288,3 +288,44 @@ describe("projectHoverAffordance — canvas-shape path", () => {
     expect(out).toEqual({ hovered: null, descendants: [], parent: null });
   });
 });
+
+describe("projectHoverAffordance — shape-kind DOMAIN item path", () => {
+  // A shape added from the toolbar is a frame-boxed DOMAIN item (kind
+  // "shape"), NOT a canvas sub-shape in `attrs.shapes`. Its hover is reported
+  // with hoveredKind "shape" yet hoveredId = the ITEM id. It must project like
+  // any frame-boxed primitive — the regression was that "shape" routed to the
+  // `attrs.shapes` lookup, found nothing, and produced no affordance at all.
+  it("a shape ITEM (real doc node) projects its own hovered rect like a frame", () => {
+    const doc = makeDoc([
+      makeItem("shape-item", { frame: { x: 0.2, y: 0.1, width: 0.4, height: 0.5, rotation: 0 } }),
+      makeItem("other", { frame: { x: 0.7, y: 0.1, width: 0.2, height: 0.2, rotation: 0 } }),
+    ]);
+    const out = projectHoverAffordance({
+      doc,
+      hoveredKind: "shape",
+      hoveredId: "shape-item",
+      designWidth: DESIGN_W,
+      designHeight: DESIGN_H,
+      selectedIds: new Set(),
+    });
+    // x=0.2*1000=200, y=0.1*600=60, w=0.4*1000=400, h=0.5*600=300.
+    expect(out.hovered).toEqual({ x: 200, y: 60, width: 400, height: 300, id: "shape-item" });
+    expect(out.descendants).toEqual([]);
+    expect(out.parent).toBeNull(); // direct parent is the doc root → skipped
+  });
+
+  it("a selected shape ITEM drops its hovered tier (selection exclusion still applies)", () => {
+    const doc = makeDoc([
+      makeItem("shape-item", { frame: { x: 0.2, y: 0.1, width: 0.4, height: 0.5, rotation: 0 } }),
+    ]);
+    const out = projectHoverAffordance({
+      doc,
+      hoveredKind: "shape",
+      hoveredId: "shape-item",
+      designWidth: DESIGN_W,
+      designHeight: DESIGN_H,
+      selectedIds: new Set(["shape-item"]),
+    });
+    expect(out).toEqual({ hovered: null, descendants: [], parent: null });
+  });
+});

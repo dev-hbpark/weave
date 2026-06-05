@@ -85,6 +85,16 @@ export function projectHoverAffordance(
   if (hoveredId === undefined) return EMPTY;
   if (!isProjectableKind(hoveredKind)) return EMPTY;
   if (hoveredKind === "shape") {
+    // "shape" is reported for BOTH a shape-kind DOMAIN item (frame-boxed,
+    // hoveredId = item id) and a canvas sub-shape inside `attrs.shapes`
+    // (hoveredId = shape id). A shape ITEM is a normal document node, so it
+    // projects exactly like any frame-boxed primitive; only a non-item id is
+    // a canvas sub-shape. Disambiguating by id keeps `projectShape`'s
+    // `attrs.shapes` lookup from silently returning EMPTY for shape items —
+    // which is why hovering a plain shape produced no affordance at all.
+    if (findItemDeep(doc, hoveredId) !== undefined) {
+      return projectFrame(doc, hoveredId, designWidth, designHeight, selectedIds);
+    }
     return projectShape(doc, hoveredId, designWidth, designHeight, selectedIds);
   }
   return projectFrame(doc, hoveredId, designWidth, designHeight, selectedIds);
