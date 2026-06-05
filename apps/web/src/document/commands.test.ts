@@ -288,6 +288,214 @@ describe("buildWeaveCommands — patch-emitting (Phase 4b)", () => {
   });
 });
 
+// ── WI-096 — weave.batch (atomic multi-command transaction) ──────────────────
+describe("weave.batch (WI-096 / DR-065)", () => {
+  function batchCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.batch");
+    if (c === undefined) throw new Error("weave.batch not found");
+    return c;
+  }
+
+  it("runs several ops as ONE result, concatenating their patches in order", () => {
+    const result = batchCmd().run(makePartialEditCtx(), {
+      ops: [
+        { command: "weave.item.update", input: { itemId: "text-1", attrs: { text: "A" } } },
+        {
+          command: "weave.item.update",
+          input: { itemId: "chart-1", attrs: { variant: { stacked: false } } },
+        },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected fail: ${JSON.stringify(result)}`);
+    // two item.attrs patches, one per op, in order
+    const attrsPatches = result.patches.filter((p) => p.type === "item.attrs");
+    expect(attrsPatches).toHaveLength(2);
+    expect((attrsPatches[0] as { itemId: unknown }).itemId).toBe("text-1");
+    expect((attrsPatches[1] as { itemId: unknown }).itemId).toBe("chart-1");
+  });
+
+  it("is ATOMIC — one failing op aborts the whole batch with no patches", () => {
+    const result = batchCmd().run(makePartialEditCtx(), {
+      ops: [
+        { command: "weave.item.update", input: { itemId: "text-1", attrs: { text: "A" } } },
+        { command: "weave.item.update", input: { itemId: "ghost", attrs: { text: "B" } } },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("item-not-found");
+    expect(result.error.message).toContain("op 1");
+  });
+
+  it("a later op sees an earlier op's effect on the SAME existing item (evolving doc)", () => {
+    // op0 sets color; op1 sets fontSize on the same text. With an evolving working
+    // doc, op1's patch carries BOTH (color from op0 + fontSize), so the final
+    // applied attrs are not lost.
+    const result = batchCmd().run(makePartialEditCtx(), {
+      ops: [
+        { command: "weave.item.update", input: { itemId: "text-1", attrs: { color: "#e11" } } },
+        { command: "weave.item.update", input: { itemId: "text-1", attrs: { fontSize: 40 } } },
+      ],
+    });
+    if (!result.ok) throw new Error("unexpected fail");
+    const last = result.patches.filter((p) => p.type === "item.attrs").at(-1) as {
+      after: Record<string, unknown>;
+    };
+    expect(last.after.color).toBe("#e11");
+    expect(last.after.fontSize).toBe(40);
+  });
+
+  it("rejects an unknown command, nesting, and doc.reset", () => {
+    const unknown = batchCmd().run(makePartialEditCtx(), {
+      ops: [{ command: "weave.nope", input: {} }],
+    });
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.error.code).toBe("unknown-command");
+
+    const nested = batchCmd().run(makePartialEditCtx(), {
+      ops: [{ command: "weave.batch", input: { ops: [] } }],
+    });
+    expect(nested.ok).toBe(false);
+    if (!nested.ok) expect(nested.error.code).toBe("command-not-batchable");
+
+    const reset = batchCmd().run(makePartialEditCtx(), {
+      ops: [{ command: "weave.doc.reset", input: {} }],
+    });
+    expect(reset.ok).toBe(false);
+    if (!reset.ok) expect(reset.error.code).toBe("command-not-batchable");
+  });
+
+  it("rejects an empty / missing ops list", () => {
+    const empty = batchCmd().run(makePartialEditCtx(), { ops: [] });
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.error.code).toBe("invalid-input");
+  });
+});
+
+// ── WI-094 — weave.item.update partial-edit normalization (text + chart) ─────
+function makePartialEditCtx(): CommandContext {
+  const textItem = {
+    id: "text-1",
+    kind: "text",
+    attrs: {
+      frame: FULL_FRAME,
+      text: "Q3 sales up",
+      textRuns: [{ insert: "Q3 sales up" }],
+      color: "var(--text-default)",
+    },
+    behaviors: [],
+    createdAt: META_DATE,
+  } as unknown as Item;
+  const chartItem = {
+    id: "chart-1",
+    kind: "chart",
+    attrs: {
+      frame: FULL_FRAME,
+      datasetId: "ds-1",
+      chartType: "bar",
+      encoding: { category: { field: "항목" }, value: [{ field: "값" }] },
+      variant: { stacked: true, smooth: true },
+      overrides: { datum: { A: { color: "#111" } }, series: { 값: { color: "#222" } } },
+    },
+    behaviors: [],
+    createdAt: META_DATE,
+  } as unknown as Item;
+  const weave: WeaveDocument = {
+    id: "doc-partial",
+    title: "Partial",
+    items: [textItem, chartItem],
+    updatedAt: META_DATE,
+    schemaVersion: 3,
+  };
+  return {
+    document: toAgocraftDocument(weave),
+    resolve: (() => null) as CommandContext["resolve"],
+    skipRelations: false,
+  };
+}
+
+describe("weave.item.update — partial-edit normalization (WI-094)", () => {
+  function updateAttrs(
+    ctx: CommandContext,
+    itemId: string,
+    attrs: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.update");
+    if (cmd === undefined) throw new Error("command not found");
+    const result = cmd.run(ctx, { itemId, attrs });
+    if (!result.ok) throw new Error(`unexpected fail: ${JSON.stringify(result)}`);
+    const patch = result.patches.find((p) => p.type === "item.attrs");
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    return patch.after as Record<string, unknown>;
+  }
+
+  it("text: setting `text` alone re-derives textRuns so the change shows (DR-057 canonical)", () => {
+    const after = updateAttrs(makePartialEditCtx(), "text-1", { text: "New copy" });
+    expect(after.text).toBe("New copy");
+    expect(after.textRuns).toEqual([{ insert: "New copy" }]);
+  });
+
+  it("text: setting `textRuns` (부분편집) syncs the `text` mirror to the joined inserts", () => {
+    const runs = [
+      { insert: "Q3 " },
+      { insert: "sales", attributes: { color: "#e11", fontWeight: "bold" } },
+      { insert: " up" },
+    ];
+    const after = updateAttrs(makePartialEditCtx(), "text-1", { textRuns: runs });
+    expect(after.textRuns).toEqual(runs);
+    expect(after.text).toBe("Q3 sales up");
+  });
+
+  it("text: the UI `patch` form is untouched (no re-derive) — provided is undefined", () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.update");
+    if (cmd === undefined) throw new Error("command not found");
+    const result = cmd.run(makePartialEditCtx(), {
+      itemId: "text-1",
+      patch: (it: Item) => ({ ...it, attrs: { ...it.attrs, text: "X" } as never }),
+    });
+    if (!result.ok) throw new Error("unexpected fail");
+    const patch = result.patches.find((p) => p.type === "item.attrs");
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    const after = patch.after as Record<string, unknown>;
+    expect(after.text).toBe("X");
+    // runs left as-is (the editor writes text + textRuns together itself)
+    expect(after.textRuns).toEqual([{ insert: "Q3 sales up" }]);
+  });
+
+  it("chart: a partial `variant` deep-merges — sibling flags survive", () => {
+    const after = updateAttrs(makePartialEditCtx(), "chart-1", { variant: { stacked: false } });
+    expect(after.variant).toEqual({ stacked: false, smooth: true });
+  });
+
+  it("chart: a partial `overrides` emphasizes one datum without dropping the others", () => {
+    const after = updateAttrs(makePartialEditCtx(), "chart-1", {
+      overrides: { datum: { B: { color: "#e11" } } },
+    });
+    expect(after.overrides).toEqual({
+      datum: { A: { color: "#111" }, B: { color: "#e11" } },
+      series: { 값: { color: "#222" } },
+    });
+  });
+
+  it("chart: a null value clears just that override key (deep)", () => {
+    const after = updateAttrs(makePartialEditCtx(), "chart-1", {
+      overrides: { datum: { A: null } },
+    });
+    expect(after.overrides).toEqual({ datum: {}, series: { 값: { color: "#222" } } });
+  });
+
+  it("chart: `palette` (array) and scalars still replace wholesale", () => {
+    const after = updateAttrs(makePartialEditCtx(), "chart-1", {
+      palette: ["#aaa", "#bbb"],
+      chartType: "line",
+    });
+    expect(after.palette).toEqual(["#aaa", "#bbb"]);
+    expect(after.chartType).toBe("line");
+    // untouched nested maps stay intact
+    expect(after.variant).toEqual({ stacked: true, smooth: true });
+  });
+});
+
 // ── WI-055 — weave.shape.setCornerRadius ────────────────────────────────────
 function makeShapeCtx(): CommandContext {
   const rectItem = {

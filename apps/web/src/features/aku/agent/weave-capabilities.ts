@@ -92,7 +92,10 @@ export const WEAVE_CAPABILITIES = {
         // PLACEMENT — a text item is a CHILD of an auto-layout frame; the frame sets its
         // WIDTH and the box AUTO-FITS its height to the wrapped content (AUTO-HEIGHT).
         "PLACEMENT & SIZING: add text as a CHILD of an auto-layout frame (containerId = a layout frame); the frame sets the text's WIDTH and the box AUTO-FITS ITS HEIGHT to the wrapped content (auto-height). BIND THE TEXT'S WIDTH TO ITS CELL so it WRAPS and never overflows horizontally: in a flex COLUMN set the frame's align (or the child's alignSelf) to 'stretch' — in a column the cross axis IS the width, so the text fills the column width and wraps; in an auto-grid the column track already bounds the width. Do NOT leave a text in auto-width (hugging its content) inside a layout — a long line then spills past its cell. Only the WIDTH is layout-bound: do NOT give text main-axis grow or a vertical stretch (that inflates its HEIGHT) and do NOT pin a fixed height — a short title keeps its natural height, and spare room is taken up by the frame's justify / align / gap / padding. For equal-size regions (e.g. comparison columns) size the FRAMES with grid tracks / flex grow, never the leaf text. CHOOSE A FONT SIZE THAT FITS: pick the fontSizeSpec ratio so the text sits inside its region with margin to spare — if it would crowd or overflow, bring the size DOWN and shorten the copy; never oversize. Position glyphs with textAlignHorizontal / textAlignVertical. ONLY when a text sits directly in an absolute-constraints frame (intentional free-form placement) give it an explicit frame and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }.",
-        "STYLE: fontFamily (CSS stack), fontWeight ('normal' | 'bold'), fontStyle ('normal' | 'italic'), color, textDecoration ('NONE' | 'UNDERLINE' | 'STRIKETHROUGH'), textCase ('ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE').",
+        "STYLE: fontFamily (CSS stack), fontWeight ('normal' | 'bold'), fontStyle ('normal' | 'italic'), color, textDecoration ('NONE' | 'UNDERLINE' | 'STRIKETHROUGH'), textCase ('ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE'). These attrs style the WHOLE box.",
+        // PER-RANGE typography (부분편집) — DR-062/DR-057. textRuns is the canonical
+        // inline content; the plain `text` is a mirror derived from it.
+        "PER-RANGE STYLE (부분편집 — style ONLY part of the text, e.g. one word/number a different color or bold): set attrs.textRuns = an ORDERED array of runs that, concatenated, form the full string. Each run is { insert:'<segment>', attributes?:{ color?, fontSize?(px), fontFamily?, fontWeight?:'bold', fontStyle?:'italic', textDecoration?:'UNDERLINE'|'STRIKETHROUGH', textCase?, letterSpacing?(px), outlineColor?, outlineWidth?(px) } }. A run with NO attributes inherits the box defaults. Use '\\n' as its own insert for a hard line break. Example — make 'sales' red+bold in 'Q3 sales up': textRuns:[{insert:'Q3 '},{insert:'sales',attributes:{color:'#e11',fontWeight:'bold'}},{insert:' up'}]. textRuns is the SINGLE SOURCE OF TRUTH: setting attrs.textRuns updates the visible text AND its styling; setting attrs.text alone REPLACES the whole string and RESETS every per-range style (use that for a plain whole-text rewrite). To recolor just one span on existing text, READ the current textRuns from the snapshot, change only the run(s) you want, and send the full textRuns back (the box keeps the others).",
         "COLOR — DEFAULT to a theme token by ROLE so text re-skins with the theme: title/heading → var(--text-strong); body/paragraph → var(--text-default); secondary/supporting → var(--text-soft); caption/footnote/label → var(--text-muted); EMPHASIZED word/number/KPI/highlight → var(--accent) (or var(--accent-strong)). If you set NO color it already defaults to var(--text-default) (never lazily hard-code a neutral dark/light hex). Override with a LITERAL color only when the content's MOOD wants a specific text color (mood > theme), or for brand/data-bound text.",
         "LAYOUT: textAlignHorizontal ('LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED'), textAlignVertical ('TOP' | 'CENTER' | 'BOTTOM'), lineHeightSpec ({ value, unit: 'multiplier' | 'px' }, default 1.4×), letterSpacing / paragraphSpacing / paragraphIndent (all design-px).",
         "Edit any of these with weave.item.update { itemId, attrs }.",
@@ -100,6 +103,7 @@ export const WEAVE_CAPABILITIES = {
       editableAttrs: [
         "frame",
         "text",
+        "textRuns",
         "fontFamily",
         "fontSize",
         "fontSizeSpec",
@@ -259,6 +263,19 @@ export const WEAVE_CAPABILITIES = {
       description:
         'Hides the item until a given presentation step. step (0-indexed camera order), mode ("fade" | …).',
       editableAttrs: ["step", "mode", "label"],
+    },
+    {
+      // WI-090 — item link. Any item becomes a clickable link in Present mode.
+      kind: "button-trigger",
+      description:
+        "An ITEM LINK (WI-090) — makes the WHOLE item a clickable button in Present mode. Add via " +
+        "weave.item.addBehavior { itemId, behavior:{ id, kind:'button-trigger', action } }; edit via " +
+        "weave.behavior.update, remove via weave.item.removeBehavior. `action` is a HotspotAction: " +
+        "{ type:'external', href:'https://…' } opens a URL in a new tab, or { type:'jump-camera', " +
+        "targetId:'present-<frameId>' } jumps to that slide-frame in the deck (targetId = 'present-' + the " +
+        "top-level frame's id). Use this for 'link this to …' / clickable buttons. For a link on PART of a " +
+        "text run, use the text item's inline hyperlink instead (per-range), not this whole-item trigger.",
+      editableAttrs: ["action", "label"],
     },
   ],
 } as const;

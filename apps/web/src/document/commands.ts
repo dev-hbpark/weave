@@ -70,6 +70,7 @@ import {
   createSwapGridCellsCommand,
 } from "@agocraft/layout";
 import {
+  applyChangeToDocument,
   applyCreationUnits,
   computeReparentFrameRatio,
   findItemDeep,
@@ -93,6 +94,7 @@ import {
   normalizeDatasetPayload,
   readDatasetPayload,
 } from "./dataset/dataset-store.js";
+import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import {
   ALIGN_OPS_ORDER,
@@ -101,7 +103,6 @@ import {
   computeAlignedFrames,
 } from "./multi/align-ops.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
-import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
@@ -345,6 +346,103 @@ function normalizeShapeAttrs(
   merged.shape = kind;
   return { ...attrs, shape: kind, subAttrs: merged };
 }
+
+/** Deep-merge `after` over `before`, RECURSING into plain-object values so a
+ *  PARTIAL nested object (e.g. a chart's `overrides.datum` carrying one new
+ *  category) EXTENDS the existing one instead of replacing it wholesale. A
+ *  `null` value DELETES that key (the explicit "clear" signal); arrays and
+ *  scalars replace wholesale. Used by the chart attrs normalizer so the agent's
+ *  declarative partial edits don't wipe sibling emphasis / variant flags — the
+ *  UI avoids the same trap via the imperative `patch` form (WI-092 후속2). */
+function deepMergePreserve(
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const out: Record<string, unknown> = { ...before };
+  for (const [k, v] of Object.entries(after)) {
+    if (v === null) {
+      delete out[k];
+      continue;
+    }
+    const bv = out[k];
+    out[k] = isPlainObject(bv) && isPlainObject(v) ? deepMergePreserve(bv, v) : v;
+  }
+  return out;
+}
+
+/** WI-094 — chart partial-edit safety. `weave.item.update` shallow-merges the
+ *  caller's `attrs` over the item's current attrs, so a partial `variant` /
+ *  `encoding` / `overrides` REPLACES the whole key — dropping the sibling flags /
+ *  channels / per-element emphasis the agent didn't resend (it only holds the
+ *  delta). Deep-merge ONLY these three nested-map fields back from `before`, so a
+ *  per-element edit ("이 막대만 강조") or a single-flag edit ("도넛으로") is
+ *  non-destructive; everything else (frame, chartType, palette[], barWidth, …)
+ *  keeps wholesale-replace. A `null` value clears a key. Idempotent for complete
+ *  input (the UI patch path already merges), so applying it on every chart
+ *  update is safe. */
+const CHART_DEEP_MERGE_KEYS: ReadonlyArray<string> = ["variant", "encoding", "overrides"];
+function normalizeChartAttrs(
+  after: Readonly<Record<string, unknown>>,
+  before: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  let next = after;
+  for (const key of CHART_DEEP_MERGE_KEYS) {
+    const a = next[key];
+    const b = before[key];
+    if (isPlainObject(a) && isPlainObject(b)) {
+      next = { ...next, [key]: deepMergePreserve(b, a) };
+    }
+  }
+  return next;
+}
+
+/** WI-094 — text partial-edit + canonical-runs coherence. Since DR-057,
+ *  `textRuns` (when present) is the SINGLE SOURCE OF TRUTH for inline content +
+ *  per-range typography (부분편집); the plain `text` is only a legacy mirror. A
+ *  declarative agent edit must keep the two coherent:
+ *    • sets `textRuns` (per-range styling) → sync `text` = the joined run inserts
+ *      so the mirror matches the canonical runs.
+ *    • sets `text` only (whole-text replace) → re-derive `textRuns` from it
+ *      ([{insert:text}] / []), so the change actually shows on a runs-canonical
+ *      item (otherwise the stale runs win and the edit is silently ignored) and
+ *      the old per-range styling is intentionally reset.
+ *  Runs only for the DECLARATIVE path (`provided` given); the UI `patch` form
+ *  writes text + textRuns together itself → `provided` undefined → no-op. */
+function normalizeTextAttrs(
+  after: Readonly<Record<string, unknown>>,
+  provided: Readonly<Record<string, unknown>> | undefined,
+): Readonly<Record<string, unknown>> {
+  if (provided === undefined) return after;
+  if ("textRuns" in provided) {
+    const runs = after.textRuns;
+    const text = Array.isArray(runs)
+      ? runs.map((r) => (isPlainObject(r) && typeof r.insert === "string" ? r.insert : "")).join("")
+      : "";
+    return { ...after, text };
+  }
+  if ("text" in provided) {
+    const text = typeof after.text === "string" ? after.text : "";
+    return { ...after, textRuns: text.length > 0 ? [{ insert: text }] : [] };
+  }
+  return after;
+}
+
+/** Per-kind normalizer for the merged `after` of weave.item.update — a registry,
+ *  not a switch on `child.kind` (Rule 6). Each entry makes a PARTIAL edit safe /
+ *  coherent for that kind: shape keeps subAttrs geometry complete (no render
+ *  crash), chart deep-merges variant/encoding/overrides (no sibling wipe), text
+ *  keeps text↔textRuns coherent. `provided` is the caller's declarative `attrs`
+ *  (undefined for the UI `patch` form). */
+type AttrsNormalizer = (
+  after: Readonly<Record<string, unknown>>,
+  before: Readonly<Record<string, unknown>>,
+  provided: Readonly<Record<string, unknown>> | undefined,
+) => Readonly<Record<string, unknown>>;
+const ATTRS_NORMALIZERS: Partial<Record<DomainKind, AttrsNormalizer>> = {
+  shape: (after) => normalizeShapeAttrs(after),
+  chart: (after, before) => normalizeChartAttrs(after, before),
+  text: (after, _before, provided) => normalizeTextAttrs(after, provided),
+};
 
 // WI-077 — seed dataset for a freshly-added chart (weave.chart.add). First
 // column = category, the rest = value series. Editable afterwards via the
@@ -604,10 +702,16 @@ export function buildWeaveCommands(
         } as unknown as WeaveItem["attrs"],
       }));
     const afterRaw = patchFn(weaveItem).attrs as unknown as Readonly<Record<string, unknown>>;
-    // WI-062 — same shape-subAttrs completeness guard as weave.item.add: a
-    // declarative `attrs` partial that touched subAttrs must not leave the
-    // geometry incomplete (→ render crash). Idempotent for non-shape / complete.
-    const after = child.kind === "shape" ? normalizeShapeAttrs(afterRaw) : afterRaw;
+    // WI-062 / WI-094 — per-kind normalize the merged attrs so a PARTIAL edit is
+    // safe/coherent: shape keeps subAttrs geometry complete (→ no render crash);
+    // chart deep-merges variant/encoding/overrides so emphasizing one element or
+    // toggling one flag doesn't wipe the siblings the agent didn't resend; text
+    // keeps text↔textRuns coherent (DR-057 canonical runs) so a whole-text edit
+    // shows and per-range typography (부분편집) round-trips. Registry lookup, not
+    // a switch on kind (Rule 6). Idempotent for non-registered / complete input.
+    const normalize = ATTRS_NORMALIZERS[child.kind as DomainKind];
+    const before = child.attrs as unknown as Readonly<Record<string, unknown>>;
+    const after = normalize ? normalize(afterRaw, before, input.attrs) : afterRaw;
     // DR-017 ADR-D — drag auto-merge.
     //   agocraft's `mergeKeyOf` derives the merge key from the patch's
     //   target identity (e.g. `item.attrs#${itemId}`) and the editor's
@@ -1372,11 +1476,10 @@ export function buildWeaveCommands(
       // like scatter/heatmap/candlestick/treemap/sankey).
       const categoryName = payload.columns[0]?.name;
       const valueNames = payload.columns.slice(1).map((c) => c.name);
-      const encoding: ChartEncoding =
-        input.encoding ?? {
-          ...(categoryName !== undefined ? { category: { field: categoryName } } : {}),
-          ...(valueNames.length > 0 ? { value: valueNames.map((field) => ({ field })) } : {}),
-        };
+      const encoding: ChartEncoding = input.encoding ?? {
+        ...(categoryName !== undefined ? { category: { field: categoryName } } : {}),
+        ...(valueNames.length > 0 ? { value: valueNames.map((field) => ({ field })) } : {}),
+      };
       let chart = createDefaultItem("chart", container.children.length);
       chart = {
         ...chart,
@@ -2033,7 +2136,7 @@ export function buildWeaveCommands(
     enabled: layoutGate,
   });
 
-  return [
+  const base: ReadonlyArray<Command> = [
     addItem as Command,
     removeItem as Command,
     removeItems as Command,
@@ -2084,6 +2187,73 @@ export function buildWeaveCommands(
     // instance reused inline by weave.item.update for one-call styled edits (WI-063).
     setDecorationCommand as Command,
   ];
+
+  // WI-096 (DR-065) — weave.batch: run SEVERAL commands as ONE atomic transaction.
+  // Each op is dispatched against an EVOLVING working document (op N+1 sees op N's
+  // effects, exactly like today's sequential round execs), and ALL patches are
+  // returned as a single result → one ChangeStream transaction → one Cmd+Z. If ANY
+  // op fails (unknown command / validation / command error), NOTHING is applied
+  // (atomic all-or-nothing) — unlike N parallel tool calls where some land and some
+  // don't. New ids generated mid-batch are NOT addressable by later ops (the agent
+  // writes every input up-front), so batch is for independent edits + edits to
+  // EXISTING items; to chain on a freshly-created item, use a follow-up call (still
+  // one undo via the agent round group).
+  const byName = new Map<string, Command>(base.map((c) => [c.name, c]));
+  // Commands excluded from a batch: weave.batch (no nesting) + weave.doc.reset
+  // (a non-patch side effect that would fire even if a later op aborts the batch).
+  const BATCH_DISALLOWED = new Set<string>(["weave.batch", "weave.doc.reset"]);
+  const batch: Command<{ readonly ops?: ReadonlyArray<{ command?: string; input?: unknown }> }> = {
+    name: "weave.batch",
+    run: (ctx, input) => {
+      const ops = input?.ops;
+      if (!Array.isArray(ops) || ops.length === 0) {
+        return fail("invalid-input", "weave.batch: provide a non-empty `ops` array");
+      }
+      let workingDoc = ctx.document;
+      const patches: Patch[] = [];
+      const results: unknown[] = [];
+      for (let i = 0; i < ops.length; i++) {
+        const op = ops[i];
+        const name = op?.command;
+        if (typeof name !== "string" || name === "") {
+          return fail("invalid-input", `weave.batch: op ${i} is missing a string \`command\``);
+        }
+        if (BATCH_DISALLOWED.has(name)) {
+          return fail("command-not-batchable", `weave.batch: "${name}" cannot run inside a batch`);
+        }
+        const cmd = byName.get(name);
+        if (cmd === undefined) {
+          return fail(
+            "unknown-command",
+            `weave.batch: op ${i} references unknown command "${name}"`,
+          );
+        }
+        const r = cmd.run({ ...ctx, document: workingDoc }, op?.input);
+        if (!r.ok) {
+          return fail(
+            r.error.code,
+            `weave.batch: op ${i} (${name}) failed — ${r.error.message}`,
+            r.error.detail,
+          );
+        }
+        results.push(r.value);
+        // Evolve the working doc so the next op computes against this op's effect
+        // (mirrors sequential exec). applyChangeToDocument === applyPatch; a patch
+        // type it doesn't materialize is a no-op here but still applied for real by
+        // the transaction runner from the returned list.
+        for (const p of r.patches) {
+          workingDoc = applyChangeToDocument(
+            workingDoc,
+            p as unknown as Parameters<typeof applyChangeToDocument>[1],
+          );
+        }
+        patches.push(...r.patches);
+      }
+      return ok(results, patches);
+    },
+  };
+
+  return [...base, batch];
 }
 
 /** Register the command set on an editor. Returns a single teardown that

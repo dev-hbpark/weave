@@ -24,7 +24,7 @@
 // for exactly this surface (WI-054) — these schemas advertise only the
 // declarative form.
 
-import { retargetCommandSchemas, type AgentCommandSpec } from "@agocraft/agent-client";
+import { type AgentCommandSpec, retargetCommandSchemas } from "@agocraft/agent-client";
 
 // `JsonSchema` is `Readonly<Record<string, unknown>>` (the small-think contract);
 // alias it locally so we need no direct @small-think/client dependency.
@@ -63,9 +63,16 @@ const TEXT_ATTRS_NOTE =
   "For text items: size via attrs.fontSizeSpec { kind:'ratio', value } (value = 0..1 of the height of the " +
   "text's IMMEDIATE parent frame — its containerId frame, NOT the slide/canvas; responsive, preferred) or " +
   "{ kind:'px', value }; NEVER put a fraction in the plain fontSize " +
-  "number (0.07 → sub-pixel text). Other fields: text, fontFamily, fontWeight, fontStyle, color, " +
-  "textAlignHorizontal/Vertical, lineHeightSpec, letterSpacing. See the text itemKind capabilities for " +
-  "roles, defaults and full detail.";
+  "number (0.07 → sub-pixel text). Other WHOLE-BOX fields: text, fontFamily, fontWeight, fontStyle, color, " +
+  "textAlignHorizontal/Vertical, lineHeightSpec, letterSpacing. " +
+  "PARTIAL/PER-RANGE styling (부분편집 — color/bold/etc. on PART of the text, e.g. one emphasized word or " +
+  "number): set attrs.textRuns = ordered [{ insert:'<segment>', attributes?:{ color?, fontSize?(px), " +
+  "fontFamily?, fontWeight?:'bold', fontStyle?:'italic', textDecoration?, textCase?, letterSpacing?(px), " +
+  "outlineColor?, outlineWidth? } }, …] whose inserts concatenate to the full string (a no-attributes run = " +
+  "box defaults; '\\n' = line break). textRuns is canonical: it sets the visible text AND its inline styling; " +
+  "setting attrs.text alone replaces the whole string and RESETS per-range style. To restyle one span on " +
+  "existing text, read the current textRuns from the snapshot, edit only the run(s) you want, and resend the " +
+  "full array. See the text itemKind capabilities for roles, defaults and full detail.";
 
 // WI-058 — data-driven QR. The code regenerates from `data` on every render.
 const QR_ATTRS_NOTE =
@@ -93,7 +100,12 @@ const CHART_ATTRS_NOTE =
   "attrs.showLegend / attrs.showAxis (boolean), attrs.opacity (0..1), and attrs.overrides for per-element emphasis " +
   "— { datum:{ '<category>':{ color?, borderWidth?, offset? } }, series:{ '<series>':{ color?, borderWidth? } } } " +
   "(highlight one bar/slice or a whole series). Edit the look/type/encoding/variant/style with weave.item.update; " +
-  "edit the DATA with weave.dataset.update.";
+  "edit the DATA with weave.dataset.update. " +
+  "PARTIAL chart edits are NON-DESTRUCTIVE: attrs.variant, attrs.encoding and attrs.overrides are DEEP-MERGED " +
+  "over the chart's current values, so you may send ONLY the delta — e.g. attrs:{ variant:{ stacked:true } } " +
+  "keeps the other variant flags, and attrs:{ overrides:{ datum:{ 'B':{ color:'#e11' } } } } emphasizes ONE bar " +
+  "without dropping other datum/series overrides. To CLEAR a key, set its value to null (e.g. " +
+  "overrides:{ datum:{ 'B':null } } removes B's emphasis). attrs.palette is a full array (replaced wholesale).";
 
 // WI-077 — tabular dataset payload, shared by weave.chart.add / weave.dataset.*.
 const DATASET_PAYLOAD: Json = {
@@ -378,8 +390,22 @@ const EDIT_UNITS: Json = {
   },
 };
 
-function obj(properties: Readonly<Record<string, Json>>, required: ReadonlyArray<string>): Json {
-  return { type: "object", properties, required: [...required], additionalProperties: false };
+function obj(
+  properties: Readonly<Record<string, Json>>,
+  required: ReadonlyArray<string>,
+  description?: string,
+): Json {
+  return {
+    type: "object",
+    properties,
+    required: [...required],
+    additionalProperties: false,
+    // WI-095 (DR-064) — a top-level `description` on the input schema is the ONLY
+    // per-command guidance that reaches the agent: the reverse-MCP tool's own
+    // `description` falls back to the bare command NAME (AgentCommandSpec carries no
+    // description field), so every command states what it does + when to use it here.
+    ...(description !== undefined && description !== "" ? { description } : {}),
+  };
 }
 
 /** Outer frame box — 0..1 ratios of the PARENT frame (top-level item = the whole
@@ -516,9 +542,21 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.swapFlexOrder": "플렉스 순서 교환",
   "weave.item.dropGridCell": "그리드 셀 이동",
   "weave.item.setDecoration": "장식 설정",
+  "weave.batch": "일괄 실행",
 };
 
 const label = (name: string): string => WEAVE_COMMAND_LABELS[name] ?? name;
+
+/** Patch a retargeted kit schema with the weave label AND a top-level
+ *  `inputSchema.description` (the only per-command text that reaches the agent —
+ *  see the `obj` helper note). The argument shape stays the kit's by import. */
+function withKitDesc(spec: AgentCommandSpec, name: string, description: string): AgentCommandSpec {
+  return {
+    ...spec,
+    label: label(name),
+    inputSchema: { ...spec.inputSchema, description },
+  };
+}
 
 // Kit commands whose argument contract is OWNED by @agocraft/core and whose
 // weave.* name is just the canonical name under our prefix — re-exposed BY IMPORT
@@ -538,11 +576,36 @@ const KIT_SCHEMAS = retargetCommandSchemas({
   prefix: "weave.",
   only: ["item.remove", "item.reparent", "clipboard.copy", "clipboard.cut", "item.duplicate"],
   patch: {
-    "weave.item.remove": (s) => ({ ...s, label: label("weave.item.remove") }),
-    "weave.item.reparent": (s) => ({ ...s, label: label("weave.item.reparent") }),
-    "weave.clipboard.copy": (s) => ({ ...s, label: label("weave.clipboard.copy") }),
-    "weave.clipboard.cut": (s) => ({ ...s, label: label("weave.clipboard.cut") }),
-    "weave.item.duplicate": (s) => ({ ...s, label: label("weave.item.duplicate") }),
+    // Patch in BOTH the weave label AND a top-level inputSchema.description — the
+    // retargeted kit schemas carry neither, so without this the agent would see
+    // only the command name (WI-095). `withKitDesc` spreads the description onto
+    // the imported inputSchema without touching its argument shape (still by import).
+    "weave.item.remove": (s) =>
+      withKitDesc(s, "weave.item.remove", "DELETE one item by id (and its children)."),
+    "weave.item.reparent": (s) =>
+      withKitDesc(
+        s,
+        "weave.item.reparent",
+        "Move an item under a different parent container, preserving its on-screen position. Use to regroup an item into another frame.",
+      ),
+    "weave.clipboard.copy": (s) =>
+      withKitDesc(
+        s,
+        "weave.clipboard.copy",
+        "Copy the given items to the clipboard for a later weave.clipboard.paste.",
+      ),
+    "weave.clipboard.cut": (s) =>
+      withKitDesc(
+        s,
+        "weave.clipboard.cut",
+        "Cut the given items (copy + remove) for a later weave.clipboard.paste.",
+      ),
+    "weave.item.duplicate": (s) =>
+      withKitDesc(
+        s,
+        "weave.item.duplicate",
+        "Clone one item in place (offset slightly), as a new item.",
+      ),
   },
 });
 
@@ -566,6 +629,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         units: CREATION_UNITS,
       },
       ["kind"],
+      "ADD a new item (frame / text / image / video / shape / line / qr) into the design or a container frame. Pass containerId for a parent frame (omit → design root), frame for the 0..1 box, attrsOverride for per-kind content/style, and units to style it (fill/shadow/…) in the SAME call. For a chart use weave.chart.add instead. This is the primary creation tool.",
     ),
   },
   // weave.item.remove → retargeted from kit (see KIT_SCHEMAS).
@@ -613,6 +677,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         dataset: DATASET_PAYLOAD,
       },
       [],
+      "CREATE a data-driven chart — seeds a dataset AND the chart in ONE undoable step. Use this for ANY quantitative data (comparisons, trends, proportions, KPIs); do NOT use weave.item.add with kind 'chart' (empty placeholder). Pick chartType from the 14 families, give encoding (required for non-category/value types), optional variant, and dataset:{columns,rows} (omit → sample data).",
     ),
   },
   // Datasets are the data SOURCE charts reference by id. Create a shared one
@@ -620,32 +685,51 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   // weave.chart.add's seeded dataset is enough.
   "weave.dataset.add": {
     label: label("weave.dataset.add"),
-    inputSchema: obj({ id: STR, dataset: DATASET_PAYLOAD }, []),
+    inputSchema: obj(
+      { id: STR, dataset: DATASET_PAYLOAD },
+      [],
+      "CREATE a standalone dataset (the data SOURCE charts reference by id). Use only when several charts must share ONE dataset; otherwise weave.chart.add's seeded dataset is enough. Returns the new dataset id.",
+    ),
   },
   // Declarative form only (the UI's `patch` function is not agent-reachable).
   // `dataset` is shallow-merged over the current payload — pass just the fields
   // you change (e.g. only `rows`). Every referencing chart reflows.
   "weave.dataset.update": {
     label: label("weave.dataset.update"),
-    inputSchema: obj({ id: STR, dataset: DATASET_PAYLOAD }, ["id"]),
+    inputSchema: obj(
+      { id: STR, dataset: DATASET_PAYLOAD },
+      ["id"],
+      "EDIT a chart's underlying DATA. `dataset` is shallow-merged over the current payload — pass just what changes (e.g. only `rows`, or only `columns`). Every chart referencing this dataset id reflows. Use this for the numbers; use weave.item.update for the chart's look/type/encoding/style.",
+    ),
   },
   "weave.dataset.remove": {
     label: label("weave.dataset.remove"),
     destructive: true,
-    inputSchema: obj({ id: STR }, ["id"]),
+    inputSchema: obj(
+      { id: STR },
+      ["id"],
+      "DELETE a dataset by id. Charts still referencing it render a graceful placeholder. Rarely needed directly.",
+    ),
   },
-  /* WI-064 — absorbed into weave.items.lifecycle { op:'remove' }; hidden from the
-     agent (AGENT_HIDDEN_COMMANDS). Registered for UI use.
+  // WI-095 (DR-064) — re-exposed to the agent. Bulk remove; weave.items.lifecycle
+  // { op:'remove' } covers the same ground. Registered for UI + agent.
   "weave.items.remove": {
     label: label("weave.items.remove"),
     destructive: true,
-    inputSchema: obj({ itemIds: STR_ARR }, ["itemIds"]),
+    inputSchema: obj(
+      { itemIds: STR_ARR },
+      ["itemIds"],
+      "DELETE several items in ONE undo step. Equivalent to weave.items.lifecycle { op:'remove' }. Each id may live under a different parent.",
+    ),
   },
-  */
   "weave.doc.reset": {
     label: label("weave.doc.reset"),
     destructive: true,
-    inputSchema: obj({}, []),
+    inputSchema: obj(
+      {},
+      [],
+      "DANGER: wipe the ENTIRE document back to empty (removes ALL slides + items). Irreversible-feeling for the user — only use on an explicit 'start over / clear everything' request, never as a step inside a normal edit.",
+    ),
   },
 
   // ── attrs editing (declarative form — see WI-054 note above) ──
@@ -654,12 +738,20 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     // `attrs` is shallow-merged over the item's current attrs. Provide COMPLETE
     // sub-objects (e.g. the full `frame` { x, y, width, height }) — a partial
     // sub-object replaces the whole key. The snapshot gives current values.
+    // EXCEPTIONS (partial-edit safe, see notes): for CHART items attrs.variant /
+    // encoding / overrides are DEEP-MERGED (send only the delta; null clears a
+    // key); for TEXT items attrs.textRuns carries per-range styling and stays
+    // coherent with attrs.text.
     // For text items, `attrs` is the path for fontSize / color / alignment /
     // lineHeightSpec etc. (sizing rules in TEXT_ATTRS_NOTE).
     // `units` sets/clears decoration + transform.flip units (fill / shadow / stroke /
     // filter / opacity / flip) in the SAME call — attrs:null clears a unit.
     // Provide attrs and/or units (at least one); only `itemId` is required.
-    inputSchema: obj({ itemId: STR, attrs: ATTRS_WITH_TEXT_NOTE, units: EDIT_UNITS }, ["itemId"]),
+    inputSchema: obj(
+      { itemId: STR, attrs: ATTRS_WITH_TEXT_NOTE, units: EDIT_UNITS },
+      ["itemId"],
+      "EDIT one existing item — the primary change tool. `attrs` changes any attribute (text/textRuns, fontSize, color, frame, chart encoding/variant/overrides, …) and `units` sets/clears decoration + flip; give either or both. attrs is shallow-merged (send COMPLETE sub-objects) EXCEPT chart variant/encoding/overrides are deep-merged and text text↔textRuns stay coherent. Target by the itemId in the snapshot.",
+    ),
   },
   // ── rectangle corner radius (WI-055) ──
   // Rectangle-only (`shape` item with `subAttrs.shape === "rectangle"`). The
@@ -671,15 +763,12 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   //                 top-left, tr = top-right, br = bottom-right, bl = bottom-left.
   // Sending both, or neither, is rejected with `invalid-input`. A non-rectangle
   // target is rejected with `not-a-rectangle`. The edit is reversible (Cmd+Z).
-  /* WI-063 — these per-property shape setters are SUBSUMED by weave.item.add /
-     weave.item.update (attrs + units in one call) and are hidden from the agent
-     command list (AGENT_HIDDEN_COMMANDS in use-aku-agent). Commented out here so
-     the advertised schema set matches the two-command surface. They stay
-     REGISTERED on the editor for the UI (toolbar) — only the agent loses them.
-     setCornerRadius → update { attrs:{ subAttrs:{ shape:'rectangle', cornerRadii } } }
-     setFill         → update { units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] }
-     setVertices     → update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }
-
+  // WI-095 (DR-064) — re-exposed to the agent. These per-property setters are ALSO
+  // reachable via weave.item.add / weave.item.update (attrs + units in one call);
+  // kept available as direct setters for targeted edits:
+  //   setCornerRadius → update { attrs:{ subAttrs:{ shape:'rectangle', cornerRadii } } }
+  //   setFill         → update { units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] }
+  //   setVertices     → update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }
   "weave.shape.setCornerRadius": {
     label: label("weave.shape.setCornerRadius"),
     inputSchema: obj(
@@ -700,6 +789,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       // `radius` XOR `radii` is enforced at runtime by the command, not by JSON
       // Schema (which can't express "exactly one of these optional keys").
       ["itemId"],
+      "Round a RECTANGLE shape's corners (absolute px, not a ratio). Send EXACTLY ONE of `radius` (uniform, all four) or `radii` (per-corner partial: tl/tr/br/bl). Rectangle-only. Also doable via weave.item.update { attrs:{ subAttrs:{ shape:'rectangle', cornerRadii } } }.",
     ),
   },
   // ── shape fill incl. gradient (WI-056) ──
@@ -735,11 +825,13 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
             // radial-gradient
             cx: {
               type: "number",
-              description: "radial-gradient center X, 0..1 of THIS shape's bbox (0 = left edge, 1 = right edge).",
+              description:
+                "radial-gradient center X, 0..1 of THIS shape's bbox (0 = left edge, 1 = right edge).",
             },
             cy: {
               type: "number",
-              description: "radial-gradient center Y, 0..1 of THIS shape's bbox (0 = top edge, 1 = bottom edge).",
+              description:
+                "radial-gradient center Y, 0..1 of THIS shape's bbox (0 = top edge, 1 = bottom edge).",
             },
             // gradient stops (linear + radial)
             stops: {
@@ -748,7 +840,8 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
                 {
                   offset: {
                     type: "number",
-                    description: "stop position, 0..1 along the gradient axis (0 = start, 1 = end).",
+                    description:
+                      "stop position, 0..1 along the gradient axis (0 = start, 1 = end).",
                   },
                   color: STR,
                 },
@@ -758,7 +851,10 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
             // image / video
             src: STR,
             fit: STR,
-            opacity: { type: "number", description: "paint opacity, 0..1 scalar (1 = opaque, 0 = transparent)." },
+            opacity: {
+              type: "number",
+              description: "paint opacity, 0..1 scalar (1 = opaque, 0 = transparent).",
+            },
             muted: { type: "boolean" },
             loop: { type: "boolean" },
           },
@@ -767,6 +863,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         },
       },
       ["itemId", "fill"],
+      "Set a SHAPE's fill paint (`PaintSpec`): solid / linear-gradient / radial-gradient / image / video / none. Shape-only. Also doable via weave.item.update { units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] }, which works for any item kind.",
     ),
   },
   // ── freeform polygon vertices (WI-057) ──
@@ -791,11 +888,42 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         closed: { type: "boolean" },
       },
       ["itemId", "points"],
+      "Replace a FREEFORM polygon's (subAttrs.shape === 'poly') vertices. `points` is the COMPLETE new list, each {x,y} a 0..1 ratio of the shape's own bbox; `closed` toggles filled vs open. Poly-shape only. Also doable via weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }.",
     ),
   },
-  */
-  /* WI-064 — absorbed into weave.items.update `updates`; hidden from the agent
-     (AGENT_HIDDEN_COMMANDS). Registered for UI use (DesignPage dispatches it).
+  // ── image crop (WI-074 / DR-029) — image items only ──
+  // WI-095 (DR-064) — re-exposed to the agent. `crop` = the visible window in
+  // 0..1 of the image's box ({x,y} top-left, {w,h} size; no-crop = {0,0,1,1}).
+  // `rotation` (radians) straightens the CONTENT (frame stays put); `offset`
+  // (frame-box fractions) pans within the rotation cover-zoom. Also reachable via
+  // weave.item.update { attrs:{ cropRatio:{ x,y,w,h, rotation? } } }.
+  "weave.image.setCrop": {
+    label: label("weave.image.setCrop"),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        crop: obj({ x: NUM, y: NUM, w: NUM, h: NUM }, ["x", "y", "w", "h"]),
+        rotation: { type: "number", description: "Content rotation in radians. Omit = 0." },
+        offset: obj({ ox: NUM, oy: NUM }, ["ox", "oy"]),
+      },
+      ["itemId", "crop"],
+      "CROP an image — `crop` is the visible window in 0..1 of the image box ({x,y} top-left, {w,h} size; no-crop = {0,0,1,1}). `rotation` straightens the content; `offset` pans within the cover-zoom. Image-only. Also doable via weave.item.update { attrs:{ cropRatio } }.",
+    ),
+  },
+  // ── flip / mirror (WI-074 / DR-029 D7) — image / video / shape / line ──
+  // WI-095 (DR-064) — re-exposed to the agent. Toggles a horizontal/vertical
+  // mirror (stored as a transform.flip unit). Also reachable via weave.item.update
+  // { units:[{ kind:'transform.flip', attrs:{ flipH?, flipV? } }] }.
+  "weave.item.flip": {
+    label: label("weave.item.flip"),
+    inputSchema: obj(
+      { itemId: STR, axis: { type: "string", enum: ["horizontal", "vertical"] } },
+      ["itemId", "axis"],
+      "MIRROR an item horizontally or vertically (image / video / shape / line). Toggles a transform.flip unit. Also doable via weave.item.update { units:[{ kind:'transform.flip', attrs:{ flipH?, flipV? } }] }.",
+    ),
+  },
+  // WI-095 (DR-064) — re-exposed to the agent. Per-item explicit frames; also
+  // reachable via weave.items.update { updates }. Registered for UI + agent.
   "weave.items.resizeMulti": {
     label: label("weave.items.resizeMulti"),
     inputSchema: obj(
@@ -810,10 +938,24 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
                 description:
                   "New box in 0..1 ratios of the item's PARENT frame (top-level item = the whole design). NEVER pixels.",
                 properties: {
-                  x: { type: "number", description: "Left edge, 0..1 of the PARENT frame's width (top-level = design width)." },
-                  y: { type: "number", description: "Top edge, 0..1 of the PARENT frame's height (top-level = design height)." },
-                  width: { type: "number", description: "Width as 0..1 of the PARENT frame's width." },
-                  height: { type: "number", description: "Height as 0..1 of the PARENT frame's height." },
+                  x: {
+                    type: "number",
+                    description:
+                      "Left edge, 0..1 of the PARENT frame's width (top-level = design width).",
+                  },
+                  y: {
+                    type: "number",
+                    description:
+                      "Top edge, 0..1 of the PARENT frame's height (top-level = design height).",
+                  },
+                  width: {
+                    type: "number",
+                    description: "Width as 0..1 of the PARENT frame's width.",
+                  },
+                  height: {
+                    type: "number",
+                    description: "Height as 0..1 of the PARENT frame's height.",
+                  },
                 },
                 required: ["x", "y", "width", "height"],
                 additionalProperties: false,
@@ -824,9 +966,9 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         },
       },
       ["updates"],
+      "RESIZE/REPOSITION several items at once, each to its own explicit frame (0..1 of its parent), in ONE undo step. Equivalent to weave.items.update { updates }.",
     ),
   },
-  */
   // ── THE multi-selection EDIT command (WI-061/063/064) ──
   // One verb to modify many items in ONE undo step. Supply any combination:
   //   • attrs   — shared attrs merged over EACH itemId (COMPLETE sub-objects; same
@@ -878,6 +1020,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         },
       },
       [],
+      "EDIT MANY items in ONE undo step — the preferred multi-select tool. Supply any combination: `attrs` (shared attrs merged over each itemId), `units` (shared decoration), `updates` (per-item explicit frames), or `op` (align/distribute across the selection). `itemIds` is required when attrs/units/op are used.",
     ),
   },
   // ── THE multi-selection LIFECYCLE command (WI-064) ──
@@ -895,49 +1038,78 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         },
       },
       ["itemIds", "op"],
+      "Bulk STRUCTURAL op over several items in ONE undo step: op:'remove' deletes them, op:'duplicate' clones them.",
     ),
   },
   "weave.behavior.update": {
     label: label("weave.behavior.update"),
     // declarative: `behavior` is shallow-merged over the current behavior payload.
-    inputSchema: obj({ itemId: STR, behaviorId: STR, behavior: ATTRS }, [
-      "itemId",
-      "behaviorId",
-      "behavior",
-    ]),
+    inputSchema: obj(
+      { itemId: STR, behaviorId: STR, behavior: ATTRS },
+      ["itemId", "behaviorId", "behavior"],
+      "EDIT an existing behavior/interaction unit on an item (e.g. retarget an item link, rename a camera step). `behavior` is shallow-merged over the current payload. Add new behaviors with weave.item.addBehavior, remove with weave.item.removeBehavior.",
+    ),
   },
 
   // ── design-level ──
   "weave.design.setBackground": {
     label: label("weave.design.setBackground"),
     // null clears the background; a `var(--token)` literal is resolved to a StyleRef.
-    inputSchema: obj({ color: { type: ["string", "null"] } }, ["color"]),
+    inputSchema: obj(
+      { color: { type: ["string", "null"] } },
+      ["color"],
+      "Set the WHOLE DESIGN's background color (behind every slide). Accepts a hex/rgb or a var(--token) literal; null clears it. For a single slide's fill use a decoration.fill unit on that frame instead.",
+    ),
   },
   "weave.design.setPresentationOrder": {
     label: label("weave.design.setPresentationOrder"),
-    inputSchema: obj({ order: STR_ARR }, ["order"]),
+    inputSchema: obj(
+      { order: STR_ARR },
+      ["order"],
+      "Reorder the DECK — `order` is the full list of top-level slide-frame ids in presentation sequence. Use to rearrange which slide comes first/next in Present mode.",
+    ),
   },
   "weave.design.reorderChildren": {
     label: label("weave.design.reorderChildren"),
-    inputSchema: obj({ containerId: STR, order: STR_ARR }, ["order"]),
+    inputSchema: obj(
+      { containerId: STR, order: STR_ARR },
+      ["order"],
+      "Reorder the children of a container (or the design root if containerId omitted) — `order` is the full id list in the new sibling order. Also changes paint/z order among siblings.",
+    ),
   },
 
   // ── z-order ──
   "weave.item.bringForward": {
     label: label("weave.item.bringForward"),
-    inputSchema: obj({ itemId: STR }, ["itemId"]),
+    inputSchema: obj(
+      { itemId: STR },
+      ["itemId"],
+      "Move an item ONE step forward (up) in its sibling paint/z order.",
+    ),
   },
   "weave.item.sendBackward": {
     label: label("weave.item.sendBackward"),
-    inputSchema: obj({ itemId: STR }, ["itemId"]),
+    inputSchema: obj(
+      { itemId: STR },
+      ["itemId"],
+      "Move an item ONE step backward (down) in its sibling paint/z order.",
+    ),
   },
   "weave.item.bringToFront": {
     label: label("weave.item.bringToFront"),
-    inputSchema: obj({ itemId: STR }, ["itemId"]),
+    inputSchema: obj(
+      { itemId: STR },
+      ["itemId"],
+      "Move an item to the FRONT (top) of its sibling paint/z order — drawn over all siblings.",
+    ),
   },
   "weave.item.sendToBack": {
     label: label("weave.item.sendToBack"),
-    inputSchema: obj({ itemId: STR }, ["itemId"]),
+    inputSchema: obj(
+      { itemId: STR },
+      ["itemId"],
+      "Move an item to the BACK (bottom) of its sibling paint/z order — e.g. push a background image behind the content.",
+    ),
   },
 
   // ── structure: reparent / dissolve ──
@@ -945,7 +1117,11 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   "weave.frame.removeKeepingChildren": {
     label: label("weave.frame.removeKeepingChildren"),
     destructive: true,
-    inputSchema: obj({ frameId: STR, designWidth: NUM, designHeight: NUM }, ["frameId"]),
+    inputSchema: obj(
+      { frameId: STR, designWidth: NUM, designHeight: NUM },
+      ["frameId"],
+      "Dissolve a frame: reparent its children up to the frame's parent (preserving their on-screen position), then remove the now-empty frame. Use to ungroup a layout frame without deleting its contents.",
+    ),
   },
 
   // ── shape ↔ line conversion (WI-065 / DR-031) ──
@@ -966,6 +1142,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         },
       },
       ["itemId"],
+      "Convert a CLOSED shape (rectangle/triangle/polygon/star/ellipse/closed poly) into an open stroke-only `line`, cut at outline vertex `vertexIndex`. The fill becomes the stroke. Replaces the item with a new id.",
     ),
   },
   // closeToShape: fuse the two endpoints of an open `line` / free-curve (or an
@@ -974,25 +1151,79 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   // shape's fill. Replaces the item with a NEW id.
   "weave.line.closeToShape": {
     label: label("weave.line.closeToShape"),
-    inputSchema: obj({ itemId: STR }, ["itemId"]),
+    inputSchema: obj(
+      { itemId: STR },
+      ["itemId"],
+      "Convert an open `line` / free-curve (≥3 points) into a filled `poly` shape by fusing its endpoints. The stroke becomes the fill. Replaces the item with a new id.",
+    ),
   },
 
   // ── behaviors (units) ──
   "weave.item.addBehavior": {
     label: label("weave.item.addBehavior"),
-    inputSchema: obj({ itemId: STR, behavior: BEHAVIOR }, ["itemId", "behavior"]),
+    inputSchema: obj(
+      { itemId: STR, behavior: BEHAVIOR },
+      ["itemId", "behavior"],
+      "ADD a behavior/interaction unit to an item. `behavior` = { id, kind, …payload }. Kinds include 'button-trigger' (ITEM LINK — action:{type:'external',href} opens a URL, {type:'jump-camera',targetId:'present-<frameId>'} jumps to a slide), 'camera-target' (a Present step), 'hotspot' (clickable sub-region), 'reveal-on-step'. See the unitKinds capabilities for each kind's shape.",
+    ),
   },
   "weave.item.removeBehavior": {
     label: label("weave.item.removeBehavior"),
-    inputSchema: obj({ itemId: STR, behaviorId: STR }, ["itemId", "behaviorId"]),
+    inputSchema: obj(
+      { itemId: STR, behaviorId: STR },
+      ["itemId", "behaviorId"],
+      "REMOVE a behavior/interaction unit from an item by its behaviorId (e.g. delete an item link or a Present step).",
+    ),
   },
 
   // ── presets ──
+  // WI-095 (DR-064) — re-exposed to the agent. Inserts a READY-MADE slide from the
+  // 25-preset catalog (cover / agenda / divider / content / closing). presetId is a
+  // closed enum (the agent previously guessed ids → preset-not-found, why presets
+  // were hidden). containerId omitted → the design root; locale picks the seed copy.
+  // Building a slide manually with weave.item.add { kind:'frame' } + layout frames
+  // stays the flexible alternative; a preset is the quick start.
   "weave.preset.insertSlide": {
     label: label("weave.preset.insertSlide"),
     inputSchema: obj(
-      { presetId: STR, containerId: STR, locale: { type: "string", enum: ["ko", "en"] } },
+      {
+        presetId: {
+          type: "string",
+          enum: [
+            "cover.hero",
+            "cover.bold",
+            "cover.minimal",
+            "cover.split",
+            "cover.asymmetric",
+            "agenda.bullets",
+            "agenda.numbered",
+            "agenda.timeline",
+            "agenda.three-column",
+            "agenda.minimal",
+            "divider.chapter",
+            "divider.section-number",
+            "divider.quote",
+            "divider.left-accent",
+            "divider.fullbleed",
+            "content.title-body",
+            "content.bullet-list",
+            "content.two-column",
+            "content.stat-headline",
+            "content.image-caption",
+            "closing.thanks",
+            "closing.summary",
+            "closing.cta",
+            "closing.qa",
+            "closing.contact",
+          ],
+          description:
+            "Preset slide id (category.variant). One of the 25 built-in starting points.",
+        },
+        containerId: STR,
+        locale: { type: "string", enum: ["ko", "en"] },
+      },
       ["presetId"],
+      "INSERT a ready-made slide from the 25-preset catalog (cover / agenda / divider / content / closing) — a fast starting point. presetId is a closed enum; containerId omitted → design root; locale picks ko/en seed copy. For full control, build the slide manually with weave.item.add { kind:'frame' } + layout frames instead.",
     ),
   },
 
@@ -1016,39 +1247,59 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         targetIds: STR_ARR,
       },
       ["containerSizePx"],
+      "PASTE clipboard items into a container. Default mode 'everything' clones the copied items; 'style'/'text'/'size'/'position' apply just that facet of the copied item to the current selection (targetIds). Pair with weave.clipboard.copy / weave.clipboard.cut.",
     ),
   },
 
   // ── duplicate ──
   // weave.item.duplicate → retargeted from kit (see KIT_SCHEMAS).
-  /* WI-064 — absorbed into weave.items.lifecycle { op:'duplicate' }; hidden from
-     the agent (AGENT_HIDDEN_COMMANDS). Registered for UI use.
+  // WI-095 (DR-064) — re-exposed to the agent. Bulk duplicate; weave.items.lifecycle
+  // { op:'duplicate' } covers the same ground. Registered for UI + agent.
   "weave.items.duplicate": {
     label: label("weave.items.duplicate"),
-    inputSchema: obj({ itemIds: STR_ARR }, ["itemIds"]),
+    inputSchema: obj(
+      { itemIds: STR_ARR },
+      ["itemIds"],
+      "Clone several items in ONE undo step. Equivalent to weave.items.lifecycle { op:'duplicate' }.",
+    ),
   },
-  */
 
   // ── layout (WI-020 / WI-043) ──
   // Make the frame `itemId` auto-arrange its children like CSS flex/grid. Omit
   // `layout` to clear back to free (absolute-constraints) placement.
   "weave.frame.setLayout": {
     label: label("weave.frame.setLayout"),
-    inputSchema: obj({ itemId: STR, layout: LAYOUT_SPEC }, ["itemId"]),
+    inputSchema: obj(
+      { itemId: STR, layout: LAYOUT_SPEC },
+      ["itemId"],
+      "Make a FRAME auto-arrange its children like CSS flex/grid. `layout` = an auto-flex (row/column) or auto-grid spec (see layoutKinds). Omit `layout` to clear back to free (absolute) placement. This is the primary layout tool — group items in a nested frame, then set its layout.",
+    ),
   },
   // Set how `itemId` behaves inside its parent frame's layout. Omit `policy` to
   // clear. The `kind` should match the parent frame's layout kind.
   "weave.item.setLayoutChild": {
     label: label("weave.item.setLayoutChild"),
-    inputSchema: obj({ itemId: STR, policy: LAYOUT_CHILD_POLICY }, ["itemId"]),
+    inputSchema: obj(
+      { itemId: STR, policy: LAYOUT_CHILD_POLICY },
+      ["itemId"],
+      "Tune how ONE child behaves inside its parent frame's layout (flex grow/shrink/basis/alignSelf, or grid column/row/span). `policy.kind` should match the parent's layout kind. Omit `policy` to clear. For TEXT, alignSelf:'stretch' in a column binds its width so it wraps.",
+    ),
   },
   "weave.item.swapGridCells": {
     label: label("weave.item.swapGridCells"),
-    inputSchema: obj({ aId: STR, bId: STR }, ["aId", "bId"]),
+    inputSchema: obj(
+      { aId: STR, bId: STR },
+      ["aId", "bId"],
+      "Swap two grid children's cell positions (both in the same auto-grid frame).",
+    ),
   },
   "weave.item.swapFlexOrder": {
     label: label("weave.item.swapFlexOrder"),
-    inputSchema: obj({ aId: STR, bId: STR }, ["aId", "bId"]),
+    inputSchema: obj(
+      { aId: STR, bId: STR },
+      ["aId", "bId"],
+      "Swap two flex children's sequence order (both in the same auto-flex frame).",
+    ),
   },
   "weave.item.dropGridCell": {
     label: label("weave.item.dropGridCell"),
@@ -1065,6 +1316,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         },
       },
       ["itemId", "x", "y"],
+      "Move a grid child to the cell at 1-based column `x` / row `y`: an occupied cell swaps, an empty cell relocates. The item's frame must be in an auto-grid parent.",
     ),
   },
   // DR-028 — decorations are units. One command sets/replaces/clears a decoration
@@ -1072,8 +1324,8 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   // { x, y, blur, spread, color }. Stroke: { paint:{type,color}, width, dashArray? }.
   // Fill: a PaintSpec ({type:"solid",color} | gradient | image). Filter:
   // { brightness?, contrast?, saturate?, blur?, hueRotate? }. Opacity: { value:0..1 }.
-  /* WI-063 — subsumed by weave.item.add / weave.item.update `units`; hidden from
-     the agent (AGENT_HIDDEN_COMMANDS in use-aku-agent). Registered for UI use.
+  // WI-095 (DR-064) — re-exposed to the agent. Single-unit setter; also reachable
+  // via weave.item.add / weave.item.update `units`. Registered for UI + agent.
   "weave.item.setDecoration": {
     label: label("weave.item.setDecoration"),
     inputSchema: obj(
@@ -1092,7 +1344,38 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         attrs: { type: ["object", "null"], additionalProperties: true },
       },
       ["itemId", "kind", "attrs"],
+      "Set/replace/clear ONE decoration unit on an item: kind = decoration.fill/.stroke/.shadow/.filter/.opacity; `attrs` IS that kind's spec (PaintSpec for fill, { x,y,blur,spread,color } for shadow, …), or null to clear it. weave.item.update { units } does the same (and several at once) — prefer that for multi-unit edits.",
     ),
   },
-  */
+  // WI-096 (DR-065) — atomic multi-command transaction.
+  "weave.batch": {
+    label: label("weave.batch"),
+    inputSchema: obj(
+      {
+        ops: {
+          type: "array",
+          description:
+            "Ordered list of operations. Each is { command:<a weave.* command name>, input:<that command's arguments object> }. Ops apply in sequence and a later op SEES earlier ops' effects on EXISTING items/document state (e.g. set a frame's layout, then move its existing children). A NEW item's id from an earlier op is NOT yet known, so it cannot be targeted later in the same batch. Cannot contain weave.batch (no nesting) or weave.doc.reset.",
+          items: obj(
+            {
+              command: {
+                type: "string",
+                description:
+                  "The weave.* command to run for this op (e.g. 'weave.item.add', 'weave.item.update', 'weave.items.update'). Not 'weave.batch' / 'weave.doc.reset'.",
+              },
+              input: {
+                type: "object",
+                additionalProperties: true,
+                description:
+                  "The argument object for `command` (same shape as calling it directly).",
+              },
+            },
+            ["command", "input"],
+          ),
+        },
+      },
+      ["ops"],
+      "Run SEVERAL commands as ONE ATOMIC transaction (single Cmd+Z). Prefer this to fire many edits together: ops apply in order, each sees the previous ops' effects, and if ANY op fails NOTHING is applied (all-or-nothing — unlike separate calls where some land and some don't). Returns each op's result value in order. LIMITATION: an item created in one op cannot be targeted by id in a LATER op of the same batch (ids are assigned on apply) — do that creation, then a follow-up edit.",
+    ),
+  },
 };

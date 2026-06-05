@@ -23,7 +23,7 @@ import {
   type ServerInfo,
   type ToolClientHandle,
 } from "@agocraft/agent-client";
-import type { Document as AgocraftDocument, CommandRegistry, Schema } from "@agocraft/core";
+import type { Document as AgocraftDocument, Schema } from "@agocraft/core";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import { DEFAULT_THEME, THEMES } from "@weave/design-system";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -175,45 +175,16 @@ function activityFor(st: AgentRunState): string | undefined {
   return undefined; // done / error / aborted → caption cleared
 }
 
-/** Commands hidden from the agent (presets are UI-only — see the `commands` memo). */
-const AGENT_HIDDEN_COMMAND_PREFIX = "weave.preset.";
-
-/** WI-063 — per-property attribute setters are SUBSUMED by weave.item.add /
- *  weave.item.update (which now take attrs + units in one call), so the agent
- *  surface for add + attribute-change is just those two. These redundant setters
- *  stay registered for the UI (toolbar) but are hidden from the agent tool list
- *  to force the consolidated path and stop command fragmentation. */
-const AGENT_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
-  // single-item attribute setters → weave.item.add / weave.item.update (attrs + units)
-  "weave.shape.setFill", // → weave.item.update { units:[{ kind:'decoration.fill', attrs }] }
-  "weave.shape.setCornerRadius", // → weave.item.update { attrs:{ subAttrs:{ shape:'rectangle', cornerRadii } } }
-  "weave.image.setCrop", // → weave.item.update { attrs:{ cropRatio:{ x,y,w,h, rotation? } } }
-  "weave.item.flip", // → weave.item.update { units:[{ kind:'transform.flip', attrs:{ flipH?, flipV? } }] }
-  "weave.shape.setVertices", // → weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }
-  "weave.item.setDecoration", // → weave.item.add/update { units:[{ kind, attrs }] }
-  // multi-selection family → weave.items.update (edit) + weave.items.lifecycle (structural)
-  "weave.items.resizeMulti", // → weave.items.update { updates:[{ itemId, frame }] }
-  "weave.items.remove", // → weave.items.lifecycle { itemIds, op:'remove' }
-  "weave.items.duplicate", // → weave.items.lifecycle { itemIds, op:'duplicate' }
-  // destructive / non-generation commands — keep them out of the design agent's reach
-  "weave.doc.reset", // wipes the ENTIRE document; a generation agent must never reset the user's work
-]);
-
-/** A read-through view of the command registry with preset + subsumed setter
- *  commands filtered out, so `describeCommands` (which reads `list()`) never
- *  advertises them as agent tools. The underlying registry is untouched — the
- *  editor keeps every command for UI use. */
-function withoutPresetCommands(registry: CommandRegistry): CommandRegistry {
-  const hidden = (name: string): boolean =>
-    name.startsWith(AGENT_HIDDEN_COMMAND_PREFIX) || AGENT_HIDDEN_COMMANDS.has(name);
-  return {
-    ...registry,
-    list: () => registry.list().filter((c) => !hidden(c.name)),
-    has: (name: string) => !hidden(name) && registry.has(name),
-    get: ((name: string) =>
-      hidden(name) ? undefined : registry.get(name)) as CommandRegistry["get"],
-  };
-}
+// WI-095 (DR-064) — NO commands are hidden from the agent anymore. The previously
+// hidden set (preset.* + the WI-063 subsumed setters setFill / setCornerRadius /
+// setVertices / setDecoration / image.setCrop / item.flip, the multi-selection
+// legacy items.resizeMulti / items.remove / items.duplicate, and doc.reset) is now
+// fully advertised: every one carries a curated schema in WEAVE_COMMAND_SCHEMAS
+// (presets gained a closed presetId enum so the agent can't guess an invalid id).
+// The consolidated commands (weave.item.add / weave.item.update / weave.items.update
+// / weave.items.lifecycle) remain the preferred path; the re-exposed setters are
+// redundant-but-available direct alternatives. The agent therefore sees the FULL
+// registered command set — `describeCommands` reads the registry's `list()` as-is.
 
 export function useAkuAgent(deps: {
   readonly editor: Editor;
@@ -320,16 +291,12 @@ export function useAkuAgent(deps: {
   // (the server keeps running unless we also cancel; we ignore its late resolution).
   const genRef = useRef(0);
 
-  // The agent gets the full command registry MINUS preset commands: presets are a
-  // UI-only convenience (the slide-template picker), and the model can't know valid
-  // presetIds so it guessed and got `preset-not-found`. The agent builds slides the
-  // direct way instead — add a top-level frame into the design root (weave.item.add
-  // { kind:'frame' }). Hiding them from `list()` keeps them out of the advertised
-  // tools; the editor still has them for the UI (exec runs through `editor`, not here).
-  const commands = useMemo(
-    () => withoutPresetCommands(editor.container.resolve(CommandRegistryToken)),
-    [editor],
-  );
+  // WI-095 (DR-064) — the agent gets the FULL command registry (no hiding). Every
+  // weave.* command is advertised as a tool; presets carry a closed presetId enum
+  // (the prior preset-not-found guessing was the reason they were hidden), and the
+  // re-exposed setters are redundant-but-available alternatives to the consolidated
+  // item.add / item.update commands.
+  const commands = useMemo(() => editor.container.resolve(CommandRegistryToken), [editor]);
   // DEV diagnostic for the "No command registered with name weave.item.add" class
   // of runtime errors (stale build / registry mismatch). Logs the command set the
   // agent is actually given at connect time. If `hasItemAdd` is false or `count` is

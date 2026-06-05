@@ -26,11 +26,17 @@ describe("agent schemas — retargeted kit commands (DR-039)", () => {
     }
   });
 
-  it("carries the kit inputSchema verbatim (contract by import, not copy)", () => {
+  it("carries the kit inputSchema by import — argument SHAPE verbatim, + a weave description (WI-095)", () => {
     for (const [weaveName, kitName] of RETARGETED) {
-      expect(WEAVE_COMMAND_SCHEMAS[weaveName]?.inputSchema, weaveName).toEqual(
-        AGENT_COMMAND_SCHEMAS[kitName]?.inputSchema,
-      );
+      const weaveSchema = {
+        ...(WEAVE_COMMAND_SCHEMAS[weaveName]?.inputSchema as object),
+      } as Record<string, unknown>;
+      // WI-095/DR-064 — withKitDesc adds a top-level `description` (the only
+      // per-command text the agent sees). The ARGUMENT SHAPE is still the kit's by
+      // import: strip the weave description, then assert the rest is verbatim.
+      expect(typeof weaveSchema.description, weaveName).toBe("string");
+      delete weaveSchema.description;
+      expect(weaveSchema, weaveName).toEqual(AGENT_COMMAND_SCHEMAS[kitName]?.inputSchema);
     }
   });
 
@@ -44,7 +50,9 @@ describe("agent schemas — retargeted kit commands (DR-039)", () => {
 
   it("uses the weave-owned label, not the kit's English label", () => {
     for (const [weaveName] of RETARGETED) {
-      expect(WEAVE_COMMAND_SCHEMAS[weaveName]?.label, weaveName).toBe(WEAVE_COMMAND_LABELS[weaveName]);
+      expect(WEAVE_COMMAND_SCHEMAS[weaveName]?.label, weaveName).toBe(
+        WEAVE_COMMAND_LABELS[weaveName],
+      );
     }
     // sanity: the label really is weave's Korean verb, not the kit default
     expect(WEAVE_COMMAND_SCHEMAS["weave.item.remove"]?.label).toBe("아이템 삭제");
