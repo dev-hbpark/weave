@@ -1318,8 +1318,8 @@ export function FrameStage(props: FrameStageProps) {
 
   // Total on-screen scale = base camera × user pan zoom. Provided via
   // context so every descendant (NestedFrame, CanvasBlock shapes, …) can
-  // compute its display size and gate hit-testing once the visible footprint
-  // drops below `HIT_THRESHOLD_PX`.
+  // compute its display size and gate hit-testing once the visible area
+  // drops below `HIT_THRESHOLD_AREA_PX2`.
   const totalScaleMV = useMotionValue(baseScale * pan.scale);
   useEffect(() => {
     const update = () => {

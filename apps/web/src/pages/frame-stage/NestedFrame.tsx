@@ -39,7 +39,7 @@ import {
   selectFromHit,
 } from "../../document/interactions/selection-context.js";
 import {
-  HIT_THRESHOLD_PX,
+  HIT_THRESHOLD_AREA_PX2,
   TotalScaleContext,
 } from "../../document/interactions/total-scale-context.js";
 import {
@@ -219,7 +219,7 @@ export function NestedFrame({
   const heightPx = parentHeightPx * (frame?.height ?? 0);
 
   // Display-size hit gate. The frame is interactive only while its on-
-  // screen footprint clears `HIT_THRESHOLD_PX` in both dimensions.
+  // screen AREA (width × height) clears `HIT_THRESHOLD_AREA_PX2`.
   // Updates happen via ref mutation on every scale change (drill spring,
   // pan zoom, mount layout) so the gate stays accurate without re-rendering
   // the frame tree on every animation frame.
@@ -247,7 +247,9 @@ export function NestedFrame({
       }
       const dw = widthPx * scale;
       const dh = heightPx * scale;
-      el.style.pointerEvents = Math.min(dw, dh) >= HIT_THRESHOLD_PX ? "auto" : "none";
+      // Gate on displayed AREA (width × height), not the shorter side, so a
+      // thin-but-long frame keeps a usable click target.
+      el.style.pointerEvents = dw * dh >= HIT_THRESHOLD_AREA_PX2 ? "auto" : "none";
     },
     [widthPx, heightPx],
   );

@@ -14,11 +14,13 @@
 import type { MotionValue } from "motion/react";
 import { createContext } from "react";
 
-/** Pointer-events hit-test threshold (CSS px on screen). Items whose
- *  displayed width OR height falls below this number stop receiving pointer
- *  events. Centralised here so frame chrome, shapes and inner-item gates
- *  all agree on the same number. */
-export const HIT_THRESHOLD_PX = 20;
+/** Pointer-events hit-test threshold as on-screen AREA (CSS px², width ×
+ *  height). Items whose displayed area falls below this number stop
+ *  receiving pointer events. Area — not min side length — so a frame that
+ *  is thin in one dimension but long in the other (and still has a usable
+ *  click target) stays interactive. Centralised here so frame chrome,
+ *  shapes and inner-item gates all agree on the same number. */
+export const HIT_THRESHOLD_AREA_PX2 = 10;
 
 /** Motion value carrying the design plane's current on-screen scale factor
  *  — i.e. `pan.scale × drill spring scale`. Provider lives in FrameStage;
