@@ -46,9 +46,11 @@ export const WEAVE_CAPABILITIES = {
         "• align — cross-axis alignment: 'start'|'center'|'end'|'stretch' ('stretch' = child fills the cross axis).",
         "• padding — { top, right, bottom, left }, each a 0..1 ratio of the frame.",
         "Per-child tuning via weave.item.setLayoutChild { itemId, policy:{ kind:'auto-flex', grow, shrink, basis, alignSelf? } }: grow/shrink are flex weights (≥0), basis is the main-axis base size (0..1 ratio of the parent frame's main axis, or 'auto' = use the child's own size), alignSelf overrides the parent align for that one child.",
+        // ONE child per flex slot — group with a nested frame to put several together.
+        "ONE ITEM PER SLOT: each direct child is its own slot along the axis. To put MULTIPLE items in a SINGLE slot (e.g. an icon + a label that should travel together as one flex item), add a NESTED frame as that slot's child (containerId = this frame, presentable:false), give the nested frame its OWN layout (auto-flex/auto-grid), and put the several items INSIDE it. Do NOT drop the multiple items directly into this frame — they would each become separate slots.",
       ].join(" "),
       childConstraints:
-        "child attrs.frame is overridden by the flex layout; size/order it via weave.item.setLayoutChild (auto-flex policy) and weave.item.swapFlexOrder",
+        "child attrs.frame is overridden by the flex layout; size/order it via weave.item.setLayoutChild (auto-flex policy) and weave.item.swapFlexOrder. ONE item per slot — to group several into one slot, nest a frame (its own layout) and put them inside it.",
     },
     {
       kind: "auto-grid",
@@ -61,9 +63,11 @@ export const WEAVE_CAPABILITIES = {
         "• justify (column-axis) / align (row-axis) — 'start'|'center'|'end'|'stretch' for children inside their cell.",
         "• padding — { top, right, bottom, left }, 0..1 ratios of the frame (top/bottom of its height, left/right of its width).",
         "Per-child placement via weave.item.setLayoutChild { itemId, policy:{ kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf? } }: column/row are 1-based cell indices, columnSpan/rowSpan (≥1) merge cells. Also weave.item.swapGridCells / weave.item.dropGridCell move children between cells.",
+        // ONE child per cell — group with a nested frame to put several in one cell.
+        "ONE ITEM PER CELL: each cell holds exactly ONE direct child (a joining child auto-takes the next free cell; two children can't share a cell — they'd land in different cells). To place MULTIPLE items in a SINGLE cell (e.g. a heading + body stacked inside one card cell), add a NESTED frame as that cell's child (containerId = this frame, presentable:false), give the nested frame its OWN layout (e.g. auto-flex column), and put the several items INSIDE it. columnSpan/rowSpan only MERGE cells for one child — they do NOT let two children share a cell.",
       ].join(" "),
       childConstraints:
-        "child attrs.frame is overridden by the grid layout; place/size it via weave.item.setLayoutChild (auto-grid policy), weave.item.swapGridCells, weave.item.dropGridCell",
+        "child attrs.frame is overridden by the grid layout; place/size it via weave.item.setLayoutChild (auto-grid policy), weave.item.swapGridCells, weave.item.dropGridCell. ONE item per cell — to put several in one cell, nest a frame (its own layout) as that cell's single child and place them inside it.",
     },
   ],
   itemKinds: [
@@ -294,6 +298,7 @@ export const WEAVE_TASK_PRIMER = [
   "- One slide = its OWN top-level frame; place slides at DISTINCT x (filmstrip: slide i at { x: i*1.1, y:0, width:1, height:1 }), NEVER all at {0,0,1,1}. A Markdown document → ONE slide.",
   "- STRUCTURE EVERY SLIDE FROM NESTED LAYOUT FRAMES — REQUIRED, and the #1 rule to get wrong: do NOT hand-place content items on the slide root with absolute x/y. For EACH region (header, body, columns, card grid, stat row) FIRST add a nested frame (containerId = the slide, presentable:false) and give it weave.frame.setLayout (auto-flex row/column or auto-grid: direction, gap, padding, justify, align), THEN add the items as that frame's CHILDREN so the layout positions them. Nest frames inside frames for sub-structure. Absolute x/y on the slide root is ONLY for deliberate free-form composition, never the default.",
   "- TABLES / matrices → auto-grid with explicit tracks, NEVER nested flex rows. TEXT is AUTO-HEIGHT and must WRAP to its cell: BIND its WIDTH (flex COLUMN → align/alignSelf 'stretch' = the cross axis IS the width; grid → the column track) so a long line never overflows. Only the HEIGHT follows content — do NOT grow/vertically-stretch text or pin a height. Size equal regions with the FRAMES (tracks/grow), not the leaf text.",
+  "- ONE ITEM PER CELL/SLOT: a grid cell or flex slot holds exactly ONE direct child (two children can't share one; columnSpan/rowSpan only merge cells for a single child). To put SEVERAL items in one cell/slot (card = title+body+button, stat = number+caption, icon+label), add ONE nested frame as that cell's child (presentable:false) with its OWN layout and place the items INSIDE it — never drop the multiple items straight into the grid/flex frame.",
   "- VISUAL-FIRST, TEXT-MINIMAL (hard — agent slides keep coming out too wordy and under-decorated): text LABELS and headlines, it does NOT explain in sentences. Per slide: a short title + AT MOST ~3–5 short PHRASES (≈≤6 words each, NO full sentences, NO paragraphs); keep total body text to a few dozen words. If an idea needs explaining, SHOW it (a shape diagram, a chart, an icon + label, a big number + caption) — do NOT write the sentence; if you catch yourself writing one, convert it to a visual or cut it. VISUAL QUOTA: every content slide MUST carry ≥1 real non-text visual (chart / image-or-placeholder / shape diagram / icon / a deliberate graphic treatment — panels, bands, accents), never just text boxes on a background. Make the one key thing the HERO; size every text to FIT.",
   "- MATCH CONTENT TO THE SLIDE'S ROLE in the deck (mandatory): an overview/agenda/summary is a brief table of contents — just the section names, almost NO on-screen explanation; a section divider only names the part; the per-item DETAIL slide is the ONLY place that explains that item; a closing slide only closes. NEVER preview or dump a detail slide's explanation onto the overview — defer every explanation to the slide whose role owns it.",
   "- Pick the STRUCTURE that best communicates the content, and use MEDIA/SHAPES (source-less placeholders when you lack a real asset) instead of text-only slides.",
@@ -359,6 +364,15 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   frame MUST be auto-grid with explicit column/row tracks (weave.frame.setLayout { kind:'auto-grid', columns,",
   "   rows }), each cell placed by { column, row, columnSpan?, rowSpan? } — NEVER fake a table with a stack of",
   "   nested auto-flex rows; columns won't line up and it is painful to edit.",
+  "   ONE ITEM PER CELL / SLOT — and how to put SEVERAL in one: a layout frame gives each DIRECT child its own",
+  "   cell (auto-grid) or slot (auto-flex); two children CANNOT share one cell/slot (a joining grid child auto-takes",
+  "   the NEXT FREE cell, and columnSpan/rowSpan only MERGE cells for a single child — they don't let two children",
+  "   co-occupy). So whenever a single cell/slot must hold MULTIPLE items (a card = heading + body + button; a",
+  "   stat = big number + caption; an icon + label pair), do NOT drop those items straight into the grid/flex",
+  "   frame — instead add ONE NESTED frame as that cell's/slot's child (containerId = the layout frame,",
+  "   attrs.presentable:false), give the nested frame its OWN layout (usually an auto-flex column/row), and place",
+  "   the several items INSIDE it. The nested frame is the single occupant of the cell/slot; its inner layout",
+  "   arranges its contents. This is THE way to compose multi-item cells — plan for it before placing children.",
   "",
   "1) FRAME COORDINATES ARE RATIOS OF THE ITEM'S OWN PARENT FRAME, NEVER PIXELS. attrs.frame = { x, y, width,",
   "   height, rotation } where x / y / width / height are 0..1 RATIOS of the frame the item is a DIRECT CHILD of",
