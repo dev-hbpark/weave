@@ -72,7 +72,12 @@ const TEXT_ATTRS_NOTE =
   "box defaults; '\\n' = line break). textRuns is canonical: it sets the visible text AND its inline styling; " +
   "setting attrs.text alone replaces the whole string and RESETS per-range style. To restyle one span on " +
   "existing text, read the current textRuns from the snapshot, edit only the run(s) you want, and resend the " +
-  "full array. See the text itemKind capabilities for roles, defaults and full detail.";
+  "full array. " +
+  "OUTLINE (외곽선): attrs.textOutline = { color, width(px) } draws a halo around the WHOLE text (omit / width<=0 " +
+  "= none) — use it for a heading/number over a busy image or same-tone fill; for ONE word use outlineColor/" +
+  "outlineWidth inside that textRuns run. attrs.textOverflow = 'VISIBLE'|'HIDDEN' (clip vs spill). attrs.hyperlink " +
+  "= a URL makes the whole text a link (null = none; per-range link → a run; non-text item link → a button-trigger " +
+  "behavior). See the text itemKind capabilities for roles, defaults and full detail.";
 
 // WI-058 — data-driven QR. The code regenerates from `data` on every render.
 const QR_ATTRS_NOTE =
@@ -105,7 +110,17 @@ const CHART_ATTRS_NOTE =
   "over the chart's current values, so you may send ONLY the delta — e.g. attrs:{ variant:{ stacked:true } } " +
   "keeps the other variant flags, and attrs:{ overrides:{ datum:{ 'B':{ color:'#e11' } } } } emphasizes ONE bar " +
   "without dropping other datum/series overrides. To CLEAR a key, set its value to null (e.g. " +
-  "overrides:{ datum:{ 'B':null } } removes B's emphasis). attrs.palette is a full array (replaced wholesale).";
+  "overrides:{ datum:{ 'B':null } } removes B's emphasis). attrs.palette is a full array (replaced wholesale). " +
+  "DATA: put the category/label column FIRST, numeric series after; keep series legible (≈≤5). For colours prefer " +
+  "the theme categorical tokens [var(--domain-slide-accent)/--domain-canvas-accent/--domain-block-accent/" +
+  "--domain-media-accent] in attrs.palette (distinct + theme-reactive), and GROUND the chart on a card surface " +
+  "(a frame behind it with decoration.fill + cornerRadius + soft shadow), not bare canvas. " +
+  "TEXT IS REAL TEXT ITEMS (DR-035): for bar/line/area + pie the CATEGORY/axis labels are AUTO-MANAGED text child " +
+  "items derived from the dataset — do NOT hand-add them (duplicates), do NOT reposition them, and editing a " +
+  "label's TEXT means editing the DATA (use weave.dataset.update). You MAY restyle those label items (color/" +
+  "fontWeight/fontSize via weave.item.update — persists across re-projection). ADD YOUR OWN separate text items " +
+  "for the chart TITLE, the one-line takeaway, callouts/annotations and a source note — a chart almost always " +
+  "needs a human title + takeaway the data labels don't supply.";
 
 // WI-077 — tabular dataset payload, shared by weave.chart.add / weave.dataset.*.
 const DATASET_PAYLOAD: Json = {

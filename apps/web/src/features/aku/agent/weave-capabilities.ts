@@ -97,6 +97,9 @@ export const WEAVE_CAPABILITIES = {
         // WIDTH and the box AUTO-FITS its height to the wrapped content (AUTO-HEIGHT).
         "PLACEMENT & SIZING: add text as a CHILD of an auto-layout frame (containerId = a layout frame); the frame sets the text's WIDTH and the box AUTO-FITS ITS HEIGHT to the wrapped content (auto-height). BIND THE TEXT'S WIDTH TO ITS CELL so it WRAPS and never overflows horizontally: in a flex COLUMN set the frame's align (or the child's alignSelf) to 'stretch' — in a column the cross axis IS the width, so the text fills the column width and wraps; in an auto-grid the column track already bounds the width. Do NOT leave a text in auto-width (hugging its content) inside a layout — a long line then spills past its cell. Only the WIDTH is layout-bound: do NOT give text main-axis grow or a vertical stretch (that inflates its HEIGHT) and do NOT pin a fixed height — a short title keeps its natural height, and spare room is taken up by the frame's justify / align / gap / padding. For equal-size regions (e.g. comparison columns) size the FRAMES with grid tracks / flex grow, never the leaf text. CHOOSE A FONT SIZE THAT FITS: pick the fontSizeSpec ratio so the text sits inside its region with margin to spare — if it would crowd or overflow, bring the size DOWN and shorten the copy; never oversize. Position glyphs with textAlignHorizontal / textAlignVertical. ONLY when a text sits directly in an absolute-constraints frame (intentional free-form placement) give it an explicit frame and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }.",
         "STYLE: fontFamily (CSS stack), fontWeight ('normal' | 'bold'), fontStyle ('normal' | 'italic'), color, textDecoration ('NONE' | 'UNDERLINE' | 'STRIKETHROUGH'), textCase ('ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE'). These attrs style the WHOLE box.",
+        // OUTLINE (외곽선) — DR-059 whole-item + DR-060 per-range.
+        "OUTLINE (외곽선): attrs.textOutline = { color, width } draws a halo/stroke around the WHOLE text (color = hex or var(--token); width = VISIBLE halo thickness in design-px; omit or width<=0 = no outline) — use for a heading/number that must read over a busy image or a same-tone fill. For a PER-RANGE outline (just one word), put outlineColor / outlineWidth in that run's textRuns attributes instead (see PER-RANGE STYLE).",
+        "OVERFLOW & LINK: attrs.textOverflow ('VISIBLE' | 'HIDDEN') — whether content past the box is clipped (HIDDEN) or spills (VISIBLE; default derives from the resize mode). attrs.hyperlink — a URL string makes the whole text a link in Present mode (or null = none); for a link on PART of the text use a per-range run, and for a link on a NON-text item use a button-trigger behavior.",
         // PER-RANGE typography (부분편집) — DR-062/DR-057. textRuns is the canonical
         // inline content; the plain `text` is a mirror derived from it.
         "PER-RANGE STYLE (부분편집 — style ONLY part of the text, e.g. one word/number a different color or bold): set attrs.textRuns = an ORDERED array of runs that, concatenated, form the full string. Each run is { insert:'<segment>', attributes?:{ color?, fontSize?(px), fontFamily?, fontWeight?:'bold', fontStyle?:'italic', textDecoration?:'UNDERLINE'|'STRIKETHROUGH', textCase?, letterSpacing?(px), outlineColor?, outlineWidth?(px) } }. A run with NO attributes inherits the box defaults. Use '\\n' as its own insert for a hard line break. Example — make 'sales' red+bold in 'Q3 sales up': textRuns:[{insert:'Q3 '},{insert:'sales',attributes:{color:'#e11',fontWeight:'bold'}},{insert:' up'}]. textRuns is the SINGLE SOURCE OF TRUTH: setting attrs.textRuns updates the visible text AND its styling; setting attrs.text alone REPLACES the whole string and RESETS every per-range style (use that for a plain whole-text rewrite). To recolor just one span on existing text, READ the current textRuns from the snapshot, change only the run(s) you want, and send the full textRuns back (the box keeps the others).",
@@ -123,6 +126,9 @@ export const WEAVE_CAPABILITIES = {
         "paragraphSpacing",
         "paragraphIndent",
         "opacity",
+        "textOutline",
+        "textOverflow",
+        "hyperlink",
       ],
       // Baseline for a freshly-added text item — mirrors seed.ts `text` defaults
       // (apps/web/src/document/seed.ts:134-167). Keep in sync if seed changes.
@@ -191,16 +197,17 @@ export const WEAVE_CAPABILITIES = {
     {
       kind: "image",
       description:
-        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius a 0..1 ratio of the image's OWN min(width, height) (not the parent). Size/position via attrs.frame. " +
+        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius a 0..1 ratio of the image's OWN min(width, height) (not the parent). Size/position via attrs.frame. attrs.cropRatio = { x, y, w, h, rotation? } (all 0..1 except rotation radians) crops to a sub-window of the source (no-crop = { x:0,y:0,w:1,h:1 }); set it via weave.item.update or the dedicated weave.image.setCrop. " +
         'attrs.src is OPTIONAL: OMIT it (or pass "") to create a SOURCE-LESS PLACEHOLDER — a neutral framed box with an image glyph, NOT a broken image. Use this for wireframe/layout drafts where the real picture is added later. When src is empty, attrs.alt is rendered as CENTERED CAPTION TEXT inside the placeholder (so set a short alt like "제품 사진 자리" to label the slot); once a real src is set, alt reverts to its accessibility role and is no longer drawn.',
-      editableAttrs: ["frame", "src", "alt", "fit", "opacity", "borderRadius"],
+      editableAttrs: ["frame", "src", "alt", "fit", "opacity", "borderRadius", "cropRatio"],
     },
     {
       kind: "video",
       description:
         "A video. attrs.src is the URL; autoplay/loop/muted/controls are booleans; attrs.fit one of cover|contain|fill. Size/position via attrs.frame. " +
         'attrs.src is OPTIONAL, just like image: OMIT it (or pass "") to create a SOURCE-LESS PLACEHOLDER for wireframe/layout drafts — NOT an empty black player. When src is empty, the placeholder is either (a) attrs.poster rendered as a static COVER IMAGE with a play badge (set attrs.poster to a thumbnail/still URL), or (b) if no poster, a neutral framed box with a play/film glyph. ' +
-        'attrs.alt is a short DESCRIPTION of the clip (e.g. "제품 데모 영상", "드론 항공 b-roll") — like image alt: when src is empty it is drawn as CENTERED CAPTION TEXT inside the placeholder so the slot says what KIND of video belongs there; once a real src is set, alt becomes the accessibility description. ALWAYS set attrs.alt on a video so the intent is clear even before a real clip is dropped in.',
+        'attrs.alt is a short DESCRIPTION of the clip (e.g. "제품 데모 영상", "드론 항공 b-roll") — like image alt: when src is empty it is drawn as CENTERED CAPTION TEXT inside the placeholder so the slot says what KIND of video belongs there; once a real src is set, alt becomes the accessibility description. ALWAYS set attrs.alt on a video so the intent is clear even before a real clip is dropped in. ' +
+        "attrs.volume (0..1) and attrs.playbackRate (1 = normal speed) tune playback; attrs.borderRadius (0..1 of the video's OWN min(w,h)) rounds the corners.",
       editableAttrs: [
         "frame",
         "src",
@@ -211,6 +218,52 @@ export const WEAVE_CAPABILITIES = {
         "muted",
         "controls",
         "fit",
+        "volume",
+        "playbackRate",
+        "borderRadius",
+      ],
+    },
+    {
+      // WI-058 — data-driven QR code (regenerates from `data` on every render).
+      kind: "qr",
+      description:
+        "A QR code. attrs.data is the encoded URL/text (the matrix regenerates from it; empty → placeholder) — set it to the link you want scannable. attrs.ecLevel ('L'|'M'|'Q'|'H', default M) is the error-correction level. STYLE: attrs.foreground is the dark-module paint (a PaintSpec — { type:'solid', color } or a linear/radial gradient), attrs.background the light/background paint (PaintSpec or null = transparent), attrs.moduleStyle ('square'|'dot'|'rounded') the module glyph, attrs.margin the quiet-zone width in modules (default 4), attrs.opacity (0..1). Size/position via attrs.frame. Use for a scannable link/contact/Wi-Fi on a slide.",
+      editableAttrs: [
+        "frame",
+        "data",
+        "ecLevel",
+        "foreground",
+        "background",
+        "margin",
+        "moduleStyle",
+        "opacity",
+      ],
+    },
+    {
+      // WI-098 — data-driven chart (DR-036/DR-035). Created via weave.chart.add, NOT
+      // weave.item.add. Styled + re-typed via weave.item.update { attrs }.
+      kind: "chart",
+      description: [
+        "A DATA-DRIVEN chart. It owns NO data inline — it references a dataset by attrs.datasetId; the visual is derived from the resolved rows. CREATE it with weave.chart.add (seeds a dataset AND the chart in one undoable step); do NOT use weave.item.add with kind:'chart' (empty placeholder). Edit the LOOK/type/encoding/style with weave.item.update { itemId, attrs }; edit the DATA with weave.dataset.update.",
+        // ── DATA composition — get the dataset shape right for the type. ──
+        "DATA (compose it well): a dataset is { columns:[{name,type}], rows:[{<col>:value}] }. Put the CATEGORY/label column FIRST and numeric SERIES columns after it. Pick the chartType that FITS the data, not just bar/line/pie: 14 types (bar·line·area·pie·funnel·gauge·scatter·bubble·radar·heatmap·candlestick·boxplot·treemap·sankey). attrs.encoding maps channels→columns, each { field:<column>, aggregate? }; `value` may be an ARRAY for multiple (wide-format) series. category+value[] → bar/line/area/pie/funnel/radar; x+y(+size) → scatter/bubble; x+y+value → heatmap; category+open/high/low/close → candlestick; category+lower/q1/median/q3/upper → boxplot; id+parent(+value) → treemap; source+target(+value) → sankey. Keep series legible (≈≤5); compare proportions with pie/treemap, trends with line/area, ranked magnitudes with bar.",
+        // ── STYLING — make it beautiful, all via weave.item.update { attrs }. ──
+        "STYLE (꾸미기 — all attrs via weave.item.update): attrs.palette = series colours (string[]) — use the theme-coordinated categorical tokens [var(--domain-slide-accent), var(--domain-canvas-accent), var(--domain-block-accent), var(--domain-media-accent)] so series stay distinct AND theme-reactive, or mood/brand literals when the content calls for it. attrs.variant = { stacked, normalized (100%), horizontal (bar), smooth (line/area), innerRadius (0..1 → pie becomes a DOUGHNUT) }. attrs.showLegend / attrs.showAxis (boolean), attrs.opacity (0..1), attrs.barWidth (0..1 of the band). EMPHASIS: attrs.overrides = { datum:{ '<category>':{ color?, borderWidth?, offset? } }, series:{ '<series>':{ color?, borderWidth? } } } — recolour or pull out the ONE hero bar/slice so the key number pops (partial-merge safe — send only the delta). GROUND the chart on a designed surface (a card frame behind it: decoration.fill + cornerRadius + soft shadow) instead of bare canvas; keep series/text contrast ≥ AA.",
+        // ── TEXT IS RENDERED AS REAL TEXT ITEMS — the load-bearing thing to know. ──
+        "TEXT / LABELS (IMPORTANT — charts show their text through REAL weave text Items, DR-035): for bar/line/area + pie, the CATEGORY/axis labels are AUTO-MANAGED `text` child Items of the chart, DERIVED from the dataset (each tagged chartLabelRef). So: (1) do NOT hand-add category/axis label text — the chart projects them automatically; adding your own duplicates them. (2) Editing a managed label's TEXT actually edits the DATASET (it's derived, not free text) — to change a label, edit the data via weave.dataset.update. (3) Their POSITION is auto-placed (re-derived) — don't reposition them. (4) You MAY RESTYLE them for beauty — set color / fontWeight / fontSize / fontFamily on those label text Items via weave.item.update and it PERSISTS across re-projection (only text+position re-derive). (5) For a chart TITLE, a takeaway headline, a callout/annotation, an axis caption, or a source note, ADD YOUR OWN separate `text` Items (these are NOT auto-managed) and place them around the chart — a chart almost always needs a human title + one-line takeaway that the data labels do not provide. (Other types — scatter/heatmap/radar/etc. — keep the chart engine's own labels, not text Items.)",
+      ].join(" "),
+      editableAttrs: [
+        "frame",
+        "datasetId",
+        "chartType",
+        "encoding",
+        "variant",
+        "palette",
+        "showLegend",
+        "showAxis",
+        "opacity",
+        "barWidth",
+        "overrides",
       ],
     },
   ],
@@ -247,6 +300,14 @@ export const WEAVE_CAPABILITIES = {
       kind: "decoration.opacity",
       description: "Layer opacity. attrs = { value: 0..1 } (1 = opaque, 0 = invisible).",
       editableAttrs: ["value"],
+    },
+    {
+      // WI-074 / DR-029 D7 — kind-agnostic mirror. Set/clear via the `units` arg of
+      // weave.item.update (or weave.item.flip). image / video / shape / line / frame.
+      kind: "transform.flip",
+      description:
+        "Mirror the item's final composition. attrs = { flipH?:boolean (left/right), flipV?:boolean (up/down) }. Set via weave.item.update { units:[{ kind:'transform.flip', attrs:{ flipH:true } }] } (attrs:null clears it), or the shortcut weave.item.flip. image / video / shape / line / frame only (ignored on text / qr).",
+      editableAttrs: ["flipH", "flipV"],
     },
     // ── BEHAVIOR units — presentation interactivity. Set with
     //    weave.item.addBehavior / weave.item.removeBehavior / weave.behavior.update.
@@ -474,6 +535,18 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "     have no real asset URL, STILL place a source-less PLACEHOLDER (image: omit src + a descriptive alt like",
   "     '제품 사진 자리'; video: omit src + alt = clip description, optionally a poster URL) so the slot shows",
   "     instead of an empty/text-only slide. Always give image/video a descriptive alt. Match media to the topic.",
+  "   • CHARTS — compose the DATA, then make it BEAUTIFUL, then TITLE it (see the `chart` itemKind for full detail):",
+  "     (a) DATA: weave.chart.add seeds the dataset + chart together; category/label column FIRST, numeric series",
+  "     after; pick the chartType that FITS (not just bar/line/pie) and keep series legible (≈≤5). Edit data via",
+  "     weave.dataset.update, look/style via weave.item.update { attrs }. (b) STYLE: attrs.palette with the theme",
+  "     categorical tokens (--domain-slide/canvas/block/media-accent) so series are distinct + theme-reactive;",
+  "     attrs.variant (doughnut innerRadius / stacked / smooth / horizontal); attrs.overrides to emphasise the ONE",
+  "     hero bar/slice; showLegend/showAxis as needed; GROUND the chart on a card frame (decoration.fill +",
+  "     cornerRadius + soft shadow), AA contrast. (c) TEXT IS REAL TEXT ITEMS (DR-035): for bar/line/area + pie the",
+  "     CATEGORY/axis labels are AUTO-MANAGED text child items derived from the dataset — do NOT hand-add or",
+  "     reposition them, and editing a label's text edits the DATA (weave.dataset.update); you MAY restyle them",
+  "     (color/weight/size, persists). ALWAYS add your OWN separate text items for the chart TITLE + a one-line",
+  "     TAKEAWAY (and any callout / source note) — the data labels never supply those.",
   "   • VISUAL TREATMENT (raise visual satisfaction — REQUIRED; a plain run of text on a blank slide is a defect):",
   "     ground content on DESIGNED SURFACES and add graphic polish. This is VISUAL work (colour / shape / depth),",
   "     NEVER more text or data. (a) FRAME BACKGROUNDS: give the slide a deliberate base fill (a solid mood colour",
@@ -516,5 +589,8 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   • Target existing items by the id shown in the current document (already in the prompt — no separate fetch",
   "     step). Issue every edit the request needs (a full deck is many calls); avoid only redundant ones, and if a",
   "     tool returns an error, read it and adjust.",
+  "   • LOCKED items: ANY item kind may carry attrs.locked (boolean). A locked item rejects move / resize / rotate /",
+  "     delete / text-edit / reparent (it stays selectable). Set attrs.locked:true (weave.item.update) to protect a",
+  "     finished background or frame, false to unlock. Do NOT edit a locked item without unlocking it first.",
   ...THEME_REGISTRY_LINES,
 ].join("\n");
