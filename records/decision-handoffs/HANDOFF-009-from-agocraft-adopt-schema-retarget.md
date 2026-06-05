@@ -1,5 +1,11 @@
 # HANDOFF-009 — from agocraft → weave: adopt `retargetCommandSchemas`, drop hand-copied kit schemas
 
+> **STATUS: ACCEPTED & IMPLEMENTED (2026-06-05)** — adopted in-session. weave now re-exposes 5 kit
+> commands (`item.remove`, `item.reparent`, `clipboard.copy`, `clipboard.cut`, `item.duplicate`) via
+> `retargetCommandSchemas`; `weave-command-schemas.kit.test.ts` is the drift guard (4 tests).
+> Suite green (102/102), tsc clean. The other kit-derived commands stay inline (renamed key or extended
+> shape — see DR-039 § Implementation status). Vendor bumped to `agocraft-agent-client-1.0.0-rc.20260605120000.tgz`.
+
 - Date: 2026-06-05
 - From: agocraft (owner of `@agocraft/agent-client`)
 - To: weave (owner of `apps/web/src/features/aku/agent/weave-command-schemas.ts`)

@@ -8,11 +8,15 @@
 // `connectAgocraftAgent({ schemas })`, they are the highest-precedence layer
 // (over `AGENT_COMMAND_SCHEMAS` + any valibot-derived schemas).
 //
-// The input shapes mirror `document/commands.ts` exactly. Commands absorbed into
-// the `@agocraft/core` / `@agocraft/layout` kits (remove / reparent / dissolve /
-// duplicate / clipboard / reorder / layout / z-order) share their kit input
-// shape — copied here from the kit's own AGENT_COMMAND_SCHEMAS so weave's
-// `weave.*` names carry the identical contract.
+// The input shapes mirror `document/commands.ts` exactly. Kit commands whose
+// `weave.*` name is just the canonical name under our prefix AND whose contract is
+// byte-identical (item.remove / item.reparent / clipboard.copy / clipboard.cut /
+// item.duplicate) are re-exposed BY IMPORT via `retargetCommandSchemas` (KIT_SCHEMAS
+// below, DR-039) — not hand-copied — so an upstream kit-contract change surfaces as a
+// build break instead of silent drift. The remaining kit-derived commands stay inline
+// because they either RENAME the key (z-order bringToFront ← agocraft.zOrder.moveToTop,
+// design.reorderChildren ← children.reorder, frame.removeKeepingChildren ← frame.dissolve)
+// or EXTEND the shape (clipboard.paste paste-special) — prefix-retarget covers neither.
 //
 // Two commands (`weave.item.update`, `weave.behavior.update`) take a function
 // `patch` in their UI-facing signature, which an agent can't send over JSON.
@@ -20,7 +24,7 @@
 // for exactly this surface (WI-054) — these schemas advertise only the
 // declarative form.
 
-import type { AgentCommandSpec } from "@agocraft/agent-client";
+import { retargetCommandSchemas, type AgentCommandSpec } from "@agocraft/agent-client";
 
 // `JsonSchema` is `Readonly<Record<string, unknown>>` (the small-think contract);
 // alias it locally so we need no direct @small-think/client dependency.
@@ -516,8 +520,36 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
 
 const label = (name: string): string => WEAVE_COMMAND_LABELS[name] ?? name;
 
+// Kit commands whose argument contract is OWNED by @agocraft/core and whose
+// weave.* name is just the canonical name under our prefix — re-exposed BY IMPORT
+// (DR-039) instead of hand-copied, so an upstream kit-contract change surfaces here
+// as a build break, not silent drift (DR-038 was exactly such a change). Only the
+// label is weave-owned, so we patch it back in. The retargeted inputSchema/
+// destructive come verbatim from AGENT_COMMAND_SCHEMAS.
+//
+// Kit commands NOT retargeted here, and why (kept inline below):
+//  • z-order (bringForward / sendBackward / bringToFront / sendToBack): weave RENAMES
+//    them off agocraft.zOrder.move*, and bringForward/sendBackward are step-relative
+//    with no kit equivalent — prefix-retarget can't rename a key.
+//  • weave.design.reorderChildren ← children.reorder, weave.frame.removeKeepingChildren
+//    ← frame.dissolve: identical contract but a RENAMED key (prefix-retarget can't rename).
+//  • weave.clipboard.paste: weave EXTENDS the kit shape with paste-special (mode/targetIds).
+const KIT_SCHEMAS = retargetCommandSchemas({
+  prefix: "weave.",
+  only: ["item.remove", "item.reparent", "clipboard.copy", "clipboard.cut", "item.duplicate"],
+  patch: {
+    "weave.item.remove": (s) => ({ ...s, label: label("weave.item.remove") }),
+    "weave.item.reparent": (s) => ({ ...s, label: label("weave.item.reparent") }),
+    "weave.clipboard.copy": (s) => ({ ...s, label: label("weave.clipboard.copy") }),
+    "weave.clipboard.cut": (s) => ({ ...s, label: label("weave.clipboard.cut") }),
+    "weave.item.duplicate": (s) => ({ ...s, label: label("weave.item.duplicate") }),
+  },
+});
+
 /** Every weave editing command, keyed by its `weave.*` registry name. */
 export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> = {
+  // Kit commands re-exposed from @agocraft/agent-client under weave.* (see KIT_SCHEMAS).
+  ...KIT_SCHEMAS,
   // ── lifecycle ──
   // For `kind: "text"`, `attrsOverride` seeds the new box's text attrs. Pick a
   // `fontSize` (absolute design-px) relative to the canvas px size in the task's
@@ -536,11 +568,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       ["kind"],
     ),
   },
-  "weave.item.remove": {
-    label: label("weave.item.remove"),
-    destructive: true,
-    inputSchema: obj({ itemId: STR, containerId: STR }, ["itemId"]),
-  },
+  // weave.item.remove → retargeted from kit (see KIT_SCHEMAS).
   // ── WI-077 — data-driven chart + dataset (데이터 관리 아이템) ──
   // weave.chart.add is the PRIMARY chart-creation tool: it seeds a dataset AND
   // the chart in one undoable step (NOT weave.item.add+kind:chart, which makes
@@ -913,20 +941,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   },
 
   // ── structure: reparent / dissolve ──
-  "weave.item.reparent": {
-    label: label("weave.item.reparent"),
-    inputSchema: obj(
-      {
-        entries: {
-          type: "array",
-          items: obj({ itemId: STR, newParentId: STR }, ["itemId", "newParentId"]),
-        },
-        designWidth: NUM,
-        designHeight: NUM,
-      },
-      ["entries"],
-    ),
-  },
+  // weave.item.reparent → retargeted from kit (see KIT_SCHEMAS).
   "weave.frame.removeKeepingChildren": {
     label: label("weave.frame.removeKeepingChildren"),
     destructive: true,
@@ -982,15 +997,8 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   },
 
   // ── clipboard ──
-  "weave.clipboard.copy": {
-    label: label("weave.clipboard.copy"),
-    inputSchema: obj({ itemIds: STR_ARR }, ["itemIds"]),
-  },
-  "weave.clipboard.cut": {
-    label: label("weave.clipboard.cut"),
-    destructive: true,
-    inputSchema: obj({ itemIds: STR_ARR, containerId: STR }, ["itemIds"]),
-  },
+  // weave.clipboard.copy / weave.clipboard.cut → retargeted from kit (see KIT_SCHEMAS).
+  // weave.clipboard.paste stays inline — weave EXTENDS the kit shape with paste-special.
   "weave.clipboard.paste": {
     label: label("weave.clipboard.paste"),
     inputSchema: obj(
@@ -1012,10 +1020,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   },
 
   // ── duplicate ──
-  "weave.item.duplicate": {
-    label: label("weave.item.duplicate"),
-    inputSchema: obj({ itemId: STR }, ["itemId"]),
-  },
+  // weave.item.duplicate → retargeted from kit (see KIT_SCHEMAS).
   /* WI-064 — absorbed into weave.items.lifecycle { op:'duplicate' }; hidden from
      the agent (AGENT_HIDDEN_COMMANDS). Registered for UI use.
   "weave.items.duplicate": {
