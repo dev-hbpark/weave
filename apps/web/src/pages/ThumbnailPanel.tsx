@@ -698,6 +698,11 @@ export function ThumbnailPanel({
                     data-tip="슬라이드(덱)에서 제외"
                     className={
                       "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
+                      // WI-101 — MUST be positioned above the full-coverage activation
+                      // button (absolute inset-0 z-0): a static footer button paints
+                      // UNDER it, so its click was swallowed by "select frame" and the
+                      // toggle never fired. `relative z-10` lifts it into the click path.
+                      "relative z-10 " +
                       // WI-072 — kept subtly visible (not hover-only) so deck
                       // membership is discoverable at a glance and reliably hit-
                       // testable; brightens on hover/focus.
@@ -735,6 +740,12 @@ export function ThumbnailPanel({
             </div>
             {nonSlideEntries.map((entry) => {
               const isSelected = entry.id === selectedId;
+              // WI-100 — group (excluded) tiles keep the focus eye too, so a frame
+              // that is NOT in the deck can still be dimmed / isolated for editing
+              // convenience exactly like a slide tile.
+              const isFocused = entry.id === focusedId;
+              const tileStage: FocusStage = isFocused ? focusStage : 0;
+              const isDisabled = disabledFrameIds?.has(entry.id) ?? false;
               return (
                 <div
                   key={entry.id}
@@ -743,6 +754,7 @@ export function ThumbnailPanel({
                   data-frame-id={entry.id}
                   data-frame-kind={entry.kind}
                   data-testid={`thumbnail-nonslide-${entry.id}`}
+                  data-tile-stage={tileStage}
                   className={
                     "group relative flex flex-col w-[132px] h-[112px] p-2 gap-1.5 rounded-[var(--radius-md)] " +
                     "border border-dashed transition-[border-color,opacity] duration-[var(--motion-quick)] " +
@@ -770,7 +782,13 @@ export function ThumbnailPanel({
                   />
                   <div
                     className="relative flex-1 overflow-hidden rounded-[var(--radius-sm)] border border-dashed border-[color:var(--surface-2-border)] flex items-center justify-center pointer-events-none"
-                    style={{ background: design.background ?? "var(--surface-2)" }}
+                    style={{
+                      background: design.background ?? "var(--surface-2)",
+                      boxShadow:
+                        tileStage >= 1
+                          ? `inset 0 0 0 2px ${tileStage === 2 ? "var(--accent)" : "var(--accent-strong)"}`
+                          : undefined,
+                    }}
                     aria-hidden
                   >
                     <span
@@ -782,6 +800,47 @@ export function ThumbnailPanel({
                     >
                       {FLAVOR_GLYPH[flavorIconForKind(entry.kind)]}
                     </span>
+                    {/* WI-100 — focus (눈) toggle on group tiles too: a frame
+                        excluded from the deck stays fully editable, so keep the
+                        same dim/isolate convenience here. Identical control to the
+                        slide tile's focus button (pointer-events-auto over the
+                        pointer-events-none preview). */}
+                    {onCycleFocus !== undefined ? (
+                      <button
+                        type="button"
+                        disabled={isDisabled}
+                        onClick={(e) => handleToggleClick(entry, e)}
+                        onKeyDown={(e) => handleToggleKey(entry, e)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-testid={`thumbnail-nonslide-focus-${entry.id}`}
+                        data-thumbnail-focus-id={entry.id}
+                        data-stage={tileStage}
+                        aria-label={
+                          tileStage === 0
+                            ? "Focus this frame"
+                            : tileStage === 1
+                              ? "Focused: dimming layers above"
+                              : "Isolated: above layers locked"
+                        }
+                        aria-pressed={ariaPressedFor(tileStage)}
+                        data-tip={nextStageLabel(tileStage)}
+                        className={
+                          "absolute top-1.5 right-1.5 inline-flex items-center justify-center w-6 h-6 rounded-[var(--radius-sm)] " +
+                          "pointer-events-auto " +
+                          "border transition-[opacity,background,color,border-color] duration-[var(--motion-quick)] " +
+                          "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)] " +
+                          "disabled:cursor-not-allowed disabled:pointer-events-none " +
+                          (tileStage >= 1
+                            ? "opacity-100 bg-[color:var(--accent)] text-[color:var(--text-on-accent)] border-[color:var(--accent)] "
+                            : (isDisabled
+                                ? "opacity-0 "
+                                : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ") +
+                              "bg-[rgba(0,0,0,0.42)] [backdrop-filter:blur(6px)] text-[color:var(--text-overlay-soft)] border-transparent hover:text-[color:var(--text-overlay)] ")
+                        }
+                      >
+                        <FocusGlyph stage={tileStage} />
+                      </button>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-1.5 px-0.5">
                     <span className="text-[10px] uppercase tracking-[0.1em] text-[color:var(--text-muted)] shrink-0">
@@ -803,6 +862,9 @@ export function ThumbnailPanel({
                         data-tip="슬라이드(덱)에 추가"
                         className={
                           "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
+                          // WI-101 — lift above the absolute inset-0 z-0 activation
+                          // button so the click reaches the toggle (see slide tile).
+                          "relative z-10 " +
                           "text-[color:var(--text-muted)] hover:text-[color:var(--accent-strong)] " +
                           "hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
                         }

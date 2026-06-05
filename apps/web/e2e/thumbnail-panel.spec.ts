@@ -142,6 +142,77 @@ test("clicking the eye (focus) button also selects the frame", async ({ page }) 
   await expect(page.getByTestId("thumbnail-focus-0")).toHaveAttribute("data-stage", "1");
 });
 
+test("excluding a slide moves it to the group section, where the focus eye still works (WI-100)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Group eye" });
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
+  await expect(page.getByTestId("thumbnail-panel")).toBeVisible();
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
+
+  // The bottom-right deck-membership button excludes a slide → it drops into
+  // the non-slide (group) section.
+  await page.getByTestId("thumbnail-slide-toggle-0").click();
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(1);
+  const groupTile = page.locator('[data-testid^="thumbnail-nonslide-"]').first();
+  await expect(groupTile).toBeVisible();
+
+  // WI-100 — the excluded group tile keeps a working focus (눈) button: editing
+  // convenience (dim/isolate) is retained even for non-deck frames.
+  const groupEye = page.locator('[data-testid^="thumbnail-nonslide-focus-"]').first();
+  await expect(groupEye).toHaveCount(1);
+  await groupEye.click();
+  await expect(groupEye).toHaveAttribute("data-stage", "1");
+
+  // It can be re-included via the same deck button.
+  await page.locator('[data-testid^="thumbnail-nonslide-toggle-"]').first().click();
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
+});
+
+test("focusing a frame blocks pointer-events on the other frames' canvas (WI-102)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "Focus gate" });
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
+  await expect(page.getByTestId("thumbnail-panel")).toBeVisible();
+  const ids = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown; kind: string }> } };
+    };
+    return (w.__weaveDoc?.root.children ?? [])
+      .filter((c) => c.kind === "frame")
+      .map((c) => String(c.id));
+  });
+  expect(ids.length).toBe(2);
+
+  // Focus the FIRST frame → stage 1 ("dim") gates frames painted ABOVE it in
+  // z-order (its later sibling = the second frame). The gated frame's canvas
+  // wrapper must become non-interactive (pointer-events:none) — the regression
+  // was that the imperative gate could be raced by motion's style re-apply, so
+  // the block is now declared on the style and must hold.
+  await page.getByTestId("thumbnail-focus-0").click();
+  await expect(page.getByTestId("thumbnail-focus-0")).toHaveAttribute("data-stage", "1");
+
+  const blockedPE = await page.evaluate((fid) => {
+    const el = document.querySelector(
+      `[data-testid="frame-stage"] [data-frame-id="${fid}"]`,
+    ) as Element | null;
+    return el === null ? "" : getComputedStyle(el).pointerEvents;
+  }, ids[1]);
+  expect(blockedPE).toBe("none");
+
+  // The focused frame itself stays interactive.
+  const focusedPE = await page.evaluate((fid) => {
+    const el = document.querySelector(
+      `[data-testid="frame-stage"] [data-frame-id="${fid}"]`,
+    ) as Element | null;
+    return el === null ? "" : getComputedStyle(el).pointerEvents;
+  }, ids[0]);
+  expect(focusedPE).not.toBe("none");
+});
+
 test("double-clicking a tile fits the camera to that frame", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Dblclick zoom" });

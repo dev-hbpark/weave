@@ -365,16 +365,25 @@ export function NestedFrame({
     //   `--focus-isolate-opacity` (0 — fully invisible) and pointer
     //   events are blocked. The host populates the set with the entire
     //   outside-tree subtree.
-    // The two sets are mutually exclusive (host enforces). The
-    // pointer-events block lives in `applyHitGate` above (single
-    // authority over `style.pointerEvents`, so React-managed style and
-    // the imperative gate don't fight).
+    // The two sets are mutually exclusive (host enforces).
     opacity: isolatedFrameIds?.has(itemId)
       ? "var(--focus-isolate-opacity, 0)"
       : dimmedFrameIds?.has(itemId)
         ? "var(--focus-dim-opacity, 0.28)"
         : 1,
     transition: "opacity 180ms ease",
+    // WI-102 — FOCUS pointer-events block declared HERE (in the React/motion
+    // style), not only imperatively in `applyHitGate`. A `motion.div` re-applies
+    // its style object on its own animation tick, which could land AFTER the
+    // useLayoutEffect gate and leave a gated frame's imperative `none` stale →
+    // the focused-out frame stayed editable (the reported regression). Declaring
+    // it on the style makes React the source of truth for the DETERMINISTIC focus
+    // case (gated → none), so nothing can overwrite it. The SIZE gate (auto/none
+    // by footprint) stays imperative-only in `applyHitGate`: this key is OMITTED
+    // for un-gated frames, so the two never fight over the same frame.
+    ...(isolatedFrameIds?.has(itemId) || dimmedFrameIds?.has(itemId)
+      ? { pointerEvents: "none" as const }
+      : {}),
     ...(frame.rotation ? { transform: `rotate(${frame.rotation}rad)` } : {}),
     // WI-074 D8c — lift the cropping frame above sibling items so its spotlight
     // dim (box-shadow hole in ImageBlock) covers them.
