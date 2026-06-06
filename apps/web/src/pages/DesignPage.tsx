@@ -2381,6 +2381,9 @@ function DesignPageBody() {
                                   // WI-065 — after the agent adds slide(s), fit the deck
                                   // at the shared 70% (agent edits skip the UI add-fit).
                                   onFramesAdded={handleFitAll}
+                                  // WI-125 — fit the camera to each NEW slide the agent
+                                  // creates, at its creation moment.
+                                  onZoomToFrame={handleZoomToFrame}
                                 />
                                 <CursorTooltipBridge
                                   hover={hoverContext}

@@ -21,6 +21,7 @@ import { useAkuAgent } from "./agent/use-aku-agent.js";
 import { gpuSpriteRenderer } from "./expression/gpu-sprite-renderer.js";
 import { useAkuExpression } from "./expression/use-aku-expression.js";
 import { useAkuGeometry } from "./useAkuGeometry.js";
+import { useAkuNewSlideCamera } from "./useAkuNewSlideCamera.js";
 import { useAkuRoam } from "./useAkuRoam.js";
 import { useAkuTips } from "./useAkuTips.js";
 
@@ -39,6 +40,7 @@ export function AkuAssistant({
   designId,
   designInfo,
   onFramesAdded,
+  onZoomToFrame,
 }: {
   readonly editor: Editor;
   readonly document: AgocraftDocument;
@@ -48,6 +50,9 @@ export function AkuAssistant({
   readonly designInfo: { width: number; height: number; background: string };
   /** WI-065 — fit the camera after the agent adds top-level frame(s). */
   readonly onFramesAdded?: (() => void) | undefined;
+  /** WI-125 — center+fit a frame by id (DesignPage's zoom-to-frame). Used to fit
+   *  the camera to each NEW slide the agent creates, at its creation moment. */
+  readonly onZoomToFrame?: ((frameId: string) => void) | undefined;
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   // Delay the first-run coachmark until the page has settled — mounting it
@@ -141,6 +146,14 @@ export function AkuAssistant({
     boxH: 120,
     home: { x: geometry.x, y: geometry.y },
     onTap: openPanel,
+  });
+
+  // WI-125 — when the agent creates a new top-level slide, fit the camera to it at
+  // its creation moment (so the deck builds slide by slide). Gated on streaming.
+  useAkuNewSlideCamera({
+    document: agoDocument,
+    streaming: status === "streaming",
+    onZoomToFrame,
   });
 
   // Expression layer (WI-103) — derive the mascot's mood from the run-state the
