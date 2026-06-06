@@ -3,7 +3,8 @@
 //   - USER EDITING (pointer/keyboard activity on the doc) → sit IDLE at home,
 //   - idle, < 1 min since the last edit → wander to random viewport points,
 //   - idle, ≥ 1 min since the last edit → walk to screen centre, then doze (sleep),
-//   - WORKING (agent streaming) → fly to the edited frame (changeStream),
+//   - WORKING (agent streaming) → move to the screen CENTRE and stay (WI-113):
+//     the camera brings the edited root frame to centre, so Aku works over it,
 //   - DRAG → follow the pointer (drag-struggle sprite), settling where dropped.
 // `moving`/`dragging`/`sleeping` let the caller pick the sprite; a tap (no movement
 // past threshold) calls `onTap`. `paused` (panel open / coachmark) and reduced
@@ -12,7 +13,6 @@
 // real pointer/keyboard editing (Information Expert). `sleeping` is fed back into
 // useAkuExpression so the mood table stays the single source of mood priority.
 
-import type { Editor } from "@agocraft/editor";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -21,15 +21,22 @@ import {
   useState,
 } from "react";
 import { isAkuSurface } from "./interaction-lock.js";
-import { randomViewportPoint, roamPointInRect, travelDir } from "./roam-target.js";
+import { randomViewportPoint, travelDir } from "./roam-target.js";
 
 export const ROAM_TRAVEL_MS = 1100;
 const IDLE_MS = 3600; // cadence of random wander hops while roaming
-const STREAM_DEBOUNCE_MS = 180;
 const DRAG_THRESHOLD = 4;
 const EDIT_SETTLE_MS = 4000; // within this since the last edit gesture → "user is editing"
 const SLEEP_AFTER_MS = 60_000; // no editing for ≥ 1 min → doze (blanket-sleep)
 const TICK_MS = 1000; // phase-driver cadence
+
+/** The top-left for a boxW×boxH mascot centred in the current viewport. */
+function viewportCentre(boxW: number, boxH: number): { x: number; y: number } {
+  return {
+    x: Math.max(4, (window.innerWidth - boxW) / 2),
+    y: Math.max(4, (window.innerHeight - boxH) / 2),
+  };
+}
 
 export interface AkuRoam {
   readonly x: number;
@@ -47,7 +54,6 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 export function useAkuRoam(opts: {
-  readonly editor: Editor;
   readonly streaming: boolean;
   readonly paused: boolean;
   readonly reduce: boolean;
@@ -56,7 +62,7 @@ export function useAkuRoam(opts: {
   readonly home: { readonly x: number; readonly y: number };
   readonly onTap: () => void;
 }): AkuRoam {
-  const { editor, streaming, paused, reduce, boxW, boxH, home, onTap } = opts;
+  const { streaming, paused, reduce, boxW, boxH, home, onTap } = opts;
   const [state, setState] = useState<{
     x: number;
     y: number;
@@ -174,10 +180,15 @@ export function useAkuRoam(opts: {
         return;
       }
       if (f.streaming) {
-        // agent working — the streaming effect owns position; treat as activity so
-        // the moment it finishes Aku is "editing" (home/idle), never instantly asleep.
+        // agent working — move to (and hold at) the screen centre; the camera brings
+        // the edited root frame here so Aku works over it (WI-113). Counts as activity
+        // so the moment it finishes Aku is "editing" (home/idle), never instantly asleep.
         lastActivityRef.current = Date.now();
         wake();
+        const c = viewportCentre(f.boxW, f.boxH);
+        if (Math.abs(posRef.current.x - c.x) > 1 || Math.abs(posRef.current.y - c.y) > 1) {
+          goTo(c);
+        }
         return;
       }
       const dt = Date.now() - lastActivityRef.current;
@@ -199,9 +210,7 @@ export function useAkuRoam(opts: {
         if (!sleepingRef.current) {
           sleepingRef.current = true;
           setSleeping(true);
-          const cx = Math.max(4, (window.innerWidth - f.boxW) / 2);
-          const cy = Math.max(4, (window.innerHeight - f.boxH) / 2);
-          goTo({ x: cx, y: cy });
+          goTo(viewportCentre(f.boxW, f.boxH));
         }
         return;
       }
@@ -218,38 +227,14 @@ export function useAkuRoam(opts: {
     return () => clearInterval(id);
   }, [goTo]);
 
-  // Working — fly to the frame the agent just edited (debounced; skip off-screen).
+  // Working start — move to the screen centre immediately (don't wait a tick) so a
+  // turn visibly begins with Aku gliding to centre, then "connecting" (WI-113). The
+  // driver holds it there; the camera brings the edited frame to it.
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let pending: string | null = null;
-    const flyToFrame = (itemId: string): void => {
-      const f = flags.current;
-      if (f.reduce || f.paused || !f.streaming || draggingRef.current) return;
-      const sel = `[data-frame-id="${CSS.escape(itemId)}"]`;
-      const el = document.querySelector(`main ${sel}`) ?? document.querySelector(sel);
-      const rect = el?.getBoundingClientRect();
-      if (rect === undefined || rect.width === 0 || rect.height === 0) return;
-      goTo(
-        roamPointInRect(rect, f.boxW, f.boxH, window.innerWidth, window.innerHeight, Math.random),
-      );
-    };
-    const off = editor.changeStream.subscribe(
-      (change: unknown) => {
-        const id = (change as { itemId?: unknown }).itemId;
-        if (typeof id !== "string") return;
-        pending = id;
-        if (timer !== undefined) clearTimeout(timer);
-        timer = setTimeout(() => {
-          if (pending !== null) flyToFrame(pending);
-        }, STREAM_DEBOUNCE_MS);
-      },
-      { origins: ["user-command"] },
-    );
-    return () => {
-      off?.();
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [editor, goTo]);
+    if (!streaming || draggingRef.current) return;
+    const f = flags.current;
+    goTo(viewportCentre(f.boxW, f.boxH));
+  }, [streaming, goTo]);
 
   useEffect(
     () => () => {

@@ -1,4 +1,4 @@
-// 아쿠 — interaction lock UI (WI-105 / DR-072 · WI-110 spotlight).
+// 아쿠 — interaction lock UI (WI-105 / DR-072 · WI-110/WI-113 spotlight).
 //
 // While the agent is streaming (`locked`), dims + blocks the whole app so only the
 // Aku panel/launcher is operable (correctness: the agent reads the doc/selection
@@ -8,19 +8,24 @@
 // all app chrome. Effects engage #root `inert` + the window keyboard/wheel guard;
 // everything reverses when `locked` goes false (status → idle), so it never traps.
 //
-// WI-110 — `spotlight`: while the roaming Aku is working (panel closed), a clear
-// circle (radius ≈ 2× the Aku height) follows it so you can see what it's editing
-// sharply, while the rest stays dim+blurred. Implemented as an alpha radial-gradient
-// MASK on the dim/blur layer (transparent center → opaque outside): masked-out
-// pixels paint nothing, so backdrop-blur isn't applied there. A rAF loop tracks the
-// launcher's REAL (gliding) position via CSS vars so the hole stays glued to it.
+// WI-110/WI-113 — `spotlight`: while the working Aku is centered (panel closed), a
+// circle around it stays sharp + BRIGHT while the rest is blurred + DARKENED:
+//   - DIM layer  — blur + brightness↓ + dark tint, masked to EXCLUDE the centre
+//     (masked-out pixels paint nothing → no blur/dim over Aku).
+//   - BRIGHT layer — backdrop brightness↑ + a soft glow, masked to ONLY the centre
+//     so the slide Aku is editing reads brighter than the dimmed surround.
+// A rAF loop tracks the launcher's REAL (gliding) centre into CSS vars on the
+// container; both layers inherit them so the hole stays glued to Aku.
 
 import { useEffect, useRef } from "react";
 import { installInteractionLock, isAkuSurface } from "./interaction-lock.js";
 
-// Clear out to ~2× the 120px Aku height (240px), feathering to fully blurred at 300px.
-const SPOTLIGHT_MASK =
-  "radial-gradient(circle at var(--aku-spot-x, -999px) var(--aku-spot-y, -999px), transparent 0, transparent 240px, #000 300px)";
+const SPOT = "var(--aku-spot-x, -999px) var(--aku-spot-y, -999px)";
+// Outside ~210px → blurred + dark; the centre is cut clear for the bright layer.
+const DIM_MASK = `radial-gradient(circle at ${SPOT}, transparent 0, transparent 210px, #000 300px)`;
+// Brighten only the inner ~180px around Aku, feathering out by 260px.
+const BRIGHT_MASK = `radial-gradient(circle at ${SPOT}, #000 0, #000 180px, transparent 260px)`;
+const BRIGHT_GLOW = `radial-gradient(circle at ${SPOT}, rgba(255,255,255,0.10) 0, rgba(255,255,255,0) 200px)`;
 
 export function AkuInteractionLock({
   locked,
@@ -29,7 +34,7 @@ export function AkuInteractionLock({
   readonly locked: boolean;
   readonly spotlight?: boolean;
 }): JSX.Element | null {
-  const blurRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!locked) return;
@@ -39,12 +44,13 @@ export function AkuInteractionLock({
     });
   }, [locked]);
 
-  // Glue the clear circle to the launcher's real (animated) center each frame.
+  // Glue the bright/clear circle to the launcher's real (animated) center each
+  // frame — write the vars on the container so both mask layers inherit them.
   useEffect(() => {
     if (!locked || !spotlight) return;
     let raf = 0;
     const tick = (): void => {
-      const el = blurRef.current;
+      const el = rootRef.current;
       const aku = document.querySelector("[data-aku-launcher]");
       if (el !== null && aku !== null) {
         const r = aku.getBoundingClientRect();
@@ -60,15 +66,29 @@ export function AkuInteractionLock({
   if (!locked) return null;
 
   return (
-    <div data-aku-lock className="fixed inset-0 z-[47] flex items-start justify-center">
+    <div
+      ref={rootRef}
+      data-aku-lock
+      className="fixed inset-0 z-[47] flex items-start justify-center"
+    >
+      {/* DIM — blur + darken everything (masked to leave the Aku circle clear). */}
       <div
-        ref={blurRef}
         aria-hidden="true"
-        className="absolute inset-0 bg-[color:var(--bg)]/45 backdrop-blur-[2px]"
-        style={
-          spotlight ? { maskImage: SPOTLIGHT_MASK, WebkitMaskImage: SPOTLIGHT_MASK } : undefined
-        }
+        className="absolute inset-0 bg-[color:var(--bg)]/55 backdrop-blur-[3px] backdrop-brightness-[0.5]"
+        style={spotlight ? { maskImage: DIM_MASK, WebkitMaskImage: DIM_MASK } : undefined}
       />
+      {/* BRIGHT — lift the Aku circle above normal (panel-closed spotlight only). */}
+      {spotlight ? (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 backdrop-brightness-[1.22] backdrop-saturate-[1.1]"
+          style={{
+            background: BRIGHT_GLOW,
+            maskImage: BRIGHT_MASK,
+            WebkitMaskImage: BRIGHT_MASK,
+          }}
+        />
+      ) : null}
       <div
         role="status"
         aria-live="polite"

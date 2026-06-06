@@ -2372,6 +2372,9 @@ function DesignPageBody() {
                                   // WI-065 — after the agent adds slide(s), fit the deck
                                   // at the shared 70% (agent edits skip the UI add-fit).
                                   onFramesAdded={handleFitAll}
+                                  // WI-113 — while streaming, keep the edited root frame
+                                  // centered (same fit as thumbnail double-click).
+                                  onZoomToFrame={handleZoomToFrame}
                                 />
                                 <CursorTooltipBridge
                                   hover={hoverContext}
