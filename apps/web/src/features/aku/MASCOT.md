@@ -30,9 +30,10 @@ idle 시트) 으로 전환하며, 편집 재개 시 home 복귀. 단계/활동 �
 `AkuInteractionLock`의 딤/브라이트 레이어에 알파 radial-gradient **MASK**로 중앙을 도려내/밝히고,
 rAF가 `[data-aku-launcher]` 중심을 `--aku-spot-x/y`로 갱신해 움직이는 아쿠를 추종.
 
-**작업 중 센터 스테이지(WI-115)**: streaming 시작 시 아쿠가 **화면 정중앙**으로 이동해 작업 내내
-중앙 유지(WI-107 fly-to-frame 대체), `useAkuFrameCamera`가 편집 중인 **루트 슬라이드를 카메라로
-중앙**에 가져옴(`handleZoomToFrame`/`cameraFitBox`, 루트 id 디듀프, streaming 게이트).
+**작업 시작 = 중앙, 이후 = 프레임 로밍(WI-116)**: streaming 시작 시 아쿠가 **화면 정중앙**으로
+한 번 이동(시작을 중앙에서)하고, 이후에는 **편집되는 프레임으로 날아다님**(WI-107 fly-to-frame 복원
+— `editor.changeStream`의 user-command 변경마다 해당 `[data-frame-id]` 위치로). 중앙 고정 아님.
+(WI-115의 중앙 고정 + 카메라 센터링은 철회 — 로밍을 가림.)
 
 **투명도 교체(2026-06-06)**: 구 스프라이트/마스코트가 불투명(흰 배경)이라 **투명(alpha)** 버전으로 교체.
 **너비 조정(2026-06-06)**: 프레임 너비를 단계적으로 확장 — 최종 **고정폭 520**(시트 3120×724,

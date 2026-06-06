@@ -20,7 +20,6 @@ import { useAkuSettings } from "./agent/aku-settings.js";
 import { useAkuAgent } from "./agent/use-aku-agent.js";
 import { gpuSpriteRenderer } from "./expression/gpu-sprite-renderer.js";
 import { useAkuExpression } from "./expression/use-aku-expression.js";
-import { useAkuFrameCamera } from "./useAkuFrameCamera.js";
 import { useAkuGeometry } from "./useAkuGeometry.js";
 import { useAkuRoam } from "./useAkuRoam.js";
 import { useAkuTips } from "./useAkuTips.js";
@@ -40,7 +39,6 @@ export function AkuAssistant({
   designId,
   designInfo,
   onFramesAdded,
-  onZoomToFrame,
 }: {
   readonly editor: Editor;
   readonly document: AgocraftDocument;
@@ -50,9 +48,6 @@ export function AkuAssistant({
   readonly designInfo: { width: number; height: number; background: string };
   /** WI-065 — fit the camera after the agent adds top-level frame(s). */
   readonly onFramesAdded?: (() => void) | undefined;
-  /** WI-115 — center+fit a frame by id (DesignPage's zoom-to-frame). While the
-   *  agent streams, Aku keeps the edited root frame centered via this. */
-  readonly onZoomToFrame?: ((frameId: string) => void) | undefined;
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   // Delay the first-run coachmark until the page has settled — mounting it
@@ -135,6 +130,7 @@ export function AkuAssistant({
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const openPanel = useCallback(() => setOpen(true), []);
   const roam = useAkuRoam({
+    editor,
     streaming: status === "streaming",
     // freeze auto-roam while hidden (panel open) or while the first-run coachmark
     // needs a stable anchor. Tips ride along as the launcher caption (no anchor),
@@ -145,15 +141,6 @@ export function AkuAssistant({
     boxH: 120,
     home: { x: geometry.x, y: geometry.y },
     onTap: openPanel,
-  });
-
-  // WI-115 — while the agent works, keep the edited root frame (slide) centered so
-  // it sits under the centered Aku. Gated on streaming (manual edits never pan).
-  useAkuFrameCamera({
-    editor,
-    streaming: status === "streaming",
-    getDocument: () => docRef.current,
-    onZoomToFrame,
   });
 
   // Expression layer (WI-103) — derive the mascot's mood from the run-state the

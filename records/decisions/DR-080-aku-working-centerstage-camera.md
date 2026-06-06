@@ -1,6 +1,9 @@
 # DR-080 — 아쿠 작업 중 "센터 스테이지": 화면 중앙 고정 + 편집 슬라이드 카메라 센터링 + 명암 스포트라이트
 
-- **Date:** 2026-06-06 · **Status:** Accepted · **WI:** WI-115
+- **Date:** 2026-06-06 · **Status:** Superseded-in-part by DR-081 · **WI:** WI-115
+- **Superseded:** the "Aku pinned to centre" + per-edit camera-centring parts are
+  withdrawn (DR-081 / WI-116) — operator wanted Aku to START at centre then ROAM to
+  the edited frames (WI-107 behaviour). The 명암 spotlight (WI-110) stays.
 - **Relates / supersedes-in-part:** WI-107(fly-to-frame 로밍 — 작업 중 동작을 본 DR이 대체),
   DR-072(편집 중 인터랙션 락 + 스포트라이트), WI-110(스포트라이트), WI-111(활동 기반 단계).
 - **Operator directive (2026-06-06):**
