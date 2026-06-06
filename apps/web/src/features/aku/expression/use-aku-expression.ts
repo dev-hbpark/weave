@@ -21,21 +21,35 @@
 import { useEffect, useRef, useState } from "react";
 import type { AkuConnection, AkuMessage, AkuStatus } from "../types.js";
 import { type AkuMood, moodIntensity, resolveAkuMood } from "./mood.js";
+import { pickPhrase } from "./phrases.js";
 import type { AkuExpressionState } from "./renderer-types.js";
 
 const CELEBRATE_MS = 1800;
 const LOOKING_MS = 1400;
 // Minimum time a per-operation edit mood stays on screen (WI-118). Agent tools
-// settle in milliseconds, so adding/updating/working can flip faster than the
-// sprite can render; hold each for at least this long before switching to ANOTHER
-// edit mood. Switches to/from non-edit moods (thinking/finalizing/idle/…) are
-// immediate so reasoning + wrap-up still read instantly.
+// settle in milliseconds, so the edit casts (adding/updating/working/finalizing)
+// can flip faster than the sprite can render; hold each for at least this long
+// before switching to ANOTHER edit mood. Switches to/from non-edit moods
+// (thinking/idle/…) are immediate so reasoning reads instantly.
 const EDIT_HOLD_MS = 700;
-const EDIT_MOODS: ReadonlySet<AkuMood> = new Set(["adding", "updating", "working"]);
+// finalizing(puff) is now one of the edit casts (WI-124): it stopped being a wrap-up
+// indicator when the "정리 중…" caption was retired, so it joins the random spell pool
+// below and gets the same min-hold as the other casts instead of flashing sub-frame.
+const EDIT_MOODS: ReadonlySet<AkuMood> = new Set([
+  "adding",
+  "updating",
+  "working",
+  "finalizing",
+  "painting",
+]);
 // "idea situations" — generic edits (`working`) and the completion ✨ (`celebrating`)
-// used to all show idea.png. Operator: show one of the two spell casts at RANDOM
-// instead (WI-119). One pick per entry into an idea situation, held stable.
+// used to all show idea.png. Operator: show one of the spell casts at RANDOM instead
+// (WI-119; WI-124 added puff as a third cast). One pick per entry, held stable.
 const IDEA_MOODS: ReadonlySet<AkuMood> = new Set(["working", "celebrating"]);
+// The random spell-cast pool for idea situations: spell-right (adding), spell-left
+// (updating), puff (finalizing), paint brush (painting) — all play during edit
+// actions (WI-124, +paint WI-129).
+const SPELL_CASTS: readonly AkuMood[] = ["adding", "updating", "finalizing", "painting"];
 
 export interface AkuExpression extends AkuExpressionState {
   /** Live caption to show above the collapsed launcher while a turn streams
@@ -54,13 +68,13 @@ export function useAkuExpression(input: {
 }): AkuExpression {
   const { status, connection, messages, selectionKey, sleeping } = input;
 
-  // The live caption is the streaming assistant message's `activity` (the agent
-  // already wrote it there); fall back to the connection banner if attention is
-  // needed. Cleared when the turn settles.
+  // The streaming assistant message's TECHNICAL `activity` (e.g. "○○ 적용 중…"). The
+  // launcher 말풍선 is DECORATIVE (the panel carries the real status), so it now prefers
+  // the playful mood PHRASE (built below) — WI-130 wires the DR-070 D5 phrase layer that
+  // was never connected. `activity` is kept only as a fallback for a mood without phrases.
   const last = messages[messages.length - 1];
   const liveActivity =
     status === "streaming" && last?.role === "assistant" ? (last.activity ?? null) : null;
-  const caption = liveActivity ?? connection.banner;
 
   const [celebrate, setCelebrate] = useState(false);
   const [looking, setLooking] = useState(false);
@@ -114,7 +128,8 @@ export function useAkuExpression(input: {
     const isIdea = IDEA_MOODS.has(raw);
     if (isIdea && !prevIdea.current) {
       // fresh entry into an idea situation → re-roll which spell to cast
-      spell.current = Math.random() < 0.5 ? "adding" : "updating";
+      // (three casts now: spell-right / spell-left / puff — WI-124)
+      spell.current = SPELL_CASTS[Math.floor(Math.random() * SPELL_CASTS.length)] ?? "adding";
     }
     prevIdea.current = isIdea;
     const desired = isIdea ? spell.current : raw;
@@ -134,6 +149,26 @@ export function useAkuExpression(input: {
     setMood(desired);
     heldAt.current = now;
   }, [raw, mood]);
+
+  // Mood → phrase 말풍선 (WI-130). pickPhrase is deterministic (seeded by a per-mood-entry
+  // counter, NOT Math.random → SSR/test-stable). Re-pick on every mood change so each
+  // phase gets its own line and repeated entries cycle the list. The phrase is keyed on
+  // the displayed `mood`, so it stays coherent with the sprite (e.g. spell-right →
+  // "여기 딱 넣을게요!"). The 5 phrase moods cover thinking + every edit cast.
+  const [phrase, setPhrase] = useState<string | null>(null);
+  const phraseSeed = useRef(0);
+  useEffect(() => {
+    phraseSeed.current += 1;
+    setPhrase(pickPhrase(mood, phraseSeed.current));
+  }, [mood]);
+
+  // Caption priority: a live connection banner (reconnect / error) is REAL, actionable
+  // status → it outranks everything. Then the playful phrase, but ONLY while a turn is
+  // active or during the celebrate window (turn/event-bound, never an idle nag — the idle
+  // tip cadence stays owned by useAkuTips). Then the technical activity as a last resort.
+  // Null while idle → the launcher falls back to the idle tip / Zzz hint in AkuAssistant.
+  const turnBound = status === "streaming" || celebrate;
+  const caption = connection.banner ?? (turnBound ? phrase : null) ?? liveActivity;
 
   return { mood, intensity: moodIntensity(mood), caption };
 }

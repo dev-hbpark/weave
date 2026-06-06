@@ -184,7 +184,14 @@ function activityFor(st: AgentRunState): string | undefined {
   const running = st.activeTools.find((t) => t.status === "running");
   if (running !== undefined) return `${chipLabel(running.name)} 적용 중…`;
   if (st.phase === "thinking") return "생각 중…";
-  if (st.phase === "streaming-text") return "정리 중…";
+  // Commands-only product: the server runs no-prose (SMALL_THINK_COMMANDS_ONLY / byo-ssh
+  // headless), so Aku never authors a user-facing reply. The `streaming-text` phase is
+  // therefore not a real "정리" step worth advertising — it's the loop's terminal/stray
+  // text turn. Return undefined so the onEvent merge leaves the prior caption untouched
+  // (e.g. the last "○○ 적용 중…" / "생각 중…") instead of flashing a phantom "정리 중…"
+  // finalizing step. The server-side `message` drop (byo-ssh-session.ts) is the primary
+  // fix; this is the client-side guarantee for any event that still slips through (A+B).
+  if (st.phase === "streaming-text") return undefined;
   if (st.phase === "tool-calling" || st.phase === "applying") {
     // After a tool SETTLES there's no `running` tool, but we're still mid-edit
     // (phase tool-calling/applying). The tool-start→settle window is milliseconds

@@ -21,6 +21,7 @@ export type AkuMood =
   | "adding" // 아이템 추가 중 (right-spell)
   | "updating" // 아이템 수정 중 (left-spell)
   | "working" // 그 외 일반 편집 (변경/설정/삭제 등)
+  | "painting" // 편집 캐스트 (paint 브러시) — random spell pool only (WI-129)
   | "finalizing"
   | "celebrating"
   | "confused"
@@ -106,6 +107,7 @@ const MOOD_INTENSITY: Readonly<Record<AkuMood, number>> = {
   adding: 0.95,
   updating: 0.9,
   working: 0.95,
+  painting: 0.95,
   finalizing: 0.55,
   celebrating: 1,
   confused: 0.7,

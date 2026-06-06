@@ -19,6 +19,7 @@ import { AkuPanel } from "./AkuPanel.js";
 import { useAkuSettings } from "./agent/aku-settings.js";
 import { useAkuAgent } from "./agent/use-aku-agent.js";
 import { gpuSpriteRenderer } from "./expression/gpu-sprite-renderer.js";
+import { resolveAkuMood } from "./expression/mood.js";
 import { useAkuExpression } from "./expression/use-aku-expression.js";
 import { useAkuFrameCamera } from "./useAkuFrameCamera.js";
 import { useAkuGeometry } from "./useAkuGeometry.js";
@@ -134,13 +135,34 @@ export function AkuAssistant({
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const openPanel = useCallback(() => setOpen(true), []);
+  // Is Aku in a NON-editing "thinking"-class sub-phase (reasoning / connecting / the
+  // terminal turn)? Resolve it off the SAME mood arbiter (single source) with the
+  // roam-owned inputs neutralized — during streaming celebrate/looking/sleeping are
+  // all false anyway. The roam WANDER (move → 2 loops → move) is for EDITING; while
+  // thinking, Aku stays put and just loops the thinking sprite until the state
+  // changes — no hop needed since it isn't editing (WI-129).
+  const lastMsg = messages[messages.length - 1];
+  const thinkingActivity =
+    status === "streaming" && lastMsg?.role === "assistant" ? (lastMsg.activity ?? null) : null;
+  const thinking =
+    resolveAkuMood({
+      status,
+      connectionState: connection.state,
+      activity: thinkingActivity,
+      celebrate: false,
+      looking: false,
+      sleeping: false,
+    }) === "thinking";
   const roam = useAkuRoam({
     editor,
     streaming: status === "streaming",
-    // freeze auto-roam while hidden (panel open) or while the first-run coachmark
-    // needs a stable anchor. Tips ride along as the launcher caption (no anchor),
-    // so they do NOT pause roaming. A drag always overrides (handled in the hook).
-    paused: open || showCoachmark,
+    thinking,
+    // freeze auto-roam while hidden (panel open AND idle) or while the first-run
+    // coachmark needs a stable anchor. EXCEPTION: while the agent is streaming we
+    // keep roaming even with the panel open, so starting an edit visibly summons Aku
+    // and it flies to the edited frame (WI-127). Tips ride along as the launcher
+    // caption (no anchor), so they do NOT pause roaming. A drag always overrides.
+    paused: (open && status !== "streaming") || showCoachmark,
     reduce: reduceMotion,
     boxW: 86,
     boxH: 120,
@@ -202,6 +224,33 @@ export function AkuAssistant({
         locked={status === "streaming"}
         spotlight={status === "streaming" && !open}
       />
+      {/* The roaming launcher Aku. Shown when the panel is CLOSED and — WI-127 —
+          ALSO while the agent is streaming even if the panel is open, so starting
+          an edit visibly summons Aku (it flies to the edited frame). Rendered BEFORE
+          the panel so the panel stays on top where they overlap (Aku roams the
+          canvas, not the panel surface). The first-run coachmark anchors only when
+          closed — showCoachmark already requires !open. */}
+      {!open || status === "streaming" ? (
+        showCoachmark ? (
+          // First-run nudge to drive discovery — one-shot, anchored to the launcher
+          // (persisted under weave.coachmark.aku-intro; silent on later visits).
+          <OnboardingCoachmark
+            persistKey="aku-intro"
+            side="bottom"
+            align="start"
+            icon={<AkuMascot variant="mark" className="w-5 h-5" />}
+            headline="아쿠에게 맡겨보세요"
+            dismissLabel="알겠어요"
+            onDismissed={() => setCoachmarkSeen(true)}
+            anchor={<AkuLauncher {...launcherProps} />}
+          >
+            배경 변경, 텍스트·슬라이드 추가 같은 편집을 대화로 처리해 드려요. 드래그로 옮기고 모서리로
+            크기를 바꿀 수 있어요.
+          </OnboardingCoachmark>
+        ) : (
+          <AkuLauncher {...launcherProps} />
+        )
+      ) : null}
       {open ? (
         <AkuPanel
           geometry={geometry}
@@ -228,26 +277,7 @@ export function AkuAssistant({
           onSetToken={setToken}
           onResetToken={resetToken}
         />
-      ) : /* WI-107 — closed → the single roaming launcher Aku (no field-agent dup). */
-      showCoachmark ? (
-        // First-run nudge to drive discovery — one-shot, anchored to the launcher
-        // (persisted under weave.coachmark.aku-intro; silent on later visits).
-        <OnboardingCoachmark
-          persistKey="aku-intro"
-          side="bottom"
-          align="start"
-          icon={<AkuMascot variant="mark" className="w-5 h-5" />}
-          headline="아쿠에게 맡겨보세요"
-          dismissLabel="알겠어요"
-          onDismissed={() => setCoachmarkSeen(true)}
-          anchor={<AkuLauncher {...launcherProps} />}
-        >
-          배경 변경, 텍스트·슬라이드 추가 같은 편집을 대화로 처리해 드려요. 드래그로 옮기고 모서리로
-          크기를 바꿀 수 있어요.
-        </OnboardingCoachmark>
-      ) : (
-        <AkuLauncher {...launcherProps} />
-      )}
+      ) : null}
     </>,
     document.body,
   );

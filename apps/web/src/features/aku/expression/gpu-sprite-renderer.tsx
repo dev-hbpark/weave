@@ -31,6 +31,9 @@ const SPRITES: Readonly<Record<AkuMood, SpriteSpec>> = {
   // WI-119: working/celebrating are REMAPPED to a random spell in useAkuExpression
   // (idea.png retired), so these entries are dead fallbacks kept for type exhaustiveness.
   working: { src: "/aku/sprites/idea.png", frames: 6, fps: 9, looping: true },
+  // paint brush cast — an edit spell in the random pool (WI-129). 6 frames @ 6fps =
+  // 1s/loop so the roam wander's 2-loop (2000ms) rest-play stays aligned with the casts.
+  painting: { src: "/aku/sprites/paint.png", frames: 6, fps: 6, looping: true }, // 편집 (paint)
   finalizing: { src: "/aku/sprites/puff.png", frames: 6, fps: 9, looping: true }, // 정리 중 (puff)
   celebrating: { src: "/aku/sprites/idea.png", frames: 6, fps: 10, looping: true },
   confused: { src: "/aku/sprites/thinking.png", frames: 6, fps: 8, looping: true }, // 오류 (?)

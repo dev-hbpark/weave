@@ -65,6 +65,10 @@ function clamp(v: number, lo: number, hi: number): number {
 export function useAkuRoam(opts: {
   readonly editor: Editor;
   readonly streaming: boolean;
+  /** True while the agent is in a NON-editing "thinking"-class phase. The editing
+   *  wander (move → 2 loops → move) is suspended — Aku stays put and just loops the
+   *  thinking sprite until the phase changes (WI-129). */
+  readonly thinking: boolean;
   readonly paused: boolean;
   readonly reduce: boolean;
   readonly boxW: number;
@@ -72,7 +76,7 @@ export function useAkuRoam(opts: {
   readonly home: { readonly x: number; readonly y: number };
   readonly onTap: () => void;
 }): AkuRoam {
-  const { editor, streaming, paused, reduce, boxW, boxH, home, onTap } = opts;
+  const { editor, streaming, thinking, paused, reduce, boxW, boxH, home, onTap } = opts;
   const [state, setState] = useState<{
     x: number;
     y: number;
@@ -94,8 +98,8 @@ export function useAkuRoam(opts: {
   const lastRoamRef = useRef(0);
 
   // Live flags read by the long-lived schedulers (avoids reset-on-rerender).
-  const flags = useRef({ streaming, paused, reduce, boxW, boxH, home });
-  flags.current = { streaming, paused, reduce, boxW, boxH, home };
+  const flags = useRef({ streaming, thinking, paused, reduce, boxW, boxH, home });
+  flags.current = { streaming, thinking, paused, reduce, boxW, boxH, home };
 
   const goTo = useCallback((p: { x: number; y: number }): void => {
     if (draggingRef.current) return;
@@ -287,6 +291,9 @@ export function useAkuRoam(opts: {
   useEffect(() => {
     if (!streaming) return;
     const id = setInterval(() => {
+      // Thinking is NOT editing — suspend the hop so Aku stays put and just loops the
+      // thinking sprite until the phase changes (WI-129). The next editing tick resumes.
+      if (flags.current.thinking) return;
       const cur = editFrameRef.current;
       if (cur !== null) flyToFrame(cur);
     }, FRAME_HOP_MS);
