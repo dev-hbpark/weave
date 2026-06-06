@@ -32,9 +32,13 @@ const DRAG_THRESHOLD = 4;
 const EDIT_SETTLE_MS = 4000; // within this since the last edit gesture → "user is editing"
 const SLEEP_AFTER_MS = 60_000; // no editing for ≥ 1 min → doze (blanket-sleep)
 const TICK_MS = 1000; // phase-driver cadence
-// While working, hop to a fresh random point inside the edited frame every 2 sprite
-// loops. The editing sprites are 6 frames @ 10fps → one loop 600ms, two loops 1200ms.
-const FRAME_HOP_MS = 1200;
+// While working, the wander cycle is MOVE → then PLAY 2 sprite loops at rest → MOVE.
+// During the glide (ROAM_TRAVEL_MS) the locomotion sprite shows; once it settles the
+// editing spell plays. Editing sprites are 6 frames @ 10fps → 2 loops = 1200ms of
+// rest-play. So the hop interval = travel + 2-loop play, otherwise the next hop fires
+// mid-glide and the spell never gets to play ("이동만 하고 있어"). (WI-122)
+const FRAME_PLAY_MS = 1200; // 2 loops of rest-play after arriving
+const FRAME_HOP_MS = ROAM_TRAVEL_MS + FRAME_PLAY_MS;
 
 /** The top-left for a boxW×boxH mascot centred in the current viewport. */
 function viewportCentre(boxW: number, boxH: number): { x: number; y: number } {
