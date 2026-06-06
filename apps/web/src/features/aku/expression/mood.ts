@@ -58,7 +58,10 @@ type Rule = readonly [predicate: (i: AkuMoodInput) => boolean, mood: AkuMood];
 // Priority order matters: connection trouble and live work outrank idle moods.
 const MOOD_RULES: readonly Rule[] = [
   [(i) => i.connectionState === "error" || i.connectionState === "closed", "confused"],
-  [(i) => i.connectionState === "connecting" || i.connectionState === "reconnecting", "connecting"],
+  // 연결/재연결 중 → THINKING sprite (operator: "연결중 상태에서는 thinking"). The
+  // `connecting` mood itself stays mapped to the move-left sheet — it's reused by
+  // useAkuRoam for left-ward locomotion, NOT for the connection state (WI-119).
+  [(i) => i.connectionState === "connecting" || i.connectionState === "reconnecting", "thinking"],
   [
     (i) => i.status === "streaming" && i.activity !== null && i.activity.includes(THINKING_MARK),
     "thinking",

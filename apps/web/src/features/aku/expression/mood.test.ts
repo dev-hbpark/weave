@@ -57,9 +57,9 @@ describe("resolveAkuMood", () => {
     expect(resolveAkuMood({ ...base, status: "streaming", activity: null })).toBe("working");
   });
 
-  it("maps connecting / reconnecting to the connecting mood", () => {
-    expect(resolveAkuMood({ ...base, connectionState: "connecting" })).toBe("connecting");
-    expect(resolveAkuMood({ ...base, connectionState: "reconnecting" })).toBe("connecting");
+  it("maps connecting / reconnecting to the thinking mood (WI-119)", () => {
+    expect(resolveAkuMood({ ...base, connectionState: "connecting" })).toBe("thinking");
+    expect(resolveAkuMood({ ...base, connectionState: "reconnecting" })).toBe("thinking");
   });
 
   it("maps a broken connection to confused", () => {

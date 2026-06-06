@@ -32,6 +32,10 @@ const LOOKING_MS = 1400;
 // immediate so reasoning + wrap-up still read instantly.
 const EDIT_HOLD_MS = 700;
 const EDIT_MOODS: ReadonlySet<AkuMood> = new Set(["adding", "updating", "working"]);
+// "idea situations" — generic edits (`working`) and the completion ✨ (`celebrating`)
+// used to all show idea.png. Operator: show one of the two spell casts at RANDOM
+// instead (WI-119). One pick per entry into an idea situation, held stable.
+const IDEA_MOODS: ReadonlySet<AkuMood> = new Set(["working", "celebrating"]);
 
 export interface AkuExpression extends AkuExpressionState {
   /** Live caption to show above the collapsed launcher while a turn streams
@@ -98,25 +102,36 @@ export function useAkuExpression(input: {
     sleeping,
   });
 
-  // Minimum-hold latch: keep an edit mood on screen ≥ EDIT_HOLD_MS before swapping
-  // to a DIFFERENT edit mood, so fast tool bursts (add→update→…) actually render
-  // instead of flashing sub-frame. Non-edit transitions switch immediately.
+  // Minimum-hold latch (+ idea→random-spell remap). Keeps an edit mood on screen
+  // ≥ EDIT_HOLD_MS before swapping to a DIFFERENT edit mood (so fast tool bursts
+  // render instead of flashing sub-frame), and substitutes a random spell cast for
+  // "idea situations" (working/celebrating). Non-edit transitions switch instantly.
   const [mood, setMood] = useState<AkuMood>(raw);
   const heldAt = useRef(Date.now());
+  const spell = useRef<AkuMood>("adding");
+  const prevIdea = useRef(false);
   useEffect(() => {
-    if (raw === mood) return;
+    const isIdea = IDEA_MOODS.has(raw);
+    if (isIdea && !prevIdea.current) {
+      // fresh entry into an idea situation → re-roll which spell to cast
+      spell.current = Math.random() < 0.5 ? "adding" : "updating";
+    }
+    prevIdea.current = isIdea;
+    const desired = isIdea ? spell.current : raw;
+
+    if (desired === mood) return;
     const now = Date.now();
-    if (EDIT_MOODS.has(raw) && EDIT_MOODS.has(mood)) {
+    if (EDIT_MOODS.has(desired) && EDIT_MOODS.has(mood)) {
       const remaining = EDIT_HOLD_MS - (now - heldAt.current);
       if (remaining > 0) {
         const t = setTimeout(() => {
-          setMood(raw);
+          setMood(desired);
           heldAt.current = Date.now();
         }, remaining);
         return () => clearTimeout(t);
       }
     }
-    setMood(raw);
+    setMood(desired);
     heldAt.current = now;
   }, [raw, mood]);
 
