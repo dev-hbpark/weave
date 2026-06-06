@@ -112,6 +112,7 @@ export function UnifiedTooltip({
   };
 
   // Hard reset on disabled flip.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (!disabled) return;
     clearShow();
@@ -122,6 +123,7 @@ export function UnifiedTooltip({
   // Resolves the nearest [data-tip] ancestor on each pointermove and drives
   // the state machine.  Same target → maybe refresh data, different target
   // → cancel & restart show timer, no target → return to idle.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
 
@@ -220,6 +222,7 @@ export function UnifiedTooltip({
   }, [state.status, state.clientX, state.clientY]);
 
   // Cleanup on unmount.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return () => clearShow();
   }, []);

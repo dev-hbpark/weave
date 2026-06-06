@@ -382,6 +382,7 @@ export function useAkuAgent(deps: {
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const getHandle = useCallback((): Promise<ToolClientHandle> => {
     if (handleRef.current !== null) return Promise.resolve(handleRef.current);
     if (token === null || token === "") {

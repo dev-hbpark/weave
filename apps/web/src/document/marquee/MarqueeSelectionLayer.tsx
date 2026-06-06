@@ -317,6 +317,7 @@ export const MarqueeSelectionLayer = forwardRef<HTMLDivElement, MarqueeSelection
       return () => cancelAnimationFrame(raf);
     }, [marqueeActive, visualHost]);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
     const composedRef = useCallback(mergeRefs<HTMLDivElement>(forwardedRef, hostElementRef), [
       forwardedRef,
     ]);

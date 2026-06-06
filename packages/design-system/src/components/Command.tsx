@@ -84,6 +84,7 @@ export interface CommandHostProviderProps extends CommandHostValue {
 export function CommandHostProvider({ children, ...value }: CommandHostProviderProps) {
   // Stable value identity — caller is expected to memoize each field;
   // we don't recreate the object unless one changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const memo = useMemo<CommandHostValue>(
     () => value,
     [value.registry, value.context, value.locale, value.dispatch],

@@ -200,6 +200,7 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
     // lifecycle (pointerdown/move/up → vm.rubberBand transitions). When
     // `bindingExternal` is true, an outer host owns the gesture; we skip
     // registration and only render visuals.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
     useEffect(() => {
       if (bindingExternal === true) return undefined;
       if (router === null || vm === null) return undefined;
@@ -582,6 +583,7 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
     // popover so the menu doesn't jump as the cursor moves.
     type PopSide = "top" | "right" | "bottom" | "left";
     type PopAlign = "start" | "center" | "end";
+    // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
     const [popoverSide, popoverAlign] = useMemo<[PopSide, PopAlign]>(() => {
       // Approximate popover footprint — better than a fixed guess
       // because it scales with the recommendation count.
@@ -760,6 +762,7 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
     // `affordancesAllowed` + `hoverPoint` retained for the dimensions chip
     // /  drag previews below; the hint mount is removed.
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
     const composedRef = useCallback(mergeRefs<HTMLDivElement>(forwardedRef, hostElementRef), [
       forwardedRef,
     ]);

@@ -258,6 +258,7 @@ export function NestedFrame({
   }, [applyHitGate, totalScaleMV]);
   // Re-poke the gate whenever either focus set flips so the latest set
   // takes effect immediately instead of waiting for the next scale change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useLayoutEffect(() => {
     applyHitGate(totalScaleMV.get());
   }, [applyHitGate, totalScaleMV, isolatedFrameIds, dimmedFrameIds]);

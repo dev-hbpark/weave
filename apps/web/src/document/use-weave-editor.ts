@@ -246,6 +246,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
   // Phase 3b will close the loop the other way (remote pulls → re-derive
   // agocraft Document → re-emit on ChangeStream as origin:"system").
   const syncConfig = deps.sync;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const syncBundle = useMemo<UseWeaveEditorSync | undefined>(() => {
     if (syncConfig === undefined) return undefined;
     const yDoc = new Y.Doc();
@@ -378,6 +379,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
   // Register weave.* commands when targets are supplied. Re-runs only when
   // commandTargets identity changes — useDocument provides stable callbacks
   // via useCallback, so this effectively runs once.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (deps.commandTargets === undefined) return;
     // Indirect via ref so re-registers aren't needed when callbacks change.

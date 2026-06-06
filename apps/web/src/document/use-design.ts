@@ -431,6 +431,7 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
   // become history-aware) lands in a follow-up PR with the Phase 1.5
   // schema migration. Until then, direct setter calls still bypass history;
   // editor.exec-driven calls flow through this mirror and undo correctly.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const applyChange = useCallback((change: Change) => {
     setDesign((prev) => {
       const nextDoc = applyChangeToDocument(prev.document, change);

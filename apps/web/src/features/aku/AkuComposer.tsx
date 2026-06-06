@@ -162,6 +162,7 @@ export function AkuComposer({
     );
   }, [slashQuery]);
   const slashOpen = slashItems.length > 0;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     setSlashActive(0);
   }, [slashQuery]);

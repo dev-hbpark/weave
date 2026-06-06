@@ -109,6 +109,7 @@ export function usePeekMode(deps: UsePeekModeDeps): UsePeekModeResult {
   // FrameSpatialIndex — built once, but `listItems` / `resolveBbox` look
   // through `containerIdRef` so a container change just requires a
   // `markDirty()` + the next query rebuilds from the new container.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const index = useMemo<FrameSpatialIndex<unknown>>(() => {
     return createFrameSpatialIndex<unknown>({
       onChange: (h) => deps.subscribeToChanges(() => h()),
@@ -146,6 +147,7 @@ export function usePeekMode(deps: UsePeekModeDeps): UsePeekModeResult {
   }, [deps.containerId, index]);
 
   // PeekModeController — built once.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const controller = useMemo<PeekModeController>(() => {
     return createPeekModeController({
       resolveIndex: () => index,

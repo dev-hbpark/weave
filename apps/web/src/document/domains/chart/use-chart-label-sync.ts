@@ -24,6 +24,7 @@ export function useChartLabelSync(
     (d: AgocraftDocument) => projectAllChartLabels(d, designW, designH),
     [designW, designH],
   );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     reconcileDerived(project);
     // biome-ignore lint/correctness/useExhaustiveDependencies: `doc` is an

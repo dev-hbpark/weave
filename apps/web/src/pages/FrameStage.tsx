@@ -523,6 +523,7 @@ export function FrameStage(props: FrameStageProps) {
   // engines, which means `e.preventDefault()` is a no-op and the browser
   // proceeds to zoom the entire document — visible as the header/footer
   // sliding out of the viewport on pinch.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (!infiniteCanvas) return undefined;
     const el = outerRef.current;
@@ -630,6 +631,7 @@ export function FrameStage(props: FrameStageProps) {
   onSelectRef.current = onSelect;
   const moveSelectionSessionRef = useRef<string | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const frameAccess = useMemo<FrameAccess>(() => {
     function findFrameElement(itemId: ItemId): HTMLElement | null {
       if (typeof document === "undefined") return null;
@@ -977,6 +979,7 @@ export function FrameStage(props: FrameStageProps) {
   // registered always — it carries its own `enabled` predicate and is
   // the gesture the user typically wants when in `hand` / `panning`.
   const frameDragAllowed = useFrameDragBindingsAllowed();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (router === null) return undefined;
     if (vm === null) return undefined;
@@ -1087,6 +1090,7 @@ export function FrameStage(props: FrameStageProps) {
   // (full parity — identical math + mergeKey), and starts the per-handle FSM
   // gesture (`startHandleGesture` owns the document pointer loop). Move / marquee
   // / pan stay on the GestureRouter — they are not handles.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (vm === null) return undefined;
     if (typeof document === "undefined") return undefined;

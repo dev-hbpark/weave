@@ -812,6 +812,7 @@ function DesignPageBody() {
   // `clientToLocal` reuses `screenToDesign`; presence positions are
   // stored in design-space so remote viewers can map them back to
   // their own host's projected pixels via `designToHost`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const clientToLocal = useCallback(
     (clientX: number, clientY: number): { x: number; y: number } => {
       const p = screenToDesign(clientX, clientY);
@@ -1057,6 +1058,7 @@ function DesignPageBody() {
   // L+drag to reorder the siblings of the selected item). No selection ⇒
   // root.children (legacy top-level peek behavior). Same semantics as the
   // four `weave.item.*` z-order commands so the two surfaces stay aligned.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (selectedFrameId === undefined) {
       setPeekContainerId(undefined);
@@ -1385,6 +1387,7 @@ function DesignPageBody() {
   // The slots receive the hovered frame id from the dispatcher and run
   // the appropriate weave action (delete / duplicate / open media src
   // picker). The slots persist for the lifetime of this component.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return setFrameDeleter((frameId) => {
       // DR-061 — a locked item is protected from deletion.
@@ -1398,6 +1401,7 @@ function DesignPageBody() {
   // DR-061 — lock/unlock toggle slot. Operates on the WHOLE current selection
   // (single OR multi): lock ALL if any is unlocked, else unlock all. Batched so
   // a multi-toggle is one undo step. Undoable via the generic attr command.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return setLockToggler(() => {
       const ids = Array.from(selectedIdsRef.current);
@@ -1417,6 +1421,7 @@ function DesignPageBody() {
   }, []);
   // DR-design-016 Phase 2 — duplicate slot. Real copy of the current selection
   // (single → weave.item.duplicate, multi → weave.items.duplicate).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return setItemDuplicator(() => {
       const ids = Array.from(selectedIdsRef.current);
@@ -1483,6 +1488,7 @@ function DesignPageBody() {
   // a single inverse patch.
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return setMultiDeleter(() => {
       const all = Array.from(selectedIdsRef.current);
@@ -1737,6 +1743,7 @@ function DesignPageBody() {
   // stays mount-stable while the value moves with each commit.
   const multiSameParentRef = useRef(multiSameParent);
   multiSameParentRef.current = multiSameParent;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return setMultiAligner((op: MultiAlignOp) => {
       const ids = Array.from(selectedIdsRef.current);
@@ -1788,6 +1795,7 @@ function DesignPageBody() {
   // WI-048 — arrange the multi-selection into Flex / Grid. Same shape as the
   // align slot above: read live ids + doc via refs, build same-parent inputs,
   // run the pure `computeArrangedFrames`, dispatch one resizeMulti batch.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return setMultiLayoutArranger((layout: ArrangeLayout) => {
       const ids = Array.from(selectedIdsRef.current);
@@ -2608,6 +2616,7 @@ function MultiSelectionOverlay({
     () => (isMulti ? Array.from(selectedIds).sort().join("|") : ""),
     [isMulti, selectedIds],
   );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (!isMulti) {
       setBox(null);
@@ -3030,6 +3039,7 @@ function QuickActionBarAnchored({
     () => (isMulti ? Array.from(selectedIds).sort().join("|") : ""),
     [isMulti, selectedIds],
   );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     const ids = isMulti
       ? Array.from(selectedIds)

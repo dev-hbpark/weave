@@ -383,6 +383,7 @@ function SceneItem({ scene, visibility, progressMV, reduce, activeKey }: SceneIt
   // Effect runs *before* the parent's camera spring reset, because child
   // effects run before parent effects on the same commit — so by the time
   // the parent calls `progressMV.set(0)` our refs are already updated.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     if (reduce) {
       fromRef.current = targetOpacity;
