@@ -5,6 +5,7 @@
 // SVG element) and silently dropped move gestures for shape items.
 
 import { expect, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // Mouse-drag specs can flake when run after a long e2e queue (Vite HMR
@@ -96,9 +97,9 @@ test("Shape (star, SVG polygon target) can be moved — resolveTarget fix", asyn
       root: { children: ReadonlyArray<{ id: string | number; kind: string }> };
     };
     const w = window as unknown as { __weaveEditor?: Editor; __weaveDoc?: Doc };
-    const first = w.__weaveDoc!.root.children[0];
+    const first = nn(w.__weaveDoc).root.children[0];
     if (!first) throw new Error("no item");
-    w.__weaveEditor!.exec("weave.item.update", {
+    nn(w.__weaveEditor).exec("weave.item.update", {
       itemId: String(first.id),
       patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
         attrs: {

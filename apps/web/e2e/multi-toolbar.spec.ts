@@ -10,6 +10,7 @@
 //   4. Multi-selection of mixed kinds (slide + shape) → toolbar hides.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -173,9 +174,9 @@ test("mixed kinds (slide + shape) → toolbar hides", async ({ page }) => {
       };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const result = w.__weaveEditor!.exec("weave.item.add", {
+    const result = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "frame",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.55, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
     });
     return String(result.value);

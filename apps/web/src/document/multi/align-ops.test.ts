@@ -3,6 +3,7 @@
 // by the e2e; here we focus on the math.
 
 import { describe, expect, it } from "vitest";
+import { nn } from "../../lib/nn.js";
 import { ALIGN_OPS_ORDER, type AlignInput, computeAlignedFrames } from "./align-ops.js";
 
 function frame(x: number, y: number, w: number, h: number) {
@@ -51,9 +52,9 @@ describe("computeAlignedFrames — align horizontal", () => {
     ];
     const out = computeAlignedFrames(inp, "align-right");
     // Right edge target = 0.7. Each item.x = 0.7 - width.
-    expect(out[0]!.frame.x).toBeCloseTo(0.6, 10);
-    expect(out[1]!.frame.x).toBeCloseTo(0.5, 10); // unchanged (it set the target)
-    expect(out[2]!.frame.x).toBeCloseTo(0.6, 10);
+    expect(nn(out[0]).frame.x).toBeCloseTo(0.6, 10);
+    expect(nn(out[1]).frame.x).toBeCloseTo(0.5, 10); // unchanged (it set the target)
+    expect(nn(out[2]).frame.x).toBeCloseTo(0.6, 10);
   });
 
   it("align-horizontal-center centers items about the bbox center", () => {
@@ -65,8 +66,8 @@ describe("computeAlignedFrames — align horizontal", () => {
     // bbox center = (0.1 + 0.6) / 2 = 0.35
     // a: 0.35 - 0.1/2 = 0.30
     // b: 0.35 - 0.2/2 = 0.25
-    expect(out[0]!.frame.x).toBeCloseTo(0.3, 10);
-    expect(out[1]!.frame.x).toBeCloseTo(0.25, 10);
+    expect(nn(out[0]).frame.x).toBeCloseTo(0.3, 10);
+    expect(nn(out[1]).frame.x).toBeCloseTo(0.25, 10);
   });
 });
 
@@ -84,9 +85,9 @@ describe("computeAlignedFrames — align vertical", () => {
       item("c", 0.3, 0.2, 0.1, 0.3), // bottom = 0.5 ← target
     ];
     const out = computeAlignedFrames(inp, "align-bottom");
-    expect(out[0]!.frame.y).toBeCloseTo(0.4, 10); // 0.5 - 0.1
-    expect(out[1]!.frame.y).toBeCloseTo(0.3, 10); // 0.5 - 0.2
-    expect(out[2]!.frame.y).toBeCloseTo(0.2, 10); // unchanged
+    expect(nn(out[0]).frame.y).toBeCloseTo(0.4, 10); // 0.5 - 0.1
+    expect(nn(out[1]).frame.y).toBeCloseTo(0.3, 10); // 0.5 - 0.2
+    expect(nn(out[2]).frame.y).toBeCloseTo(0.2, 10); // unchanged
   });
 
   it("align-vertical-center centers items about the bbox vertical center", () => {
@@ -98,8 +99,8 @@ describe("computeAlignedFrames — align vertical", () => {
     // bbox: top=0.1, bottom=0.6, center=0.35
     // a: 0.35 - 0.1/2 = 0.3
     // b: 0.35 - 0.2/2 = 0.25
-    expect(out[0]!.frame.y).toBeCloseTo(0.3, 10);
-    expect(out[1]!.frame.y).toBeCloseTo(0.25, 10);
+    expect(nn(out[0]).frame.y).toBeCloseTo(0.3, 10);
+    expect(nn(out[1]).frame.y).toBeCloseTo(0.25, 10);
   });
 });
 
@@ -113,9 +114,9 @@ describe("computeAlignedFrames — distribute", () => {
       item("c", 0.9, 0.4, 0.1, 0.1),
     ];
     const out = computeAlignedFrames(inp, "distribute-horizontal");
-    expect(out[0]!.frame.x).toBeCloseTo(0.0, 10); // first untouched
-    expect(out[1]!.frame.x).toBeCloseTo(0.45, 10); // 0 + 0.1 + 0.35
-    expect(out[2]!.frame.x).toBeCloseTo(0.9, 10); // last untouched
+    expect(nn(out[0]).frame.x).toBeCloseTo(0.0, 10); // first untouched
+    expect(nn(out[1]).frame.x).toBeCloseTo(0.45, 10); // 0 + 0.1 + 0.35
+    expect(nn(out[2]).frame.x).toBeCloseTo(0.9, 10); // last untouched
   });
 
   it("distribute-vertical places equal gaps along y", () => {
@@ -125,9 +126,9 @@ describe("computeAlignedFrames — distribute", () => {
       item("c", 0.4, 0.9, 0.1, 0.1),
     ];
     const out = computeAlignedFrames(inp, "distribute-vertical");
-    expect(out[0]!.frame.y).toBeCloseTo(0.0, 10);
-    expect(out[1]!.frame.y).toBeCloseTo(0.45, 10);
-    expect(out[2]!.frame.y).toBeCloseTo(0.9, 10);
+    expect(nn(out[0]).frame.y).toBeCloseTo(0.0, 10);
+    expect(nn(out[1]).frame.y).toBeCloseTo(0.45, 10);
+    expect(nn(out[2]).frame.y).toBeCloseTo(0.9, 10);
   });
 
   it("distribute is a no-op for n < 3", () => {
@@ -149,11 +150,11 @@ describe("computeAlignedFrames — distribute", () => {
     // Output order = input order, but x values match the SORTED roles.
     expect(out.map((o) => o.id)).toEqual(["c", "a", "b"]);
     // c is the rightmost → last → x=0.9 unchanged
-    expect(out[0]!.frame.x).toBeCloseTo(0.9, 10);
+    expect(nn(out[0]).frame.x).toBeCloseTo(0.9, 10);
     // a is the leftmost → first → x=0.0 unchanged
-    expect(out[1]!.frame.x).toBeCloseTo(0.0, 10);
+    expect(nn(out[1]).frame.x).toBeCloseTo(0.0, 10);
     // b is the middle → x=0.45
-    expect(out[2]!.frame.x).toBeCloseTo(0.45, 10);
+    expect(nn(out[2]).frame.x).toBeCloseTo(0.45, 10);
   });
 
   it("distribute keeps y / width / height untouched (axis-only operation)", () => {
@@ -174,9 +175,12 @@ describe("computeAlignedFrames — degenerate inputs", () => {
     const one = [item("a", 0.3, 0.4, 0.1, 0.1)];
     // align-right re-derives x as `max(x+w) - w` — FP round-trip leaves
     // ≤ ε drift. The visual result is unchanged; assert with tolerance.
-    expect(computeAlignedFrames(one, "align-left")[0]!.frame.x).toBeCloseTo(0.3, 10);
-    expect(computeAlignedFrames(one, "align-right")[0]!.frame.x).toBeCloseTo(0.3, 10);
-    expect(computeAlignedFrames(one, "align-horizontal-center")[0]!.frame.x).toBeCloseTo(0.3, 10);
+    expect(nn(computeAlignedFrames(one, "align-left")[0]).frame.x).toBeCloseTo(0.3, 10);
+    expect(nn(computeAlignedFrames(one, "align-right")[0]).frame.x).toBeCloseTo(0.3, 10);
+    expect(nn(computeAlignedFrames(one, "align-horizontal-center")[0]).frame.x).toBeCloseTo(
+      0.3,
+      10,
+    );
   });
 
   it("already-aligned items survive without drift", () => {
@@ -197,8 +201,8 @@ describe("computeAlignedFrames — rotated items align by outer bounds", () => {
     };
     const B: AlignInput = { id: "B", frame: { x: 0.1, y: 0.3, width: 0.2, height: 0.1 } };
     const out = computeAlignedFrames([A, B], "align-left");
-    const a = out.find((o) => o.id === "A")!.frame;
-    const b = out.find((o) => o.id === "B")!.frame;
+    const a = nn(out.find((o) => o.id === "A")).frame;
+    const b = nn(out.find((o) => o.id === "B")).frame;
     // A shifts so its AABB left edge reaches 0.1: new center.x = 0.15 →
     // new raw x = 0.15 - 0.2/2 = 0.05.
     expect(a.x).toBeCloseTo(0.05, 6);
@@ -216,8 +220,8 @@ describe("computeAlignedFrames — rotated items align by outer bounds", () => {
     };
     const B: AlignInput = { id: "B", frame: { x: 0.1, y: 0.0, width: s, height: s } };
     const out = computeAlignedFrames([A, B], "align-top");
-    const a = out.find((o) => o.id === "A")!.frame;
-    const b = out.find((o) => o.id === "B")!.frame;
+    const a = nn(out.find((o) => o.id === "A")).frame;
+    const b = nn(out.find((o) => o.id === "B")).frame;
     const diag = s * Math.SQRT2;
     // B is unrotated at the top (y0). A's AABB top must drop to 0:
     // A center.y = diag/2 → raw y = center.y - s/2.

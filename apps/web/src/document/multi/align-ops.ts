@@ -1,3 +1,4 @@
+import { nn } from "../../lib/nn.js";
 // Multi-selection alignment + distribution — pure functions.
 //
 // Eight operations, one Map registry. The shape that drives this file
@@ -140,8 +141,8 @@ function alignVerticalCenter(items: ReadonlyArray<AlignInput>): ReadonlyArray<Al
 function distributeHorizontal(items: ReadonlyArray<AlignInput>): ReadonlyArray<AlignOutput> {
   if (items.length < 3) return items.map((it) => ({ id: it.id, frame: it.frame }));
   const sorted = items.slice().sort((a, b) => a.frame.x - b.frame.x);
-  const first = sorted[0]!;
-  const last = sorted[sorted.length - 1]!;
+  const first = nn(sorted[0]);
+  const last = nn(sorted[sorted.length - 1]);
   const leftEdge = first.frame.x;
   const rightEdge = last.frame.x + last.frame.width;
   const span = rightEdge - leftEdge;
@@ -151,7 +152,7 @@ function distributeHorizontal(items: ReadonlyArray<AlignInput>): ReadonlyArray<A
   placed.set(first.id, { id: first.id, frame: first.frame });
   let cursor = first.frame.x + first.frame.width + gap;
   for (let i = 1; i < sorted.length - 1; i += 1) {
-    const it = sorted[i]!;
+    const it = nn(sorted[i]);
     placed.set(it.id, { id: it.id, frame: { ...it.frame, x: cursor } });
     cursor += it.frame.width + gap;
   }
@@ -164,8 +165,8 @@ function distributeHorizontal(items: ReadonlyArray<AlignInput>): ReadonlyArray<A
 function distributeVertical(items: ReadonlyArray<AlignInput>): ReadonlyArray<AlignOutput> {
   if (items.length < 3) return items.map((it) => ({ id: it.id, frame: it.frame }));
   const sorted = items.slice().sort((a, b) => a.frame.y - b.frame.y);
-  const first = sorted[0]!;
-  const last = sorted[sorted.length - 1]!;
+  const first = nn(sorted[0]);
+  const last = nn(sorted[sorted.length - 1]);
   const topEdge = first.frame.y;
   const bottomEdge = last.frame.y + last.frame.height;
   const span = bottomEdge - topEdge;
@@ -175,7 +176,7 @@ function distributeVertical(items: ReadonlyArray<AlignInput>): ReadonlyArray<Ali
   placed.set(first.id, { id: first.id, frame: first.frame });
   let cursor = first.frame.y + first.frame.height + gap;
   for (let i = 1; i < sorted.length - 1; i += 1) {
-    const it = sorted[i]!;
+    const it = nn(sorted[i]);
     placed.set(it.id, { id: it.id, frame: { ...it.frame, y: cursor } });
     cursor += it.frame.height + gap;
   }
@@ -248,8 +249,8 @@ export function computeAlignedFrames(
   const bounds = items.map((it) => ({ id: it.id, frame: outerBounds(it.frame) }));
   const aligned = handler(bounds);
   return items.map((it, i) => {
-    const inB = bounds[i]!.frame;
-    const outB = aligned[i]!.frame;
+    const inB = nn(bounds[i]).frame;
+    const outB = nn(aligned[i]).frame;
     return {
       id: it.id,
       frame: {

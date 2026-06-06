@@ -69,6 +69,7 @@ import {
   createSwapFlexOrderCommand,
   createSwapGridCellsCommand,
 } from "@agocraft/layout";
+import { nn } from "../lib/nn.js";
 import {
   applyChangeToDocument,
   applyCreationUnits,
@@ -1218,7 +1219,7 @@ export function buildWeaveCommands(
     const out = computeAlignedFrames(inputs, op);
     // Emit only items whose frame actually moved (clean history; FP-drift guard).
     const updates = out.flatMap((o, i) => {
-      const prev = inputs[i]!.frame;
+      const prev = nn(inputs[i]).frame;
       const moved =
         Math.abs(prev.x - o.frame.x) > 1e-9 ||
         Math.abs(prev.y - o.frame.y) > 1e-9 ||

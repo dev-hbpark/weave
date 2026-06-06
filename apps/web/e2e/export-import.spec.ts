@@ -12,6 +12,7 @@
 // only has to prove the file ↔ payload bridge, not re-test paste internals.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -46,7 +47,7 @@ test("export selection → import the file → a copy appears, one Cmd+Z reverts
 
   const before = await rootChildIds(page);
   expect(before.length).toBe(1);
-  const original = before[0]!;
+  const original = nn(before[0]);
   await select(page, original);
 
   // 1. Export via the File menu, capturing the download bytes.

@@ -44,6 +44,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { nn } from "../../lib/nn.js";
 import { defaultInsertableRegistry } from "../insertable/default-registry.js";
 import {
   type ContainerKind,
@@ -628,7 +629,7 @@ export const RubberBandLayer = forwardRef<HTMLDivElement, RubberBandLayerProps>(
         left: POP_W,
       };
       const ranked = [...SIDES].sort((a, b) => dist[a] - dist[b]);
-      const chosen = ranked.find((s) => space[s] >= need[s]) ?? ranked[0]!;
+      const chosen = ranked.find((s) => space[s] >= need[s]) ?? nn(ranked[0]);
       // Pick align so the popover hugs the corner closer to the cursor.
       // For vertical sides (left/right) align governs the y axis; for
       // horizontal sides (top/bottom) align governs the x axis.

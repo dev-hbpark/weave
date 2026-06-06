@@ -32,6 +32,7 @@ import {
 import type { Editor } from "@agocraft/editor";
 import { ContextualToolbar as Bar, SegmentedControl, Select } from "@weave/design-system";
 import type { JSX } from "react";
+import { nn } from "../../../lib/nn.js";
 import { findParentAndIndex } from "../../agocraft-mirror.js";
 import type { ItemSnapshot } from "../multi-edit.js";
 
@@ -72,7 +73,7 @@ export function FlexChildSection({
 }: FlexChildSectionProps): JSX.Element | null {
   // Per-child layout is a single-item concern (each child has its own policy).
   if (items.length !== 1) return null;
-  const item = items[0]!;
+  const item = nn(items[0]);
   const parentSpec = parentFlexSpec(document, item.id);
   if (parentSpec === undefined) return null;
 
@@ -167,7 +168,7 @@ export function GridChildSection({
   document,
 }: FlexChildSectionProps): JSX.Element | null {
   if (items.length !== 1) return null;
-  const item = items[0]!;
+  const item = nn(items[0]);
   const parentSpec = parentGridSpec(document, item.id);
   if (parentSpec === undefined) return null;
 

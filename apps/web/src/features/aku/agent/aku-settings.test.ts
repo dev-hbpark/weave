@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { nn } from "../../../lib/nn.js";
 import {
   AKU_SETTINGS_SECTIONS,
   type AkuSettingKey,
@@ -17,7 +18,7 @@ function installMemoryStorage(): void {
   Object.defineProperty(window, "localStorage", {
     configurable: true,
     value: {
-      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      getItem: (k: string) => (store.has(k) ? nn(store.get(k)) : null),
       setItem: (k: string, v: string) => store.set(k, String(v)),
       removeItem: (k: string) => store.delete(k),
       clear: () => store.clear(),

@@ -1,3 +1,4 @@
+import { nn } from "../../../lib/nn.js";
 // Color math for the design-diversity metric (DR-077 D6).
 //
 // Parses the CSS color strings weave items carry (hex / rgb()), converts to
@@ -33,23 +34,23 @@ export function parseColor(input: string): Rgb | null {
   const m3 = HEX3.exec(s);
   if (m3) {
     return {
-      r: Number.parseInt(m3[1]! + m3[1]!, 16),
-      g: Number.parseInt(m3[2]! + m3[2]!, 16),
-      b: Number.parseInt(m3[3]! + m3[3]!, 16),
+      r: Number.parseInt(nn(m3[1]) + nn(m3[1]), 16),
+      g: Number.parseInt(nn(m3[2]) + nn(m3[2]), 16),
+      b: Number.parseInt(nn(m3[3]) + nn(m3[3]), 16),
     };
   }
   const m6 = HEX6.exec(s);
   if (m6) {
     return {
-      r: Number.parseInt(m6[1]!, 16),
-      g: Number.parseInt(m6[2]!, 16),
-      b: Number.parseInt(m6[3]!, 16),
+      r: Number.parseInt(nn(m6[1]), 16),
+      g: Number.parseInt(nn(m6[2]), 16),
+      b: Number.parseInt(nn(m6[3]), 16),
     };
   }
   const mf = RGB_FN.exec(s);
   if (mf) {
     const clamp = (n: number) => (n < 0 ? 0 : n > 255 ? 255 : n);
-    return { r: clamp(+mf[1]!), g: clamp(+mf[2]!), b: clamp(+mf[3]!) };
+    return { r: clamp(+nn(mf[1])), g: clamp(+nn(mf[2])), b: clamp(+nn(mf[3])) };
   }
   return null;
 }

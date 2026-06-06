@@ -5,6 +5,7 @@
 // dev `__weaveEditor` / `__weaveDoc` globals.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -17,9 +18,9 @@ async function addRectangle(page: Page): Promise<string> {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "shape",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.2, y: 0.2, width: 0.4, height: 0.4, rotation: 0 },
     });
     return String(r.value);
@@ -34,7 +35,7 @@ async function setFill(page: Page, itemId: string, fill: unknown): Promise<boole
       const w = window as unknown as {
         __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
       };
-      const r = w.__weaveEditor!.exec("weave.shape.setFill", { itemId, fill });
+      const r = nn(w.__weaveEditor).exec("weave.shape.setFill", { itemId, fill });
       return r.ok !== false;
     },
     { itemId, fill },

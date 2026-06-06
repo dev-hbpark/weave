@@ -1,6 +1,7 @@
 // WI-058 — QR matrix wrapper tests. Structural invariants that would catch a
 // broken/mis-vendored encoder (finder patterns, size, determinism).
 import { describe, expect, it } from "vitest";
+import { nn } from "../../lib/nn.js";
 import { qrMatrix } from "./qr-matrix.js";
 
 describe("qrMatrix", () => {
@@ -21,10 +22,10 @@ describe("qrMatrix", () => {
       // top + bottom edges of the 7×7 finder are solid dark; the 5×5 ring at
       // offset 1 has a dark border with a light gap on row 1.
       for (let i = 0; i < 7; i++) {
-        if (!m[oy]![ox + i]! || !m[oy + 6]![ox + i]!) return false; // top/bottom rows
-        if (!m[oy + i]![ox]! || !m[oy + i]![ox + 6]!) return false; // left/right cols
+        if (!nn(nn(m[oy])[ox + i]) || !nn(nn(m[oy + 6])[ox + i])) return false; // top/bottom rows
+        if (!nn(nn(m[oy + i])[ox]) || !nn(nn(m[oy + i])[ox + 6])) return false; // left/right cols
       }
-      if (m[oy + 1]![ox + 1]!) return false; // inner ring gap (light)
+      if (nn(nn(m[oy + 1])[ox + 1])) return false; // inner ring gap (light)
       return true;
     };
     expect(isFinder(0, 0)).toBe(true); // top-left

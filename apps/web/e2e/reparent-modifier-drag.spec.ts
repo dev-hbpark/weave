@@ -18,6 +18,7 @@
 // cleanly with no patch.
 
 import { expect, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import {
   addFrame,
   clearAllDesigns,
@@ -53,12 +54,12 @@ test("editor.exec reparent moves an item between two root frames + visual positi
   // Use the seed root child as parent A; add parent B + a child inside B.
   const initialRoot = await listRootChildren(page);
   expect(initialRoot.length).toBeGreaterThanOrEqual(1);
-  const parentA = initialRoot[0]!.id;
+  const parentA = nn(initialRoot[0]).id;
   await addFrame(page, "frame", {
     frame: { x: 0.6, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
   });
   const afterAddB = await listRootChildren(page);
-  const parentB = afterAddB[afterAddB.length - 1]!.id;
+  const parentB = nn(afterAddB[afterAddB.length - 1]).id;
   await addFrame(page, "frame", {
     containerId: parentB,
     frame: { x: 0.25, y: 0.25, width: 0.5, height: 0.5, rotation: 0 },
@@ -82,10 +83,10 @@ test("editor.exec reparent moves an item between two root frames + visual positi
     }
     const parent = find(doc.root);
     if (parent === null || parent.children.length === 0) return null;
-    return { id: String(parent.children[0]!.id) };
+    return { id: String(nn(parent.children[0]).id) };
   }, parentB);
   expect(childInfo).not.toBeNull();
-  const childId = childInfo!.id;
+  const childId = nn(childInfo).id;
 
   // Before: child sits inside parentB.
   const before = await readParentInfo(page, childId);
@@ -111,7 +112,7 @@ test("editor.exec reparent moves an item between two root frames + visual positi
   await page.waitForTimeout(120);
   const reverted = await readParentInfo(page, childId);
   expect(reverted?.parentId).toBe(parentB);
-  expect(reverted?.indexInParent).toBe(before!.indexInParent);
+  expect(reverted?.indexInParent).toBe(nn(before).indexInParent);
 });
 
 test("modifier-drag gesture arms when Cmd+Shift is held on a frame and cancels cleanly outside any target", async ({
@@ -128,7 +129,7 @@ test("modifier-drag gesture arms when Cmd+Shift is held on a frame and cancels c
   });
   const rootChildren = await listRootChildren(page);
   expect(rootChildren.length).toBeGreaterThanOrEqual(2);
-  const draggedId = rootChildren[rootChildren.length - 1]!.id;
+  const draggedId = nn(rootChildren[rootChildren.length - 1]).id;
   const draggedFrame = page.locator(`[data-frame-id="${draggedId}"]`).first();
   const bbox = await draggedFrame.boundingBox();
   expect(bbox).not.toBeNull();
@@ -139,11 +140,15 @@ test("modifier-drag gesture arms when Cmd+Shift is held on a frame and cancels c
   const before = await listRootChildren(page);
   await page.keyboard.down("ControlOrMeta");
   await page.keyboard.down("Shift");
-  await page.mouse.move(bbox!.x + bbox!.width / 2, bbox!.y + bbox!.height / 2);
+  await page.mouse.move(nn(bbox).x + nn(bbox).width / 2, nn(bbox).y + nn(bbox).height / 2);
   await page.mouse.down();
-  await page.mouse.move(bbox!.x + bbox!.width / 2 + 40, bbox!.y + bbox!.height / 2 + 40, {
-    steps: 6,
-  });
+  await page.mouse.move(
+    nn(bbox).x + nn(bbox).width / 2 + 40,
+    nn(bbox).y + nn(bbox).height / 2 + 40,
+    {
+      steps: 6,
+    },
+  );
 
   // Ghost overlay must appear while the gesture is in flight.
   await expect(page.locator("[data-reparent-ghost]")).toBeVisible({ timeout: 1500 });

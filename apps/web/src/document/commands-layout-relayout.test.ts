@@ -28,6 +28,7 @@ import {
   trackFr,
 } from "@agocraft/core";
 import { describe, expect, it, vi } from "vitest";
+import { nn } from "../lib/nn.js";
 import { buildWeaveCommands, type WeaveCommandTargets } from "./commands.js";
 import { WI020_LAYOUT_VARIANTS_ENABLED } from "./layout/registry.js";
 
@@ -504,13 +505,13 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       // Children land at distinct, increasing x (row spread) — NOT their old
       // scattered positions.
       const byId = new Map(attrsPatches.map((p) => [String(p.itemId), p]));
-      const a1 = byId.get("c1")!.after as {
+      const a1 = nn(byId.get("c1")).after as {
         frame?: { x: number };
         shape?: string;
         layoutChild?: { kind: string };
       };
-      const a2 = byId.get("c2")!.after as { frame?: { x: number } };
-      expect(a1.frame?.x).toBeLessThan(a2.frame!.x);
+      const a2 = nn(byId.get("c2")).after as { frame?: { x: number } };
+      expect(a1.frame?.x).toBeLessThan(nn(a2.frame).x);
       // Each child's other attrs survived AND its policy was reassigned to flex.
       expect(a1.shape).toBe("ellipse");
       expect(a1.layoutChild?.kind).toBe("auto-flex");
@@ -539,8 +540,8 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       );
       expect(attrsPatches).toHaveLength(3);
       const xs = ["c1", "c2", "c3"].map((id) => {
-        const p = attrsPatches.find((q) => String(q.itemId) === id)!;
-        return (p.after as { frame?: { x: number } }).frame!.x;
+        const p = nn(attrsPatches.find((q) => String(q.itemId) === id));
+        return nn((p.after as { frame?: { x: number } }).frame).x;
       });
       // 3 children → row-major into columns 1/2/3 → x = 0, 1/3, 2/3.
       expect(xs[0]).toBeCloseTo(0, 5);
@@ -548,7 +549,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       expect(xs[2]).toBeCloseTo(2 / 3, 5);
       // Each child's policy reassigned to a distinct grid cell.
       for (const id of ["c1", "c2", "c3"]) {
-        const p = attrsPatches.find((q) => String(q.itemId) === id)!;
+        const p = nn(attrsPatches.find((q) => String(q.itemId) === id));
         const policy = (p.after as { layoutChild?: { kind: string; column: number } }).layoutChild;
         expect(policy?.kind).toBe("auto-grid");
       }

@@ -8,6 +8,7 @@
 import { type StyleRef, ref as styleRef } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import type { JSX } from "react";
+import { nn } from "../../lib/nn.js";
 import { findItemDeep } from "../agocraft-mirror.js";
 import { resolveStoredColor } from "../style/resolver.js";
 import { useDocumentForResolution } from "../style/resolver-context.js";
@@ -31,9 +32,9 @@ export function sharedValue<T>(
   eq: (a: T, b: T) => boolean = Object.is,
 ): MixedOr<T> {
   if (items.length === 0) return MIXED;
-  const first = read(items[0]!);
+  const first = read(nn(items[0]));
   for (let i = 1; i < items.length; i++) {
-    if (!eq(first, read(items[i]!))) return MIXED;
+    if (!eq(first, read(nn(items[i])))) return MIXED;
   }
   return first;
 }
@@ -119,7 +120,7 @@ export function batchPerItem(
 ): void {
   if (ids.length === 0) return;
   if (ids.length === 1) {
-    perItem(ids[0]!);
+    perItem(nn(ids[0]));
     return;
   }
   editor.runBatch(() => {

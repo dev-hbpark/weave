@@ -121,6 +121,7 @@ import {
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
+import { frameHoverStore } from "../document/interactions/frame-hover-store.js";
 import {
   buildFrameTree,
   type FrameTreeNode,
@@ -128,7 +129,6 @@ import {
 } from "../document/interactions/frame-tree.js";
 import { ReparentGhostOverlay } from "../document/interactions/ReparentGhostOverlay.js";
 import { RouterProvider } from "../document/interactions/router-context.js";
-import { frameHoverStore } from "../document/interactions/frame-hover-store.js";
 import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
@@ -190,6 +190,7 @@ import { useWeaveEditor } from "../document/use-weave-editor.js";
 import { AkuAssistant } from "../features/aku/AkuAssistant.js";
 import { FigmaSelectionLaunchBanner } from "../launch/FigmaSelectionLaunchBanner.js";
 import { TextV1LaunchBanner } from "../launch/TextV1LaunchBanner.js";
+import { nn } from "../lib/nn.js";
 import { useDesignCommandHost } from "./design/hooks/use-command-host.js";
 import { useDesignPeek } from "./design/hooks/use-design-peek.js";
 import { useDesignSave } from "./design/hooks/use-design-save.js";
@@ -299,8 +300,8 @@ function FrameContextMenu({
         {hasLayers && (
           <>
             <LayerPickerMenu
-              layers={layers!}
-              onPickLayer={onPickLayer!}
+              layers={nn(layers)}
+              onPickLayer={nn(onPickLayer)}
               {...(onHoverPreview !== undefined ? { onHoverPreview } : {})}
             />
             <ContextMenuSeparator />
@@ -1763,7 +1764,7 @@ function DesignPageBody() {
       // input). Approx-equal guard tolerates the FP drift from
       // bbox-center math (`(min + max) / 2 - w / 2`).
       const updates = out.flatMap((o, i) => {
-        const prev = inputs[i]!.frame;
+        const prev = nn(inputs[i]).frame;
         const moved =
           Math.abs(prev.x - o.frame.x) > 1e-9 ||
           Math.abs(prev.y - o.frame.y) > 1e-9 ||
@@ -1810,7 +1811,7 @@ function DesignPageBody() {
       // not 1:1, so ratio-space squares would render as aspect rectangles).
       const out = computeArrangedFrames(inputs, layout, design.width, design.height);
       const updates = out.flatMap((o, i) => {
-        const prev = inputs[i]!.frame;
+        const prev = nn(inputs[i]).frame;
         const moved =
           Math.abs(prev.x - o.frame.x) > 1e-9 ||
           Math.abs(prev.y - o.frame.y) > 1e-9 ||
@@ -1896,7 +1897,7 @@ function DesignPageBody() {
   })();
   // WI-076 — prefill the caption field (image `alt`) when editing an image.
   const mediaInitialAlt = (() => {
-    if (!pendingMedia || pendingMedia.kind !== "image") return "";
+    if (pendingMedia?.kind !== "image") return "";
     if (pendingMedia.action === "edit" && selectedFrameId) {
       const it = findItemDeep(docInAgocraft, selectedFrameId);
       if (it && it.kind === "image") return (it.attrs as { alt?: string }).alt ?? "";
@@ -2935,7 +2936,7 @@ function ArrangePreviewOverlay({
     // Parent on-screen rect from the first child's DOM rect (= that child's
     // AABB) and its AABB ratio, so the scale is correct even when the first
     // selected item is rotated.
-    const first = inputs[0]!;
+    const first = nn(inputs[0]);
     const el = document.querySelector(`[data-frame-id="${CSS.escape(first.id)}"]`);
     if (!(el instanceof HTMLElement)) return [];
     const cr = el.getBoundingClientRect();
@@ -3064,7 +3065,7 @@ function QuickActionBarAnchored({
       // a multi-selection we expose the primary id (first selected)
       // so the bar still routes single-frame commands through
       // commandContext.selectedId.
-      const tagId = isMulti ? (ids[0] ?? "multi") : ids[0]!;
+      const tagId = isMulti ? (ids[0] ?? "multi") : nn(ids[0]);
       setAnchor((prev) => {
         if (
           prev !== null &&

@@ -35,6 +35,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { nn } from "../../lib/nn.js";
 import { startHandleGesture, toHandlePointer } from "./handle-gesture-runner.js";
 import {
   type FrameGeom,
@@ -399,7 +400,7 @@ export function createPolyVertexHandleViewModel(
       // ── vertex handles (move / toggle type / right-click menu) ──
       const globalSmooth = poly.smooth ?? false;
       for (let idx = 0; idx < points.length; idx++) {
-        const pt = points[idx]!;
+        const pt = nn(points[idx]);
         // WI-066 — classify the handle's role once; the registry owns the rest
         // (label, drag strategy). DR-033 — shape comes from the point TYPE.
         const role = classifyPointHandle(idx, points.length, closed);
@@ -485,8 +486,8 @@ export function createPolyVertexHandleViewModel(
       // ── midpoint handles (insert a vertex on the edge, then drag it) ──
       const edgeCount = closed ? points.length : points.length - 1;
       for (let i = 0; i < edgeCount; i++) {
-        const a = points[i]!;
-        const b = points[(i + 1) % points.length]!;
+        const a = nn(points[i]);
+        const b = nn(points[(i + 1) % points.length]);
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const insertAt = i + 1;
         specs.push({

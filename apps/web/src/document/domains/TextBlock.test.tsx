@@ -17,6 +17,7 @@ import type { TextRun } from "@agocraft/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { nn } from "../../lib/nn.js";
 import type { AgoItem, TextAttrs } from "../types.js";
 import { FULL_FRAME } from "../types.js";
 import { TextBlock } from "./TextBlock.js";
@@ -91,8 +92,8 @@ test("run-driven box neutralizes the container; a non-bold run renders normal ev
   expect(spans.length).toBe(2);
   // First run carries its own bold; the plain run emits NO weight → inherits
   // the neutralized container (normal). This is the un-bold-a-range fix.
-  expect(spans[0]!.style.fontWeight).toBe("bold");
-  expect(spans[1]!.style.fontWeight).toBe("");
+  expect(nn(spans[0]).style.fontWeight).toBe("bold");
+  expect(nn(spans[1]).style.fontWeight).toBe("");
 });
 
 test("legacy box with no runs keeps the item-level bold on the container", () => {
@@ -113,8 +114,8 @@ test("run-driven underline override: a plain run renders no decoration under a s
   // plain run via the item-level STRIKETHROUGH base).
   expect(contentDiv().style.textDecoration).toBe("none");
   const spans = contentDiv().querySelectorAll("span");
-  expect(spans[0]!.style.textDecoration).toBe("underline");
-  expect(spans[1]!.style.textDecoration).toBe("");
+  expect(nn(spans[0]).style.textDecoration).toBe("underline");
+  expect(nn(spans[1]).style.textDecoration).toBe("");
 });
 
 // ── DR-059 — layered text outline ──────────────────────────────────────────
@@ -125,15 +126,15 @@ test("textOutline renders a thick stroked back layer behind the fill", () => {
   const back = contentDiv().querySelector<HTMLElement>("[data-text-outline]");
   expect(back).not.toBeNull();
   // Decorative + non-interactive; the real text is the front fill.
-  expect(back!.getAttribute("aria-hidden")).toBe("true");
-  expect(back!.style.pointerEvents).toBe("none");
-  expect(back!.style.position).toBe("absolute");
+  expect(nn(back).getAttribute("aria-hidden")).toBe("true");
+  expect(nn(back).style.pointerEvents).toBe("none");
+  expect(nn(back).style.position).toBe("absolute");
   // Forced outline color on the back container (glyphs inherit it).
-  expect(back!.style.color).toBe("rgb(255, 0, 0)");
+  expect(nn(back).style.color).toBe("rgb(255, 0, 0)");
   // Stroke = 2× the visible halo; serialized into the inline style.
-  expect(back!.style.cssText).toContain("stroke");
+  expect(nn(back).style.cssText).toContain("stroke");
   // Both layers carry the same text (front fill + back outline).
-  expect(back!.textContent).toBe("hello world");
+  expect(nn(back).textContent).toBe("hello world");
   expect(contentDiv().textContent).toContain("hello world");
 });
 
@@ -154,11 +155,11 @@ test("outline back layer does NOT inherit a run's fill color (glyphs stay outlin
   const back = contentDiv().querySelector<HTMLElement>("[data-text-outline]");
   expect(back).not.toBeNull();
   // The back run span drops per-run color so the forced outline color wins.
-  const backSpan = back!.querySelector("span");
-  expect(backSpan!.style.color).toBe("");
+  const backSpan = nn(back).querySelector("span");
+  expect(nn(backSpan).style.color).toBe("");
   // The FRONT fill keeps the run's own color.
   const frontSpans = Array.from(contentDiv().querySelectorAll("span")).filter(
-    (s) => !back!.contains(s),
+    (s) => !nn(back).contains(s),
   );
   expect(frontSpans.some((s) => s.style.color === "rgb(0, 255, 0)")).toBe(true);
 });
@@ -175,12 +176,12 @@ test("a run with its own outline renders a back layer even with no whole-item ou
   render(textItem({ textRuns: PER_RUN }));
   const back = contentDiv().querySelector<HTMLElement>("[data-text-outline]");
   expect(back).not.toBeNull();
-  const spans = back!.querySelectorAll("span");
+  const spans = nn(back).querySelectorAll("span");
   // The outlined run strokes itself (2× the 3px halo); cssText carries the stroke.
-  expect(spans[0]!.style.cssText).toContain("stroke");
-  expect(spans[0]!.style.color).toBe("rgb(255, 0, 0)");
+  expect(nn(spans[0]).style.cssText).toContain("stroke");
+  expect(nn(spans[0]).style.color).toBe("rgb(255, 0, 0)");
   // The non-outlined run paints nothing in the back layer (transparent).
-  expect(spans[1]!.style.color).toBe("transparent");
+  expect(nn(spans[1]).style.color).toBe("transparent");
 });
 
 test("with NO per-run and NO whole-item outline, there is no back layer", () => {
@@ -197,10 +198,10 @@ test("a non-outlined run inherits the whole-item outline (not transparent)", () 
   const back = contentDiv().querySelector<HTMLElement>("[data-text-outline]");
   expect(back).not.toBeNull();
   // Whole-item outline applied on the container so non-outlined runs inherit it.
-  expect(back!.style.color).toBe("rgb(0, 0, 255)");
-  const spans = back!.querySelectorAll("span");
+  expect(nn(back).style.color).toBe("rgb(0, 0, 255)");
+  const spans = nn(back).querySelectorAll("span");
   // Per-run override on "a".
-  expect(spans[0]!.style.color).toBe("rgb(0, 255, 0)");
+  expect(nn(spans[0]).style.color).toBe("rgb(0, 255, 0)");
   // "b" has no own style → inherits the container's whole-item outline.
-  expect(spans[1]!.style.color).toBe("");
+  expect(nn(spans[1]).style.color).toBe("");
 });

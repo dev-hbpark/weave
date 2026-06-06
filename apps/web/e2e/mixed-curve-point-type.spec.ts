@@ -3,6 +3,7 @@
 // (square=corner ↔ circle=smooth) and the rendered geometry follow; Cmd+Z reverts.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -22,9 +23,9 @@ async function addPoly(page: Page): Promise<string> {
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = w.__weaveEditor!.exec("weave.item.add", {
+      const r = nn(w.__weaveEditor).exec("weave.item.add", {
         kind: "shape",
-        containerId: String(w.__weaveDoc!.root.id),
+        containerId: String(nn(w.__weaveDoc).root.id),
         frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
         attrsOverride: { shape: "poly", subAttrs: { shape: "poly", points, closed: true } },
       });

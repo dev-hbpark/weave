@@ -9,6 +9,7 @@
 // → undo — deterministically, without depending on hit-testing an SVG <path>.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -21,8 +22,8 @@ async function addChart(page: Page): Promise<{ chartId: string; datasetId: strin
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.chart.add", {
-      containerId: String(w.__weaveDoc!.root.id),
+    const r = nn(w.__weaveEditor).exec("weave.chart.add", {
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.2, y: 0.2, width: 0.6, height: 0.6, rotation: 0 },
     });
     return String(r.value);
@@ -32,7 +33,7 @@ async function addChart(page: Page): Promise<{ chartId: string; datasetId: strin
     const w = window as unknown as {
       __weaveDoc?: { root: { units: ReadonlyArray<{ kind: string; id: unknown }> } };
     };
-    const datasets = w.__weaveDoc!.root.units.filter((u) => u.kind === "dataset");
+    const datasets = nn(w.__weaveDoc).root.units.filter((u) => u.kind === "dataset");
     return String(datasets[datasets.length - 1]?.id);
   });
   return { chartId, datasetId };
@@ -123,8 +124,8 @@ test("WI-092 — dragging a bar's value handle up raises the dataset cell; Cmd+Z
   await page.waitForTimeout(150);
   const box = await handle.boundingBox();
   expect(box).not.toBeNull();
-  const cx = box!.x + box!.width / 2;
-  const cy = box!.y + box!.height / 2;
+  const cx = nn(box).x + nn(box).width / 2;
+  const cy = nn(box).y + nn(box).height / 2;
 
   // Drag the handle UP (smaller client-y = taller bar = larger value).
   await page.mouse.move(cx, cy);
@@ -184,8 +185,8 @@ test("WI-092 — width-handle changes ONLY the selected bar (per-datum); Cmd+Z r
   await page.waitForTimeout(150);
   const box = await widthHandle.boundingBox();
   expect(box).not.toBeNull();
-  const cx = box!.x + box!.width / 2;
-  const cy = box!.y + box!.height / 2;
+  const cx = nn(box).x + nn(box).width / 2;
+  const cy = nn(box).y + nn(box).height / 2;
 
   // Drag the side handle OUTWARD (away from the bar center) → thicker bar.
   await page.mouse.move(cx, cy);
@@ -313,22 +314,25 @@ test("WI-092 — CHART-level width: handle on every bar, drag one → ALL bars t
 
   // HOVER bar B → only its handle reveals.
   const chartBox = await page.locator('[data-testid="chart-echarts"]').boundingBox();
-  await page.mouse.move(chartBox!.x + chartBox!.width * 0.37, chartBox!.y + chartBox!.height * 0.6);
+  await page.mouse.move(
+    nn(chartBox).x + nn(chartBox).width * 0.37,
+    nn(chartBox).y + nn(chartBox).height * 0.6,
+  );
   await page.waitForTimeout(150);
   await expect(hidden).toHaveCount(3); // one revealed
 
   // Drag that handle inward → the chart-wide barWidth shrinks → ALL bars become
   // narrower AND equal width.
   const box = await globalHandles.nth(1).boundingBox();
-  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.move(nn(box).x + nn(box).width / 2, nn(box).y + nn(box).height / 2);
   await page.mouse.down();
-  await page.mouse.move(box!.x - 25, box!.y + box!.height / 2, { steps: 6 });
+  await page.mouse.move(nn(box).x - 25, nn(box).y + nn(box).height / 2, { steps: 6 });
   await page.mouse.up();
   await page.waitForTimeout(400);
 
   const after = await barRects(page);
   expect(after.length).toBe(4);
-  for (const b of after) expect(b.w).toBeLessThan(before[0]!.w); // every bar got narrower
+  for (const b of after) expect(b.w).toBeLessThan(nn(before[0]).w); // every bar got narrower
   const widths = after.map((b) => b.w);
   expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2); // all equal
   const bw = await page.evaluate((cid) => {
@@ -345,7 +349,7 @@ test("WI-092 — CHART-level width: handle on every bar, drag one → ALL bars t
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(200);
   const reverted = await barRects(page);
-  expect(reverted[0]!.w).toBeGreaterThan(after[0]!.w); // back to the wider default
+  expect(nn(reverted[0]).w).toBeGreaterThan(nn(after[0]).w); // back to the wider default
 });
 
 test("WI-092 — per-bar widths actually RENDER (custom series): wide vs narrow vs default", async ({
@@ -371,9 +375,9 @@ test("WI-092 — per-bar widths actually RENDER (custom series): wide vs narrow 
   for (const b of bars) expect(b.h).toBeGreaterThan(30); // real height, not collapsed
   const [a, bWide, c] = bars;
   // A (0.2) clearly narrower than the default C (~0.6) clearly narrower than B (0.95).
-  expect(a!.w).toBeLessThan(c!.w);
-  expect(c!.w).toBeLessThan(bWide!.w);
-  expect(bWide!.w / a!.w).toBeGreaterThan(2); // wide bar is much fatter than the narrow one
+  expect(nn(a).w).toBeLessThan(nn(c).w);
+  expect(nn(c).w).toBeLessThan(nn(bWide).w);
+  expect(nn(bWide).w / nn(a).w).toBeGreaterThan(2); // wide bar is much fatter than the narrow one
 });
 
 test("WI-092 — a pie slice gets an angular sweep handle", async ({ page }) => {
@@ -437,10 +441,10 @@ test("WI-092 — dragging a pie slice's inner-radius handle opens a donut; Cmd+Z
   const hBox = await radiusHandle.boundingBox();
   expect(chartBox).not.toBeNull();
   expect(hBox).not.toBeNull();
-  const ccx = chartBox!.x + chartBox!.width / 2;
-  const ccy = chartBox!.y + chartBox!.height / 2;
-  const hx = hBox!.x + hBox!.width / 2;
-  const hy = hBox!.y + hBox!.height / 2;
+  const ccx = nn(chartBox).x + nn(chartBox).width / 2;
+  const ccy = nn(chartBox).y + nn(chartBox).height / 2;
+  const hx = nn(hBox).x + nn(hBox).width / 2;
+  const hy = nn(hBox).y + nn(hBox).height / 2;
   const len = Math.hypot(hx - ccx, hy - ccy) || 1;
   const ux = (hx - ccx) / len;
   const uy = (hy - ccy) / len;

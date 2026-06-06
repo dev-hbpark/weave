@@ -5,6 +5,7 @@
 // adapter (the same path the persistent layout and multi-arrange share).
 
 import { expect, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -105,7 +106,7 @@ test("grid layout shrinks a rotated child so its outer bounds fit the cell", asy
   await addFrame(page, "slide", {
     frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6, rotation: 0 },
   });
-  const fId = (await rootChildIds(page)).at(-1)!;
+  const fId = nn((await rootChildIds(page)).at(-1));
   // Two children inside F.
   await addFrame(page, "slide", {
     containerId: fId,

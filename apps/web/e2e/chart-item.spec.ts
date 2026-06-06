@@ -5,6 +5,7 @@
 // reverts the whole create — all via commands.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -22,8 +23,8 @@ async function addChart(page: Page): Promise<ChartHandles> {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.chart.add", {
-      containerId: String(w.__weaveDoc!.root.id),
+    const r = nn(w.__weaveEditor).exec("weave.chart.add", {
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.25, y: 0.25, width: 0.5, height: 0.5, rotation: 0 },
     });
     return String(r.value);
@@ -36,7 +37,7 @@ async function addChart(page: Page): Promise<ChartHandles> {
     const w = window as unknown as {
       __weaveDoc?: { root: { units: ReadonlyArray<{ kind: string; id: unknown }> } };
     };
-    const datasets = w.__weaveDoc!.root.units.filter((u) => u.kind === "dataset");
+    const datasets = nn(w.__weaveDoc).root.units.filter((u) => u.kind === "dataset");
     return String(datasets[datasets.length - 1]?.id);
   });
   return { chartId, datasetId };

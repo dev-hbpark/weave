@@ -9,6 +9,7 @@
 // Single selection is unchanged: its chrome is always on, no hover needed.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -111,7 +112,7 @@ test("multi-selection: per-item chrome reveals only for the hovered item", async
   await expect(layers).toHaveCount(1);
   const layerBox = await layers.first().boundingBox();
   expect(layerBox).not.toBeNull();
-  expect(Math.abs((layerBox!.x + layerBox!.width / 2) - ca.x)).toBeLessThan(ca.w);
+  expect(Math.abs(nn(layerBox).x + nn(layerBox).width / 2 - ca.x)).toBeLessThan(ca.w);
 
   // Move hover to frame B → still exactly one, now over B.
   const cb = await rectOf(page, b);
@@ -119,7 +120,7 @@ test("multi-selection: per-item chrome reveals only for the hovered item", async
   await expect(layers).toHaveCount(1);
   const layerBoxB = await layers.first().boundingBox();
   expect(layerBoxB).not.toBeNull();
-  expect(Math.abs((layerBoxB!.x + layerBoxB!.width / 2) - cb.x)).toBeLessThan(cb.w);
+  expect(Math.abs(nn(layerBoxB).x + nn(layerBoxB).width / 2 - cb.x)).toBeLessThan(cb.w);
 
   // Back to empty canvas → chrome hides again.
   await page.mouse.move(bg.x, bg.y);
@@ -143,7 +144,7 @@ test("multi-selection of SHAPE items: hover switches chrome between shapes (regr
   await expect(layers).toHaveCount(1);
   const boxA = await layers.first().boundingBox();
   expect(boxA).not.toBeNull();
-  expect(Math.abs((boxA!.x + boxA!.width / 2) - ca.x)).toBeLessThan(ca.w);
+  expect(Math.abs(nn(boxA).x + nn(boxA).width / 2 - ca.x)).toBeLessThan(ca.w);
 
   // Hover shape B → chrome SWITCHES to B (the bug: it stayed on A).
   const cb = await rectOf(page, b);
@@ -151,7 +152,7 @@ test("multi-selection of SHAPE items: hover switches chrome between shapes (regr
   await expect(layers).toHaveCount(1);
   const boxB = await layers.first().boundingBox();
   expect(boxB).not.toBeNull();
-  expect(Math.abs((boxB!.x + boxB!.width / 2) - cb.x)).toBeLessThan(cb.w);
+  expect(Math.abs(nn(boxB).x + nn(boxB).width / 2 - cb.x)).toBeLessThan(cb.w);
 });
 
 test("single selection: chrome stays on without hover (unchanged)", async ({ page }) => {

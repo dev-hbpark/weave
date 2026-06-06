@@ -9,6 +9,7 @@
 //   • a 3-point line never offers the snap (fusing would degenerate).
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -38,9 +39,9 @@ async function addLine(
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = w.__weaveEditor!.exec("weave.item.add", {
+      const r = nn(w.__weaveEditor).exec("weave.item.add", {
         kind: "line",
-        containerId: String(w.__weaveDoc!.root.id),
+        containerId: String(nn(w.__weaveDoc).root.id),
         frame: { x: 0.25, y: 0.2, width: 0.5, height: 0.6, rotation: 0 },
         attrsOverride: { points: pts, smooth: false, heads: { start: "none", end: "none" } },
       });
@@ -133,11 +134,13 @@ test("WI-070 — Alt+drag endpoint onto the opposite end snaps, then fuses + clo
   await expect
     .poll(async () => {
       const ns = await rootNodes(page);
-      return ns.length === 1 ? `${ns[0]!.kind}:${ns[0]!.closed}:${ns[0]!.pointCount}` : "?";
+      return ns.length === 1
+        ? `${nn(ns[0]).kind}:${nn(ns[0]).closed}:${nn(ns[0]).pointCount}`
+        : "?";
     })
     .toBe("shape:true:3");
   const after = await rootNodes(page);
-  expect(after[0]!.id).not.toBe(lineId); // fresh id (new-id policy)
+  expect(nn(after[0]).id).not.toBe(lineId); // fresh id (new-id policy)
 
   // Feedback cleared after release.
   await expect(page.getByTestId("snap-feedback")).toHaveCount(0);
@@ -147,7 +150,7 @@ test("WI-070 — Alt+drag endpoint onto the opposite end snaps, then fuses + clo
   await expect
     .poll(async () => {
       const ns = await rootNodes(page);
-      return ns.length === 1 ? `${ns[0]!.kind}:${ns[0]!.id}` : "?";
+      return ns.length === 1 ? `${nn(ns[0]).kind}:${nn(ns[0]).id}` : "?";
     })
     .toBe(`line:${lineId}`);
 
@@ -155,7 +158,7 @@ test("WI-070 — Alt+drag endpoint onto the opposite end snaps, then fuses + clo
   await expect
     .poll(async () => {
       const ns = await rootNodes(page);
-      return ns.length === 1 ? `${ns[0]!.kind}:${ns[0]!.closed}` : "?";
+      return ns.length === 1 ? `${nn(ns[0]).kind}:${nn(ns[0]).closed}` : "?";
     })
     .toBe("shape:true");
 });
@@ -173,8 +176,8 @@ test("WI-070 — releasing AWAY from the opposite endpoint does not convert", as
 
   const after = await rootNodes(page);
   expect(after).toHaveLength(1);
-  expect(after[0]!.kind).toBe("line"); // still a line — no snap, no close
-  expect(after[0]!.pointCount).toBe(4);
+  expect(nn(after[0]).kind).toBe("line"); // still a line — no snap, no close
+  expect(nn(after[0]).pointCount).toBe(4);
 });
 
 test("WI-070 — a 3-point line never offers endpoint snap (fuse would degenerate)", async ({
@@ -192,5 +195,5 @@ test("WI-070 — a 3-point line never offers endpoint snap (fuse would degenerat
   await releaseAlt(page);
 
   const after = await rootNodes(page);
-  expect(after[0]!.kind).toBe("line"); // unchanged
+  expect(nn(after[0]).kind).toBe("line"); // unchanged
 });

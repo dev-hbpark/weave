@@ -72,9 +72,8 @@ import {
   toHandlePointer,
 } from "../document/selection-chrome/handle-gesture-runner.js";
 import { rotationSnapFeedback } from "../document/selection-chrome/rotation-snap-feedback.js";
-
+import { nn } from "../lib/nn.js";
 import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
-
 /** WI-033 A4 — context passed to `renderFrameMenu` so the callback
  *  (typically a per-frame ContextMenu) can render a Layer Picker
  *  section listing every frame overlapping the right-clicked point.
@@ -665,7 +664,7 @@ export function FrameStage(props: FrameStageProps) {
       type Node = { id: string | number; children: ReadonlyArray<Node> };
       const stack: Node[] = [d.root as unknown as Node];
       while (stack.length > 0) {
-        const node = stack.pop()!;
+        const node = nn(stack.pop());
         for (const c of node.children) {
           if (String(c.id) === String(targetId)) return node.id as ItemId;
           stack.push(c);

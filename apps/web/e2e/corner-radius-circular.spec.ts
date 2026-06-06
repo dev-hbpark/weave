@@ -4,6 +4,7 @@
 // ELLIPSE whenever w ≠ h — this spec is the regression gate for that fix.
 
 import { expect, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers";
 
 /** Read the frame's main fill rect (the rounded one — the clip rect lives in
@@ -26,8 +27,9 @@ async function setFrameRadius(
 ) {
   await page.evaluate(
     ({ id, cornerRadius }) => {
-      const editor = (window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => unknown } })
-        .__weaveEditor;
+      const editor = (
+        window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => unknown } }
+      ).__weaveEditor;
       // A solid fill makes FrameBlock mount its SVG overlay (a paint-less frame
       // stays a plain transparent div with no rect to inspect).
       editor.exec("weave.item.setDecoration", {
@@ -58,9 +60,10 @@ test.describe("corner radius — circular px model", () => {
       frame: { x: 0.1, y: 0.1, width: 0.5, height: 0.1, rotation: 0 },
     });
     const frameId = await page.evaluate(() => {
-      const root = (window as unknown as { __weaveDoc: { root: { id: unknown; children: { id: unknown }[] } } })
-        .__weaveDoc.root;
-      return String(root.children[root.children.length - 1]!.id);
+      const root = (
+        window as unknown as { __weaveDoc: { root: { id: unknown; children: { id: unknown }[] } } }
+      ).__weaveDoc.root;
+      return String(nn(root.children[root.children.length - 1]).id);
     });
 
     // Oversized radius → must clamp to half the short side, circular.

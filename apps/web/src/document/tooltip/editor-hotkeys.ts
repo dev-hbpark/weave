@@ -30,6 +30,7 @@ import { createInputBus } from "@agocraft/input/bus";
 import { createHotkeyRegistry } from "@agocraft/input/hotkey";
 import type { AITooltipHotkeyTable } from "@weave/design-system";
 import { useEffect, useMemo, useRef } from "react";
+import { nn } from "../../lib/nn.js";
 import { KNOWN_DOMAIN_KINDS } from "../domain-kinds.js";
 import { croppingState, isCroppingNow } from "../interactions/cropping-state.js";
 
@@ -1230,7 +1231,7 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
       // prefer the qualified id.
       const tail = meta.id.split(".").pop();
       if (tail !== undefined && tail !== meta.id) {
-        table[tail] = table[meta.id]!;
+        table[tail] = nn(table[meta.id]);
       }
     }
     return table;

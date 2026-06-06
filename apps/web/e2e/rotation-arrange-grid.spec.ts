@@ -7,6 +7,7 @@
 // Driven through the real toolbar → multiLayoutArranger → resizeMulti wire.
 
 import { expect, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -116,12 +117,12 @@ test("grid arrange of a rotated + unrotated pair preserves the band, equal-halve
   await addFrame(page, "slide", {
     frame: { x: 0.25, y: 0.4, width: 0.18, height: 0.18, rotation: 0 },
   });
-  const flat = (await rootChildIds(page)).find((x) => !before.includes(x))!;
+  const flat = nn((await rootChildIds(page)).find((x) => !before.includes(x)));
   const afterA = await rootChildIds(page);
   await addFrame(page, "slide", {
     frame: { x: 0.6, y: 0.4, width: 0.18, height: 0.18, rotation: 0 },
   });
-  const tilt = (await rootChildIds(page)).find((x) => !afterA.includes(x))!;
+  const tilt = nn((await rootChildIds(page)).find((x) => !afterA.includes(x)));
   // 30° (not 45°): a 45° item's AABB is always square and cannot fill a
   // non-square cell, so it would fall back to an inscribed square. 30° fills.
   await setRotation(page, tilt, Math.PI / 6);
@@ -130,7 +131,7 @@ test("grid arrange of a rotated + unrotated pair preserves the band, equal-halve
   await page.waitForTimeout(60);
 
   // The rubber-band BEFORE arrange — the result must fill exactly this.
-  const band0 = bandOf([(await readFrame(page, flat))!, (await readFrame(page, tilt))!]);
+  const band0 = bandOf([nn(await readFrame(page, flat)), nn(await readFrame(page, tilt))]);
 
   // The toolbar exposes "Arrange as Grid" (그리드로 정렬) as a command button.
   const gridBtn = page.getByRole("button", { name: /Arrange as Grid|그리드로 정렬/ });
@@ -138,8 +139,8 @@ test("grid arrange of a rotated + unrotated pair preserves the band, equal-halve
 
   await gridBtn.click();
   await page.waitForTimeout(120);
-  const flat1 = (await readFrame(page, flat))!;
-  const tilt1 = (await readFrame(page, tilt))!;
+  const flat1 = nn(await readFrame(page, flat));
+  const tilt1 = nn(await readFrame(page, tilt));
 
   // Equal halves: the rotated item's AABB equals the unrotated item's box.
   expect(tilt1.rotation ?? 0).toBeCloseTo(Math.PI / 6, 3);
@@ -159,8 +160,8 @@ test("grid arrange of a rotated + unrotated pair preserves the band, equal-halve
   await page.waitForTimeout(100);
   await gridBtn.click();
   await page.waitForTimeout(120);
-  const flat3 = (await readFrame(page, flat))!;
-  const tilt3 = (await readFrame(page, tilt))!;
+  const flat3 = nn(await readFrame(page, flat));
+  const tilt3 = nn(await readFrame(page, tilt));
   expect(flat3.width).toBeCloseTo(flat1.width, 4);
   expect(flat3.height).toBeCloseTo(flat1.height, 4);
   expect(tilt3.width).toBeCloseTo(tilt1.width, 4);
@@ -188,19 +189,19 @@ test("flex arrange of many items fills the band — no collapse to a center stri
       frame: { x: s.x, y: s.y, width: 0.08, height: 0.08, rotation: 0 },
     });
     await page.waitForTimeout(40);
-    ids.push((await rootChildIds(page)).find((x) => !before.includes(x))!);
+    ids.push(nn((await rootChildIds(page)).find((x) => !before.includes(x))));
   }
 
   await selectBoth(page, ids);
   await page.waitForTimeout(60);
-  const band0 = bandOf(await Promise.all(ids.map(async (id) => (await readFrame(page, id))!)));
+  const band0 = bandOf(await Promise.all(ids.map(async (id) => nn(await readFrame(page, id)))));
 
   const flexBtn = page.getByRole("button", { name: /Arrange as Flex|플렉스로 정렬/ });
   await expect(flexBtn).toBeVisible();
   await flexBtn.click();
   await page.waitForTimeout(120);
 
-  const out = await Promise.all(ids.map(async (id) => (await readFrame(page, id))!));
+  const out = await Promise.all(ids.map(async (id) => nn(await readFrame(page, id))));
   const band1 = bandOf(out);
   // Band preserved in BOTH dimensions — height must not collapse.
   expect(Math.abs(band1.w - band0.w)).toBeLessThan(3);

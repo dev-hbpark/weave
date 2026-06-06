@@ -9,6 +9,7 @@
 // transform.
 
 import { expect, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -103,7 +104,7 @@ test("hover overlay rotates with a rotated item", async ({ page }) => {
   await addFrame(page, "slide", {
     frame: { x: 0.4, y: 0.4, width: 0.2, height: 0.2, rotation: 0 },
   });
-  const id = (await rootChildIds(page)).at(-1)!;
+  const id = nn((await rootChildIds(page)).at(-1));
   await setRotation(page, id, Math.PI / 6); // 30°
   await selectItems(page, []); // hover is suppressed for selected items
 
@@ -121,8 +122,10 @@ test("hover overlay rotates with a rotated item", async ({ page }) => {
   expect(transform).not.toBe("none");
   const m = transform.match(/matrix\(([^)]+)\)/);
   expect(m).not.toBeNull();
-  const [a, b] = m![1]!.split(",").map((s) => Number.parseFloat(s.trim()));
-  const angle = Math.atan2(b!, a!);
+  const [a, b] = nn(nn(m)[1])
+    .split(",")
+    .map((s) => Number.parseFloat(s.trim()));
+  const angle = Math.atan2(nn(b), nn(a));
   expect(angle).toBeCloseTo(Math.PI / 6, 2); // overlay rotated 30° with the item
 });
 
@@ -133,7 +136,7 @@ test("marquee selects a rotated item by its outer bounds, not the raw slot", asy
   await addFrame(page, "slide", {
     frame: { x: 0.3, y: 0.47, width: 0.4, height: 0.06, rotation: 0 },
   });
-  const id = (await rootChildIds(page)).at(-1)!;
+  const id = nn((await rootChildIds(page)).at(-1));
   await setRotation(page, id, Math.PI / 2); // 90° → AABB is 0.06 wide × 0.4 tall
   await selectItems(page, []);
 
@@ -167,12 +170,12 @@ test("multi-align places a rotated item by its outer bounds (end-to-end)", async
   await addFrame(page, "slide", {
     frame: { x: 0.55, y: 0.55, width: 0.2, height: 0.2, rotation: 0 },
   });
-  const aId = (await rootChildIds(page)).find((x) => !before.includes(x))!;
+  const aId = nn((await rootChildIds(page)).find((x) => !before.includes(x)));
   const afterA = await rootChildIds(page);
   await addFrame(page, "slide", {
     frame: { x: 0.1, y: 0.02, width: 0.2, height: 0.2, rotation: 0 },
   });
-  const bId = (await rootChildIds(page)).find((x) => !afterA.includes(x))!;
+  const bId = nn((await rootChildIds(page)).find((x) => !afterA.includes(x)));
 
   await setRotation(page, aId, Math.PI / 4);
   await selectItems(page, [aId, bId]);

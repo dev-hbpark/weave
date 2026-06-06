@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { nn } from "../../../lib/nn.js";
 import { colorDeltaE, deltaE2000, type Lab, parseColor, rgbToLab } from "./color-metrics.js";
 
 describe("parseColor", () => {
@@ -46,7 +47,7 @@ describe("colorDeltaE (string → ΔE00)", () => {
     expect(colorDeltaE("#111111", "#111111")).toBeCloseTo(0, 6);
     const d = colorDeltaE("#e23b3b", "#2b6fe2");
     expect(d).not.toBeNull();
-    expect(d!).toBeGreaterThan(20); // red vs blue — perceptually far apart
+    expect(nn(d)).toBeGreaterThan(20); // red vs blue — perceptually far apart
   });
 
   it("returns null when either color is a token", () => {

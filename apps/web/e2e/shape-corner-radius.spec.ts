@@ -6,6 +6,7 @@
 // rectangle-only + input-exclusivity guards.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -20,9 +21,9 @@ async function addRectangle(page: Page): Promise<string> {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "shape",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.2, y: 0.2, width: 0.4, height: 0.4, rotation: 0 },
       // seed default for `shape` is already a rectangle with zero radii.
     });
@@ -37,7 +38,7 @@ async function setCornerRadius(page: Page, input: Record<string, unknown>): Prom
     const w = window as unknown as {
       __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
     };
-    const r = w.__weaveEditor!.exec("weave.shape.setCornerRadius", inp);
+    const r = nn(w.__weaveEditor).exec("weave.shape.setCornerRadius", inp);
     return r.ok !== false;
   }, input);
   await page.waitForTimeout(120);

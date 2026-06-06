@@ -18,6 +18,7 @@
 // in `clipboardStore.write` (origin equality) keeps the second fire
 // from looping.
 
+import { nn } from "../../lib/nn.js";
 import { clipboardStore } from "./clipboard-store.js";
 import type { ClipboardPayload, KnownClipboardPayload } from "./clipboard-types.js";
 
@@ -105,7 +106,7 @@ export function mountLocalStorageTransport(sessionOrigin: string): LocalStorageT
     isActive: true,
     dispose: () => {
       unsubscribeStore();
-      g.removeEventListener!("storage", handleStorage as EventListener);
+      nn(g.removeEventListener)("storage", handleStorage as EventListener);
     },
   };
 }

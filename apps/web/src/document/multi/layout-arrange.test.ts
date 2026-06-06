@@ -6,6 +6,7 @@
 // footprints; a rotated item solves for the raw box whose AABB fills the cell.
 
 import { describe, expect, it } from "vitest";
+import { nn } from "../../lib/nn.js";
 import { type ArrangeInput, computeArrangedFrames } from "./layout-arrange.js";
 
 type F = { x: number; y: number; width: number; height: number; rotation?: number };
@@ -73,8 +74,8 @@ describe("computeArrangedFrames", () => {
     ];
     const band0 = bandOf(items.map((it) => it.frame));
     const out = computeArrangedFrames(items, "grid");
-    const flat = out.find((o) => o.id === "flat")!.frame;
-    const tilt = out.find((o) => o.id === "tilt")!.frame;
+    const flat = nn(out.find((o) => o.id === "flat")).frame;
+    const tilt = nn(out.find((o) => o.id === "tilt")).frame;
     // Rotation preserved; the rotated item's AABB equals the unrotated box —
     // both fill an equal half of the band.
     expect(tilt.rotation).toBeCloseTo(Math.PI / 6, 6);
@@ -97,9 +98,9 @@ describe("computeArrangedFrames", () => {
     const p2 = computeArrangedFrames(p1, "grid");
     const p3 = computeArrangedFrames(p2, "grid");
     for (const id of ["a", "b"]) {
-      const a = p1.find((o) => o.id === id)!.frame;
-      const b = p2.find((o) => o.id === id)!.frame;
-      const c = p3.find((o) => o.id === id)!.frame;
+      const a = nn(p1.find((o) => o.id === id)).frame;
+      const b = nn(p2.find((o) => o.id === id)).frame;
+      const c = nn(p3.find((o) => o.id === id)).frame;
       expect(b.width).toBeCloseTo(a.width, 9);
       expect(b.height).toBeCloseTo(a.height, 9);
       expect(b.x).toBeCloseTo(a.x, 9);
@@ -142,8 +143,8 @@ describe("computeArrangedFrames", () => {
       H,
     );
     const out = computeArrangedFrames(items, "grid", W, H);
-    const flat = aabb(out.find((o) => o.id === "flat")!.frame, W, H);
-    const tilt = aabb(out.find((o) => o.id === "tilt")!.frame, W, H);
+    const flat = aabb(nn(out.find((o) => o.id === "flat")).frame, W, H);
+    const tilt = aabb(nn(out.find((o) => o.id === "tilt")).frame, W, H);
     expect(tilt.w).toBeCloseTo(flat.w, 4); // equal halves in pixels
     expect(tilt.h).toBeCloseTo(flat.h, 4);
     const band1 = bandOf(
@@ -164,10 +165,10 @@ describe("computeArrangedFrames", () => {
     const out = computeArrangedFrames(items, "flex");
     expect(out).toHaveLength(3);
     const xs = out.map((o) => o.frame.x);
-    expect(xs[0]!).toBeLessThan(xs[1]!);
-    expect(xs[1]!).toBeLessThan(xs[2]!);
+    expect(nn(xs[0])).toBeLessThan(nn(xs[1]));
+    expect(nn(xs[1])).toBeLessThan(nn(xs[2]));
     const ys = out.map((o) => o.frame.y);
-    expect(Math.abs(ys[0]! - ys[1]!)).toBeLessThan(1e-9);
-    expect(Math.abs(ys[1]! - ys[2]!)).toBeLessThan(1e-9);
+    expect(Math.abs(nn(ys[0]) - nn(ys[1]))).toBeLessThan(1e-9);
+    expect(Math.abs(nn(ys[1]) - nn(ys[2]))).toBeLessThan(1e-9);
   });
 });

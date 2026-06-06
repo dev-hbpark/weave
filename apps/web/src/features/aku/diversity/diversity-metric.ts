@@ -16,6 +16,7 @@
 // JSON (kind / attrs / units / children), so it works on raw agent output
 // without constructing @agocraft/core instances. Pure & unit-tested.
 
+import { nn } from "../../../lib/nn.js";
 import { colorDeltaE, parseColor } from "./color-metrics.js";
 
 // ── Structural input (a subset of the agocraft Document/Item JSON) ────────────
@@ -255,7 +256,7 @@ export function diversityReport(
   const deltas: number[] = [];
   for (let i = 0; i < bgColors.length; i += 1) {
     for (let j = i + 1; j < bgColors.length; j += 1) {
-      const d = colorDeltaE(bgColors[i]!, bgColors[j]!);
+      const d = colorDeltaE(nn(bgColors[i]), nn(bgColors[j]));
       if (d !== null) deltas.push(d);
     }
   }

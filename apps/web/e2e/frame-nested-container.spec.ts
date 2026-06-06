@@ -5,6 +5,7 @@
 //      "non-slide" section; toggling it back returns it to the slide strip.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -29,9 +30,9 @@ type TreeNode = {
 async function addFrameWithImage(page: Page): Promise<{ frameId: string; imageId: string }> {
   const frameId = await page.evaluate(() => {
     const w = window as unknown as W;
-    const f = w.__weaveEditor!.exec("weave.item.add", {
+    const f = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "frame",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
     });
     return String(f.value);
@@ -39,7 +40,7 @@ async function addFrameWithImage(page: Page): Promise<{ frameId: string; imageId
   await page.waitForTimeout(150);
   const imageId = await page.evaluate((fid) => {
     const w = window as unknown as W;
-    const img = w.__weaveEditor!.exec("weave.item.add", {
+    const img = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "image",
       containerId: fid,
       frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0 },
@@ -59,7 +60,7 @@ async function setPresentable(page: Page, frameId: string, presentable: boolean)
   await page.evaluate(
     ({ id, val }) => {
       const w = window as unknown as W;
-      w.__weaveEditor!.exec("weave.item.update", {
+      nn(w.__weaveEditor).exec("weave.item.update", {
         itemId: id,
         patch: (prev: { attrs: Record<string, unknown> }) => ({
           attrs: { ...prev.attrs, presentable: val },
@@ -79,7 +80,7 @@ interface Snapshot {
 async function snapshot(page: Page, frameId: string): Promise<Snapshot> {
   return page.evaluate((fid) => {
     const w = window as unknown as W;
-    const root = w.__weaveDoc!.root;
+    const root = nn(w.__weaveDoc).root;
     let frame: TreeNode | undefined;
     const walk = (n: TreeNode): void => {
       if (String(n.id) === fid) frame = n;
@@ -136,10 +137,10 @@ test("WI-072 ⑤ — toggling a frame off the deck moves it to the thumbnail non
   // Two top-level frames → both slides by default.
   const ids = await page.evaluate(() => {
     const w = window as unknown as W;
-    const root = String(w.__weaveDoc!.root.id);
+    const root = String(nn(w.__weaveDoc).root.id);
     const mk = (x: number) =>
       String(
-        w.__weaveEditor!.exec("weave.item.add", {
+        nn(w.__weaveEditor).exec("weave.item.add", {
           kind: "frame",
           containerId: root,
           frame: { x, y: 0, width: 0.4, height: 0.4, rotation: 0 },

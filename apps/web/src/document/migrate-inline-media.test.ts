@@ -1,5 +1,6 @@
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
+import { nn } from "../lib/nn.js";
 import {
   findInlineImageItems,
   replaceInlineImageSrcs,
@@ -123,7 +124,7 @@ describe("findInlineImageItems", () => {
     const doc = docWith([imageItem("a", "data:,AAA")]);
     const targets = findInlineImageItems(doc);
     expect(targets).toHaveLength(1);
-    expect(targets[0]!.mime).toBe("image/png");
+    expect(nn(targets[0]).mime).toBe("image/png");
   });
 
   it("includes shape items with an image fill carrying a data URL", () => {
@@ -133,7 +134,7 @@ describe("findInlineImageItems", () => {
     ]);
     const targets = findInlineImageItems(doc);
     expect(targets.map((t) => t.itemId)).toEqual(["s1"]);
-    expect(targets[0]!.mime).toBe("image/jpeg");
+    expect(nn(targets[0]).mime).toBe("image/jpeg");
   });
 
   it("skips shape items whose image fill is already a cloud URL", () => {
@@ -185,11 +186,11 @@ describe("replaceInlineImageSrcs", () => {
     ]);
     const out = replaceInlineImageSrcs(blob, map) as Record<string, unknown>;
     const children = out.children as ReadonlyArray<Record<string, unknown>>;
-    expect((children[0]!.attrs as { src: string }).src).toBe("https://cloud.example.com/a.png");
-    expect((children[0]!.attrs as { alt: string }).alt).toBe("");
+    expect((nn(children[0]).attrs as { src: string }).src).toBe("https://cloud.example.com/a.png");
+    expect((nn(children[0]).attrs as { alt: string }).alt).toBe("");
     // Frame item with a coincidentally-named src field is left alone.
-    expect((children[1]!.attrs as { src: string }).src).toBe("data:not-an-image");
-    const grand = (children[2]!.children as ReadonlyArray<Record<string, unknown>>)[0]!;
+    expect((nn(children[1]).attrs as { src: string }).src).toBe("data:not-an-image");
+    const grand = nn((nn(children[2]).children as ReadonlyArray<Record<string, unknown>>)[0]);
     expect((grand.attrs as { src: string }).src).toBe("https://cloud.example.com/d.jpg");
   });
 

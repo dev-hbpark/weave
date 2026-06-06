@@ -22,6 +22,7 @@ import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { ContextualToolbar as Bar } from "@weave/design-system";
 import type { JSX } from "react";
+import { nn } from "../../lib/nn.js";
 import type { ItemSnapshot } from "./multi-edit.js";
 import { FlexChildSection, GridChildSection } from "./sections/flex-child-section.js";
 import { toolbarSectionRegistry } from "./sections/index.js";
@@ -57,7 +58,7 @@ export function ContextualToolbar({
   if (selectedItems.length === 0) return null;
 
   // Same-kind only — multi-selection of mixed kinds hides the bar.
-  const firstKind = selectedItems[0]!.kind;
+  const firstKind = nn(selectedItems[0]).kind;
   for (const it of selectedItems) {
     if (it.kind !== firstKind) return null;
   }

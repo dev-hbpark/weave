@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { nn } from "../../../lib/nn.js";
 import {
   autoStyleDirective,
   composeStyleTask,
@@ -83,7 +84,7 @@ describe("variationLine (within-style diversity)", () => {
 
 describe("composeStyleTask", () => {
   it("emits a [디자인 스타일] block with the recipe, commit tail, and variation", () => {
-    const style = styleById("cyberpunk")!;
+    const style = nn(styleById("cyberpunk"));
     const line = composeStyleTask(style, 3);
     expect(line).toContain("[디자인 스타일]");
     expect(line).toContain(style.recipe);

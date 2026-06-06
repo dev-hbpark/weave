@@ -5,6 +5,7 @@
 // border-radius (NOT the legacy 0..1 ratio, which would round to ~0px).
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers";
 
 /** Run an agent-style edit: `editor.exec("weave.item.update", { itemId, attrs })`. */
@@ -38,7 +39,7 @@ async function imageBorderRadius(page: Page, itemId: string): Promise<string> {
       const br = el.style.borderRadius;
       // ImageBlock writes a px value (uniform "Npx" or 4-value); skip unrelated
       // inline radii that use CSS-var tokens (e.g. placeholder var(--radius-md)).
-      if (br && br.includes("px")) return br;
+      if (br?.includes("px")) return br;
     }
     return "0px";
   }, itemId);
@@ -59,7 +60,7 @@ test.describe("corner radius — Aku agent path", () => {
     const id = await page.evaluate(() => {
       const root = (window as unknown as { __weaveDoc: { root: { children: { id: unknown }[] } } })
         .__weaveDoc.root;
-      return String(root.children[root.children.length - 1]!.id);
+      return String(nn(root.children[root.children.length - 1]).id);
     });
 
     // Uniform px (agent sends a plain number — now design-px, not a 0..1 ratio).

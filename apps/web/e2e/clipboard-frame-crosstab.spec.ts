@@ -10,6 +10,7 @@
 //    time; the clipboard stays empty so a subsequent paste is a no-op.
 
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -115,7 +116,7 @@ test("Frame with 5 children deep-copies: paste produces a new id for every desce
   // A new root sibling has appeared.
   await expect.poll(() => rootChildCount(page)).toBe(2);
   const ids = await rootChildIds(page);
-  const newRoot = ids[ids.length - 1]!;
+  const newRoot = nn(ids[ids.length - 1]);
   expect(newRoot).not.toBe(parentId);
 
   // Every descendant must be a fresh id (no collision with the source).

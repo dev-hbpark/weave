@@ -9,6 +9,7 @@
 // Rotation is stored INSIDE `cropRatio` (agocraft DR-037 `ImageCrop.rotation`).
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // 1×1 transparent PNG — enough for the <img> to mount.
@@ -33,9 +34,9 @@ async function addImage(page: Page): Promise<string> {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "image",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
       attrsOverride: { src },
     });
@@ -87,7 +88,7 @@ async function setCrop(page: Page, input: Record<string, unknown>): Promise<bool
     const w = window as unknown as {
       __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
     };
-    return w.__weaveEditor!.exec("weave.image.setCrop", inp).ok !== false;
+    return nn(w.__weaveEditor).exec("weave.image.setCrop", inp).ok !== false;
   }, input);
   await page.waitForTimeout(120);
   return ok;
@@ -181,11 +182,13 @@ async function readCropOffset(
 async function flip(page: Page, itemId: string, axis: "horizontal" | "vertical"): Promise<boolean> {
   const ok = await page.evaluate(
     ([id, ax]) =>
-      (
-        window as unknown as {
-          __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
-        }
-      ).__weaveEditor!.exec("weave.item.flip", { itemId: id, axis: ax }).ok !== false,
+      nn(
+        (
+          window as unknown as {
+            __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
+          }
+        ).__weaveEditor,
+      ).exec("weave.item.flip", { itemId: id, axis: ax }).ok !== false,
     [itemId, axis] as const,
   );
   await page.waitForTimeout(100);
@@ -199,9 +202,9 @@ async function addKind(page: Page, kind: string): Promise<string> {
       __weaveDoc?: { root: { id: unknown } };
     };
     return String(
-      w.__weaveEditor!.exec("weave.item.add", {
+      nn(w.__weaveEditor).exec("weave.item.add", {
         kind: k,
-        containerId: String(w.__weaveDoc!.root.id),
+        containerId: String(nn(w.__weaveDoc).root.id),
         frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
       }).value,
     );
@@ -251,9 +254,9 @@ test("WI-074 — guards: non-image and out-of-range crop are rejected", async ({
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "shape",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.2, rotation: 0 },
     });
     return String(r.value);

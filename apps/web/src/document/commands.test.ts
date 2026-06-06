@@ -21,6 +21,7 @@ import {
   itemId as makeItemId,
 } from "@agocraft/core";
 import { describe, expect, it, vi } from "vitest";
+import { nn } from "../lib/nn.js";
 import {
   absoluteFrameTransform,
   addChild,
@@ -855,7 +856,7 @@ describe("z-order commands (WI-038)", () => {
     const result = cmd.run(makeZOrderCtx(), { itemId });
     if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
     if (result.patches.length === 0) return { patches: 0 };
-    const patch = result.patches[0]!;
+    const patch = nn(result.patches[0]);
     if (patch.type !== "item.children.reorder") {
       throw new Error(`expected item.children.reorder, got ${patch.type}`);
     }
@@ -921,13 +922,13 @@ describe("z-order commands (WI-038)", () => {
     // Root-level reorder → container itemId equals doc.root.id
     const rootResult = cmd.run(ctx, { itemId: "a" });
     if (!rootResult.ok) throw new Error("expected ok");
-    const rootPatch = rootResult.patches[0]!;
+    const rootPatch = nn(rootResult.patches[0]);
     if (rootPatch.type !== "item.children.reorder") throw new Error("wrong kind");
     expect(String(rootPatch.itemId)).toBe(String(ctx.document.root.id));
     // Nested reorder → container itemId equals frame b
     const nestedResult = cmd.run(ctx, { itemId: "b-1" });
     if (!nestedResult.ok) throw new Error("expected ok");
-    const nestedPatch = nestedResult.patches[0]!;
+    const nestedPatch = nn(nestedResult.patches[0]);
     if (nestedPatch.type !== "item.children.reorder") throw new Error("wrong kind");
     expect(String(nestedPatch.itemId)).toBe("b");
   });
@@ -1007,10 +1008,10 @@ describe("weave.item.reparent (WI-039)", () => {
     const result = runReparent(ctx, [{ itemId: "c1", newParentId: "p2" }]);
     if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
     expect(result.patches).toHaveLength(1);
-    const patch = result.patches[0]!;
+    const patch = nn(result.patches[0]);
     if (patch.type !== "item.reparent") throw new Error("wrong patch type");
     expect(patch.entries).toHaveLength(1);
-    const e = patch.entries[0]!;
+    const e = nn(patch.entries[0]);
     expect(String(e.itemId)).toBe("c1");
     expect(String(e.oldParentId)).toBe("p1");
     expect(e.oldIndex).toBe(0);
@@ -1044,9 +1045,9 @@ describe("weave.item.reparent (WI-039)", () => {
     const ctx2: CommandContext = { ...ctx, document: doc };
     const result = runReparent(ctx2, [{ itemId: "cr", newParentId: "p2" }]);
     if (!result.ok) throw new Error("expected ok");
-    const patch = result.patches[0]!;
+    const patch = nn(result.patches[0]);
     if (patch.type !== "item.reparent") throw new Error("wrong type");
-    const e = patch.entries.find((x) => String(x.itemId) === "cr")!;
+    const e = nn(patch.entries.find((x) => String(x.itemId) === "cr"));
     expect(e.newFrameRatio.rotation).toBeCloseTo(0.6, 5);
   });
 
@@ -1069,9 +1070,9 @@ describe("weave.item.reparent (WI-039)", () => {
     const ctx2: CommandContext = { ...ctx, document: doc };
     const result = runReparent(ctx2, [{ itemId: "cr", newParentId: "p3" }]);
     if (!result.ok) throw new Error("expected ok");
-    const patch = result.patches[0]!;
+    const patch = nn(result.patches[0]);
     if (patch.type !== "item.reparent") throw new Error("wrong type");
-    const e = patch.entries.find((x) => String(x.itemId) === "cr")!;
+    const e = nn(patch.entries.find((x) => String(x.itemId) === "cr"));
     expect(e.newFrameRatio.rotation).toBeCloseTo(0.1, 5);
   });
 
@@ -1149,7 +1150,7 @@ describe("weave.item.reparent (WI-039)", () => {
     ]);
     if (!result.ok) throw new Error("expected ok");
     expect(result.patches).toHaveLength(1); // single history entry
-    const patch = result.patches[0]!;
+    const patch = nn(result.patches[0]);
     if (patch.type !== "item.reparent") throw new Error("wrong type");
     expect(patch.entries).toHaveLength(2);
     expect(patch.entries.map((e) => String(e.itemId))).toEqual(["c1", "c2"]);
@@ -1167,9 +1168,9 @@ describe("weave.item.reparent (WI-039)", () => {
     const ctx2: CommandContext = { ...ctx, document: doc };
     const result = runReparent(ctx2, [{ itemId: "c-loose", newParentId: "p2" }]);
     if (!result.ok) throw new Error("expected ok");
-    const patch = result.patches[0]!;
+    const patch = nn(result.patches[0]);
     if (patch.type !== "item.reparent") throw new Error("wrong type");
-    const e = patch.entries[0]!;
+    const e = nn(patch.entries[0]);
     expect(String(e.oldParentId)).toBe(String(ctx2.document.root.id));
     expect(String(e.newParentId)).toBe("p2");
   });
@@ -1179,9 +1180,9 @@ describe("weave.item.reparent (WI-039)", () => {
     const rootId = String(ctx.document.root.id);
     const result = runReparent(ctx, [{ itemId: "c1", newParentId: rootId }]);
     if (!result.ok) throw new Error("expected ok");
-    const patch = result.patches[0]!;
+    const patch = nn(result.patches[0]);
     if (patch.type !== "item.reparent") throw new Error("wrong type");
-    const e = patch.entries[0]!;
+    const e = nn(patch.entries[0]);
     expect(String(e.oldParentId)).toBe("p1");
     expect(String(e.newParentId)).toBe(rootId);
     expect(e.newIndex).toBe(2); // root had [p1, p2] = length 2
@@ -1318,8 +1319,8 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
       expect(String(e.oldParentId)).toBe("p1");
       expect(String(e.newParentId)).toBe(rootId);
     }
-    expect(reparent.entries[0]!.newIndex).toBe(2);
-    expect(reparent.entries[1]!.newIndex).toBe(3);
+    expect(nn(reparent.entries[0]).newIndex).toBe(2);
+    expect(nn(reparent.entries[1]).newIndex).toBe(3);
 
     if (remove === undefined || remove.type !== "item.remove") {
       throw new Error("patch[1] must be item.remove");
@@ -1375,7 +1376,7 @@ describe("weave.frame.removeKeepingChildren (WI-050)", () => {
     const { result } = runDissolve(ctx, "p2"); // p2 has no children
     if (!result.ok) throw new Error("expected ok");
     expect(result.patches).toHaveLength(1);
-    expect(result.patches[0]!.type).toBe("item.remove");
+    expect(nn(result.patches[0]).type).toBe("item.remove");
   });
 
   it("guards: dissolving the root fails; an unknown id fails", () => {
@@ -1487,10 +1488,10 @@ describe("weave.item.add — creation units (WI-063)", () => {
     const units = createdUnits(res);
     const fills = units.filter((u) => u.kind === "decoration.fill");
     expect(fills).toHaveLength(1); // the seeded default fill was replaced, not duplicated
-    expect(fills[0]!.attrs).toEqual(gradient);
+    expect(nn(fills[0]).attrs).toEqual(gradient);
     const shadows = units.filter((u) => u.kind === "decoration.shadow");
     expect(shadows).toHaveLength(1);
-    expect(shadows[0]!.attrs).toEqual(shadow);
+    expect(nn(shadows[0]).attrs).toEqual(shadow);
   });
 
   it("keeps the seeded default fill when no units are provided", () => {
@@ -1854,7 +1855,7 @@ describe("weave.shape.breakToLine + weave.line.closeToShape (WI-065 / DR-031)", 
 
   it("breakToLine turns a rectangle into a fresh-id line (remove + create)", () => {
     const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.shape.breakToLine");
-    const r = cmd!.run(makeShapeCtx(), { itemId: "rect-1" });
+    const r = nn(cmd).run(makeShapeCtx(), { itemId: "rect-1" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.patches.map((p) => p.type)).toEqual(["item.remove", "item.create"]);
@@ -1866,14 +1867,14 @@ describe("weave.shape.breakToLine + weave.line.closeToShape (WI-065 / DR-031)", 
 
   it("breakToLine rejects an out-of-range vertex index", () => {
     const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.shape.breakToLine");
-    const r = cmd!.run(makeShapeCtx(), { itemId: "rect-1", vertexIndex: 99 });
+    const r = nn(cmd).run(makeShapeCtx(), { itemId: "rect-1", vertexIndex: 99 });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe("invalid-vertex-index");
   });
 
   it("closeToShape turns a free curve into a fresh-id closed poly shape", () => {
     const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.line.closeToShape");
-    const r = cmd!.run(makeLineCtx(), { itemId: "line-1" });
+    const r = nn(cmd).run(makeLineCtx(), { itemId: "line-1" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.patches.map((p) => p.type)).toEqual(["item.remove", "item.create"]);

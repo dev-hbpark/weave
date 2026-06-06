@@ -6,6 +6,7 @@
 // were unaffected (no-layout parents emit no reflow patches).
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -44,9 +45,9 @@ async function makeFrameWithChild(
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "frame",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
       attrsOverride: { layout: lay },
     });
@@ -57,7 +58,7 @@ async function makeFrameWithChild(
     const w = window as unknown as {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "shape",
       containerId: pid,
       frame: { x: 0.1, y: 0.1, width: 0.4, height: 0.4, rotation: 0 },
@@ -125,9 +126,9 @@ test("WI-047 — absolute-frame child still accepts a property edit (control)", 
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "frame",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
     });
     return String(r.value);
@@ -137,7 +138,7 @@ test("WI-047 — absolute-frame child still accepts a property edit (control)", 
     const w = window as unknown as {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "shape",
       containerId: pid,
       frame: { x: 0.1, y: 0.1, width: 0.4, height: 0.4, rotation: 0 },

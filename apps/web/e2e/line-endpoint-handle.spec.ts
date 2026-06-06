@@ -5,6 +5,7 @@
 // Verified in the live runtime via on-screen handle positions (refit-invariant).
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -24,9 +25,9 @@ async function addLine(page: Page): Promise<string> {
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = w.__weaveEditor!.exec("weave.item.add", {
+      const r = nn(w.__weaveEditor).exec("weave.item.add", {
         kind: "line",
-        containerId: String(w.__weaveDoc!.root.id),
+        containerId: String(nn(w.__weaveDoc).root.id),
         frame: { x: 0.25, y: 0.25, width: 0.5, height: 0.5, rotation: 0 },
         attrsOverride: { points, smooth: false, heads: { start: "none", end: "none" } },
       });

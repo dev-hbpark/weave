@@ -11,6 +11,7 @@
 
 import { put } from "@vercel/blob";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { nn } from "../../src/lib/nn.js";
 import { apiError } from "../_lib/errors.js";
 import { blobPath, resourceIndexKey, resourceKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
@@ -123,8 +124,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           apiError(res, 400, "INVALID_FIELD", "Malformed data URL");
           return;
         }
-        const mime = match[1]!;
-        const buf = Buffer.from(match[2]!, "base64");
+        const mime = nn(match[1]);
+        const buf = Buffer.from(nn(match[2]), "base64");
         const blob = await put(blobPath(`${generateId(kind)}-${name}`), buf, {
           access: "public",
           contentType: mime,

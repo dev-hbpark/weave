@@ -6,6 +6,7 @@
 
 import { type PaintSpec, paintToSvgFill } from "@agocraft/core";
 import { type SVGAttributes, useId } from "react";
+import { nn } from "../../lib/nn.js";
 import { qrMatrix } from "../qr/qr-matrix.js";
 import type { AgoItem, QrAttrs } from "../types.js";
 
@@ -29,7 +30,7 @@ function modulesPath(
 ): string {
   const parts: string[] = [];
   for (let y = 0; y < matrix.length; y++) {
-    const row = matrix[y]!;
+    const row = nn(matrix[y]);
     for (let x = 0; x < row.length; x++) {
       if (!row[x]) continue;
       const px = x + margin;

@@ -5,6 +5,7 @@
 // guards reject bad input.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -24,9 +25,9 @@ async function addPoly(page: Page): Promise<string> {
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = w.__weaveEditor!.exec("weave.item.add", {
+      const r = nn(w.__weaveEditor).exec("weave.item.add", {
         kind: "shape",
-        containerId: String(w.__weaveDoc!.root.id),
+        containerId: String(nn(w.__weaveDoc).root.id),
         frame: { x: 0.2, y: 0.2, width: 0.4, height: 0.4, rotation: 0 },
         attrsOverride: { shape: "poly", subAttrs: { shape: "poly", points, closed: true } },
       });
@@ -48,7 +49,7 @@ async function setVertices(
       const w = window as unknown as {
         __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
       };
-      const r = w.__weaveEditor!.exec("weave.shape.setVertices", { itemId, ...input });
+      const r = nn(w.__weaveEditor).exec("weave.shape.setVertices", { itemId, ...input });
       return r.ok !== false;
     },
     { itemId, input },

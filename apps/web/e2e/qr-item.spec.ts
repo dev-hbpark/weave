@@ -3,6 +3,7 @@
 // shows the placeholder, and Cmd+Z reverts — all via commands.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -15,9 +16,9 @@ async function addQr(page: Page): Promise<string> {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = w.__weaveEditor!.exec("weave.item.add", {
+    const r = nn(w.__weaveEditor).exec("weave.item.add", {
       kind: "qr",
-      containerId: String(w.__weaveDoc!.root.id),
+      containerId: String(nn(w.__weaveDoc).root.id),
       frame: { x: 0.3, y: 0.3, width: 0.3, height: 0.3, rotation: 0 },
     });
     return String(r.value);

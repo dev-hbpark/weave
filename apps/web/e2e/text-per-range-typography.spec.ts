@@ -12,6 +12,7 @@
 // and asserts the popover STAYS OPEN and the swatch reflects the selection.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -61,7 +62,7 @@ async function readRuns(page: Page, id: string): Promise<Run[]> {
       }
       return undefined;
     }
-    return find(w.__weaveDoc!.root)?.attrs.textRuns ?? [];
+    return find(nn(w.__weaveDoc).root)?.attrs.textRuns ?? [];
   }, id);
 }
 

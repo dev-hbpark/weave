@@ -7,6 +7,7 @@
 // documented in records/rendering-reviews/RPR-001.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -80,7 +81,7 @@ test("culled image frame drops its <img> (frees decode), restores on return", as
     const cv = document.createElement("canvas");
     cv.width = 64;
     cv.height = 64;
-    const g = cv.getContext("2d")!;
+    const g = nn(cv.getContext("2d"));
     g.fillStyle = "#3b82f6";
     g.fillRect(0, 0, 64, 64);
     return cv.toDataURL("image/png");
@@ -90,9 +91,9 @@ test("culled image frame drops its <img> (frees decode), restores on return", as
       type Editor = { exec: (name: string, input: unknown) => unknown };
       type Doc = { root: { id: string | number } };
       const w = window as unknown as { __weaveEditor?: Editor; __weaveDoc?: Doc };
-      w.__weaveEditor!.exec("weave.item.add", {
+      nn(w.__weaveEditor).exec("weave.item.add", {
         kind: "image",
-        containerId: String(w.__weaveDoc!.root.id),
+        containerId: String(nn(w.__weaveDoc).root.id),
         frame: { x: 0.45, y: 0.45, width: 0.12, height: 0.12, rotation: 0 },
         attrsOverride: { src, fit: "cover" },
       });
@@ -111,7 +112,7 @@ test("culled image frame drops its <img> (frees decode), restores on return", as
     const w = window as unknown as {
       __weaveDoc?: { root: { children: ReadonlyArray<{ id: string | number }> } };
     };
-    return String(w.__weaveDoc!.root.children.at(-1)!.id);
+    return String(nn(nn(w.__weaveDoc).root.children.at(-1)).id);
   });
   expect(id.length).toBeGreaterThan(0);
 

@@ -2,6 +2,7 @@
 // algebra behind the weave-owned chart drag handles).
 
 import { describe, expect, it } from "vitest";
+import { nn } from "../../../lib/nn.js";
 import {
   angleFromCenter,
   type ContainerBox,
@@ -102,7 +103,7 @@ describe("pieValueFromAngle (sweep → value inverse)", () => {
     // Two equal slices (total 2, each 50%). Drag slice 0's trailing edge so its
     // sweep becomes 270° (75%): with restTotal = 1, v' = 0.75·1/0.25 = 3.
     const layout = pieLayout([1, 1], 200, 200);
-    const sector = layout.sectors[0]!;
+    const sector = nn(layout.sectors[0]);
     const cursorDeg = sector.startDeg - 270; // 270° clockwise from the start edge
     const v = pieValueFromAngle(sector, layout.total - sector.value, cursorDeg);
     expect(v).toBeCloseTo(3, 6);
@@ -110,7 +111,7 @@ describe("pieValueFromAngle (sweep → value inverse)", () => {
 
   it("clamps tiny sweeps to a minimum fraction (slice never vanishes)", () => {
     const layout = pieLayout([1, 1], 200, 200);
-    const sector = layout.sectors[0]!;
+    const sector = nn(layout.sectors[0]);
     const cursorDeg = sector.startDeg - 0.0001; // essentially zero sweep
     const v = pieValueFromAngle(sector, 1, cursorDeg, { minFrac: 0.05 });
     // f = 0.05 → v = 0.05·1/0.95
@@ -119,7 +120,7 @@ describe("pieValueFromAngle (sweep → value inverse)", () => {
 
   it("returns null when there is no rest mass to proportion against", () => {
     const layout = pieLayout([5], 200, 200);
-    const sector = layout.sectors[0]!;
+    const sector = nn(layout.sectors[0]);
     expect(pieValueFromAngle(sector, 0, sector.startDeg - 90)).toBeNull();
   });
 });

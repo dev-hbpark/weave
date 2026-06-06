@@ -6,6 +6,7 @@
 // bar visible for further actions.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -420,7 +421,7 @@ test("WI-036 — multi-selection mounts a bounding-box marquee + 4 corner handle
   expect(ids.length).toBe(2);
 
   // Single selection — no multi overlay.
-  await selectFrame(page, ids[0]!);
+  await selectFrame(page, nn(ids[0]));
   await expect(page.getByTestId("multi-selection-overlay")).toHaveCount(0);
 
   // Multi-selection — overlay + 4 corner handles mount.

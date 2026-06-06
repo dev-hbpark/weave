@@ -411,6 +411,7 @@ function ChartHandles({
         <HandleButton key={spec.kind} spec={spec} chartItemId={chartItemId} apply={apply} />,
       );
     }
+    // biome-ignore lint/complexity/noUselessFragments: coerces the JSX.Element[] into a single JSX.Element (this function returns JSX.Element | null)
     return rendered.length > 0 ? <>{rendered}</> : null;
   }
 
@@ -431,6 +432,7 @@ function ChartHandles({
       );
     }
   });
+  // biome-ignore lint/complexity/noUselessFragments: coerces the JSX.Element[] into a single JSX.Element (this function returns JSX.Element | null)
   return rendered.length > 0 ? <>{rendered}</> : null;
 }
 

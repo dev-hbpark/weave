@@ -6,6 +6,7 @@
 // land in their own specs.
 
 import { expect, type Page, test } from "@playwright/test";
+import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign, readItemFrame } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -83,7 +84,7 @@ test("Cmd+C then Cmd+V duplicates the shape with a fresh id and offset frame", a
   await expect.poll(() => rootChildCount(page)).toBe(beforeCount + 1);
 
   const ids = await rootChildIds(page);
-  const newId = ids[ids.length - 1]!;
+  const newId = nn(ids[ids.length - 1]);
   expect(newId).not.toBe(original);
 
   const origFrame = await readItemFrame(page, original);
@@ -91,10 +92,10 @@ test("Cmd+C then Cmd+V duplicates the shape with a fresh id and offset frame", a
   expect(origFrame).not.toBeNull();
   expect(newFrame).not.toBeNull();
   // D5 keyboard-paste offset path: source frame + 8px / pasteIndex.
-  expect(newFrame!.x).toBeGreaterThan(origFrame!.x);
-  expect(newFrame!.y).toBeGreaterThan(origFrame!.y);
-  expect(newFrame!.width).toBeCloseTo(origFrame!.width, 5);
-  expect(newFrame!.height).toBeCloseTo(origFrame!.height, 5);
+  expect(nn(newFrame).x).toBeGreaterThan(nn(origFrame).x);
+  expect(nn(newFrame).y).toBeGreaterThan(nn(origFrame).y);
+  expect(nn(newFrame).width).toBeCloseTo(nn(origFrame).width, 5);
+  expect(nn(newFrame).height).toBeCloseTo(nn(origFrame).height, 5);
 });
 
 test("Cmd+X removes the shape; single Cmd+Z restores it", async ({ page }) => {
@@ -126,8 +127,8 @@ test("Cmd+C then two Cmd+V invocations produce two new ids and a paste-stack off
   await expect.poll(() => rootChildCount(page)).toBe(beforeCount + 2);
 
   const ids = await rootChildIds(page);
-  const paste1 = ids[ids.length - 2]!;
-  const paste2 = ids[ids.length - 1]!;
+  const paste1 = nn(ids[ids.length - 2]);
+  const paste2 = nn(ids[ids.length - 1]);
   expect(paste1).not.toBe(paste2);
   expect(paste1).not.toBe(original);
   expect(paste2).not.toBe(original);
@@ -137,8 +138,8 @@ test("Cmd+C then two Cmd+V invocations produce two new ids and a paste-stack off
   const f2 = await readItemFrame(page, paste2);
   expect(f1).not.toBeNull();
   expect(f2).not.toBeNull();
-  expect(f2!.x).toBeGreaterThan(f1!.x);
-  expect(f2!.y).toBeGreaterThan(f1!.y);
+  expect(nn(f2).x).toBeGreaterThan(nn(f1).x);
+  expect(nn(f2).y).toBeGreaterThan(nn(f1).y);
 });
 
 test("Single Cmd+Z reverses a paste atomically (one undo, the pasted item is gone)", async ({

@@ -6,6 +6,7 @@
 
 import type { Page } from "@playwright/test";
 import type { DocFlavor, DomainKind, ItemFrame } from "../src/document/types.js";
+import { nn } from "../src/lib/nn.js";
 
 export async function clearAllDesigns(page: Page) {
   // WI-032 Phase 3c — reset the cursor before navigating so hover state from
@@ -211,7 +212,7 @@ export async function readParentInfo(
       indexInParent: number;
     } | null {
       for (let i = 0; i < node.children.length; i++) {
-        const c = node.children[i]!;
+        const c = nn(node.children[i]);
         if (String(c.id) === targetId) {
           return parent === null
             ? { parentId: String(node.id), indexInParent: i }
