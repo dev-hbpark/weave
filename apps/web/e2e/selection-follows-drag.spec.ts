@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Regression — dragging an UNSELECTED frame (beyond the move threshold)
 // switches the selection to the dragged frame (Figma parity).
 //
@@ -10,7 +11,6 @@
 // selection to the moved frame on the first commit of each gesture.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -85,9 +85,9 @@ test("dragging an unselected frame switches the selection to it", async ({ page 
 
   // B actually moved; A stayed put.
   const after = await framePositions(page);
-  expect(Math.abs(nn(after[b]).x - nn(before[b]).x)).toBeGreaterThan(0.01);
-  expect(Math.abs(nn(after[a]).x - nn(before[a]).x)).toBeLessThan(0.005);
-  expect(Math.abs(nn(after[a]).y - nn(before[a]).y)).toBeLessThan(0.005);
+  expect(Math.abs(after[b]!.x - before[b]!.x)).toBeGreaterThan(0.01);
+  expect(Math.abs(after[a]!.x - before[a]!.x)).toBeLessThan(0.005);
+  expect(Math.abs(after[a]!.y - before[a]!.y)).toBeLessThan(0.005);
 });
 
 test("dragging a frame that is part of a multi-selection preserves the set", async ({ page }) => {

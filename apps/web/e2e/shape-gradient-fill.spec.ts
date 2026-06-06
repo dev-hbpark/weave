@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-056 — shape gradient fill. Verifies (1) the dedicated
 // `weave.shape.setFill` command stores a gradient PaintSpec and the shape
 // renders it as an SVG <linearGradient>, (2) Cmd+Z reverts, and (3) the guard
@@ -5,7 +6,6 @@
 // dev `__weaveEditor` / `__weaveDoc` globals.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -18,9 +18,9 @@ async function addRectangle(page: Page): Promise<string> {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = nn(w.__weaveEditor).exec("weave.item.add", {
+    const r = w.__weaveEditor!.exec("weave.item.add", {
       kind: "shape",
-      containerId: String(nn(w.__weaveDoc).root.id),
+      containerId: String(w.__weaveDoc!.root.id),
       frame: { x: 0.2, y: 0.2, width: 0.4, height: 0.4, rotation: 0 },
     });
     return String(r.value);
@@ -35,7 +35,7 @@ async function setFill(page: Page, itemId: string, fill: unknown): Promise<boole
       const w = window as unknown as {
         __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
       };
-      const r = nn(w.__weaveEditor).exec("weave.shape.setFill", { itemId, fill });
+      const r = w.__weaveEditor!.exec("weave.shape.setFill", { itemId, fill });
       return r.ok !== false;
     },
     { itemId, fill },

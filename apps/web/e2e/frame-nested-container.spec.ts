@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-072 — container-correctness + frame nesting + per-frame slide toggle.
 //   ① Replacing a media item that lives INSIDE a frame updates it IN PLACE
 //      (it stays in the frame) — it must NOT spawn a new image at the root.
@@ -5,7 +6,6 @@
 //      "non-slide" section; toggling it back returns it to the slide strip.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -30,9 +30,9 @@ type TreeNode = {
 async function addFrameWithImage(page: Page): Promise<{ frameId: string; imageId: string }> {
   const frameId = await page.evaluate(() => {
     const w = window as unknown as W;
-    const f = nn(w.__weaveEditor).exec("weave.item.add", {
+    const f = w.__weaveEditor!.exec("weave.item.add", {
       kind: "frame",
-      containerId: String(nn(w.__weaveDoc).root.id),
+      containerId: String(w.__weaveDoc!.root.id),
       frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
     });
     return String(f.value);
@@ -40,7 +40,7 @@ async function addFrameWithImage(page: Page): Promise<{ frameId: string; imageId
   await page.waitForTimeout(150);
   const imageId = await page.evaluate((fid) => {
     const w = window as unknown as W;
-    const img = nn(w.__weaveEditor).exec("weave.item.add", {
+    const img = w.__weaveEditor!.exec("weave.item.add", {
       kind: "image",
       containerId: fid,
       frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0 },
@@ -60,7 +60,7 @@ async function setPresentable(page: Page, frameId: string, presentable: boolean)
   await page.evaluate(
     ({ id, val }) => {
       const w = window as unknown as W;
-      nn(w.__weaveEditor).exec("weave.item.update", {
+      w.__weaveEditor!.exec("weave.item.update", {
         itemId: id,
         patch: (prev: { attrs: Record<string, unknown> }) => ({
           attrs: { ...prev.attrs, presentable: val },
@@ -80,7 +80,7 @@ interface Snapshot {
 async function snapshot(page: Page, frameId: string): Promise<Snapshot> {
   return page.evaluate((fid) => {
     const w = window as unknown as W;
-    const root = nn(w.__weaveDoc).root;
+    const root = w.__weaveDoc!.root;
     let frame: TreeNode | undefined;
     const walk = (n: TreeNode): void => {
       if (String(n.id) === fid) frame = n;
@@ -137,10 +137,10 @@ test("WI-072 ⑤ — toggling a frame off the deck moves it to the thumbnail non
   // Two top-level frames → both slides by default.
   const ids = await page.evaluate(() => {
     const w = window as unknown as W;
-    const root = String(nn(w.__weaveDoc).root.id);
+    const root = String(w.__weaveDoc!.root.id);
     const mk = (x: number) =>
       String(
-        nn(w.__weaveEditor).exec("weave.item.add", {
+        w.__weaveEditor!.exec("weave.item.add", {
           kind: "frame",
           containerId: root,
           frame: { x, y: 0, width: 0.4, height: 0.4, rotation: 0 },

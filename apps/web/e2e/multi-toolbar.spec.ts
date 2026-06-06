@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-021 — Multi-selection ContextualToolbar with mixed-value indicators.
 //
 // Covers:
@@ -10,7 +11,6 @@
 //   4. Multi-selection of mixed kinds (slide + shape) → toolbar hides.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -174,9 +174,9 @@ test("mixed kinds (slide + shape) → toolbar hides", async ({ page }) => {
       };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const result = nn(w.__weaveEditor).exec("weave.item.add", {
+    const result = w.__weaveEditor!.exec("weave.item.add", {
       kind: "frame",
-      containerId: String(nn(w.__weaveDoc).root.id),
+      containerId: String(w.__weaveDoc!.root.id),
       frame: { x: 0.55, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
     });
     return String(result.value);

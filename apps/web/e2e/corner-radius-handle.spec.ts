@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-109 — on-canvas corner-radius handle (live runtime proof).
 //
 // Uniform top-right grip drags to round all corners; double-click splits into
@@ -6,7 +7,6 @@
 // single top-right grip.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign, setSelection } from "./helpers";
 
 interface Attrs {
@@ -39,7 +39,7 @@ async function lastChildId(page: Page): Promise<string> {
   return page.evaluate(() => {
     const root = (window as unknown as { __weaveDoc: { root: { children: { id: unknown }[] } } })
       .__weaveDoc.root;
-    return String(nn(root.children[root.children.length - 1]).id);
+    return String(root.children[root.children.length - 1]!.id);
   });
 }
 
@@ -94,12 +94,12 @@ test.describe("corner-radius handle", () => {
     await dragGrip(page, "corner-radius-handle-tl", 40, 40);
     const split = await readAttrs(page, id);
     expect(split.cornerRadii).toBeDefined();
-    expect(nn(split.cornerRadii).tl).toBeGreaterThan(5);
-    expect(Math.abs(nn(split.cornerRadii).tl - nn(split.cornerRadii).tr)).toBeGreaterThan(1);
+    expect(split.cornerRadii!.tl).toBeGreaterThan(5);
+    expect(Math.abs(split.cornerRadii!.tl - split.cornerRadii!.tr)).toBeGreaterThan(1);
 
     // Double-click the top-left grip → MERGE: every corner = tl's value, back to
     // a single top-right grip (uniform).
-    const tlValue = nn((await readAttrs(page, id)).cornerRadii).tl;
+    const tlValue = (await readAttrs(page, id)).cornerRadii!.tl;
     await page.getByTestId("corner-radius-handle-tl").dblclick();
     await expect(page.getByTestId("corner-radius-handle-bl")).toHaveCount(0);
     await expect(page.getByTestId("corner-radius-handle-tr")).toBeVisible();

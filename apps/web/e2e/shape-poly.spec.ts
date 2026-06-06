@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-057 — freeform polygon ("poly"). Verifies the full slice in the live
 // runtime: create a poly shape, reshape its vertices via the dedicated
 // `weave.shape.setVertices` command (all mutation goes through a command),
@@ -5,7 +6,6 @@
 // guards reject bad input.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -25,9 +25,9 @@ async function addPoly(page: Page): Promise<string> {
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = nn(w.__weaveEditor).exec("weave.item.add", {
+      const r = w.__weaveEditor!.exec("weave.item.add", {
         kind: "shape",
-        containerId: String(nn(w.__weaveDoc).root.id),
+        containerId: String(w.__weaveDoc!.root.id),
         frame: { x: 0.2, y: 0.2, width: 0.4, height: 0.4, rotation: 0 },
         attrsOverride: { shape: "poly", subAttrs: { shape: "poly", points, closed: true } },
       });
@@ -49,7 +49,7 @@ async function setVertices(
       const w = window as unknown as {
         __weaveEditor?: { exec: (n: string, i: unknown) => { ok?: boolean } };
       };
-      const r = nn(w.__weaveEditor).exec("weave.shape.setVertices", { itemId, ...input });
+      const r = w.__weaveEditor!.exec("weave.shape.setVertices", { itemId, ...input });
       return r.ok !== false;
     },
     { itemId, input },

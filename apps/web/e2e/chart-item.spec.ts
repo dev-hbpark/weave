@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-077 — data-driven chart item. Verifies in the live runtime: weave.chart.add
 // seeds a dataset + chart in one undoable step, the chart renders bars from the
 // data, switching chartType re-renders (line/pie), editing the dataset reflows
@@ -5,7 +6,6 @@
 // reverts the whole create — all via commands.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -23,8 +23,8 @@ async function addChart(page: Page): Promise<ChartHandles> {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const r = nn(w.__weaveEditor).exec("weave.chart.add", {
-      containerId: String(nn(w.__weaveDoc).root.id),
+    const r = w.__weaveEditor!.exec("weave.chart.add", {
+      containerId: String(w.__weaveDoc!.root.id),
       frame: { x: 0.25, y: 0.25, width: 0.5, height: 0.5, rotation: 0 },
     });
     return String(r.value);
@@ -37,7 +37,7 @@ async function addChart(page: Page): Promise<ChartHandles> {
     const w = window as unknown as {
       __weaveDoc?: { root: { units: ReadonlyArray<{ kind: string; id: unknown }> } };
     };
-    const datasets = nn(w.__weaveDoc).root.units.filter((u) => u.kind === "dataset");
+    const datasets = w.__weaveDoc!.root.units.filter((u) => u.kind === "dataset");
     return String(datasets[datasets.length - 1]?.id);
   });
   return { chartId, datasetId };

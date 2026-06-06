@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-058 2c GATE — GPU texture measurement PROBE (manual, headed).
 //
 // Headless Chromium can't report GPU texture bytes (software GL), so this
@@ -15,7 +16,6 @@
 // interactive poking from the DevTools console.
 
 import { test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 const gpuTest = process.env.WEAVE_GPU === "1" ? test : test.skip;
@@ -39,7 +39,7 @@ gpuTest("probe: single-image zoom-in GPU texture", async ({ page }) => {
     const cv = document.createElement("canvas");
     cv.width = px;
     cv.height = px;
-    const g = nn(cv.getContext("2d"));
+    const g = cv.getContext("2d")!;
     // Fine checker so upscaling is visually obvious + raster is non-trivial.
     for (let y = 0; y < px; y += 40) {
       for (let x = 0; x < px; x += 40) {
@@ -54,9 +54,9 @@ gpuTest("probe: single-image zoom-in GPU texture", async ({ page }) => {
       type Editor = { exec: (n: string, i: unknown) => unknown };
       type Doc = { root: { id: string | number } };
       const w = window as unknown as { __weaveEditor?: Editor; __weaveDoc?: Doc };
-      nn(w.__weaveEditor).exec("weave.item.add", {
+      w.__weaveEditor!.exec("weave.item.add", {
         kind: "image",
-        containerId: String(nn(w.__weaveDoc).root.id),
+        containerId: String(w.__weaveDoc!.root.id),
         frame: { x: 0.35, y: 0.35, width: 0.3, height: 0.3, rotation: 0 },
         attrsOverride: { src, fit: "fill" },
       });

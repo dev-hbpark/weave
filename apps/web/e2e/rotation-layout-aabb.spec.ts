@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Rotated item fits its OUTER bounds into a flex/grid cell (user spec
 // 2026-05-29). When a frame's layout becomes grid, a rotated child must
 // shrink so its axis-aligned bounding box fits the assigned cell, keeping
@@ -5,7 +6,6 @@
 // adapter (the same path the persistent layout and multi-arrange share).
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -106,7 +106,7 @@ test("grid layout shrinks a rotated child so its outer bounds fit the cell", asy
   await addFrame(page, "slide", {
     frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6, rotation: 0 },
   });
-  const fId = nn((await rootChildIds(page)).at(-1));
+  const fId = (await rootChildIds(page)).at(-1)!;
   // Two children inside F.
   await addFrame(page, "slide", {
     containerId: fId,

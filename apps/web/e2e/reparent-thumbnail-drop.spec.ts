@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-039 — ThumbnailPanel as a reparent drop target.
 //
 // The controller drives `document.elementFromPoint` against the panel
@@ -8,7 +9,6 @@
 // presence on panel thumbnails (proves the surface plumbing).
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import {
   addFrame,
   clearAllDesigns,
@@ -53,7 +53,7 @@ test("editor.exec reparent moves a nested item onto a panel-targeted root frame 
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     return doc?.root.children.map((c) => String(c.id)) ?? [];
   });
-  const rootA = nn(initial[0]);
+  const rootA = initial[0]!;
   await addFrame(page, "frame", {
     frame: { x: 0.6, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
   });
@@ -62,7 +62,7 @@ test("editor.exec reparent moves a nested item onto a panel-targeted root frame 
     const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
     return doc?.root.children.map((c) => String(c.id)) ?? [];
   });
-  const rootB = nn(afterB[afterB.length - 1]);
+  const rootB = afterB[afterB.length - 1]!;
   await addFrame(page, "frame", {
     containerId: rootB,
     frame: { x: 0.25, y: 0.25, width: 0.5, height: 0.5, rotation: 0 },
@@ -88,13 +88,13 @@ test("editor.exec reparent moves a nested item onto a panel-targeted root frame 
   }, rootB);
   expect(childId).not.toBeNull();
 
-  await execReparent(page, [{ itemId: nn(childId), newParentId: rootA }]);
-  expect((await readParentInfo(page, nn(childId)))?.parentId).toBe(rootA);
+  await execReparent(page, [{ itemId: childId!, newParentId: rootA }]);
+  expect((await readParentInfo(page, childId!))?.parentId).toBe(rootA);
 
   // design-header (z-30, h-12) overlaps frame-stage's local (5,5); use a
   // y past the header band so the click lands on the design plane proper.
   await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(120);
-  expect((await readParentInfo(page, nn(childId)))?.parentId).toBe(rootB);
+  expect((await readParentInfo(page, childId!))?.parentId).toBe(rootB);
 });

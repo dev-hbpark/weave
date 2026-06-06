@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-019/WI-021 MC — real-browser proof that a child's selection chrome
 // reflects the manipulation constraints OWNED by the parent frame's layout.
 // The agocraft LayoutEngine.getChildConstraints is the single source;
@@ -14,7 +15,6 @@
 // deferred B5.2 suite.
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { prepareDesign, readItemFrame, setSelection } from "./helpers.js";
 
 /** Viewport-screen center of a frame/child element (by data-frame-id). */
@@ -323,8 +323,8 @@ test("reparent GESTURE (Cmd+Shift+drag) pulls a frame's child OUT to the design 
   await page.keyboard.down("Shift");
   await page.mouse.move(sPos.x, sPos.y);
   await page.mouse.down();
-  await page.mouse.move((sPos.x + nn(empty).x) / 2, (sPos.y + nn(empty).y) / 2, { steps: 4 });
-  await page.mouse.move(nn(empty).x, nn(empty).y, { steps: 4 });
+  await page.mouse.move((sPos.x + empty!.x) / 2, (sPos.y + empty!.y) / 2, { steps: 4 });
+  await page.mouse.move(empty!.x, empty!.y, { steps: 4 });
   await page.mouse.up();
   await page.keyboard.up("Shift");
   await page.keyboard.up("Meta");
@@ -441,7 +441,7 @@ async function cellKeys(
   const keys: string[] = [];
   for (const id of ids) {
     const f = await readItemFrame(page, id);
-    keys.push(`${Math.round(nn(f).x * 1000) / 1000},${Math.round(nn(f).y * 1000) / 1000}`);
+    keys.push(`${Math.round(f!.x * 1000) / 1000},${Math.round(f!.y * 1000) / 1000}`);
   }
   return keys;
 }
@@ -498,13 +498,13 @@ test("grid auto-place: fill all → move one OUT → add fills the front-most ga
   await page.waitForTimeout(120);
   const ids = await addShapes(page, fId, 4); // fills (1,1),(2,1),(1,2),(2,2)
   // The item at (1,1) is ids[0]; record its cell, then move it OUT to root.
-  const movedKey = nn((await cellKeys(page, [nn(ids[0])]))[0]);
+  const movedKey = (await cellKeys(page, [ids[0]!]))[0]!;
   const root = await rootId(page);
-  await reparent(page, nn(ids[0]), root);
+  await reparent(page, ids[0]!, root);
   await page.waitForTimeout(180);
   // Add a new item — it must fill the now-empty FRONT-most cell (the gap).
-  const newId = nn((await addShapes(page, fId, 1))[0]);
-  const newKey = nn((await cellKeys(page, [newId]))[0]);
+  const newId = (await addShapes(page, fId, 1))[0]!;
+  const newKey = (await cellKeys(page, [newId]))[0]!;
   // eslint-disable-next-line no-console
   console.log("[verify] grid gap-fill:", JSON.stringify({ movedKey, newKey }));
   expect(newKey).toBe(movedKey); // new item reuses the vacated front-most cell
@@ -521,16 +521,16 @@ test("grid cell-swap: dragging the SELECTED grid child onto another swaps their 
   });
   await page.waitForTimeout(120);
   const ids = await addShapes(page, fId, 2); // A→(1,1)=x0, B→(2,1)=x0.5
-  const aBefore = await readItemFrame(page, nn(ids[0]));
-  const bBefore = await readItemFrame(page, nn(ids[1]));
-  expect(nn(aBefore).x).toBeCloseTo(0, 2);
-  expect(nn(bBefore).x).toBeCloseTo(0.5, 2);
+  const aBefore = await readItemFrame(page, ids[0]!);
+  const bBefore = await readItemFrame(page, ids[1]!);
+  expect(aBefore!.x).toBeCloseTo(0, 2);
+  expect(bBefore!.x).toBeCloseTo(0.5, 2);
 
   // Select A, then plain-drag it onto B → swap cells.
-  await setSelection(page, [nn(ids[0])]);
+  await setSelection(page, [ids[0]!]);
   await page.waitForTimeout(120);
-  const aPos = await centerOf(page, nn(ids[0]));
-  const bPos = await centerOf(page, nn(ids[1]));
+  const aPos = await centerOf(page, ids[0]!);
+  const bPos = await centerOf(page, ids[1]!);
   await page.mouse.move(aPos.x, aPos.y);
   await page.mouse.down();
   await page.mouse.move((aPos.x + bPos.x) / 2, aPos.y, { steps: 4 });
@@ -538,12 +538,12 @@ test("grid cell-swap: dragging the SELECTED grid child onto another swaps their 
   await page.mouse.up();
   await page.waitForTimeout(200);
 
-  const aAfter = await readItemFrame(page, nn(ids[0]));
-  const bAfter = await readItemFrame(page, nn(ids[1]));
+  const aAfter = await readItemFrame(page, ids[0]!);
+  const bAfter = await readItemFrame(page, ids[1]!);
   // eslint-disable-next-line no-console
   console.log("[verify] grid swap:", JSON.stringify({ aBefore, bBefore, aAfter, bAfter }));
-  expect(nn(aAfter).x).toBeCloseTo(0.5, 2); // A now in B's cell
-  expect(nn(bAfter).x).toBeCloseTo(0, 2); // B now in A's cell
+  expect(aAfter!.x).toBeCloseTo(0.5, 2); // A now in B's cell
+  expect(bAfter!.x).toBeCloseTo(0, 2); // B now in A's cell
 });
 
 test("grid: dragging the SELECTED grid child onto an EMPTY cell moves it there", async ({
@@ -557,19 +557,19 @@ test("grid: dragging the SELECTED grid child onto an EMPTY cell moves it there",
   });
   await page.waitForTimeout(120);
   const ids = await addShapes(page, fId, 1); // single item → cell (1,1), x0
-  const aBefore = await readItemFrame(page, nn(ids[0]));
-  expect(nn(aBefore).x).toBeCloseTo(0, 2);
+  const aBefore = await readItemFrame(page, ids[0]!);
+  expect(aBefore!.x).toBeCloseTo(0, 2);
 
-  await setSelection(page, [nn(ids[0])]);
+  await setSelection(page, [ids[0]!]);
   await page.waitForTimeout(120);
   // Target the RIGHT half (empty cell 2) by cursor ratio within the frame —
   // there is NO item element there, so this exercises the empty-cell path.
   const rect = await page.evaluate((id) => {
     const el = document.querySelector(`[data-frame-id="${CSS.escape(id)}"]`);
-    const r = nn(el).getBoundingClientRect();
+    const r = el!.getBoundingClientRect();
     return { left: r.left, top: r.top, width: r.width, height: r.height };
   }, fId);
-  const aPos = await centerOf(page, nn(ids[0]));
+  const aPos = await centerOf(page, ids[0]!);
   const targetX = rect.left + rect.width * 0.75;
   const targetY = rect.top + rect.height * 0.5;
   await page.mouse.move(aPos.x, aPos.y);
@@ -579,10 +579,10 @@ test("grid: dragging the SELECTED grid child onto an EMPTY cell moves it there",
   await page.mouse.up();
   await page.waitForTimeout(200);
 
-  const aAfter = await readItemFrame(page, nn(ids[0]));
+  const aAfter = await readItemFrame(page, ids[0]!);
   // eslint-disable-next-line no-console
   console.log("[verify] grid empty-cell move:", JSON.stringify({ aBefore, aAfter }));
-  expect(nn(aAfter).x).toBeCloseTo(0.5, 2); // moved to the empty cell 2
+  expect(aAfter!.x).toBeCloseTo(0.5, 2); // moved to the empty cell 2
 });
 
 test("flex reorder: dragging the SELECTED flex child onto another swaps their sequence order", async ({
@@ -618,7 +618,7 @@ test("flex reorder: dragging the SELECTED flex child onto another swaps their se
   await page.waitForTimeout(150);
   const aBefore = await readItemFrame(page, aId);
   const bBefore = await readItemFrame(page, bId);
-  expect(nn(aBefore).x).toBeLessThan(nn(bBefore).x); // A leads, B trails
+  expect(aBefore!.x).toBeLessThan(bBefore!.x); // A leads, B trails
 
   // Select A, then plain-drag it onto B → swap sequence order.
   await setSelection(page, [aId]);
@@ -637,8 +637,8 @@ test("flex reorder: dragging the SELECTED flex child onto another swaps their se
   // eslint-disable-next-line no-console
   console.log("[verify] flex reorder:", JSON.stringify({ aBefore, bBefore, aAfter, bAfter }));
   // Order swapped: B now leads (x≈0), A now trails (x > B).
-  expect(nn(bAfter).x).toBeCloseTo(0, 2);
-  expect(nn(aAfter).x).toBeGreaterThan(nn(bAfter).x);
+  expect(bAfter!.x).toBeCloseTo(0, 2);
+  expect(aAfter!.x).toBeGreaterThan(bAfter!.x);
 });
 
 test("grid: after increasing columns, added items take distinct cells (no overlap)", async ({
@@ -717,7 +717,7 @@ test("grid: after increasing columns, added items take distinct cells (no overla
   const positions: Array<{ x: number; y: number }> = [];
   for (const id of ids) {
     const f = await readItemFrame(page, id);
-    positions.push({ x: Math.round(nn(f).x * 1000) / 1000, y: Math.round(nn(f).y * 1000) / 1000 });
+    positions.push({ x: Math.round(f!.x * 1000) / 1000, y: Math.round(f!.y * 1000) / 1000 });
   }
   // eslint-disable-next-line no-console
   console.log("[verify] grid auto-place:", JSON.stringify(positions));
@@ -745,7 +745,7 @@ test("grid reversibility: align stretch → start restores the child's intrinsic
   await page.waitForTimeout(150);
 
   const filled = await readItemFrame(page, sId);
-  expect(nn(filled).height).toBeCloseTo(1, 2); // stretch fills the cell height
+  expect(filled!.height).toBeCloseTo(1, 2); // stretch fills the cell height
 
   // Change the row alignment stretch → start.
   await setFrameLayout(page, fId, { ...GRID_2COL, align: "start" });
@@ -753,7 +753,7 @@ test("grid reversibility: align stretch → start restores the child's intrinsic
   const restored = await readItemFrame(page, sId);
   // eslint-disable-next-line no-console
   console.log("[verify] grid reversible:", JSON.stringify({ filled, restored }));
-  expect(nn(restored).height).toBeCloseTo(0.3, 2); // intrinsic restored, not baked 1
+  expect(restored!.height).toBeCloseTo(0.3, 2); // intrinsic restored, not baked 1
 });
 
 test("per-child menu (grid): selecting a grid child shows Justify/Align self; Start restores its size", async ({
@@ -782,7 +782,7 @@ test("per-child menu (grid): selecting a grid child shows Justify/Align self; St
   await expect(page.getByRole("group", { name: "Grid child align-self" })).toBeVisible();
 
   const before = await readItemFrame(page, sId);
-  expect(nn(before).height).toBeCloseTo(1, 2); // stretch fills
+  expect(before!.height).toBeCloseTo(1, 2); // stretch fills
 
   // Set Align self → Start via the per-child control.
   await page
@@ -793,7 +793,7 @@ test("per-child menu (grid): selecting a grid child shows Justify/Align self; St
   const after = await readItemFrame(page, sId);
   // eslint-disable-next-line no-console
   console.log("[verify] grid child-menu:", JSON.stringify({ before, after }));
-  expect(nn(after).height).toBeCloseTo(0.3, 2); // back to intrinsic
+  expect(after!.height).toBeCloseTo(0.3, 2); // back to intrinsic
 });
 
 test("reparenting a shape into an inner grid frame makes it follow the NEW parent's layout", async ({
@@ -836,7 +836,7 @@ test("reparenting a shape into an inner grid frame makes it follow the NEW paren
   expect(beforeS.parentId).toBe(fId);
   expect(beforeS.policyKind).toBe("auto-flex");
   const f2Before = await readItemFrame(page, f2Id);
-  expect(nn(f2Before).x).toBeGreaterThan(0.4); // F2 is the second (right) child
+  expect(f2Before!.x).toBeGreaterThan(0.4); // F2 is the second (right) child
 
   // Reparent S into the inner grid frame F2 (the user's scenario).
   await reparent(page, sId, f2Id);
@@ -852,10 +852,10 @@ test("reparenting a shape into an inner grid frame makes it follow the NEW paren
   expect(afterS.parentId).toBe(f2Id);
   expect(afterS.policyKind).toBe("auto-grid");
   // S placed by F2's grid (column 1 → x≈0 within F2).
-  expect(nn(sFrame).x).toBeCloseTo(0, 2);
+  expect(sFrame!.x).toBeCloseTo(0, 2);
   // Old parent F (flex) reflowed its now-only child F2 back to the start
   // (x ~0.5 → ~0) once S left.
-  expect(nn(f2After).x).toBeLessThan(nn(f2Before).x - 0.1);
+  expect(f2After!.x).toBeLessThan(f2Before!.x - 0.1);
 });
 
 test("CSS flex: an added item keeps its main size, fills the cross axis (align stretch), is resizable", async ({
@@ -884,9 +884,9 @@ test("CSS flex: an added item keeps its main size, fills the cross axis (align s
   // eslint-disable-next-line no-console
   console.log("[verify] flex-css single:", JSON.stringify(sFrame));
   // Main axis = authored width (NOT filled); cross axis = stretched to fill.
-  expect(nn(sFrame).width).toBeCloseTo(0.2, 2);
-  expect(nn(sFrame).height).toBeCloseTo(1, 2);
-  expect(nn(sFrame).x).toBeCloseTo(0, 2); // justify start
+  expect(sFrame!.width).toBeCloseTo(0.2, 2);
+  expect(sFrame!.height).toBeCloseTo(1, 2);
+  expect(sFrame!.x).toBeCloseTo(0, 2); // justify start
 
   // grow 0 → main (width) resizable (drag sets basis); cross stretched → no
   // n/s; flex child → no rotate.
@@ -939,13 +939,13 @@ test("reversibility: stretch → start restores the child's intrinsic height (si
   await page.waitForTimeout(150);
 
   const before = await readItemFrame(page, sId);
-  expect(nn(before).height).toBeCloseTo(0.3, 2); // align start → keeps intrinsic height
+  expect(before!.height).toBeCloseTo(0.3, 2); // align start → keeps intrinsic height
 
   // Change align → stretch: display height fills.
   await setFrameLayout(page, fId, { ...FLEX_ROW_START, align: "stretch" });
   await page.waitForTimeout(150);
   const stretched = await readItemFrame(page, sId);
-  expect(nn(stretched).height).toBeCloseTo(1, 2); // stretched to full
+  expect(stretched!.height).toBeCloseTo(1, 2); // stretched to full
 
   // Change align back → start: height must RESTORE to the intrinsic 0.3, NOT
   // stay at the baked stretched value.
@@ -954,7 +954,7 @@ test("reversibility: stretch → start restores the child's intrinsic height (si
   const restored = await readItemFrame(page, sId);
   // eslint-disable-next-line no-console
   console.log("[verify] reversible:", JSON.stringify({ before, stretched, restored }));
-  expect(nn(restored).height).toBeCloseTo(0.3, 2); // ← the whole point
+  expect(restored!.height).toBeCloseTo(0.3, 2); // ← the whole point
 });
 
 test("CSS flex row align=start: item keeps its HEIGHT (not stretched) and is resizable on both axes", async ({
@@ -982,9 +982,9 @@ test("CSS flex row align=start: item keeps its HEIGHT (not stretched) and is res
   // eslint-disable-next-line no-console
   console.log("[verify] flex-start single:", JSON.stringify(f));
   // Height kept at authored 0.3 (NOT stretched to 1); width = authored 0.2.
-  expect(nn(f).height).toBeCloseTo(0.3, 2);
-  expect(nn(f).width).toBeCloseTo(0.2, 2);
-  expect(nn(f).y).toBeCloseTo(0, 2); // align start → top
+  expect(f!.height).toBeCloseTo(0.3, 2);
+  expect(f!.width).toBeCloseTo(0.2, 2);
+  expect(f!.y).toBeCloseTo(0, 2); // align start → top
 
   // Both axes resizable (grow 0 + not stretched) → all 8 handles + no rotate.
   await setSelection(page, [sId]);
@@ -1031,11 +1031,11 @@ test("CSS flex: two items keep their sizes, packed at justify-start (NOT auto-fi
   // eslint-disable-next-line no-console
   console.log("[verify] flex-2 css:", JSON.stringify({ f1, f2 }));
   // Each keeps its own authored width (0.2 and 0.25) — NOT equalized.
-  expect(nn(f1).width).toBeCloseTo(0.2, 2);
-  expect(nn(f2).width).toBeCloseTo(0.25, 2);
-  expect(nn(f1).x).toBeCloseTo(0, 2); // first at the start
-  expect(nn(f2).x).toBeGreaterThan(nn(f1).width); // second after the first (+gap)
-  expect(nn(f1).height).toBeCloseTo(1, 2); // cross stretched
+  expect(f1!.width).toBeCloseTo(0.2, 2);
+  expect(f2!.width).toBeCloseTo(0.25, 2);
+  expect(f1!.x).toBeCloseTo(0, 2); // first at the start
+  expect(f2!.x).toBeGreaterThan(f1!.width); // second after the first (+gap)
+  expect(f1!.height).toBeCloseTo(1, 2); // cross stretched
 
   // Each is resizable on the main axis (grow 0).
   await setSelection(page, [c1]);
@@ -1082,7 +1082,7 @@ test("per-child menu: selecting a flex child shows Grow/Align-self; clicking Fil
   await expect(page.getByRole("group", { name: "Flex child align-self" })).toBeVisible();
 
   const before = await readItemFrame(page, c1);
-  expect(nn(before).width).toBeCloseTo(0.2, 2); // fixed
+  expect(before!.width).toBeCloseTo(0.2, 2); // fixed
 
   // Click "Fill" in the grow control → c1 should grow to take the remainder.
   await page.getByRole("radio", { name: "Fill" }).click();
@@ -1091,7 +1091,7 @@ test("per-child menu: selecting a flex child shows Grow/Align-self; clicking Fil
   const after = await readItemFrame(page, c1);
   // eslint-disable-next-line no-console
   console.log("[verify] child-menu fill:", JSON.stringify({ before, after }));
-  expect(nn(after).width).toBeGreaterThan(nn(before).width + 0.2); // grew well past 0.2
+  expect(after!.width).toBeGreaterThan(before!.width + 0.2); // grew well past 0.2
 });
 
 test("CSS flex: resizing the FRAME grows a grow-1 child but keeps a grow-0 child's size", async ({
@@ -1151,9 +1151,9 @@ test("CSS flex: resizing the FRAME grows a grow-1 child but keeps a grow-0 child
   console.log("[verify] frame-resize:", JSON.stringify({ c1before, c1after, c2after }));
   // c1 (grow 0) kept its ABSOLUTE width: ratio halved (0.3 → ~0.15) because
   // the parent doubled, so 0.15 × 0.8 == 0.3 × 0.4.
-  expect(nn(c1after).width).toBeCloseTo(0.15, 2);
+  expect(c1after!.width).toBeCloseTo(0.15, 2);
   // c2 (grow 1) GREW to absorb the new space (ratio ~0.85).
-  expect(nn(c2after).width).toBeGreaterThan(0.8);
+  expect(c2after!.width).toBeGreaterThan(0.8);
 });
 
 test("selected flex frame moves on body-drag over a child (frame stays grabbable)", async ({
@@ -1193,13 +1193,13 @@ test("selected flex frame moves on body-drag over a child (frame stays grabbable
   await page.waitForTimeout(120);
 
   const before = await readItemFrame(page, frameId);
-  const childBefore = await readItemFrame(page, nn(childIds[0]));
+  const childBefore = await readItemFrame(page, childIds[0]!);
   expect(before).not.toBeNull();
 
   // Press on the FIRST child's center (it fills the left half of the frame)
   // and drag right + down. The move must translate the CONTAINER frame, not
   // the child, because the selected frame is draggable from anywhere inside.
-  const c = await centerOf(page, nn(childIds[0]));
+  const c = await centerOf(page, childIds[0]!);
   expect(c.x).toBeGreaterThan(0);
   await page.mouse.move(c.x, c.y);
   await page.mouse.down();
@@ -1210,14 +1210,14 @@ test("selected flex frame moves on body-drag over a child (frame stays grabbable
   await page.waitForTimeout(150);
 
   const after = await readItemFrame(page, frameId);
-  const childAfter = await readItemFrame(page, nn(childIds[0]));
+  const childAfter = await readItemFrame(page, childIds[0]!);
   // eslint-disable-next-line no-console
   console.log("[verify] frame move:", JSON.stringify({ before, after, childBefore, childAfter }));
   expect(after).not.toBeNull();
   // Container moved right + down (ratio coords in the design root).
-  expect(nn(after).x).toBeGreaterThan(nn(before).x + 0.01);
-  expect(nn(after).y).toBeGreaterThan(nn(before).y + 0.01);
+  expect(after!.x).toBeGreaterThan(before!.x + 0.01);
+  expect(after!.y).toBeGreaterThan(before!.y + 0.01);
   // The child's ratio WITHIN the frame is unchanged (flex still owns it —
   // it moved with the container, not independently).
-  expect(nn(childAfter).x).toBeCloseTo(nn(childBefore).x, 2);
+  expect(childAfter!.x).toBeCloseTo(childBefore!.x, 2);
 });

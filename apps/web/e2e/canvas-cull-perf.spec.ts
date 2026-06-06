@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-058 perf MEASUREMENT harness (not a gate spec — run manually:
 //   npx playwright test canvas-cull.perf.ts --reporter=line
 // ).
@@ -14,7 +15,6 @@
 //     does not unmount them. The win shows in decoded-image count + paint.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 // Measurement-only — excluded from the normal `pnpm e2e` gate. Run with:
@@ -34,7 +34,7 @@ async function seedImageGrid(page: Page): Promise<number> {
       const cv = document.createElement("canvas");
       cv.width = imgPx;
       cv.height = imgPx;
-      const g = nn(cv.getContext("2d"));
+      const g = cv.getContext("2d")!;
       const grad = g.createLinearGradient(0, 0, imgPx, imgPx);
       grad.addColorStop(0, "#3b82f6");
       grad.addColorStop(1, "#ec4899");
@@ -45,8 +45,8 @@ async function seedImageGrid(page: Page): Promise<number> {
       type Editor = { exec: (name: string, input: unknown) => unknown };
       type Doc = { root: { id: string | number } };
       const w = window as unknown as { __weaveEditor?: Editor; __weaveDoc?: Doc };
-      const editor = nn(w.__weaveEditor);
-      const rootId = String(nn(w.__weaveDoc).root.id);
+      const editor = w.__weaveEditor!;
+      const rootId = String(w.__weaveDoc!.root.id);
       let n = 0;
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {

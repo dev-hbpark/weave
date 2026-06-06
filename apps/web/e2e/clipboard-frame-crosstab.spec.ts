@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-041 Phase 4 — frame deep copy + cross-tab BroadcastChannel + MAX_PASTE_NODES.
 //
 // 1. Frame deep copy — a frame with N children round-trips through the
@@ -10,7 +11,6 @@
 //    time; the clipboard stays empty so a subsequent paste is a no-op.
 
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -116,7 +116,7 @@ test("Frame with 5 children deep-copies: paste produces a new id for every desce
   // A new root sibling has appeared.
   await expect.poll(() => rootChildCount(page)).toBe(2);
   const ids = await rootChildIds(page);
-  const newRoot = nn(ids[ids.length - 1]);
+  const newRoot = ids[ids.length - 1]!;
   expect(newRoot).not.toBe(parentId);
 
   // Every descendant must be a fresh id (no collision with the source).

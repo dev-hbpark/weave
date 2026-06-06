@@ -1,8 +1,8 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-069 — select a vertex (visually highlighted) + Delete/Backspace removes it.
 // Complements the right-click "꼭지점 삭제" menu (WI-068) with a fast keyboard path.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -31,9 +31,9 @@ async function addPoly(
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = nn(w.__weaveEditor).exec("weave.item.add", {
+      const r = w.__weaveEditor!.exec("weave.item.add", {
         kind: "shape",
-        containerId: String(nn(w.__weaveDoc).root.id),
+        containerId: String(w.__weaveDoc!.root.id),
         frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
         attrsOverride: { shape: "poly", subAttrs: { shape: "poly", points, closed: true } },
       });

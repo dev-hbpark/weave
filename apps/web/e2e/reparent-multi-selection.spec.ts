@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-039 — Multi-entry reparent in a single patch / single history step.
 //
 // Selecting 2+ items and dispatching a reparent must produce ONE
@@ -7,7 +8,6 @@
 //   - one Cmd+Z restores ALL of them to their original parents
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import {
   addFrame,
   clearAllDesigns,
@@ -35,19 +35,17 @@ test("multi-entry reparent moves N items in a single patch + single Cmd+Z revert
       ) ?? []
     );
   });
-  const rootA = nn(initial[0]);
+  const rootA = initial[0]!;
   await addFrame(page, "frame", {
     frame: { x: 0.55, y: 0.1, width: 0.35, height: 0.35, rotation: 0 },
   });
-  const rootB = nn(
-    (
-      await page.evaluate(() => {
-        type Doc = { root: { children: ReadonlyArray<{ id: string | number }> } };
-        const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
-        return doc?.root.children.map((c) => String(c.id)) ?? [];
-      })
-    ).slice(-1)[0],
-  );
+  const rootB = (
+    await page.evaluate(() => {
+      type Doc = { root: { children: ReadonlyArray<{ id: string | number }> } };
+      const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
+      return doc?.root.children.map((c) => String(c.id)) ?? [];
+    })
+  ).slice(-1)[0]!;
   await addFrame(page, "frame", {
     containerId: rootA,
     frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
@@ -78,20 +76,20 @@ test("multi-entry reparent moves N items in a single patch + single Cmd+Z revert
   expect(aChildren.length).toBe(2);
   const [c1, c2] = aChildren;
 
-  const beforeC1 = await readParentInfo(page, nn(c1));
-  const beforeC2 = await readParentInfo(page, nn(c2));
+  const beforeC1 = await readParentInfo(page, c1!);
+  const beforeC2 = await readParentInfo(page, c2!);
   expect(beforeC1?.parentId).toBe(rootA);
   expect(beforeC2?.parentId).toBe(rootA);
 
   // Single dispatch, two entries.
   await execReparent(page, [
-    { itemId: nn(c1), newParentId: rootB },
-    { itemId: nn(c2), newParentId: rootB },
+    { itemId: c1!, newParentId: rootB },
+    { itemId: c2!, newParentId: rootB },
   ]);
 
   // Both children now under rootB.
-  expect((await readParentInfo(page, nn(c1)))?.parentId).toBe(rootB);
-  expect((await readParentInfo(page, nn(c2)))?.parentId).toBe(rootB);
+  expect((await readParentInfo(page, c1!))?.parentId).toBe(rootB);
+  expect((await readParentInfo(page, c2!))?.parentId).toBe(rootB);
 
   // ONE Cmd+Z restores BOTH (atomic history entry).
   // design-header (z-30, h-12) overlaps frame-stage's local (5,5); use a
@@ -100,13 +98,13 @@ test("multi-entry reparent moves N items in a single patch + single Cmd+Z revert
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(120);
 
-  const revertedC1 = await readParentInfo(page, nn(c1));
-  const revertedC2 = await readParentInfo(page, nn(c2));
+  const revertedC1 = await readParentInfo(page, c1!);
+  const revertedC2 = await readParentInfo(page, c2!);
   expect(revertedC1?.parentId).toBe(rootA);
   expect(revertedC2?.parentId).toBe(rootA);
   // Index inside the original parent restored too (z-order preserved).
-  expect(revertedC1?.indexInParent).toBe(nn(beforeC1).indexInParent);
-  expect(revertedC2?.indexInParent).toBe(nn(beforeC2).indexInParent);
+  expect(revertedC1?.indexInParent).toBe(beforeC1!.indexInParent);
+  expect(revertedC2?.indexInParent).toBe(beforeC2!.indexInParent);
 });
 
 test("empty entries dispatch is a no-op + no history entry consumed", async ({ page }) => {

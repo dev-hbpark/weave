@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // DR-062 — per-range typography integration gate (REAL UI path).
 //
 // Supersedes the DR-060 `text-outline-per-range.spec.ts`, which drove the
@@ -12,7 +13,6 @@
 // and asserts the popover STAYS OPEN and the swatch reflects the selection.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -62,7 +62,7 @@ async function readRuns(page: Page, id: string): Promise<Run[]> {
       }
       return undefined;
     }
-    return find(nn(w.__weaveDoc).root)?.attrs.textRuns ?? [];
+    return find(w.__weaveDoc!.root)?.attrs.textRuns ?? [];
   }, id);
 }
 

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-043 FIX verification — real-browser proof that adding a child to a
 // Flex / Grid frame auto-arranges it (the bug was "always lands center,
 // no auto-arrange"). Drives the actual app through window.__weaveEditor
@@ -9,7 +10,6 @@
 // Operational Readiness policy.
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { prepareDesign, readItemFrame } from "./helpers.js";
 
 /** Add a child via weave.item.add and return its new id (result.value). */
@@ -113,17 +113,17 @@ test("Flex frame auto-arranges children added into it (real browser)", async ({
   for (const f of frames) {
     expect(f).not.toBeNull();
   }
-  const xs = frames.map((f) => nn(f).x);
+  const xs = frames.map((f) => f!.x);
   // Not all equal (the bug symptom was identical center positions).
-  const allSame = xs.every((x) => Math.abs(x - nn(xs[0])) < 1e-6);
+  const allSame = xs.every((x) => Math.abs(x - xs[0]!) < 1e-6);
   expect(allSame).toBe(false);
   // Strictly increasing left → right.
-  expect(nn(xs[0])).toBeLessThan(nn(xs[1]));
-  expect(nn(xs[1])).toBeLessThan(nn(xs[2]));
+  expect(xs[0]!).toBeLessThan(xs[1]!);
+  expect(xs[1]!).toBeLessThan(xs[2]!);
   // None parked at the raw drop frame (0.85).
   for (const x of xs) expect(x).toBeLessThan(0.8);
   // First child hugs the left edge (justify=start → x≈0).
-  expect(nn(xs[0])).toBeCloseTo(0, 2);
+  expect(xs[0]!).toBeCloseTo(0, 2);
 
   await page.screenshot({ path: testInfo.outputPath("flex-arranged.png"), fullPage: false });
   await testInfo.attach("flex-arranged", {
@@ -165,10 +165,10 @@ test("Grid frame places children into distinct columns (real browser)", async ({
 
   for (const f of frames) expect(f).not.toBeNull();
   // 3 equal fr columns → x ≈ 0, 1/3, 2/3; width ≈ 1/3 each.
-  expect(nn(frames[0]).x).toBeCloseTo(0, 2);
-  expect(nn(frames[1]).x).toBeCloseTo(1 / 3, 2);
-  expect(nn(frames[2]).x).toBeCloseTo(2 / 3, 2);
-  for (const f of frames) expect(nn(f).width).toBeCloseTo(1 / 3, 2);
+  expect(frames[0]!.x).toBeCloseTo(0, 2);
+  expect(frames[1]!.x).toBeCloseTo(1 / 3, 2);
+  expect(frames[2]!.x).toBeCloseTo(2 / 3, 2);
+  for (const f of frames) expect(f!.width).toBeCloseTo(1 / 3, 2);
 
   await page.screenshot({ path: testInfo.outputPath("grid-arranged.png"), fullPage: false });
   await testInfo.attach("grid-arranged", {
@@ -246,10 +246,10 @@ test("Changing a frame's layout to Flex rearranges existing children (Contextual
   console.log("[verify] after setLayout→flex:", JSON.stringify(after));
 
   for (const f of after) expect(f).not.toBeNull();
-  expect(nn(after[0]).x).toBeLessThan(nn(after[1]).x); // spread left→right
-  expect(nn(after[0]).x).toBeCloseTo(0, 2); // first hugs left
+  expect(after[0]!.x).toBeLessThan(after[1]!.x); // spread left→right
+  expect(after[0]!.x).toBeCloseTo(0, 2); // first hugs left
   // No longer parked at the 0.6 drop position.
-  for (const f of after) expect(nn(f).x).toBeLessThan(0.6);
+  for (const f of after) expect(f!.x).toBeLessThan(0.6);
 
   await page.screenshot({ path: testInfo.outputPath("setlayout-flex.png"), fullPage: false });
   await testInfo.attach("setlayout-flex", {

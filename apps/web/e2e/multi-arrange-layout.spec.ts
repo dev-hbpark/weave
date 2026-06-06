@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-048 — multi-selection "arrange into Flex / Grid" + hover preview.
 //
 // Select ≥2 same-parent items → the QuickActionBar shows Flex / Grid buttons.
@@ -5,7 +6,6 @@
 // that layout form (one-shot, no container frame), as a single undoable batch.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -18,8 +18,8 @@ async function addRootShapes(page: Page, n: number): Promise<string[]> {
       __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
       __weaveDoc?: { root: { id: unknown } };
     };
-    const ed = nn(w.__weaveEditor);
-    const rootId = String(nn(w.__weaveDoc).root.id);
+    const ed = w.__weaveEditor!;
+    const rootId = String(w.__weaveDoc!.root.id);
     const ids: string[] = [];
     // Scattered positions so an arrange visibly changes them.
     const spots = [

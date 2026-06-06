@@ -1,9 +1,9 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // DR-033 — a single line/poly mixes straight + curved segments via per-vertex
 // corner/smooth. UX: double-click a vertex toggles its type; the handle SHAPE
 // (square=corner ↔ circle=smooth) and the rendered geometry follow; Cmd+Z reverts.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -23,9 +23,9 @@ async function addPoly(page: Page): Promise<string> {
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = nn(w.__weaveEditor).exec("weave.item.add", {
+      const r = w.__weaveEditor!.exec("weave.item.add", {
         kind: "shape",
-        containerId: String(nn(w.__weaveDoc).root.id),
+        containerId: String(w.__weaveDoc!.root.id),
         frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
         attrsOverride: { shape: "poly", subAttrs: { shape: "poly", points, closed: true } },
       });

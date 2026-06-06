@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-038 — z-order command surface (hotkeys + ContextMenu) regression cover.
 //
 // Verifies that the four z-order moves operate on the selected item's
@@ -13,7 +14,6 @@
 // Each angle Cmd+Z's once and verifies the state reverted.
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -54,7 +54,7 @@ test('editor.exec("weave.item.bringToFront") moves the frame to last and Cmd+Z r
   expect(initial.length).toBeGreaterThanOrEqual(3);
 
   // Bring the FIRST root frame to the front via editor.exec.
-  const first = nn(initial[0]);
+  const first = initial[0]!;
   await page.evaluate((id) => {
     type Editor = { exec: (name: string, input: unknown) => unknown };
     const editor = (window as unknown as { __weaveEditor?: Editor }).__weaveEditor;
@@ -86,7 +86,7 @@ test("hotkey `]` brings the selected frame one step forward and Cmd+Z reverts", 
   expect(initial.length).toBeGreaterThanOrEqual(3);
 
   // Select the first frame so the hotkey has a target.
-  const first = nn(initial[0]);
+  const first = initial[0]!;
   await selectFrameInVm(page, first);
 
   // Move focus off the canvas so the keyboard event is captured by the
@@ -145,7 +145,7 @@ test("peek (L hold) + controller drag commits a reorder against the peek contain
   // Drag the two added frames' first one (initial[1]) to the top of the
   // lift stack. Cursor at (0.5, 0.5) hits the overlap region of both
   // added frames — and the seed FULL_FRAME wrapping covers it too.
-  const draggedId = nn(initial[1]);
+  const draggedId = initial[1]!;
   await page.evaluate(
     ({ targetId, dw, dh }) => {
       type Peek = {
@@ -223,7 +223,7 @@ test("peek (L hold) + controller drag commits a reorder against the peek contain
   expect(innerIdsBefore.length).toBeGreaterThanOrEqual(2);
 
   // Select one of the nested items so peek's containerId becomes its parent.
-  const firstInner = nn(innerIdsBefore[0]);
+  const firstInner = innerIdsBefore[0]!;
   await selectFrameInVm(page, firstInner);
 
   // Give the React effect chain (selection → peekContainerId state →
@@ -342,7 +342,7 @@ test("nested: bringForward operates inside the parent frame, not at root", async
   }, containerId);
   expect(innerIds.length).toBeGreaterThanOrEqual(2);
 
-  const firstInner = nn(innerIds[0]);
+  const firstInner = innerIds[0]!;
   await page.evaluate(
     ({ id }) => {
       type Editor = { exec: (name: string, input: unknown) => unknown };

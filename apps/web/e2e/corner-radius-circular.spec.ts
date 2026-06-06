@@ -1,10 +1,10 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Corner-radius model — browser proof that the radius renders CIRCULAR
 // (rx === ry on both axes) and clamps to half the SHORT side, on a NON-SQUARE
 // frame. The previous model rendered `rx = r·0.5·w`, `ry = r·0.5·h`, i.e. an
 // ELLIPSE whenever w ≠ h — this spec is the regression gate for that fix.
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers";
 
 /** Read the frame's main fill rect (the rounded one — the clip rect lives in
@@ -63,7 +63,7 @@ test.describe("corner radius — circular px model", () => {
       const root = (
         window as unknown as { __weaveDoc: { root: { id: unknown; children: { id: unknown }[] } } }
       ).__weaveDoc.root;
-      return String(nn(root.children[root.children.length - 1]).id);
+      return String(root.children[root.children.length - 1]!.id);
     });
 
     // Oversized radius → must clamp to half the short side, circular.

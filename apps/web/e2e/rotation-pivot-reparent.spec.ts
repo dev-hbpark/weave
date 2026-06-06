@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Rotation bug fixes — two regressions pinned end-to-end.
 //
 // 1) Rotation pivot: dragging the rotation handle must track the mouse's
@@ -17,7 +18,6 @@
 // matrix-shape flakiness that kept the older rotate e2e out of the suite.
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, execReparent, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -129,7 +129,7 @@ test("rotation handle tracks the mouse angle around the item center", async ({ p
   await page.mouse.up();
   await page.waitForTimeout(80);
 
-  const id = nn((await rootChildIds(page)).at(-1));
+  const id = (await rootChildIds(page)).at(-1)!;
   const rot = await readRotationOf(page, id);
   // The applied rotation must equal the swept angle (±~3°). With the old
   // off-center pivot this same drag produced a very different angle.
@@ -143,12 +143,12 @@ test("reparent preserves a rotated item's angle (no reset to 0)", async ({ page 
     frame: { x: 0.45, y: 0.45, width: 0.2, height: 0.2, rotation: 0 },
   });
   const afterA = await rootChildIds(page);
-  const aId = nn(afterA.find((x) => !before.includes(x)));
+  const aId = afterA.find((x) => !before.includes(x))!;
   await addFrame(page, "slide", {
     frame: { x: 0.05, y: 0.05, width: 0.35, height: 0.35, rotation: 0 },
   });
   const afterB = await rootChildIds(page);
-  const bId = nn(afterB.find((x) => !afterA.includes(x)));
+  const bId = afterB.find((x) => !afterA.includes(x))!;
 
   const angle = 0.7;
   await setRotation(page, aId, angle);

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-109 follow-up — the Aku agent edits corner radius through the SAME command
 // the handle uses (`weave.item.update` with an `attrs` object). This proves the
 // agent path is connected in the absolute-px model: a uniform px value and a
@@ -5,7 +6,6 @@
 // border-radius (NOT the legacy 0..1 ratio, which would round to ~0px).
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers";
 
 /** Run an agent-style edit: `editor.exec("weave.item.update", { itemId, attrs })`. */
@@ -60,7 +60,7 @@ test.describe("corner radius — Aku agent path", () => {
     const id = await page.evaluate(() => {
       const root = (window as unknown as { __weaveDoc: { root: { children: { id: unknown }[] } } })
         .__weaveDoc.root;
-      return String(nn(root.children[root.children.length - 1]).id);
+      return String(root.children[root.children.length - 1]!.id);
     });
 
     // Uniform px (agent sends a plain number — now design-px, not a 0..1 ratio).

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Phase 10b — shared helpers for e2e specs. The wizard creates a new Design
 // with a fresh id each run; specs walk through it once and then exercise the
 // design page. `prepareDesign` clears v5 storage from prior runs, walks the
@@ -6,7 +7,6 @@
 
 import type { Page } from "@playwright/test";
 import type { DocFlavor, DomainKind, ItemFrame } from "../src/document/types.js";
-import { nn } from "../src/lib/nn.js";
 
 export async function clearAllDesigns(page: Page) {
   // WI-032 Phase 3c — reset the cursor before navigating so hover state from
@@ -212,7 +212,7 @@ export async function readParentInfo(
       indexInParent: number;
     } | null {
       for (let i = 0; i < node.children.length; i++) {
-        const c = nn(node.children[i]);
+        const c = node.children[i]!;
         if (String(c.id) === targetId) {
           return parent === null
             ? { parentId: String(node.id), indexInParent: i }

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-039 — ContextMenu "다른 부모로 이동" sub-menu picker.
 //
 // Three angles:
@@ -10,7 +11,6 @@
 //      is a no-op (Radix swallows the select on disabled items).
 
 import { expect, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign, readParentInfo } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -32,7 +32,7 @@ test('"다른 부모로 이동" sub-menu opens and lists root + every frame', as
   });
   const roots = await rootIds(page);
   expect(roots.length).toBeGreaterThanOrEqual(2);
-  const rightClickTargetId = nn(roots[0]);
+  const rightClickTargetId = roots[0]!;
 
   // Right-click on the first root frame's element.
   const frameEl = page.locator(`[data-frame-id="${rightClickTargetId}"]`).first();
@@ -63,8 +63,8 @@ test('clicking a target row in "다른 부모로 이동" reparents and Cmd+Z rev
     frame: { x: 0.6, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
   });
   const roots = await rootIds(page);
-  const rootA = nn(roots[0]);
-  const rootB = nn(roots[1]);
+  const rootA = roots[0]!;
+  const rootB = roots[1]!;
 
   const before = await readParentInfo(page, rootA);
   expect(before?.parentId).not.toBe(rootB);
@@ -84,7 +84,7 @@ test('clicking a target row in "다른 부모로 이동" reparents and Cmd+Z rev
   await page.getByTestId("frame-stage").click({ position: { x: 5, y: 100 } });
   await page.keyboard.press("ControlOrMeta+z");
   await page.waitForTimeout(120);
-  expect((await readParentInfo(page, rootA))?.parentId).toBe(nn(before).parentId);
+  expect((await readParentInfo(page, rootA))?.parentId).toBe(before!.parentId);
 });
 
 test("cycle-blocked rows render as disabled (right-clicked frame itself + its descendants)", async ({
@@ -92,7 +92,7 @@ test("cycle-blocked rows render as disabled (right-clicked frame itself + its de
 }) => {
   await prepareDesign(page, { flavor: "slide-deck" });
   const roots = await rootIds(page);
-  const parent = nn(roots[0]);
+  const parent = roots[0]!;
   await addFrame(page, "frame", {
     containerId: parent,
     frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },

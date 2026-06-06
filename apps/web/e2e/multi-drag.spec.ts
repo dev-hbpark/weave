@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-021 — multi-frame drag movement.
 //
 // Pressing on any frame that's part of the current multi-selection drags
@@ -6,7 +7,6 @@
 // only that one.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -106,10 +106,10 @@ test("marquee → drag one selected frame → all selected frames move by the sa
   const after = await framePositions(page);
   const id0 = ids[0] as string;
   const id1 = ids[1] as string;
-  const b0 = nn(before[id0]);
-  const b1 = nn(before[id1]);
-  const a0 = nn(after[id0]);
-  const a1 = nn(after[id1]);
+  const b0 = before[id0]!;
+  const b1 = before[id1]!;
+  const a0 = after[id0]!;
+  const a1 = after[id1]!;
   const dx0 = a0.x - b0.x;
   const dy0 = a0.y - b0.y;
   const dx1 = a1.x - b1.x;
@@ -149,7 +149,7 @@ test("pressing an unselected frame collapses selection to that frame", async ({ 
   // selection, so the multi is preserved.
   const fr0 = await page.evaluate((id) => {
     const el = document.querySelector(`[data-frame-id="${id}"]`) as HTMLElement | null;
-    const r = nn(el).getBoundingClientRect();
+    const r = el!.getBoundingClientRect();
     return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
   }, ids[0]);
   await page.mouse.move(fr0.cx, fr0.cy);
@@ -184,7 +184,7 @@ test("pressing an unselected frame collapses selection to that frame", async ({ 
   // Press frame 2 (unselected) — should collapse to {ids[1]}.
   const fr1 = await page.evaluate((id) => {
     const el = document.querySelector(`[data-frame-id="${id}"]`) as HTMLElement | null;
-    const r = nn(el).getBoundingClientRect();
+    const r = el!.getBoundingClientRect();
     return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
   }, ids[1]);
   await page.mouse.move(fr1.cx, fr1.cy);

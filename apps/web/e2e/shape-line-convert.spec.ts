@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // WI-065 / DR-031 — shape ↔ line KIND conversion, verified in the live runtime.
 //   • Break: right-click a closed poly's vertex handle → it becomes a `line`
 //     (fresh id), opened at that vertex. Cmd+Z restores the shape.
@@ -5,7 +6,6 @@
 //     closed `poly` shape (fresh id). Cmd+Z restores the line.
 
 import { expect, type Page, test } from "@playwright/test";
-import { nn } from "../src/lib/nn.js";
 import { clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
@@ -35,9 +35,9 @@ async function addPoly(page: Page): Promise<string> {
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = nn(w.__weaveEditor).exec("weave.item.add", {
+      const r = w.__weaveEditor!.exec("weave.item.add", {
         kind: "shape",
-        containerId: String(nn(w.__weaveDoc).root.id),
+        containerId: String(w.__weaveDoc!.root.id),
         frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
         attrsOverride: { shape: "poly", subAttrs: { shape: "poly", points, closed: true } },
       });
@@ -56,9 +56,9 @@ async function addLine(page: Page): Promise<string> {
         __weaveEditor?: { exec: (n: string, i: unknown) => { value?: unknown } };
         __weaveDoc?: { root: { id: unknown } };
       };
-      const r = nn(w.__weaveEditor).exec("weave.item.add", {
+      const r = w.__weaveEditor!.exec("weave.item.add", {
         kind: "line",
-        containerId: String(nn(w.__weaveDoc).root.id),
+        containerId: String(w.__weaveDoc!.root.id),
         frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.5, rotation: 0 },
         attrsOverride: { points, smooth: true, heads: { start: "none", end: "none" } },
       });
@@ -114,16 +114,16 @@ test("WI-065 — vertex menu 'break to line'; Cmd+Z restores the shape", async (
 
   const after = await rootNodes(page);
   expect(after).toHaveLength(1);
-  expect(nn(after[0]).kind).toBe("line");
-  expect(nn(after[0]).id).not.toBe(polyId); // fresh id (new-id policy)
-  expect(nn(after[0]).pointCount).toBe(4); // all vertices retained, ring opened
+  expect(after[0]!.kind).toBe("line");
+  expect(after[0]!.id).not.toBe(polyId); // fresh id (new-id policy)
+  expect(after[0]!.pointCount).toBe(4); // all vertices retained, ring opened
 
   // One undo restores the original closed poly shape.
   await page.keyboard.press("ControlOrMeta+z");
   await expect
     .poll(async () => {
       const ns = await rootNodes(page);
-      return ns.length === 1 ? `${nn(ns[0]).kind}:${nn(ns[0]).id}:${nn(ns[0]).closed}` : "?";
+      return ns.length === 1 ? `${ns[0]!.kind}:${ns[0]!.id}:${ns[0]!.closed}` : "?";
     })
     .toBe(`shape:${polyId}:true`);
 });
@@ -144,21 +144,21 @@ test("WI-065 — context menu closes a free line into a shape; Cmd+Z restores th
   await expect
     .poll(async () => {
       const ns = await rootNodes(page);
-      return ns.length === 1 ? `${nn(ns[0]).kind}:${nn(ns[0]).closed}` : "?";
+      return ns.length === 1 ? `${ns[0]!.kind}:${ns[0]!.closed}` : "?";
     })
     .toBe("shape:true");
 
   const after = await rootNodes(page);
-  expect(nn(after[0]).id).not.toBe(lineId); // fresh id
+  expect(after[0]!.id).not.toBe(lineId); // fresh id
   // Endpoints far apart → all 4 vertices kept, loop closed by the edge.
-  expect(nn(after[0]).pointCount).toBe(4);
+  expect(after[0]!.pointCount).toBe(4);
 
   // One undo restores the original line.
   await page.keyboard.press("ControlOrMeta+z");
   await expect
     .poll(async () => {
       const ns = await rootNodes(page);
-      return ns.length === 1 ? `${nn(ns[0]).kind}:${nn(ns[0]).id}` : "?";
+      return ns.length === 1 ? `${ns[0]!.kind}:${ns[0]!.id}` : "?";
     })
     .toBe(`line:${lineId}`);
 });
