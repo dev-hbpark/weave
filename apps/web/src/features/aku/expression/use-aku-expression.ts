@@ -25,6 +25,13 @@ import type { AkuExpressionState } from "./renderer-types.js";
 
 const CELEBRATE_MS = 1800;
 const LOOKING_MS = 1400;
+// Minimum time a per-operation edit mood stays on screen (WI-118). Agent tools
+// settle in milliseconds, so adding/updating/working can flip faster than the
+// sprite can render; hold each for at least this long before switching to ANOTHER
+// edit mood. Switches to/from non-edit moods (thinking/finalizing/idle/…) are
+// immediate so reasoning + wrap-up still read instantly.
+const EDIT_HOLD_MS = 700;
+const EDIT_MOODS: ReadonlySet<AkuMood> = new Set(["adding", "updating", "working"]);
 
 export interface AkuExpression extends AkuExpressionState {
   /** Live caption to show above the collapsed launcher while a turn streams
@@ -82,7 +89,7 @@ export function useAkuExpression(input: {
     return () => clearTimeout(t);
   }, [selectionKey]);
 
-  const mood: AkuMood = resolveAkuMood({
+  const raw: AkuMood = resolveAkuMood({
     status,
     connectionState: connection.state,
     activity: liveActivity,
@@ -90,6 +97,28 @@ export function useAkuExpression(input: {
     looking,
     sleeping,
   });
+
+  // Minimum-hold latch: keep an edit mood on screen ≥ EDIT_HOLD_MS before swapping
+  // to a DIFFERENT edit mood, so fast tool bursts (add→update→…) actually render
+  // instead of flashing sub-frame. Non-edit transitions switch immediately.
+  const [mood, setMood] = useState<AkuMood>(raw);
+  const heldAt = useRef(Date.now());
+  useEffect(() => {
+    if (raw === mood) return;
+    const now = Date.now();
+    if (EDIT_MOODS.has(raw) && EDIT_MOODS.has(mood)) {
+      const remaining = EDIT_HOLD_MS - (now - heldAt.current);
+      if (remaining > 0) {
+        const t = setTimeout(() => {
+          setMood(raw);
+          heldAt.current = Date.now();
+        }, remaining);
+        return () => clearTimeout(t);
+      }
+    }
+    setMood(raw);
+    heldAt.current = now;
+  }, [raw, mood]);
 
   return { mood, intensity: moodIntensity(mood), caption };
 }

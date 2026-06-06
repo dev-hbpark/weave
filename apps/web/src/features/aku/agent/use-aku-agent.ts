@@ -185,7 +185,16 @@ function activityFor(st: AgentRunState): string | undefined {
   if (running !== undefined) return `${chipLabel(running.name)} 적용 중…`;
   if (st.phase === "thinking") return "생각 중…";
   if (st.phase === "streaming-text") return "정리 중…";
-  if (st.phase === "tool-calling" || st.phase === "applying") return "편집 적용 중…";
+  if (st.phase === "tool-calling" || st.phase === "applying") {
+    // After a tool SETTLES there's no `running` tool, but we're still mid-edit
+    // (phase tool-calling/applying). The tool-start→settle window is milliseconds
+    // for weave edits, so keying the operation mood (추가/수정/…) only off `running`
+    // made those sprites flash sub-frame. Keep naming the MOST RECENT tool so the
+    // per-operation caption — and the mood/sprite it drives — persists across the
+    // whole operation window, not just the running instant (WI-118).
+    const last = st.activeTools[st.activeTools.length - 1];
+    return last !== undefined ? `${chipLabel(last.name)} 적용 중…` : "편집 적용 중…";
+  }
   if (st.phase === "queued") return "연결 중…";
   return undefined; // done / error / aborted → caption cleared
 }
