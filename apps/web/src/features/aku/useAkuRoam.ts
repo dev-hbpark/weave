@@ -33,10 +33,10 @@ const SLEEP_AFTER_MS = 60_000; // no editing for ≥ 1 min → doze (blanket-sle
 const TICK_MS = 1000; // phase-driver cadence
 // While working, the wander cycle is MOVE → then PLAY 2 sprite loops at rest → MOVE.
 // During the glide (ROAM_TRAVEL_MS) the locomotion sprite shows; once it settles the
-// editing spell plays. Editing sprites are 6 frames @ 10fps → 2 loops = 1200ms of
-// rest-play. So the hop interval = travel + 2-loop play, otherwise the next hop fires
-// mid-glide and the spell never gets to play ("이동만 하고 있어"). (WI-122)
-const FRAME_PLAY_MS = 1200; // 2 loops of rest-play after arriving
+// editing spell plays. Editing sprites are 6 frames @ 6fps → 1 loop 1000ms, so 2
+// loops = 2000ms of rest-play. The hop interval = travel + 2-loop play, otherwise the
+// next hop fires mid-play and the 2 plays aren't guaranteed (WI-122/WI-123).
+const FRAME_PLAY_MS = 2000; // 2 loops of rest-play after arriving (6 frames @ 6fps)
 const FRAME_HOP_MS = ROAM_TRAVEL_MS + FRAME_PLAY_MS;
 
 /** The top-left for a boxW×boxH mascot centred in the current viewport. */

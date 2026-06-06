@@ -26,8 +26,8 @@ const SPRITES: Readonly<Record<AkuMood, SpriteSpec>> = {
   idle: { src: "/aku/sprites/idle.png", frames: 6, fps: 6, looping: true },
   connecting: { src: "/aku/sprites/move-left.png", frames: 6, fps: 10, looping: true }, // 연결 중
   thinking: { src: "/aku/sprites/thinking.png", frames: 6, fps: 6, looping: true }, // 생각 중
-  adding: { src: "/aku/sprites/spell-right.png", frames: 6, fps: 10, looping: true }, // 아이템 추가 (오른쪽 spell)
-  updating: { src: "/aku/sprites/spell-left.png", frames: 6, fps: 10, looping: true }, // 아이템 수정 (왼쪽 spell)
+  adding: { src: "/aku/sprites/spell-right.png", frames: 6, fps: 6, looping: true }, // 아이템 추가 (오른쪽 spell) — 6프레임@6fps = 1초/루프
+  updating: { src: "/aku/sprites/spell-left.png", frames: 6, fps: 6, looping: true }, // 아이템 수정 (왼쪽 spell) — 1초/루프
   // WI-119: working/celebrating are REMAPPED to a random spell in useAkuExpression
   // (idea.png retired), so these entries are dead fallbacks kept for type exhaustiveness.
   working: { src: "/aku/sprites/idea.png", frames: 6, fps: 9, looping: true },
