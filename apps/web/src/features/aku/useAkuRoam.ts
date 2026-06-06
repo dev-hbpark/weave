@@ -4,8 +4,8 @@
 //   - idle, < 1 min since the last edit → wander to random viewport points,
 //   - idle, ≥ 1 min since the last edit → walk to screen centre, then doze (sleep),
 //   - WORKING (agent streaming) → START at the screen centre (the turn visibly
-//     begins centre-stage), THEN roam to each edited frame as the agent works
-//     (WI-116 — restores WI-107 fly-to-frame; no longer pinned to centre),
+//     begins centre-stage), THEN roam to each edited frame, AND keep hopping to a
+//     fresh random point WITHIN the current frame every 2 sprite loops (WI-121),
 //   - DRAG → follow the pointer (drag-struggle sprite), settling where dropped.
 // `moving`/`dragging`/`sleeping` let the caller pick the sprite; a tap (no movement
 // past threshold) calls `onTap`. `paused` (panel open / coachmark) and reduced
@@ -32,6 +32,9 @@ const DRAG_THRESHOLD = 4;
 const EDIT_SETTLE_MS = 4000; // within this since the last edit gesture → "user is editing"
 const SLEEP_AFTER_MS = 60_000; // no editing for ≥ 1 min → doze (blanket-sleep)
 const TICK_MS = 1000; // phase-driver cadence
+// While working, hop to a fresh random point inside the edited frame every 2 sprite
+// loops. The editing sprites are 6 frames @ 10fps → one loop 600ms, two loops 1200ms.
+const FRAME_HOP_MS = 1200;
 
 /** The top-left for a boxW×boxH mascot centred in the current viewport. */
 function viewportCentre(boxW: number, boxH: number): { x: number; y: number } {
@@ -79,6 +82,9 @@ export function useAkuRoam(opts: {
   const moveTimer = useRef<ReturnType<typeof setTimeout>>();
   const draggingRef = useRef(false);
   const sleepingRef = useRef(false);
+  // The frame (item id) the agent is currently editing — set from the changeStream,
+  // read by the periodic intra-frame wander (WI-121). null = nothing being edited.
+  const editFrameRef = useRef<string | null>(null);
   // Timestamp of the last real user EDIT gesture (pointer/keyboard on the doc) and
   // of the last random wander hop. Read by the long-lived phase driver.
   const lastActivityRef = useRef(Date.now());
@@ -99,6 +105,24 @@ export function useAkuRoam(opts: {
       ROAM_TRAVEL_MS,
     );
   }, []);
+
+  // Fly to a fresh RANDOM point inside the given item's on-screen frame (skip if it
+  // can't be located or is off-screen / zero-size). Shared by the changeStream
+  // (move on frame change) and the periodic intra-frame wander (WI-121).
+  const flyToFrame = useCallback(
+    (itemId: string): void => {
+      const f = flags.current;
+      if (f.reduce || f.paused || !f.streaming || draggingRef.current) return;
+      const sel = `[data-frame-id="${CSS.escape(itemId)}"]`;
+      const el = document.querySelector(`main ${sel}`) ?? document.querySelector(sel);
+      const rect = el?.getBoundingClientRect();
+      if (rect === undefined || rect.width === 0 || rect.height === 0) return;
+      goTo(
+        roamPointInRect(rect, f.boxW, f.boxH, window.innerWidth, window.innerHeight, Math.random),
+      );
+    },
+    [goTo],
+  );
 
   // Drag — follow the pointer; a sub-threshold press is a tap (→ onTap / open).
   const onPointerDown = useCallback(
@@ -228,30 +252,20 @@ export function useAkuRoam(opts: {
   }, [goTo]);
 
   // Working START — glide to the screen centre once when a turn begins, so work
-  // visibly starts centre-stage (WI-116). The fly-to-frame effect then takes over,
-  // roaming Aku to each edited frame; Aku is NOT pinned to centre.
+  // visibly starts centre-stage (WI-116). Clear the edit-frame so the wander below
+  // doesn't chase a pre-turn frame until the agent's first edit lands.
   useEffect(() => {
     if (!streaming || draggingRef.current) return;
+    editFrameRef.current = null;
     const f = flags.current;
     goTo(viewportCentre(f.boxW, f.boxH));
   }, [streaming, goTo]);
 
-  // Working ROAM — fly to the frame the agent just edited (debounced; skip
-  // off-screen). Restores WI-107: after the initial centre, Aku follows the work.
+  // Working ROAM — track the frame the agent is editing; move to it immediately when
+  // the TARGET frame changes (debounced). Intra-frame wander is handled below.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let pending: string | null = null;
-    const flyToFrame = (itemId: string): void => {
-      const f = flags.current;
-      if (f.reduce || f.paused || !f.streaming || draggingRef.current) return;
-      const sel = `[data-frame-id="${CSS.escape(itemId)}"]`;
-      const el = document.querySelector(`main ${sel}`) ?? document.querySelector(sel);
-      const rect = el?.getBoundingClientRect();
-      if (rect === undefined || rect.width === 0 || rect.height === 0) return;
-      goTo(
-        roamPointInRect(rect, f.boxW, f.boxH, window.innerWidth, window.innerHeight, Math.random),
-      );
-    };
     const off = editor.changeStream.subscribe(
       (change: unknown) => {
         const id = (change as { itemId?: unknown }).itemId;
@@ -259,7 +273,10 @@ export function useAkuRoam(opts: {
         pending = id;
         if (timer !== undefined) clearTimeout(timer);
         timer = setTimeout(() => {
-          if (pending !== null) flyToFrame(pending);
+          if (pending === null) return;
+          const isNewFrame = editFrameRef.current !== pending;
+          editFrameRef.current = pending;
+          if (isNewFrame) flyToFrame(pending); // new target → hop right away
         }, STREAM_DEBOUNCE_MS);
       },
       { origins: ["user-command"] },
@@ -268,7 +285,22 @@ export function useAkuRoam(opts: {
       off?.();
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [editor, goTo]);
+  }, [editor, flyToFrame]);
+
+  // Working WANDER — every 2 sprite loops, hop to a fresh random point WITHIN the
+  // frame currently being edited, so Aku keeps moving over the work even between
+  // edit events (WI-121: "두 번 재생마다 이동").
+  useEffect(() => {
+    if (!streaming) return;
+    const id = setInterval(() => {
+      const cur = editFrameRef.current;
+      if (cur !== null) flyToFrame(cur);
+    }, FRAME_HOP_MS);
+    return () => {
+      clearInterval(id);
+      editFrameRef.current = null;
+    };
+  }, [streaming, flyToFrame]);
 
   useEffect(
     () => () => {
