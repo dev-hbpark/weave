@@ -3,7 +3,7 @@
 //   - USER EDITING (pointer/keyboard activity on the doc) → sit IDLE at home,
 //   - idle, < 1 min since the last edit → wander to random viewport points,
 //   - idle, ≥ 1 min since the last edit → walk to screen centre, then doze (sleep),
-//   - WORKING (agent streaming) → move to the screen CENTRE and stay (WI-113):
+//   - WORKING (agent streaming) → move to the screen CENTRE and stay (WI-115):
 //     the camera brings the edited root frame to centre, so Aku works over it,
 //   - DRAG → follow the pointer (drag-struggle sprite), settling where dropped.
 // `moving`/`dragging`/`sleeping` let the caller pick the sprite; a tap (no movement
@@ -181,7 +181,7 @@ export function useAkuRoam(opts: {
       }
       if (f.streaming) {
         // agent working — move to (and hold at) the screen centre; the camera brings
-        // the edited root frame here so Aku works over it (WI-113). Counts as activity
+        // the edited root frame here so Aku works over it (WI-115). Counts as activity
         // so the moment it finishes Aku is "editing" (home/idle), never instantly asleep.
         lastActivityRef.current = Date.now();
         wake();
@@ -228,7 +228,7 @@ export function useAkuRoam(opts: {
   }, [goTo]);
 
   // Working start — move to the screen centre immediately (don't wait a tick) so a
-  // turn visibly begins with Aku gliding to centre, then "connecting" (WI-113). The
+  // turn visibly begins with Aku gliding to centre, then "connecting" (WI-115). The
   // driver holds it there; the camera brings the edited frame to it.
   useEffect(() => {
     if (!streaming || draggingRef.current) return;

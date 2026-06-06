@@ -1,4 +1,4 @@
-// 아쿠 — interaction lock UI (WI-105 / DR-072 · WI-110/WI-113 spotlight).
+// 아쿠 — interaction lock UI (WI-105 / DR-072 · WI-110/WI-115 spotlight).
 //
 // While the agent is streaming (`locked`), dims + blocks the whole app so only the
 // Aku panel/launcher is operable (correctness: the agent reads the doc/selection
@@ -8,7 +8,7 @@
 // all app chrome. Effects engage #root `inert` + the window keyboard/wheel guard;
 // everything reverses when `locked` goes false (status → idle), so it never traps.
 //
-// WI-110/WI-113 — `spotlight`: while the working Aku is centered (panel closed), a
+// WI-110/WI-115 — `spotlight`: while the working Aku is centered (panel closed), a
 // circle around it stays sharp + BRIGHT while the rest is blurred + DARKENED:
 //   - DIM layer  — blur + brightness↓ + dark tint, masked to EXCLUDE the centre
 //     (masked-out pixels paint nothing → no blur/dim over Aku).

@@ -1,10 +1,10 @@
-# WI-113 — 아쿠 작업 중 센터 스테이지 (중앙 고정 + 슬라이드 카메라 센터링 + 명암 스포트라이트)
+# WI-115 — 아쿠 작업 중 센터 스테이지 (중앙 고정 + 슬라이드 카메라 센터링 + 명암 스포트라이트)
 
 | Field | Value |
 |---|---|
 | Status | Built (single-session, 2026-06-06) |
 | Owner | hbpark |
-| Decision | DR-078 (센터 스테이지 모델 — WI-107 fly-to-frame 작업중 동작 대체) |
+| Decision | DR-080 (센터 스테이지 모델 — WI-107 fly-to-frame 작업중 동작 대체) |
 | Relates | DR-072/WI-110(인터랙션 락+스포트라이트) · WI-111(활동 단계) · WI-065(onFramesAdded fit) |
 
 ## Problem (operator, 2026-06-06)
@@ -43,4 +43,4 @@
   `handleZoomToFrame`(cameraFitBox)는 기존 기능. 루트 id 해석은 `findTrailDeep`(기존 유틸).
 - (참고) 무관 파일 `ImageBlock.tsx`/`corner-radius-field.tsx`(사용자 untracked WIP) 타입오류는 본 작업 밖.
 
-See DR-078.
+See DR-080.

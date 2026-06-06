@@ -1,4 +1,4 @@
-// 아쿠 working-camera (WI-113). While the agent streams, keep the ROOT frame
+// 아쿠 working-camera (WI-115). While the agent streams, keep the ROOT frame
 // (top-level slide) it is editing centred in the viewport — so the user watches
 // the work happen front-and-centre under the centred Aku. The trigger is the
 // agent's own `user-command` changes; manual user edits never move the camera

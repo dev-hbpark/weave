@@ -50,7 +50,7 @@ export function AkuAssistant({
   readonly designInfo: { width: number; height: number; background: string };
   /** WI-065 — fit the camera after the agent adds top-level frame(s). */
   readonly onFramesAdded?: (() => void) | undefined;
-  /** WI-113 — center+fit a frame by id (DesignPage's zoom-to-frame). While the
+  /** WI-115 — center+fit a frame by id (DesignPage's zoom-to-frame). While the
    *  agent streams, Aku keeps the edited root frame centered via this. */
   readonly onZoomToFrame?: ((frameId: string) => void) | undefined;
 }): JSX.Element | null {
@@ -147,7 +147,7 @@ export function AkuAssistant({
     onTap: openPanel,
   });
 
-  // WI-113 — while the agent works, keep the edited root frame (slide) centered so
+  // WI-115 — while the agent works, keep the edited root frame (slide) centered so
   // it sits under the centered Aku. Gated on streaming (manual edits never pan).
   useAkuFrameCamera({
     editor,

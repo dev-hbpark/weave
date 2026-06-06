@@ -25,12 +25,12 @@ editing(home idle) → roaming(랜덤 이동) → sleeping(1분 후 **화면 정
 idle 시트) 으로 전환하며, 편집 재개 시 home 복귀. 단계/활동 감시는 `useAkuRoam`가 소유하고
 `sleeping`은 `useAkuExpression`에 주입(단일 출처). 수면 mood는 idle.png 재사용.
 
-**편집 중 spotlight(WI-110 → WI-113)**: 작업(streaming) 중 화면을 블러 + **밝기↓**(어둡게)
+**편집 중 spotlight(WI-110 → WI-115)**: 작업(streaming) 중 화면을 블러 + **밝기↓**(어둡게)
 처리하고, 아쿠 주변 원은 **밝게**(별도 bright 레이어 `backdrop brightness↑` + 글로우) + 선명.
 `AkuInteractionLock`의 딤/브라이트 레이어에 알파 radial-gradient **MASK**로 중앙을 도려내/밝히고,
 rAF가 `[data-aku-launcher]` 중심을 `--aku-spot-x/y`로 갱신해 움직이는 아쿠를 추종.
 
-**작업 중 센터 스테이지(WI-113)**: streaming 시작 시 아쿠가 **화면 정중앙**으로 이동해 작업 내내
+**작업 중 센터 스테이지(WI-115)**: streaming 시작 시 아쿠가 **화면 정중앙**으로 이동해 작업 내내
 중앙 유지(WI-107 fly-to-frame 대체), `useAkuFrameCamera`가 편집 중인 **루트 슬라이드를 카메라로
 중앙**에 가져옴(`handleZoomToFrame`/`cameraFitBox`, 루트 id 디듀프, streaming 게이트).
 
