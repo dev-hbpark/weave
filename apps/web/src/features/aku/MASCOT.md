@@ -4,17 +4,37 @@
 (컨셉 결정: WI-053 / DR-design-024). 이 문서는 **에셋 규격**만 다룹니다 — 둥둥 애니메이션 /
 말풍선 tip-controller / 런처 교체 같은 **메커니즘 구현은 별도**(에셋 확정 후).
 
-## 파일 (`apps/web/public/aku/`)
+## 파일 (`apps/web/public/aku/`) — WI-104 업데이트 (실 에셋 도착)
 
 런타임에서는 `/aku/<name>` 로 정적 참조합니다 (Vite `public/`).
 
-| 파일 | 크기 | 용도 |
-|---|---|---|
-| `mascot-mark.png` / `mascot-mark@2x.png` | 128² / 256² | **런처**(접힌 상태, 작은 사이즈) — 얼굴 중심 bust |
-| `mascot-full.png` / `mascot-full@2x.png` | 512² / 1024² | **패널 헤더 · 빈 상태 · 코치마크** — 전체 캐릭터 |
+| 파일 | 용도 |
+|---|---|
+| `mascot.png` (1131×1391, **투명 PNG**) | **정적 히어로** — `AkuMascot`(패널 헤더 · 코치마크 · 팁 버블 · CSS 폴백 런처) |
+| `sprites/{idle,thinking,idea,move-left,move-right,drag}.png` (각 **3120×724 = 6프레임 스트립**, 프레임 **520×724**, **투명 PNG**) | **상태별 애니메이션** — 엔진(`@agocraft/sprite-engine`)이 mood→시트로 재생 |
 
-2-tier 이유: 전체 캐릭터(완드·티아라·리본·별)는 ~48px 런처에서 디테일이 뭉개지므로,
-런처에는 얼굴 위주의 단순화 mark를, 큰 표시에는 풀 캐릭터를 씁니다.
+스프라이트 ↔ 에이전트 동작 매핑 (`gpu-sprite-renderer.tsx` `SPRITES`):
+`idle`(대기)·`move-left`=connecting(연결 중)/이동(왼쪽)·`thinking`(생각 중)·`idea`=working(편집 적용 중)
+**및** finalizing(정리 중) **및** celebrating(완료 ✨)·`move-right`=looking(선택 주목)/이동(오른쪽).
+`drag`=dragging(런처 드래그 중 버둥, WI-108 · 시트 교체 WI-111로 520×724 통일). confused→thinking, **sleeping→idle 재사용**(전용
+수면 시트 도착 시 `gpu-sprite-renderer` 한 줄 교체). 프레임 종횡비 ≈0.72라 렌더 박스도 그에 맞춤
+(런처 **86×120**) + 엔진 **contain-fit**(agocraft DR-045 / canvas2d+worker 양쪽).
+
+**활동 기반 단계(WI-111)**: 런처 아쿠는 사용자의 실제 편집(포인터/키보드)에 따라
+editing(home idle) → roaming(랜덤 이동) → sleeping(1분 후 **화면 정중앙으로 이동 후** doze, 현재
+idle 시트) 으로 전환하며, 편집 재개 시 home 복귀. 단계/활동 감시는 `useAkuRoam`가 소유하고
+`sleeping`은 `useAkuExpression`에 주입(단일 출처). 수면 mood는 idle.png 재사용.
+
+**편집 중 spotlight(WI-110)**: 작업(streaming) 중 화면 딤+블러 시, 패널이 닫혀 있으면
+로밍 런처 중심 ~240px(아쿠 높이 2×) 반지름 원만 선명. `AkuInteractionLock`의 딤 레이어에
+알파 radial-gradient **MASK**로 구멍을 뚫어(마스크된 픽셀은 backdrop-blur 미적용) 구현하고,
+rAF가 `[data-aku-launcher]` 중심을 `--aku-spot-x/y`로 갱신해 움직이는 아쿠를 추종.
+
+**투명도 교체(2026-06-06)**: 구 스프라이트/마스코트가 불투명(흰 배경)이라 **투명(alpha)** 버전으로 교체.
+**너비 조정(2026-06-06)**: 프레임 너비를 단계적으로 확장 — 최종 **고정폭 520**(시트 3120×724,
+프레임 520×724, 종횡비 **≈0.72**, repack로 프레임 내 캐릭터 정렬). 렌더 박스를 **86×120**으로
+갱신. `editing`/`spell-right` 시트는 세트에서 제외 → `working`/`celebrating`을 `idea`로 매핑.
+구 placeholder는 WI-104에서 제거. (cols=6 불변 — 엔진이 시트너비/6으로 프레임폭 자동 산출.)
 
 ## 현재 상태 — **원본 플레이스홀더**
 

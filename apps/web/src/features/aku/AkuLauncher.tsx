@@ -33,14 +33,14 @@ export const AkuLauncher = forwardRef<HTMLButtonElement, AkuLauncherProps>(funct
       type="button"
       aria-label="아쿠 열기"
       data-aku-launcher
-      className={`fixed z-[48] w-30 h-30 rounded-full touch-none cursor-grab active:cursor-grabbing hover:brightness-105 active:brightness-95 focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)] transition-[filter] duration-[var(--motion-fast)] ${className ?? ""}`}
+      className={`fixed z-[48] w-[86px] h-30 rounded-[var(--radius-lg)] touch-none cursor-grab active:cursor-grabbing hover:brightness-105 active:brightness-95 focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)] transition-[left,top] duration-[1100ms] ease-in-out motion-reduce:transition-none ${className ?? ""}`}
       {...rest}
     >
       {caption !== null && caption !== undefined && caption !== "" ? (
         <span
           aria-hidden="true"
           data-aku-caption
-          className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-md)] bg-[color:var(--surface-raised)] px-2 py-1 text-[11px] leading-none text-[color:var(--text-default)] shadow-[var(--shadow-sm)] ring-1 ring-[color:var(--border-subtle)]"
+          className="pointer-events-none absolute bottom-full left-1/2 mb-1 w-max max-w-[180px] -translate-x-1/2 text-balance rounded-[var(--radius-md)] border border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay)] px-2 py-1 text-center text-[11px] leading-snug text-[color:var(--text-overlay)] shadow-[var(--shadow-overlay)] backdrop-blur-[var(--surface-blur)]"
         >
           {caption}
         </span>

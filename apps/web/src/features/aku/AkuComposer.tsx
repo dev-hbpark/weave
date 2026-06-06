@@ -20,7 +20,7 @@ import {
   useState,
 } from "react";
 import type { AkuSettings } from "./agent/aku-settings.js";
-import { AKU_STYLES } from "./agent/aku-styles.js";
+import { TONE_PRESETS } from "./agent/compose-tone.js";
 import { type SlashCommandItem, SlashCommandMenu } from "./SlashCommandMenu.js";
 import type { AkuImage } from "./types.js";
 
@@ -325,9 +325,10 @@ export function AkuComposer({
         </div>
       ) : null}
 
-      {/* Design-tone picker — the variety lever. "자동" (null) lets the agent
-          rotate tones each generation; picking one commits every generation to
-          that mood (literal palette / typography / shapes). Gated by settings. */}
+      {/* Design-tone picker — the variety lever. "자동" (null) frees every axis
+          for max variety; picking a preset pins its identity axes (palette /
+          typography / …) and varies the rest each generation (DR-077). Gated by
+          settings. */}
       {settings.designTone ? (
         <div className="flex flex-wrap gap-1" data-testid="aku-style-picker">
           <StyleChip
@@ -336,13 +337,13 @@ export function AkuComposer({
             onClick={() => setStyleId(null)}
             title="매 생성마다 다른 톤으로 다양하게"
           />
-          {AKU_STYLES.map((s) => (
+          {TONE_PRESETS.map((p) => (
             <StyleChip
-              key={s.id}
-              label={s.label}
-              active={styleId === s.id}
-              onClick={() => setStyleId((cur) => (cur === s.id ? null : s.id))}
-              title={s.prompt}
+              key={p.id}
+              label={p.label}
+              active={styleId === p.id}
+              onClick={() => setStyleId((cur) => (cur === p.id ? null : p.id))}
+              title={p.summary}
             />
           ))}
         </div>

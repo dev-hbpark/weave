@@ -27,6 +27,7 @@
     "@agocraft/manipulation": "file:vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz",
     "@agocraft/renderer-html-canvas": "file:vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260602053511.tgz",
     "@agocraft/spatial": "file:vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz",
+    "@agocraft/sprite-engine": "file:vendor/agocraft/agocraft-sprite-engine-1.0.0-rc.20260606150000.tgz",
     "@agocraft/sync": "file:vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz",
     "@anthropic-ai/sdk": "^0.100.1",
     "@lexical/react": "^0.44.0",

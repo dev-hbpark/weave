@@ -77,10 +77,10 @@ export const WEAVE_CAPABILITIES = {
         "A frame. A TOP-LEVEL frame (direct child of the design root) is a presentation SLIDE. A frame holds child items via weave.item.add with containerId = this frame's id; it has no text/image content of its own. NESTED FRAMES ARE YOUR LAYOUT TOOL FOR GROUPING: nest a frame (containerId = another frame's id), give it a layout via weave.frame.setLayout (auto-flex row/column or auto-grid), and it becomes a self-arranging container — a header band, a two-column split, a card, a card grid, a sidebar, a stat row. Reach for one to align/auto-arrange MULTIPLE related items, or to make a region reflow as a unit; it earns its place by doing real layout work. Do NOT wrap a SINGLE item (or a one-element region) in its own layout frame — a single-child frame is needless nesting; place that item directly on its parent instead. The defect to avoid is hand-placing a CLUSTER of related items by coordinate so they drift out of alignment — group THOSE; a lone well-placed item does not need a wrapper. CRITICAL RULE: a nested frame is a SLIDE by default, so on EVERY nested (non-top-level) frame set attrs.presentable:false — that makes it a LAYOUT GROUP, not an extra slide, so ONLY the top-level frame you intend as the slide lands in the deck. And use a plain SHAPE (rectangle) for a single coloured panel / divider / button background, never a frame.",
         // SLIDE SEMANTICS — load-bearing for this presentation tool.
         "SLIDE: a top-level frame (a direct child of the design root) IS one presentation slide. The deck = the ordered list of these root frames; Present mode shows them in order. Add each slide-frame with weave.item.add { kind:'frame', frame:{ x: i*1.1, y:0, width:1, height:1 } } (slide index i, 0-based) and NO containerId (→ the design root). Give each slide a DISTINCT x (a left-to-right filmstrip) — do NOT put them all at { x:0, y:0, width:1, height:1 }, which overlaps every slide on one spot. weave.design.setPresentationOrder reorders the deck, and weave.design.reorderChildren reorders siblings. NESTED frames (containerId = another frame's id) organise a slide's content into rows/columns/grids/cards via a layout — set attrs.presentable:false on EACH so it stays a layout group, never an extra slide. For a single coloured panel / box / divider / button, prefer a SHAPE (kind:'shape', rectangle); use a nested frame to group + auto-arrange multiple items.",
-        "BACKGROUND/FILL: ACTIVELY use frame fills — a slide should NOT sit on bare default white, and grouping frames should NOT be left transparent when a surface would add structure or depth. Give the slide a deliberate base fill and give section / group / card frames their own colour panel, tonal band, or card surface (often with cornerRadius + a soft decoration.shadow). Set the background with a decoration.fill unit — weave.item.add { …, units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } at creation, or weave.item.update { itemId, units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } later — solid, gradient, or image/video paint (see the shape itemKind for the PaintSpec shape). For a photo background, prefer adding a kind:'image' child at frame {0,0,1,1} then weave.item.sendToBack. attrs.cornerRadius (0..1 ratio of the frame's OWN min(width, height) — not the parent) rounds the frame; decoration.shadow/.stroke also apply (see decoration units).",
+        "BACKGROUND/FILL: ACTIVELY use frame fills — a slide should NOT sit on bare default white, and grouping frames should NOT be left transparent when a surface would add structure or depth. Give the slide a deliberate base fill and give section / group / card frames their own colour panel, tonal band, or card surface (often with cornerRadius + a soft decoration.shadow). Set the background with a decoration.fill unit — weave.item.add { …, units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } at creation, or weave.item.update { itemId, units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } later — solid, gradient, or image/video paint (see the shape itemKind for the PaintSpec shape). For a photo background, prefer adding a kind:'image' child at frame {0,0,1,1} then weave.item.sendToBack. attrs.cornerRadius (ABSOLUTE design-px, drawn circular, auto-capped at min(width,height)/2 — ~12–24 for a soft round, large = pill) rounds the frame, and attrs.cornerRadii { tl, tr, br, bl } (px) rounds each corner independently; decoration.shadow/.stroke also apply (see decoration units).",
         "LAYOUT: a frame can auto-arrange its children — set attrs.layout (a LayoutSpec) via weave.frame.setLayout to get a CSS-flex row/column or CSS-grid. See layoutKinds for the full auto-flex / auto-grid spec.",
       ].join(" "),
-      editableAttrs: ["frame", "layout", "cornerRadius", "presentable"],
+      editableAttrs: ["frame", "layout", "cornerRadius", "cornerRadii", "presentable"],
       units: ["decoration.fill", "decoration.shadow", "decoration.stroke", "decoration.opacity"],
     },
     {
@@ -197,9 +197,18 @@ export const WEAVE_CAPABILITIES = {
     {
       kind: "image",
       description:
-        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius a 0..1 ratio of the image's OWN min(width, height) (not the parent). Size/position via attrs.frame. attrs.cropRatio = { x, y, w, h, rotation? } (all 0..1 except rotation radians) crops to a sub-window of the source (no-crop = { x:0,y:0,w:1,h:1 }); set it via weave.item.update or the dedicated weave.image.setCrop. " +
+        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius the corner radius in ABSOLUTE design-px (circular, auto-capped at min(width,height)/2), and attrs.borderRadii { tl, tr, br, bl } (px) rounds each corner independently. Size/position via attrs.frame. attrs.cropRatio = { x, y, w, h, rotation? } (all 0..1 except rotation radians) crops to a sub-window of the source (no-crop = { x:0,y:0,w:1,h:1 }); set it via weave.item.update or the dedicated weave.image.setCrop. " +
         'attrs.src is OPTIONAL: OMIT it (or pass "") to create a SOURCE-LESS PLACEHOLDER — a neutral framed box with an image glyph, NOT a broken image. Use this for wireframe/layout drafts where the real picture is added later. When src is empty, attrs.alt is rendered as CENTERED CAPTION TEXT inside the placeholder (so set a short alt like "제품 사진 자리" to label the slot); once a real src is set, alt reverts to its accessibility role and is no longer drawn.',
-      editableAttrs: ["frame", "src", "alt", "fit", "opacity", "borderRadius", "cropRatio"],
+      editableAttrs: [
+        "frame",
+        "src",
+        "alt",
+        "fit",
+        "opacity",
+        "borderRadius",
+        "borderRadii",
+        "cropRatio",
+      ],
     },
     {
       kind: "video",
@@ -207,7 +216,7 @@ export const WEAVE_CAPABILITIES = {
         "A video. attrs.src is the URL; autoplay/loop/muted/controls are booleans; attrs.fit one of cover|contain|fill. Size/position via attrs.frame. " +
         'attrs.src is OPTIONAL, just like image: OMIT it (or pass "") to create a SOURCE-LESS PLACEHOLDER for wireframe/layout drafts — NOT an empty black player. When src is empty, the placeholder is either (a) attrs.poster rendered as a static COVER IMAGE with a play badge (set attrs.poster to a thumbnail/still URL), or (b) if no poster, a neutral framed box with a play/film glyph. ' +
         'attrs.alt is a short DESCRIPTION of the clip (e.g. "제품 데모 영상", "드론 항공 b-roll") — like image alt: when src is empty it is drawn as CENTERED CAPTION TEXT inside the placeholder so the slot says what KIND of video belongs there; once a real src is set, alt becomes the accessibility description. ALWAYS set attrs.alt on a video so the intent is clear even before a real clip is dropped in. ' +
-        "attrs.volume (0..1) and attrs.playbackRate (1 = normal speed) tune playback; attrs.borderRadius (0..1 of the video's OWN min(w,h)) rounds the corners.",
+        "attrs.volume (0..1) and attrs.playbackRate (1 = normal speed) tune playback; attrs.borderRadius (ABSOLUTE design-px, circular, auto-capped at min(w,h)/2) rounds the corners, and attrs.borderRadii { tl, tr, br, bl } (px) rounds each corner independently.",
       editableAttrs: [
         "frame",
         "src",
@@ -221,6 +230,7 @@ export const WEAVE_CAPABILITIES = {
         "volume",
         "playbackRate",
         "borderRadius",
+        "borderRadii",
       ],
     },
     {

@@ -3,6 +3,7 @@ import {
   AKU_SETTINGS_SECTIONS,
   type AkuSettingKey,
   DEFAULT_AKU_SETTINGS,
+  jitteredTemperature,
   loadAkuSettings,
   temperatureForCreativity,
 } from "./aku-settings.js";
@@ -80,5 +81,38 @@ describe("temperatureForCreativity", () => {
       temperatureForCreativity("balanced"),
     );
     expect(temperatureForCreativity("balanced")).toBeLessThan(temperatureForCreativity("creative"));
+  });
+});
+
+describe("jitteredTemperature (DR-077 D3)", () => {
+  it("keeps 'consistent' exactly deterministic (the 일관 promise)", () => {
+    for (let seed = 0; seed < 20; seed += 1) {
+      expect(jitteredTemperature("consistent", seed)).toBe(0);
+    }
+  });
+
+  it("is deterministic in the seed", () => {
+    expect(jitteredTemperature("balanced", 5)).toBe(jitteredTemperature("balanced", 5));
+  });
+
+  it("spreads non-consistent levels around their base but stays within [0, 1]", () => {
+    const base = temperatureForCreativity("balanced");
+    const samples = Array.from({ length: 14 }, (_, seed) => jitteredTemperature("balanced", seed));
+    for (const t of samples) {
+      expect(t).toBeGreaterThanOrEqual(0);
+      expect(t).toBeLessThanOrEqual(1);
+    }
+    // The jitter actually moves it: at least one sample on each side of base.
+    expect(samples.some((t) => t < base)).toBe(true);
+    expect(samples.some((t) => t > base)).toBe(true);
+    expect(new Set(samples).size).toBeGreaterThan(1);
+  });
+
+  it("never exceeds the ceiling even for 'creative' (base near 1)", () => {
+    for (let seed = 0; seed < 20; seed += 1) {
+      const t = jitteredTemperature("creative", seed);
+      expect(t).toBeLessThanOrEqual(1);
+      expect(t).toBeGreaterThanOrEqual(0);
+    }
   });
 });

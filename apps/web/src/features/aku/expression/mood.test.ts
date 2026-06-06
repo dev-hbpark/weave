@@ -36,9 +36,9 @@ describe("resolveAkuMood", () => {
     expect(resolveAkuMood({ ...base, status: "streaming", activity: null })).toBe("working");
   });
 
-  it("treats connecting / reconnecting as working (busy)", () => {
-    expect(resolveAkuMood({ ...base, connectionState: "connecting" })).toBe("working");
-    expect(resolveAkuMood({ ...base, connectionState: "reconnecting" })).toBe("working");
+  it("maps connecting / reconnecting to the connecting mood", () => {
+    expect(resolveAkuMood({ ...base, connectionState: "connecting" })).toBe("connecting");
+    expect(resolveAkuMood({ ...base, connectionState: "reconnecting" })).toBe("connecting");
   });
 
   it("maps a broken connection to confused", () => {
@@ -77,6 +77,7 @@ describe("moodIntensity", () => {
   it("returns a 0..1 vigor for every mood", () => {
     for (const mood of [
       "idle",
+      "connecting",
       "thinking",
       "working",
       "finalizing",
@@ -84,6 +85,7 @@ describe("moodIntensity", () => {
       "confused",
       "sleeping",
       "looking",
+      "dragging",
     ] as const) {
       const v = moodIntensity(mood);
       expect(v).toBeGreaterThanOrEqual(0);

@@ -19,7 +19,7 @@ minimumReleaseAge: 0
 # Kept in BOTH places so either pnpm major works. Paths are relative to this
 # workspace root and point at the checked-in tarballs under apps/web/vendor/.
 overrides:
-  "@small-think/client": "file:apps/web/vendor/small-think/small-think-client-0.1.1.tgz"
+  "@small-think/client": "file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz"
   "@agocraft/agent-client": "file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260605120000.tgz"
   "@agocraft/core": "file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260602053511.tgz"
   "@agocraft/domain-block-doc": "file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260602053511.tgz"
@@ -37,5 +37,6 @@ overrides:
   "@agocraft/renderer-html-canvas": "file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260602053511.tgz"
   "@agocraft/renderer-mock": "file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260602053511.tgz"
   "@agocraft/spatial": "file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz"
+  "@agocraft/sprite-engine": "file:apps/web/vendor/agocraft/agocraft-sprite-engine-1.0.0-rc.20260606150000.tgz"
   "@agocraft/sync": "file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz"
   "@agocraft/testing": "file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260602053511.tgz"

@@ -62,6 +62,31 @@ export function temperatureForCreativity(level: AkuCreativity): number {
   return CREATIVITY_TEMPERATURE[level];
 }
 
+/** Per-level jitter half-width — how far a request may stray from the base
+ *  temperature. "consistent" stays exactly 0 (the "일관" promise: deterministic),
+ *  the others gain a small seed-derived spread so identical settings sample
+ *  differently run-to-run (DR-077 D3). */
+const CREATIVITY_JITTER: Record<AkuCreativity, number> = {
+  consistent: 0,
+  balanced: 0.15,
+  creative: 0.1, // already near the 0..1 ceiling — keep the spread modest
+};
+
+/** A per-request temperature: the level's base nudged by a seed-derived offset
+ *  in [-jitter, +jitter], clamped to [0, 1]. Deterministic in `seed` (the same
+ *  per-request variation seed used for the `[변주]` line) so it is unit-testable
+ *  and the sampling spread tracks the input variation. */
+export function jitteredTemperature(level: AkuCreativity, seed: number): number {
+  const base = CREATIVITY_TEMPERATURE[level];
+  const jitter = CREATIVITY_JITTER[level];
+  if (jitter === 0) return base;
+  // seed % 7 → {0..6}; map to [-1, +1] then scale. Stride 7 is co-prime with the
+  // variation-knob strides so temperature doesn't lock-step with a single knob.
+  const offset = (((seed % 7) / 6) * 2 - 1) * jitter;
+  const t = base + offset;
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
 export const DEFAULT_AKU_SETTINGS: AkuSettings = {
   designTone: true,
   autoRotateTone: true,

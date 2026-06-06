@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.1.tgz
+  '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz
   '@agocraft/agent-client': file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260605120000.tgz
   '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260602053511.tgz
   '@agocraft/domain-block-doc': file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260602053511.tgz
@@ -23,6 +23,7 @@ overrides:
   '@agocraft/renderer-html-canvas': file:apps/web/vendor/agocraft/agocraft-renderer-html-canvas-1.0.0-rc.20260602053511.tgz
   '@agocraft/renderer-mock': file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260602053511.tgz
   '@agocraft/spatial': file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz
+  '@agocraft/sprite-engine': file:apps/web/vendor/agocraft/agocraft-sprite-engine-1.0.0-rc.20260606150000.tgz
   '@agocraft/sync': file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz
   '@agocraft/testing': file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260602053511.tgz
 
@@ -78,6 +79,9 @@ importers:
       '@agocraft/spatial':
         specifier: file:vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz
         version: file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz
+      '@agocraft/sprite-engine':
+        specifier: file:vendor/agocraft/agocraft-sprite-engine-1.0.0-rc.20260606150000.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-sprite-engine-1.0.0-rc.20260606150000.tgz
       '@agocraft/sync':
         specifier: file:vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz
         version: file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)
@@ -296,6 +300,10 @@ packages:
   '@agocraft/spatial@file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz':
     resolution: {integrity: sha512-hAupud9v0mxF00LKgOFEpJedjrZPKnnx0KoFAFoihAOLBfNcvMKaSG3sDKMLPe8fe1vV9+3aVockqttOsn1myg==, tarball: file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz}
     version: 1.0.0-rc.20260602053511
+
+  '@agocraft/sprite-engine@file:apps/web/vendor/agocraft/agocraft-sprite-engine-1.0.0-rc.20260606150000.tgz':
+    resolution: {integrity: sha512-4xpEBPse8RICif4PevEGUxSwFpnM8vUo1bxKQwcReuRliBuMkjfp65Tt3KTY6L1SV3p9q/GcMfyKChXwfELIUw==, tarball: file:apps/web/vendor/agocraft/agocraft-sprite-engine-1.0.0-rc.20260606150000.tgz}
+    version: 1.0.0-rc.20260606150000
 
   '@agocraft/sync@file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz':
     resolution: {integrity: sha512-WntcefaT/Uo8CpaXZ8hd+BYjuzuBY13F5p16okcJ8d41BlQwRMnqhdG6k9r3hQrt9+emh7TmEQJjOmVe6E0z+w==, tarball: file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz}
@@ -1584,9 +1592,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.1.tgz':
-    resolution: {integrity: sha512-tdLyr8Y2s0yv/ignAF3We075uyBYOBn4V17xjttD5W7RCQ3/iYzOF7F+q862Bq7CxfTmzEXjSViiI8SFAy6p6A==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.1.tgz}
-    version: 0.1.1
+  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz':
+    resolution: {integrity: sha512-QsWLZbptPknHti9HFjSXpxzdZCCDqNxLdM6JLcTNIv4iejHdYzEvQ+juxPPvdwAPIiSQdOiVSaKyiOpy6e8caQ==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz}
+    version: 0.1.2
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
@@ -3490,7 +3498,7 @@ snapshots:
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)
       '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)
-      '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.1.tgz(typescript@5.9.3)(zod@3.25.76)
+      '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz(typescript@5.9.3)(zod@3.25.76)
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - react
@@ -3585,6 +3593,8 @@ snapshots:
   '@agocraft/spatial@file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz':
     dependencies:
       rbush: 4.0.1
+
+  '@agocraft/sprite-engine@file:apps/web/vendor/agocraft/agocraft-sprite-engine-1.0.0-rc.20260606150000.tgz': {}
 
   '@agocraft/sync@file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)':
     dependencies:
@@ -4749,7 +4759,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.60.4':
     optional: true
 
-  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.1.tgz(typescript@5.9.3)(zod@3.25.76)':
+  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
       valibot: 1.4.0(typescript@5.9.3)

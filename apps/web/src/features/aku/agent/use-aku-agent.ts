@@ -32,6 +32,8 @@ import {
   loadConversation,
   persistConversation,
 } from "../conversation-storage.js";
+import { collectDiversitySample } from "../diversity/collector.js";
+import type { SigDocument } from "../diversity/diversity-metric.js";
 import type {
   AkuAssistantMessage,
   AkuConnection,
@@ -41,12 +43,15 @@ import type {
   AkuMessage,
   AkuStatus,
 } from "../types.js";
+import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
 import {
-  type AkuSettings,
-  DEFAULT_AKU_SETTINGS,
-  temperatureForCreativity,
-} from "./aku-settings.js";
-import { type AkuStyle, nextAutoStyle, styleById, styleTaskLine } from "./aku-styles.js";
+  composeToneTask,
+  picksToIds,
+  presetById,
+  presetToRegister,
+  resolveTonePicks,
+  type TonePickIds,
+} from "./compose-tone.js";
 import { makeRoundGroupingEditor } from "./round-grouping-editor.js";
 import {
   WEAVE_CAPABILITIES,
@@ -69,8 +74,9 @@ export interface UseAkuAgent {
   readonly pendingClarify: { readonly req: ClarifyRequest } | null;
   /** Answer the pending clarify question with the selected item-type names. */
   resolveClarify(types: readonly string[]): void;
-  /** `opts.styleId` picks a design tone (see AKU_STYLES); omit → AUTO (rotates
-   *  tones so consecutive generations differ, when that setting is on).
+  /** `opts.styleId` picks a tone PRESET (see TONE_PRESETS); omit/null → 자동
+   *  (every axis free → max variety, when auto-rotation is on). A picked preset
+   *  pins its identity axes and varies the rest per generation (DR-077).
    *  `opts.styleRefImages` are style-reference images (mimic palette/tone). */
   send(
     text: string,
@@ -310,12 +316,15 @@ export function useAkuAgent(deps: {
   // The in-flight task id (captured via submit's onSubmit) so stop() can cancel it
   // server-side, not just locally supersede it (small-think DR-011).
   const activeTaskIdRef = useRef<string | null>(null);
-  // AUTO design-tone rotation cursor (when the user picks no style). Seeded once
-  // with a random start so a session doesn't always open on the same tone; each
-  // auto pick advances it so consecutive generations / regenerations differ.
-  const autoStyleCursorRef = useRef<{ value: number }>({
-    value: Math.floor(Math.random() * 997),
-  });
+  // Per-request variation seed (DR-077 D3). Advances on every submit — incl. a
+  // "regenerate" of the same tone+text — so the free-axis sampling and the
+  // temperature jitter both shift, breaking same-tone convergence. Random start
+  // so a session doesn't always open on the same variation.
+  const variationSeedRef = useRef<number>(Math.floor(Math.random() * 997));
+  // Previous generation's resolved tone picks (DR-077 D4). Passed as the
+  // exclusion set so the next generation's FREE axes steer away from them —
+  // making "regenerate" jump rather than micro-vary. Pinned axes ignore it.
+  const prevTonePicksRef = useRef<TonePickIds | undefined>(undefined);
   // Supersession token: stop / clear / a new send invalidate an in-flight submit
   // (the server keeps running unless we also cancel; we ignore its late resolution).
   const genRef = useRef(0);
@@ -537,14 +546,32 @@ export function useAkuAgent(deps: {
       const primer = AKU_ABLATION.taskPrimer ? WEAVE_TASK_PRIMER : "";
       // [현재 테마] — off frees the agent to commit to the content's own palette.
       const themeLine = s.sendTheme ? currentThemeLine() : "";
-      // Design VARIETY lever — inject an explicit tone. The user's pick wins;
-      // with no pick and auto-rotation on we ROTATE the catalog so back-to-back
-      // generations (and "regenerate") land on different tones. Off → no tone.
-      const style: AkuStyle | undefined = s.designTone
-        ? (styleById(styleId) ??
-          (s.autoRotateTone ? nextAutoStyle(autoStyleCursorRef.current) : undefined))
-        : undefined;
-      const styleLine = styleTaskLine(style);
+      // Per-request variation seed (DR-077 D3) — advance once per submit so the
+      // same tone+text still differs run-to-run (drives free-axis sampling +
+      // the temperature jitter below).
+      variationSeedRef.current += 1;
+      const variationSeed = variationSeedRef.current;
+      // Design VARIETY lever (DR-077 D1/D4) — compose a tone from the 5 axes.
+      // A user-picked PRESET pins its identity axes; the rest are sampled by the
+      // seed and steered away from the previous generation's picks (D4). With no
+      // preset and auto-rotation on, EVERY axis is free (max variety). Off, or no
+      // preset with rotation off → no tone (agent uses structural tokens).
+      const preset = s.designTone ? presetById(styleId) : undefined;
+      let styleLine = "";
+      if (s.designTone && (preset !== undefined || s.autoRotateTone)) {
+        const picks = resolveTonePicks({
+          preset,
+          seed: variationSeed,
+          exclude: prevTonePicksRef.current,
+        });
+        styleLine = composeToneTask(picks);
+        prevTonePicksRef.current = picksToIds(picks);
+      }
+      // Aesthetic register for the picked preset (HANDOFF-025) — sent so the design
+      // server conditions its restraint policy on it (small-think DR-043), instead
+      // of flattening expressive presets. 자동/no preset → undefined → omitted (the
+      // server infers the register from content; auto mode varies all axes anyway).
+      const register = presetToRegister(preset?.id);
       // [테마 추천] — ask the agent to name a fitting theme in a parseable line
       // so the panel can offer one-click apply.
       const themeAdviceLine = s.themeAdvice
@@ -571,8 +598,11 @@ export function useAkuAgent(deps: {
           // parses media-type + bytes into the model's first turn). Style-
           // reference images (when enabled) ride along after the content images.
           ...(visionImages.length > 0 ? { images: visionImages } : {}),
-          // Per-request creativity → sampling temperature (server clamps 0..1).
-          temperature: temperatureForCreativity(s.creativity),
+          // Per-request creativity → sampling temperature, jittered by the
+          // variation seed so the same tone samples differently run-to-run
+          // (DR-077 D3); server clamps 0..1.
+          temperature: jitteredTemperature(s.creativity, variationSeed),
+          ...(register !== undefined ? { register } : {}),
           // Capture the server-assigned task id so stop() can cancel THIS run.
           onSubmit: (id) => {
             activeTaskIdRef.current = id;
@@ -652,6 +682,16 @@ export function useAkuAgent(deps: {
           depsRef.current.getDocument().root.children.length > rootFramesBefore
         ) {
           depsRef.current.onFramesAdded?.();
+        }
+        // DEV — record a diversity signature from the generated document so the D6
+        // harness (`window.__weaveDiversity.report()`) can score REAL cross-run
+        // variety (DR-077 D6). Guarded + tree-shaken out of production.
+        if (succeeded && import.meta.env.DEV) {
+          collectDiversitySample(
+            depsRef.current.getDocument() as unknown as SigDocument,
+            depsRef.current.getDesignInfo?.()?.background,
+            `${preset?.id ?? "auto"}#${variationSeed}`,
+          );
         }
       } catch (err) {
         if (genRef.current !== gen) return;

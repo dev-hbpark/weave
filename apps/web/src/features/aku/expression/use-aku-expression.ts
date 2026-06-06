@@ -3,13 +3,17 @@
 // Subscribes to the agent run-state the UI ALREADY has (status / connection /
 // the live `activity` caption / selection) and derives {mood, intensity} + a
 // live work caption. The producer (useAkuAgent) is untouched — this is a pure
-// consumer (Information Expert). It owns three transient, timer-driven windows
+// consumer (Information Expert). It owns two transient, timer-driven windows
 // that the raw signal can't express on its own:
 //   - celebrate: a turn just settled with applied edits (a short ✨ window),
-//   - looking:   the selection changed while idle (a brief perk-up),
-//   - sleeping:  no activity for a long while (doze).
+//   - looking:   the selection changed while idle (a brief perk-up).
 // Consumers choose their own scheduling — here, timers — never pushed onto the
 // producer (workspace producer/consumer rule).
+//
+// `sleeping` (the long-quiet doze) is NOT owned here — it's driven by real
+// pointer/keyboard editing activity, which only useAkuRoam observes (WI-111). It
+// is injected so the mood RULE TABLE remains the single arbiter of mood priority
+// (streaming/celebrate outrank doze).
 //
 // This file imports NO concrete renderer (renderer seam purity, DR-070 D2) — the
 // deps-guard test enforces it.
@@ -21,7 +25,6 @@ import type { AkuExpressionState } from "./renderer-types.js";
 
 const CELEBRATE_MS = 1800;
 const LOOKING_MS = 1400;
-const SLEEP_MS = 90_000;
 
 export interface AkuExpression extends AkuExpressionState {
   /** Live caption to show above the collapsed launcher while a turn streams
@@ -35,8 +38,10 @@ export function useAkuExpression(input: {
   readonly messages: readonly AkuMessage[];
   /** Stable join of selected ids — a change drives the `looking` window. */
   readonly selectionKey: string;
+  /** Long-quiet doze, owned by useAkuRoam (real edit-activity driven, WI-111). */
+  readonly sleeping: boolean;
 }): AkuExpression {
-  const { status, connection, messages, selectionKey } = input;
+  const { status, connection, messages, selectionKey, sleeping } = input;
 
   // The live caption is the streaming assistant message's `activity` (the agent
   // already wrote it there); fall back to the connection banner if attention is
@@ -48,7 +53,6 @@ export function useAkuExpression(input: {
 
   const [celebrate, setCelebrate] = useState(false);
   const [looking, setLooking] = useState(false);
-  const [sleeping, setSleeping] = useState(false);
 
   // celebrate: fire when a turn transitions streaming → settled WITH edits.
   const prevStatus = useRef<AkuStatus>(status);
@@ -77,15 +81,6 @@ export function useAkuExpression(input: {
     const t = setTimeout(() => setLooking(false), LOOKING_MS);
     return () => clearTimeout(t);
   }, [selectionKey]);
-
-  // sleeping: doze after a long quiet spell; ANY activity resets the timer.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: caption + selectionKey are intentional RESET triggers (a new caption or a selection change is "activity" that restarts the doze timer), not values read in the body.
-  useEffect(() => {
-    setSleeping(false);
-    if (status !== "idle") return; // streaming/connecting never sleeps
-    const t = setTimeout(() => setSleeping(true), SLEEP_MS);
-    return () => clearTimeout(t);
-  }, [status, caption, selectionKey]);
 
   const mood: AkuMood = resolveAkuMood({
     status,

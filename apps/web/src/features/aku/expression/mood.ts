@@ -16,17 +16,20 @@ import type { AkuConnection, AkuStatus } from "../types.js";
 /** The character's expressive state. Renderer-independent. */
 export type AkuMood =
   | "idle"
+  | "connecting"
   | "thinking"
   | "working"
   | "finalizing"
   | "celebrating"
   | "confused"
   | "sleeping"
-  | "looking";
+  | "looking"
+  | "dragging"; // UI-only (drag interaction) — not emitted by resolveAkuMood
 
 /** Everything resolveAkuMood needs. `activity` is the live caption off the
- *  streaming assistant message (e.g. "생각 중…", "편집 적용 중: 배경색 변경");
- *  the transient booleans are owned + timed by useAkuExpression. */
+ *  streaming assistant message (e.g. "생각 중…", "편집 적용 중: 배경색 변경").
+ *  `celebrate`/`looking` are owned + timed by useAkuExpression; `sleeping` is
+ *  injected from useAkuRoam (real edit-activity driven, WI-111). */
 export interface AkuMoodInput {
   readonly status: AkuStatus;
   readonly connectionState: AkuConnection["state"];
@@ -35,7 +38,7 @@ export interface AkuMoodInput {
   readonly celebrate: boolean;
   /** Selection changed recently while idle — perk-up window (transient). */
   readonly looking: boolean;
-  /** No activity for a long while — doze window (transient). */
+  /** No user editing for a long while — doze window (from useAkuRoam, WI-111). */
   readonly sleeping: boolean;
 }
 
@@ -50,7 +53,7 @@ type Rule = readonly [predicate: (i: AkuMoodInput) => boolean, mood: AkuMood];
 // Priority order matters: connection trouble and live work outrank idle moods.
 const MOOD_RULES: readonly Rule[] = [
   [(i) => i.connectionState === "error" || i.connectionState === "closed", "confused"],
-  [(i) => i.connectionState === "connecting" || i.connectionState === "reconnecting", "working"],
+  [(i) => i.connectionState === "connecting" || i.connectionState === "reconnecting", "connecting"],
   [
     (i) => i.status === "streaming" && i.activity !== null && i.activity.includes(THINKING_MARK),
     "thinking",
@@ -74,6 +77,7 @@ export function resolveAkuMood(input: AkuMoodInput): AkuMood {
  *  Kept here (not in a renderer) so every renderer agrees on relative energy. */
 const MOOD_INTENSITY: Readonly<Record<AkuMood, number>> = {
   idle: 0.35,
+  connecting: 0.7,
   thinking: 0.6,
   working: 0.95,
   finalizing: 0.55,
@@ -81,6 +85,7 @@ const MOOD_INTENSITY: Readonly<Record<AkuMood, number>> = {
   confused: 0.7,
   sleeping: 0.2,
   looking: 0.7,
+  dragging: 1,
 };
 
 export function moodIntensity(mood: AkuMood): number {

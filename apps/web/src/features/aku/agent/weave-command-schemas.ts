@@ -52,8 +52,9 @@ const FRAME_BASE_NOTE =
 const FRAME_ATTRS_NOTE =
   "For frame items: a TOP-LEVEL frame (no containerId) is a SLIDE; a NESTED frame (containerId set) is a " +
   "layout container — give it attrs.layout via weave.frame.setLayout (auto-flex / auto-grid) and set " +
-  "attrs.presentable:false so it stays a LAYOUT GROUP, not an extra slide. attrs.cornerRadius = 0..1 of the " +
-  "frame's own min(w,h).";
+  "attrs.presentable:false so it stays a LAYOUT GROUP, not an extra slide. attrs.cornerRadius = corner radius " +
+  "in ABSOLUTE design-px (drawn circular, auto-capped at min(w,h)/2; ~12–24 for a soft round, a large value = " +
+  "pill). Per-corner: attrs.cornerRadii { tl, tr, br, bl } (px) overrides the uniform value.";
 
 // Text attrs sizing note, shared by `weave.item.add` (attrsOverride) and
 // `weave.item.update` (attrs). The detailed per-field model (units, defaults,
@@ -141,7 +142,8 @@ const DATASET_PAYLOAD: Json = {
 const IMAGE_ATTRS_NOTE =
   "For image items: attrs.src (URL/data-URL) is OPTIONAL — OMIT it (or '') for a SOURCE-LESS PLACEHOLDER, " +
   "and set a short attrs.alt (e.g. '제품 사진 자리') which is then drawn as a centered caption to label the " +
-  "slot. attrs.fit = cover|contain|fill; attrs.borderRadius = 0..1 of the image's OWN min(w,h). See the " +
+  "slot. attrs.fit = cover|contain|fill; attrs.borderRadius = corner radius in ABSOLUTE design-px (circular, " +
+  "auto-capped at min(w,h)/2). Per-corner: attrs.borderRadii { tl, tr, br, bl } (px) overrides it. See the " +
   "image itemKind capabilities for full detail.";
 
 // Video attrs, incl. the source-less placeholder (mirrors IMAGE_ATTRS_NOTE). The
@@ -770,8 +772,9 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   },
   // ── rectangle corner radius (WI-055) ──
   // Rectangle-only (`shape` item with `subAttrs.shape === "rectangle"`). The
-  // radius is in **absolute px** of the shape's rendered bbox — NOT a 0..1
-  // ratio (unlike image/frame `borderRadius`). The renderer caps each corner at
+  // radius is in **absolute design-px** of the shape's rendered bbox — the SAME
+  // unit as frame `cornerRadius` and image/video `borderRadius` (all px since
+  // DR-075; no 0..1 ratios anywhere). The renderer caps each corner at
   // min(width, height) / 2, so a large value is safe. Send EXACTLY ONE of:
   //   • `radius`  — uniform: all four corners set to this value (0 = square).
   //   • `radii`   — per-corner partial: only the supplied corners change; tl =

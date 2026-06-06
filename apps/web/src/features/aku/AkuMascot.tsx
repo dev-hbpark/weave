@@ -6,23 +6,22 @@
 // `draggable={false}` + `pointer-events-none` so a drag on the launcher never
 // starts a native image drag and clicks always hit the button.
 
-const SRC = {
-  mark: "/aku/mascot-full",
-  full: "/aku/mascot-full",
-} as const;
+// Single brand hero asset (WI-104). Both tiers use the same /aku/mascot.png; the
+// animated per-state sprite SHEETS live under /aku/sprites/ and are driven by the
+// engine (gpu-sprite-renderer), not here. This component is the static fallback /
+// panel-header / coachmark image.
+const MASCOT_SRC = "/aku/mascot.png";
 
 export function AkuMascot({
-  variant = "mark",
+  variant: _variant = "mark",
   className,
 }: {
   readonly variant?: "mark" | "full";
   readonly className?: string;
 }): JSX.Element {
-  const base = SRC[variant];
   return (
     <img
-      src={`${base}.png`}
-      srcSet={`${base}.png 1x, ${base}@2x.png 2x`}
+      src={MASCOT_SRC}
       alt=""
       aria-hidden="true"
       draggable={false}
