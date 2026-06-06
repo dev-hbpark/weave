@@ -204,3 +204,48 @@ test("token gate: no token shows the setup view (composer hidden); saving reveal
   const saved = await page.evaluate(() => window.localStorage.getItem("weave.aku.token"));
   expect(saved).toBe("e2e-token");
 });
+
+// DR-079 — the design-style picker is pure UI (no agent), so it's verifiable here:
+// the catalog renders grouped + 자동, and a chip selects. The actual styled
+// GENERATION is model-dependent and lives in the server-dependent suite.
+test("design-style picker: grouped named styles + 자동, and a chip selects (DR-079)", async ({
+  page,
+}) => {
+  await openAku(page);
+  // Open the token gate so the composer + style picker render.
+  await page.getByTestId("aku-token-input").fill("e2e-token");
+  await page.getByTestId("aku-token-save").click();
+
+  const picker = page.getByTestId("aku-style-picker");
+  await expect(picker).toBeVisible();
+  await expect(picker.getByText("자동 (콘텐츠 분석)")).toBeVisible();
+
+  // All six use-case groups are labelled.
+  for (const group of ["미래지향", "SaaS", "브랜드", "테크", "생산성", "친근"]) {
+    await expect(picker.getByText(group, { exact: true })).toBeVisible();
+  }
+  // All twelve named styles are individually present.
+  for (const style of [
+    "글래스모피즘",
+    "오로라",
+    "벤토",
+    "미니멀리즘",
+    "네오 브루탈리즘",
+    "에디토리얼",
+    "다크 UI",
+    "사이버펑크",
+    "머티리얼",
+    "카드 UI",
+    "클레이모피즘",
+    "3D 일러스트",
+  ]) {
+    await expect(picker.getByRole("button", { name: style, exact: true })).toBeVisible();
+  }
+
+  // Selecting a style marks it active (aria-pressed); re-clicking returns to 자동.
+  const chip = picker.getByRole("button", { name: "사이버펑크", exact: true });
+  await chip.click();
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await chip.click();
+  await expect(chip).toHaveAttribute("aria-pressed", "false");
+});
