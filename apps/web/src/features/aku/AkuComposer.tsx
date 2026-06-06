@@ -20,7 +20,7 @@ import {
   useState,
 } from "react";
 import type { AkuSettings } from "./agent/aku-settings.js";
-import { TONE_PRESETS } from "./agent/compose-tone.js";
+import { DESIGN_STYLES, STYLE_GROUPS } from "./agent/design-styles.js";
 import { type SlashCommandItem, SlashCommandMenu } from "./SlashCommandMenu.js";
 import type { AkuImage } from "./types.js";
 
@@ -325,26 +325,33 @@ export function AkuComposer({
         </div>
       ) : null}
 
-      {/* Design-tone picker — the variety lever. "자동" (null) frees every axis
-          for max variety; picking a preset pins its identity axes (palette /
-          typography / …) and varies the rest each generation (DR-077). Gated by
-          settings. */}
+      {/* Design-style picker (DR-079) — "자동" (null) lets the agent read the
+          content and pick the best-fit named style; picking one commits the design
+          to that style (varied within it each generation). Grouped by use-case.
+          Gated by settings. */}
       {settings.designTone ? (
-        <div className="flex flex-wrap gap-1" data-testid="aku-style-picker">
+        <div className="flex flex-col gap-1.5" data-testid="aku-style-picker">
           <StyleChip
-            label="자동"
+            label="자동 (콘텐츠 분석)"
             active={styleId === null}
             onClick={() => setStyleId(null)}
-            title="매 생성마다 다른 톤으로 다양하게"
+            title="콘텐츠를 분석해 가장 잘 맞는 스타일을 자동 적용"
           />
-          {TONE_PRESETS.map((p) => (
-            <StyleChip
-              key={p.id}
-              label={p.label}
-              active={styleId === p.id}
-              onClick={() => setStyleId((cur) => (cur === p.id ? null : p.id))}
-              title={p.summary}
-            />
+          {STYLE_GROUPS.map((g) => (
+            <div key={g.id} className="flex flex-wrap items-center gap-1">
+              <span className="mr-0.5 text-[10px] opacity-60" title={g.useCase}>
+                {g.label}
+              </span>
+              {DESIGN_STYLES.filter((s) => s.groupId === g.id).map((s) => (
+                <StyleChip
+                  key={s.id}
+                  label={s.label}
+                  active={styleId === s.id}
+                  onClick={() => setStyleId((cur) => (cur === s.id ? null : s.id))}
+                  title={s.recipe}
+                />
+              ))}
+            </div>
           ))}
         </div>
       ) : null}

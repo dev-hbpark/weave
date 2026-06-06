@@ -8,11 +8,11 @@
 import { useCallback, useState } from "react";
 
 export interface AkuSettings {
-  // ── Design variety ──
-  /** Inject a `[디자인 톤]` block + show the tone picker in the composer. */
+  // ── Design style (DR-079) ──
+  /** Inject a `[디자인 스타일]` block + show the style picker in the composer. */
   readonly designTone: boolean;
-  /** With `designTone` on and NO tone picked, rotate tones each generation so
-   *  back-to-back runs (and "regenerate") differ. */
+  /** With `designTone` on and NO style picked, let the agent read the content and
+   *  pick the best-fit style itself (content-aware auto). Off + no pick → no style. */
   readonly autoRotateTone: boolean;
   /** Show a separate "스타일 레퍼런스 이미지" attach; those images are sent as
    *  style guidance (mimic palette/tone), not content. */
@@ -126,13 +126,13 @@ export const AKU_SETTINGS_SECTIONS: ReadonlyArray<AkuSettingSection> = [
     items: [
       {
         key: "designTone",
-        label: "디자인 톤",
-        hint: "톤(무드)을 디자인에 반영하고 톤 피커를 표시",
+        label: "디자인 스타일",
+        hint: "디자인 스타일을 적용하고 스타일 피커를 표시",
       },
       {
         key: "autoRotateTone",
-        label: "자동 톤 변주",
-        hint: "톤 미선택 시 매 생성마다 다른 톤으로",
+        label: "자동 스타일 선택",
+        hint: "스타일 미선택 시 콘텐츠를 분석해 가장 맞는 스타일을 자동 적용",
         dependsOn: "designTone",
       },
       {

@@ -44,14 +44,7 @@ import type {
   AkuStatus,
 } from "../types.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
-import {
-  composeToneTask,
-  picksToIds,
-  presetById,
-  presetToRegister,
-  resolveTonePicks,
-  type TonePickIds,
-} from "./compose-tone.js";
+import { autoStyleDirective, composeStyleTask, styleById } from "./design-styles.js";
 import { makeRoundGroupingEditor } from "./round-grouping-editor.js";
 import {
   WEAVE_CAPABILITIES,
@@ -74,9 +67,9 @@ export interface UseAkuAgent {
   readonly pendingClarify: { readonly req: ClarifyRequest } | null;
   /** Answer the pending clarify question with the selected item-type names. */
   resolveClarify(types: readonly string[]): void;
-  /** `opts.styleId` picks a tone PRESET (see TONE_PRESETS); omit/null → 자동
-   *  (every axis free → max variety, when auto-rotation is on). A picked preset
-   *  pins its identity axes and varies the rest per generation (DR-077).
+  /** `opts.styleId` picks a named DESIGN STYLE (see DESIGN_STYLES); omit/null → 자동
+   *  (the agent reads the content and picks the best-fit style, when auto is on). A
+   *  per-request variation keeps within-style diversity (DR-079).
    *  `opts.styleRefImages` are style-reference images (mimic palette/tone). */
   send(
     text: string,
@@ -321,10 +314,6 @@ export function useAkuAgent(deps: {
   // temperature jitter both shift, breaking same-tone convergence. Random start
   // so a session doesn't always open on the same variation.
   const variationSeedRef = useRef<number>(Math.floor(Math.random() * 997));
-  // Previous generation's resolved tone picks (DR-077 D4). Passed as the
-  // exclusion set so the next generation's FREE axes steer away from them —
-  // making "regenerate" jump rather than micro-vary. Pinned axes ignore it.
-  const prevTonePicksRef = useRef<TonePickIds | undefined>(undefined);
   // Supersession token: stop / clear / a new send invalidate an in-flight submit
   // (the server keeps running unless we also cancel; we ignore its late resolution).
   const genRef = useRef(0);
@@ -551,27 +540,20 @@ export function useAkuAgent(deps: {
       // the temperature jitter below).
       variationSeedRef.current += 1;
       const variationSeed = variationSeedRef.current;
-      // Design VARIETY lever (DR-077 D1/D4) — compose a tone from the 5 axes.
-      // A user-picked PRESET pins its identity axes; the rest are sampled by the
-      // seed and steered away from the previous generation's picks (D4). With no
-      // preset and auto-rotation on, EVERY axis is free (max variety). Off, or no
-      // preset with rotation off → no tone (agent uses structural tokens).
-      const preset = s.designTone ? presetById(styleId) : undefined;
+      // Design STYLE lever (DR-079) — a user-picked named style injects its recipe;
+      // with no pick and auto on, the agent reads the content and picks the best-fit
+      // style itself (content-aware). A per-request variation keeps WITHIN-style
+      // diversity. Off, or no pick with auto off → no style block.
+      const style = s.designTone ? styleById(styleId) : undefined;
       let styleLine = "";
-      if (s.designTone && (preset !== undefined || s.autoRotateTone)) {
-        const picks = resolveTonePicks({
-          preset,
-          seed: variationSeed,
-          exclude: prevTonePicksRef.current,
-        });
-        styleLine = composeToneTask(picks);
-        prevTonePicksRef.current = picksToIds(picks);
+      if (s.designTone) {
+        if (style !== undefined) styleLine = composeStyleTask(style, variationSeed);
+        else if (s.autoRotateTone) styleLine = autoStyleDirective(variationSeed);
       }
-      // Aesthetic register for the picked preset (HANDOFF-025) — sent so the design
-      // server conditions its restraint policy on it (small-think DR-043), instead
-      // of flattening expressive presets. 자동/no preset → undefined → omitted (the
-      // server infers the register from content; auto mode varies all axes anyway).
-      const register = presetToRegister(preset?.id);
+      // Aesthetic register for the picked style (DR-043 / DR-079) — sent so the design
+      // server conditions its restraint policy on it. In AUTO mode the agent chooses
+      // the style, so weave can't know it ahead → omit and let the server infer.
+      const register = style?.register;
       // [테마 추천] — ask the agent to name a fitting theme in a parseable line
       // so the panel can offer one-click apply.
       const themeAdviceLine = s.themeAdvice
@@ -690,7 +672,7 @@ export function useAkuAgent(deps: {
           collectDiversitySample(
             depsRef.current.getDocument() as unknown as SigDocument,
             depsRef.current.getDesignInfo?.()?.background,
-            `${preset?.id ?? "auto"}#${variationSeed}`,
+            `${style?.id ?? "auto"}#${variationSeed}`,
           );
         }
       } catch (err) {
