@@ -14,6 +14,8 @@ import type { AkuMood } from "./mood.js";
 const MOOD_PHRASES: ReadonlyMap<AkuMood, readonly string[]> = new Map([
   ["connecting", ["연결하는 중이에요…", "곧 준비될게요!", "서버에 닿는 중…"]],
   ["thinking", ["흠… 어떻게 만들까?", "잠깐 생각 중이에요", "아이디어 떠올리는 중…"]],
+  ["adding", ["여기 딱 넣을게요!", "새로 하나 추가요 ✨", "짠— 생기는 중!"]],
+  ["updating", ["슥슥 고치는 중", "이쪽 다듬을게요", "바꿔드릴게요!"]],
   ["working", ["쓱쓱 그리는 중!", "이거 바로 해드릴게요", "열심히 만드는 중이에요"]],
   ["finalizing", ["거의 다 됐어요", "마무리 다듬는 중…", "깔끔하게 정리할게요"]],
   ["celebrating", ["완성! 어때요?", "짠— 됐어요 ✨", "마음에 드시면 좋겠어요!"]],

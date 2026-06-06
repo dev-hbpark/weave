@@ -18,7 +18,9 @@ export type AkuMood =
   | "idle"
   | "connecting"
   | "thinking"
-  | "working"
+  | "adding" // 아이템 추가 중 (right-spell)
+  | "updating" // 아이템 수정 중 (left-spell)
+  | "working" // 그 외 일반 편집 (변경/설정/삭제 등)
   | "finalizing"
   | "celebrating"
   | "confused"
@@ -43,10 +45,13 @@ export interface AkuMoodInput {
 }
 
 // The streaming `activity` caption is Korean and partly tool-authored
-// ("배경색 변경 적용 중…"), so we key off stable substrings, not an enum we don't
-// own. "생각" → reasoning, "정리" → wrapping up; everything else streaming = busy.
+// ("아이템 추가 적용 중…", "아이템 수정 적용 중…", "배경색 변경 적용 중…"), so we key off
+// stable substrings, not an enum we don't own. "생각" → reasoning, "정리" → wrapping
+// up, "추가" → adding an item, "수정" → updating an item; anything else streaming = busy.
 const THINKING_MARK = "생각";
 const FINALIZING_MARK = "정리";
+const ADD_MARK = "추가";
+const UPDATE_MARK = "수정";
 
 type Rule = readonly [predicate: (i: AkuMoodInput) => boolean, mood: AkuMood];
 
@@ -61,6 +66,14 @@ const MOOD_RULES: readonly Rule[] = [
   [
     (i) => i.status === "streaming" && i.activity !== null && i.activity.includes(FINALIZING_MARK),
     "finalizing",
+  ],
+  [
+    (i) => i.status === "streaming" && i.activity !== null && i.activity.includes(ADD_MARK),
+    "adding",
+  ],
+  [
+    (i) => i.status === "streaming" && i.activity !== null && i.activity.includes(UPDATE_MARK),
+    "updating",
   ],
   [(i) => i.status === "streaming", "working"],
   [(i) => i.celebrate, "celebrating"],
@@ -79,6 +92,8 @@ const MOOD_INTENSITY: Readonly<Record<AkuMood, number>> = {
   idle: 0.35,
   connecting: 0.7,
   thinking: 0.6,
+  adding: 0.95,
+  updating: 0.9,
   working: 0.95,
   finalizing: 0.55,
   celebrating: 1,

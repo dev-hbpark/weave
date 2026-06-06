@@ -11,11 +11,13 @@
 | 파일 | 용도 |
 |---|---|
 | `mascot.png` (1131×1391, **투명 PNG**) | **정적 히어로** — `AkuMascot`(패널 헤더 · 코치마크 · 팁 버블 · CSS 폴백 런처) |
-| `sprites/{idle,thinking,idea,move-left,move-right,drag}.png` (각 **3120×724 = 6프레임 스트립**, 프레임 **520×724**, **투명 PNG**) | **상태별 애니메이션** — 엔진(`@agocraft/sprite-engine`)이 mood→시트로 재생 |
+| `sprites/{idle,thinking,idea,move-left,move-right,drag,spell-right,spell-left,puff}.png` (각 **3120×724 = 6프레임 스트립**, 프레임 **520×724**, **투명 PNG**) | **상태별 애니메이션** — 엔진(`@agocraft/sprite-engine`)이 mood→시트로 재생 |
 
 스프라이트 ↔ 에이전트 동작 매핑 (`gpu-sprite-renderer.tsx` `SPRITES`):
-`idle`(대기)·`move-left`=connecting(연결 중)/이동(왼쪽)·`thinking`(생각 중)·`idea`=working(편집 적용 중)
-**및** finalizing(정리 중) **및** celebrating(완료 ✨)·`move-right`=looking(선택 주목)/이동(오른쪽).
+`idle`(대기)·`move-left`=connecting(연결 중)/이동(왼쪽)·`thinking`(생각 중).
+**작업 종류별(WI-117)**: `spell-right`=adding(아이템 추가 — 캡션 "추가")·`spell-left`=updating(아이템 수정 —
+캡션 "수정")·`puff`=finalizing(정리 중 — 캡션 "정리")·`idea`=working(그 외 편집: 변경/삭제/설정)
+**및** celebrating(완료 ✨). `move-right`=looking(선택 주목)/이동(오른쪽).
 `drag`=dragging(런처 드래그 중 버둥, WI-108 · 시트 교체 WI-111로 520×724 통일). confused→thinking, **sleeping→idle 재사용**(전용
 수면 시트 도착 시 `gpu-sprite-renderer` 한 줄 교체). 프레임 종횡비 ≈0.72라 렌더 박스도 그에 맞춤
 (런처 **86×120**) + 엔진 **contain-fit**(agocraft DR-045 / canvas2d+worker 양쪽).

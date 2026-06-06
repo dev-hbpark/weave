@@ -29,8 +29,29 @@ describe("resolveAkuMood", () => {
     );
   });
 
+  it("maps the streaming '추가' caption to adding", () => {
+    expect(resolveAkuMood({ ...base, status: "streaming", activity: "아이템 추가 적용 중…" })).toBe(
+      "adding",
+    );
+    expect(resolveAkuMood({ ...base, status: "streaming", activity: "차트 추가 적용 중…" })).toBe(
+      "adding",
+    );
+  });
+
+  it("maps the streaming '수정' caption to updating", () => {
+    expect(resolveAkuMood({ ...base, status: "streaming", activity: "아이템 수정 적용 중…" })).toBe(
+      "updating",
+    );
+    expect(
+      resolveAkuMood({ ...base, status: "streaming", activity: "여러 아이템 수정 적용 중…" }),
+    ).toBe("updating");
+  });
+
   it("maps any other streaming caption (incl. tool-authored) to working", () => {
     expect(resolveAkuMood({ ...base, status: "streaming", activity: "배경색 변경 적용 중…" })).toBe(
+      "working",
+    );
+    expect(resolveAkuMood({ ...base, status: "streaming", activity: "아이템 삭제 적용 중…" })).toBe(
       "working",
     );
     expect(resolveAkuMood({ ...base, status: "streaming", activity: null })).toBe("working");
@@ -79,6 +100,8 @@ describe("moodIntensity", () => {
       "idle",
       "connecting",
       "thinking",
+      "adding",
+      "updating",
       "working",
       "finalizing",
       "celebrating",

@@ -26,8 +26,10 @@ const SPRITES: Readonly<Record<AkuMood, SpriteSpec>> = {
   idle: { src: "/aku/sprites/idle.png", frames: 6, fps: 6, looping: true },
   connecting: { src: "/aku/sprites/move-left.png", frames: 6, fps: 10, looping: true }, // 연결 중
   thinking: { src: "/aku/sprites/thinking.png", frames: 6, fps: 6, looping: true }, // 생각 중
-  working: { src: "/aku/sprites/idea.png", frames: 6, fps: 9, looping: true }, // 편집 적용 중 (editing 시트 제거 → idea 재사용)
-  finalizing: { src: "/aku/sprites/idea.png", frames: 6, fps: 7, looping: true }, // 정리 중
+  adding: { src: "/aku/sprites/spell-right.png", frames: 6, fps: 10, looping: true }, // 아이템 추가 (오른쪽 spell)
+  updating: { src: "/aku/sprites/spell-left.png", frames: 6, fps: 10, looping: true }, // 아이템 수정 (왼쪽 spell)
+  working: { src: "/aku/sprites/idea.png", frames: 6, fps: 9, looping: true }, // 그 외 편집(변경/삭제/설정) → idea
+  finalizing: { src: "/aku/sprites/puff.png", frames: 6, fps: 9, looping: true }, // 정리 중 (puff)
   celebrating: { src: "/aku/sprites/idea.png", frames: 6, fps: 10, looping: true }, // 완료 ✨ (idea: ! 버스트)
   confused: { src: "/aku/sprites/thinking.png", frames: 6, fps: 8, looping: true }, // 오류 (?)
   sleeping: { src: "/aku/sprites/idle.png", frames: 6, fps: 3, looping: true }, // 졸음
