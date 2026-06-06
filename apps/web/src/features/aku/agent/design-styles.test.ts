@@ -4,6 +4,8 @@ import {
   autoStyleDirective,
   composeStyleTask,
   DESIGN_STYLES,
+  randomStyleInGroup,
+  resolveStyleSelection,
   STYLE_GROUPS,
   styleById,
   styleToRegister,
@@ -65,6 +67,44 @@ describe("styleById / styleToRegister", () => {
     for (const s of DESIGN_STYLES) expect(styleToRegister(s.id)).toBe(s.register);
     expect(styleToRegister(null)).toBeUndefined();
     expect(styleToRegister("nope")).toBeUndefined();
+  });
+});
+
+describe("randomStyleInGroup / resolveStyleSelection (category → hidden style)", () => {
+  it("resolves a category to a concrete style WITHIN that group", () => {
+    for (const g of STYLE_GROUPS) {
+      const style = nn(randomStyleInGroup(g.id, 0));
+      expect(style.groupId).toBe(g.id);
+    }
+  });
+
+  it("미래지향 resolves to glassmorphism or aurora only", () => {
+    const seen = new Set<string>();
+    for (let seed = 0; seed < 8; seed += 1) {
+      seen.add(nn(randomStyleInGroup("futuristic", seed)).id);
+    }
+    expect([...seen].sort()).toEqual(["aurora", "glassmorphism"]);
+  });
+
+  it("is deterministic in the seed and re-rolls across seeds", () => {
+    expect(randomStyleInGroup("futuristic", 3)?.id).toBe(randomStyleInGroup("futuristic", 3)?.id);
+    // Adjacent seeds alternate the two members of a 2-style group.
+    expect(randomStyleInGroup("futuristic", 0)?.id).not.toBe(
+      randomStyleInGroup("futuristic", 1)?.id,
+    );
+  });
+
+  it("unknown group → undefined", () => {
+    expect(randomStyleInGroup("nope", 0)).toBeUndefined();
+  });
+
+  it("resolveStyleSelection: category → in-group style; legacy style id → that style; null → 자동", () => {
+    expect(nn(resolveStyleSelection("saas", 0)).groupId).toBe("saas");
+    // Back-compat: a stored concrete style id still resolves directly.
+    expect(resolveStyleSelection("cyberpunk", 0)?.id).toBe("cyberpunk");
+    expect(resolveStyleSelection(null, 0)).toBeUndefined();
+    expect(resolveStyleSelection(undefined, 0)).toBeUndefined();
+    expect(resolveStyleSelection("nope", 0)).toBeUndefined();
   });
 });
 

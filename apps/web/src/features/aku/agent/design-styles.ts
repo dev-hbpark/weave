@@ -153,6 +153,32 @@ export function styleById(id: string | null | undefined): DesignStyle | undefine
   return id == null ? undefined : STYLE_BY_ID.get(id);
 }
 
+const STYLES_BY_GROUP = new Map<string, ReadonlyArray<DesignStyle>>(
+  STYLE_GROUPS.map((g) => [g.id, DESIGN_STYLES.filter((s) => s.groupId === g.id)]),
+);
+
+/** Pick one concrete style WITHIN a category (STYLE_GROUPS id), chosen by `seed`. The
+ *  user selects a category (미래지향 / SaaS / …); the specific style (글래스모피즘 /
+ *  오로라 / …) is hidden and resolved here. `seed` advances per generation, so a held
+ *  category re-rolls its concrete style on each generate / regenerate. */
+export function randomStyleInGroup(groupId: string, seed: number): DesignStyle | undefined {
+  const styles = STYLES_BY_GROUP.get(groupId);
+  if (styles === undefined || styles.length === 0) return undefined;
+  return pick(styles, seed, 1);
+}
+
+/** Resolve the composer's style selection to a concrete style. The selection is a
+ *  CATEGORY (STYLE_GROUPS id) → a seeded random style within it. A legacy concrete
+ *  style id still resolves directly so stored sessions / regenerate keep working.
+ *  null → 자동 (the agent picks from content). */
+export function resolveStyleSelection(
+  selectionId: string | null | undefined,
+  seed: number,
+): DesignStyle | undefined {
+  if (selectionId == null) return undefined;
+  return randomStyleInGroup(selectionId, seed) ?? styleById(selectionId);
+}
+
 /** The small-think register for a picked style; undefined for 자동 (the server then
  *  infers the register from content, since the agent chooses the style). */
 export function styleToRegister(id: string | null | undefined): AkuRegister | undefined {

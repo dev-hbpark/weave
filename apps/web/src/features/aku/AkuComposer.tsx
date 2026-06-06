@@ -20,7 +20,7 @@ import {
   useState,
 } from "react";
 import type { AkuSettings } from "./agent/aku-settings.js";
-import { DESIGN_STYLES, STYLE_GROUPS } from "./agent/design-styles.js";
+import { STYLE_GROUPS } from "./agent/design-styles.js";
 import { type SlashCommandItem, SlashCommandMenu } from "./SlashCommandMenu.js";
 import type { AkuImage } from "./types.js";
 
@@ -121,8 +121,10 @@ export function AkuComposer({
 }): JSX.Element {
   const [text, setText] = useState("");
   const [images, setImages] = useState<ReadonlyArray<AkuImage>>([]);
-  // Design tone — null = AUTO (the hook rotates tones so generations differ).
-  const [styleId, setStyleId] = useState<string | null>(null);
+  // Design CATEGORY (STYLE_GROUPS id) — null = AUTO (the agent reads the content and
+  // picks). A picked category hides the concrete style; the hook resolves a random
+  // style within the category each generation.
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   // Style-reference images (mimic palette/tone) — separate from content images.
   const [styleRefImages, setStyleRefImages] = useState<ReadonlyArray<AkuImage>>([]);
   const [dragging, setDragging] = useState(false);
@@ -182,7 +184,7 @@ export function AkuComposer({
   const submit = (): void => {
     if (!canSend || streaming) return;
     onSend(text, images, {
-      styleId: settings.designTone ? styleId : null,
+      styleId: settings.designTone ? categoryId : null,
       ...(settings.styleReference && styleRefImages.length > 0 ? { styleRefImages } : {}),
     });
     setText("");
@@ -327,33 +329,26 @@ export function AkuComposer({
         </div>
       ) : null}
 
-      {/* Design-style picker (DR-079) — "자동" (null) lets the agent read the
-          content and pick the best-fit named style; picking one commits the design
-          to that style (varied within it each generation). Grouped by use-case.
-          Gated by settings. */}
+      {/* Design-category picker (DR-079) — the user picks a CATEGORY (미래지향 / SaaS
+          / …); the concrete style within it (글래스모피즘 / 오로라 / …) is hidden and
+          chosen randomly per generation by the hook. "자동" (null) lets the agent read
+          the content and pick the best-fit style itself. Gated by settings. */}
       {settings.designTone ? (
-        <div className="flex flex-col gap-1.5" data-testid="aku-style-picker">
+        <div className="flex flex-wrap gap-1" data-testid="aku-style-picker">
           <StyleChip
             label="자동 (콘텐츠 분석)"
-            active={styleId === null}
-            onClick={() => setStyleId(null)}
+            active={categoryId === null}
+            onClick={() => setCategoryId(null)}
             title="콘텐츠를 분석해 가장 잘 맞는 스타일을 자동 적용"
           />
           {STYLE_GROUPS.map((g) => (
-            <div key={g.id} className="flex flex-wrap items-center gap-1">
-              <span className="mr-0.5 text-[10px] opacity-60" title={g.useCase}>
-                {g.label}
-              </span>
-              {DESIGN_STYLES.filter((s) => s.groupId === g.id).map((s) => (
-                <StyleChip
-                  key={s.id}
-                  label={s.label}
-                  active={styleId === s.id}
-                  onClick={() => setStyleId((cur) => (cur === s.id ? null : s.id))}
-                  title={s.recipe}
-                />
-              ))}
-            </div>
+            <StyleChip
+              key={g.id}
+              label={g.label}
+              active={categoryId === g.id}
+              onClick={() => setCategoryId((cur) => (cur === g.id ? null : g.id))}
+              title={g.useCase}
+            />
           ))}
         </div>
       ) : null}

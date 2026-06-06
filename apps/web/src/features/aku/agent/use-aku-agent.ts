@@ -44,7 +44,7 @@ import type {
   AkuStatus,
 } from "../types.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
-import { autoStyleDirective, composeStyleTask, styleById } from "./design-styles.js";
+import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./design-styles.js";
 import { makeRoundGroupingEditor } from "./round-grouping-editor.js";
 import {
   WEAVE_CAPABILITIES,
@@ -557,11 +557,13 @@ export function useAkuAgent(deps: {
       // the temperature jitter below).
       variationSeedRef.current += 1;
       const variationSeed = variationSeedRef.current;
-      // Design STYLE lever (DR-079) — a user-picked named style injects its recipe;
-      // with no pick and auto on, the agent reads the content and picks the best-fit
-      // style itself (content-aware). A per-request variation keeps WITHIN-style
-      // diversity. Off, or no pick with auto off → no style block.
-      const style = s.designTone ? styleById(styleId) : undefined;
+      // Design STYLE lever (DR-079) — the user picks a CATEGORY (미래지향 / SaaS / …);
+      // we resolve a concrete style within it (글래스모피즘 / 오로라 / …), seeded so a
+      // held category re-rolls each generation. With no pick and auto on, the agent
+      // reads the content and picks the best-fit style itself (content-aware). A
+      // per-request variation keeps WITHIN-style diversity. Off, or no pick with auto
+      // off → no style block.
+      const style = s.designTone ? resolveStyleSelection(styleId, variationSeed) : undefined;
       let styleLine = "";
       if (s.designTone) {
         if (style !== undefined) styleLine = composeStyleTask(style, variationSeed);

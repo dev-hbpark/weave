@@ -1,6 +1,8 @@
 # DR-079 — Named design-style catalog (recipe-based) replaces the abstract tone presets; content-aware auto
 
-- **Date:** 2026-06-06 · **Status:** Accepted · **WI:** WI-114
+- **Date:** 2026-06-06 · **Status:** Accepted (D1 picker-exposure partially superseded by DR-085) · **WI:** WI-114
+- **Superseded (부분, 2026-06-07):** DR-085가 D1의 "각 스타일을 **개별 선택**" 노출을 카테고리 선택
+  + 내부 seed-랜덤 스타일로 대체. 카탈로그·recipe·register·자동 디렉티브·variation은 DR-085에서도 유지.
 - **Supersedes:** DR-077 (axis registry + abstract tone presets) for the PICKER path — the
   axis-decomposition (`tone-axes.ts`) + tone presets (`compose-tone.ts`) are retired. The
   register transport (DR-077 HANDOFF-025 → small-think DR-043) and the diversity harness
