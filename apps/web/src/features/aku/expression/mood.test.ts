@@ -23,6 +23,11 @@ describe("resolveAkuMood", () => {
     expect(resolveAkuMood({ ...base, status: "streaming", activity: "생각 중…" })).toBe("thinking");
   });
 
+  it("maps the streaming '연결' caption (queued dial) to thinking (WI-120)", () => {
+    // connectionState is already `open`; the queued-phase caption is "연결 중…".
+    expect(resolveAkuMood({ ...base, status: "streaming", activity: "연결 중…" })).toBe("thinking");
+  });
+
   it("maps the streaming '정리' caption to finalizing", () => {
     expect(resolveAkuMood({ ...base, status: "streaming", activity: "정리 중…" })).toBe(
       "finalizing",

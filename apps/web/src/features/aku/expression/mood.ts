@@ -52,6 +52,10 @@ const THINKING_MARK = "생각";
 const FINALIZING_MARK = "정리";
 const ADD_MARK = "추가";
 const UPDATE_MARK = "수정";
+// The turn's initial/queued caption is "연결 중…" while connectionState is already
+// `open` (persistent reverse-MCP link), so the connectionState rule misses it. Treat
+// the streaming "연결" caption as connecting → thinking, same as the state (WI-120).
+const CONNECT_MARK = "연결";
 
 type Rule = readonly [predicate: (i: AkuMoodInput) => boolean, mood: AkuMood];
 
@@ -62,6 +66,10 @@ const MOOD_RULES: readonly Rule[] = [
   // `connecting` mood itself stays mapped to the move-left sheet — it's reused by
   // useAkuRoam for left-ward locomotion, NOT for the connection state (WI-119).
   [(i) => i.connectionState === "connecting" || i.connectionState === "reconnecting", "thinking"],
+  [
+    (i) => i.status === "streaming" && i.activity !== null && i.activity.includes(CONNECT_MARK),
+    "thinking",
+  ],
   [
     (i) => i.status === "streaming" && i.activity !== null && i.activity.includes(THINKING_MARK),
     "thinking",
