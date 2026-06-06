@@ -121,6 +121,9 @@ HANDLE_INTERACTIONS.register({ kind: "frame-rotate", buildStates: dragGestureSta
 // WI-092 — dragging a chart datum's value handle (bar height / line point / pie
 // sweep). Same drag FSM; the sink maps the pointer to a new dataset value.
 HANDLE_INTERACTIONS.register({ kind: "chart-value-drag", buildStates: dragGestureStates });
+// WI-109 — dragging a corner-radius grip (uniform top-right, or one of the four
+// after a split). Same drag FSM; the sink maps the pointer to a new radius.
+HANDLE_INTERACTIONS.register({ kind: "corner-radius-drag", buildStates: dragGestureStates });
 HANDLE_INTERACTIONS.register({ kind: "discrete-action", buildStates: discreteActionStates });
 
 // ───── Dispatcher ─────────────────────────────────────────────────────────────

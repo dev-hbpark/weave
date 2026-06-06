@@ -37,7 +37,8 @@ import {
   type StrokeSpec,
   strokeToSvgAttrs,
 } from "@agocraft/core";
-import { type SVGAttributes, useEffect, useId, useRef, useState } from "react";
+import { type JSX, type SVGAttributes, useEffect, useId, useRef, useState } from "react";
+import { type CornerRadii, cornerRadiusPxToFraction, perCornerRectPath } from "../corner-radius.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import type { AgoItem } from "../types.js";
 
@@ -102,8 +103,15 @@ export function FrameBlock({ item }: FrameBlockProps) {
 
   // Measure the true rendered size so the viewBox is 1 user-unit = 1 screen px
   // (preserveAspectRatio="none" then never distorts gradients or corner radii).
+  // `designBox` is the UNSCALED layout size (offsetWidth/Height ignore the
+  // Stage's CSS `transform: scale`) — the denominator for the corner-radius
+  // fraction, since `cornerRadius` is stored in design-px.
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [bbox, setBbox] = useState<{ width: number; height: number }>({ width: 100, height: 100 });
+  const [designBox, setDesignBox] = useState<{ width: number; height: number }>({
+    width: 100,
+    height: 100,
+  });
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return undefined;
@@ -112,6 +120,11 @@ export function FrameBlock({ item }: FrameBlockProps) {
       const w = Math.max(1, r.width);
       const h = Math.max(1, r.height);
       setBbox((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+      const dw = Math.max(1, el.offsetWidth);
+      const dh = Math.max(1, el.offsetHeight);
+      setDesignBox((prev) =>
+        prev.width === dw && prev.height === dh ? prev : { width: dw, height: dh },
+      );
     };
     apply();
     const ro = new ResizeObserver(apply);
@@ -157,16 +170,50 @@ export function FrameBlock({ item }: FrameBlockProps) {
   const inset = sw / 2;
   const rectW = Math.max(0, bbox.width - sw);
   const rectH = Math.max(0, bbox.height - sw);
-  // cornerRadius: 0..1; 1.0 = pill/ellipse. Matches `border-radius: N*50%`.
-  const rx =
-    cornerRadius !== undefined && cornerRadius > 0 ? cornerRadius * 0.5 * rectW : undefined;
-  const ry =
-    cornerRadius !== undefined && cornerRadius > 0 ? cornerRadius * 0.5 * rectH : undefined;
+  // cornerRadius is an absolute design-px radius, drawn CIRCULAR (rx === ry) and
+  // clamped to the half-short side. SVG clamps rx/ry independently, so we apply
+  // the clamp ourselves: take the radius as a fraction of the design box's
+  // half-short side, then scale that fraction onto the measured screen-px box —
+  // identical curvature on both axes at every zoom.
+  const radius =
+    cornerRadius !== undefined && cornerRadius > 0
+      ? cornerRadiusPxToFraction(cornerRadius, designBox.width, designBox.height) *
+        (Math.min(rectW, rectH) / 2)
+      : undefined;
+  const rx = radius;
+  const ry = radius;
+
+  // WI-109 — per-corner override: when `cornerRadii` is present the box is drawn
+  // as an SVG path (SVG `<rect>` only carries one rx/ry). Each corner's design-px
+  // radius is projected to screen-px via the uniform zoom and clamped to the
+  // half-short side, so the four arcs never overlap.
+  const cornerRadii = (item.attrs as { cornerRadii?: CornerRadii }).cornerRadii;
+  const designShort = Math.min(designBox.width, designBox.height);
+  const zoom = designShort > 0 ? Math.min(rectW, rectH) / designShort : 1;
+  const capScreen = Math.min(rectW, rectH) / 2;
+  const screenRadii: CornerRadii | null = cornerRadii
+    ? {
+        tl: Math.min(Math.max(0, cornerRadii.tl) * zoom, capScreen),
+        tr: Math.min(Math.max(0, cornerRadii.tr) * zoom, capScreen),
+        br: Math.min(Math.max(0, cornerRadii.br) * zoom, capScreen),
+        bl: Math.min(Math.max(0, cornerRadii.bl) * zoom, capScreen),
+      }
+    : null;
+  const perCornerPathD = screenRadii ? perCornerRectPath(rectW, rectH, screenRadii) : null;
 
   const rectFillProps: SVGAttributes<SVGRectElement> = { fill: fill ? fill.value : "transparent" };
   const rectStrokeProps: SVGAttributes<SVGRectElement> = strokeAttrs
     ? (strokeAttrs as unknown as SVGAttributes<SVGRectElement>)
     : {};
+
+  /** The rounded frame box — a per-corner `<path>` when `cornerRadii` is set,
+   *  else the uniform `<rect rx/ry>`. Same fill/stroke props feed either. */
+  const RoundedBox = (props: SVGAttributes<SVGElement>): JSX.Element =>
+    perCornerPathD !== null ? (
+      <path transform={`translate(${inset} ${inset})`} d={perCornerPathD} {...props} />
+    ) : (
+      <rect x={inset} y={inset} width={rectW} height={rectH} rx={rx} ry={ry} {...props} />
+    );
 
   // Only mount the SVG overlay when a paint unit exists — a frame with no
   // fill / stroke stays a plain transparent div (keeps the DOM minimal).
@@ -195,28 +242,11 @@ export function FrameBlock({ item }: FrameBlockProps) {
                 rendered below, so a video background respects cornerRadius. */}
             {fill?.videoFill ? (
               <clipPath id={`${uid}-video-clip`} clipPathUnits="userSpaceOnUse">
-                <rect
-                  x={inset}
-                  y={inset}
-                  width={rectW}
-                  height={rectH}
-                  rx={rx}
-                  ry={ry}
-                  fill="black"
-                />
+                <RoundedBox fill="black" />
               </clipPath>
             ) : null}
           </defs>
-          <rect
-            x={inset}
-            y={inset}
-            width={rectW}
-            height={rectH}
-            rx={rx}
-            ry={ry}
-            {...rectFillProps}
-            {...rectStrokeProps}
-          />
+          <RoundedBox {...rectFillProps} {...rectStrokeProps} />
           {/* Video fill — a foreignObject-hosted <video> clipped to the frame
               rect. Autoplays muted by default (Figma default + browser policy).
               Same mechanism shapes use, so the agent's image/video fill paints

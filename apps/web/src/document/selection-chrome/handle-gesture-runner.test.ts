@@ -18,6 +18,7 @@ describe("HANDLE_INTERACTIONS registry (WI-067)", () => {
     expect([...HANDLE_INTERACTIONS.list()].sort()).toEqual(
       [
         "chart-value-drag",
+        "corner-radius-drag",
         "discrete-action",
         "frame-resize",
         "frame-rotate",

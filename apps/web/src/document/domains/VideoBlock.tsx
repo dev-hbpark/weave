@@ -8,6 +8,7 @@
 import type { Item as AgocraftItem, ShadowSpec } from "@agocraft/core";
 import { findUnitInItem, OPACITY_UNIT_KIND, SHADOW_UNIT_KIND, shadowToCss } from "@agocraft/core";
 import { type CSSProperties, useEffect, useRef } from "react";
+import { type CornerRadii, mediaBorderRadius } from "../corner-radius.js";
 import type { AgoItem, VideoAttrs } from "../types.js";
 import { MediaPlaceholder } from "./MediaPlaceholder.js";
 
@@ -80,7 +81,12 @@ export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
     <div
       className="relative h-full w-full overflow-hidden"
       style={{
-        borderRadius: a.borderRadius ? `${a.borderRadius * 50}%` : 0,
+        // borderRadius is an absolute design-px radius (CSS clamps + circular).
+        // WI-109 — a per-corner `borderRadii` four-tuple overrides it.
+        borderRadius: mediaBorderRadius(
+          (a as { borderRadii?: CornerRadii }).borderRadii,
+          a.borderRadius,
+        ),
         opacity,
         boxShadow: shadow,
       }}

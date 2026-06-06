@@ -26,12 +26,13 @@ import {
 } from "@agocraft/core";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CornerRadii, mediaBorderRadius } from "../corner-radius.js";
 import { coverZoom, panCropOffset, panCropWindow } from "../crop-geometry.js";
-import { MediaPlaceholder } from "./MediaPlaceholder.js";
 import { croppingState, useCropDraft, useCroppingItemId } from "../interactions/cropping-state.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import { readCropOffset } from "../transform-crop-offset.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
+import { MediaPlaceholder } from "./MediaPlaceholder.js";
 
 interface ImageBlockProps {
   readonly item: AgoItem<"image">;
@@ -369,7 +370,13 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
       // the overflow clip while cropping.
       className={cropMode ? "relative h-full w-full" : "relative h-full w-full overflow-hidden"}
       style={{
-        borderRadius: cropMode || !a.borderRadius ? 0 : `${a.borderRadius * 50}%`,
+        // borderRadius is an absolute design-px radius (CSS clamps a single px
+        // value to the half-short side and draws it circular). WI-109 — a
+        // per-corner `borderRadii` four-tuple overrides it as a 4-value
+        // border-radius (each corner clamped + circular by the browser).
+        borderRadius: cropMode
+          ? 0
+          : mediaBorderRadius((a as { borderRadii?: CornerRadii }).borderRadii, a.borderRadius),
         opacity,
         boxShadow: shadow,
       }}

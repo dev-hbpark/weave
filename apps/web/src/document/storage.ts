@@ -9,6 +9,7 @@ import {
   migrateTextAutoResizeToLayoutChild,
 } from "@agocraft/core";
 import { ensureRootStyleProvider, toAgocraftDocument } from "./agocraft-mirror.js";
+import { migrateCornerRadiusRatioToPx } from "./migrate-corner-radius-px.js";
 import { migrateLegacyKindsToFrame } from "./migrate-frame-only.js";
 import type { CanvasShape, Design, Document, Item, ItemFrame } from "./types.js";
 import { DEFAULT_DESIGN_BACKGROUND, FULL_FRAME, NEW_DESIGN_BACKGROUND } from "./types.js";
@@ -144,6 +145,10 @@ export interface SerializedDesignV5 {
     readonly createdAt: string;
     readonly updatedAt: string;
     readonly schemaVersion: 5;
+    /** See `Design.meta.cornerRadiusUnit`. Optional + backward-compatible: old
+     *  v5 blobs lack it (→ ratio, convert on load); new/migrated blobs carry
+     *  `"px"`. Old clients ignore the extra field, so schemaVersion stays 5. */
+    readonly cornerRadiusUnit?: "px";
   };
 }
 
@@ -340,6 +345,18 @@ function wrapDocumentInDesign(doc: AgocraftDocument): Design {
  *  cloud blobs from before the migration land in a known-frame shape.
  *  The v9 backup *cannot* be written here — there's no original v5
  *  raw string to stash; the migration backup contract is LS-only. */
+/** One-time corner-radius ratio → px conversion + marker stamp. Gated on
+ *  `design.meta.cornerRadiusUnit`: pre-migration blobs lack it (convert), and
+ *  the stamped `"px"` rides on `design.meta` through `toSerializedDesign` so the
+ *  next save persists the converted shape — every later load is a no-op. Applied
+ *  to EVERY runtime `Design` a load path returns, so a post-load edit + save can
+ *  never be re-interpreted as a ratio. */
+function finalizeCornerRadius(design: Design): Design {
+  if (design.meta.cornerRadiusUnit === "px") return design;
+  const document = migrateCornerRadiusRatioToPx(design.document, design.width, design.height);
+  return { ...design, document, meta: { ...design.meta, cornerRadiusUnit: "px" } };
+}
+
 export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | undefined {
   if (blob.meta?.schemaVersion !== 5) return undefined;
   let documentJson = blob.document;
@@ -365,7 +382,7 @@ export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | unde
     document = migrateLegacyKindsToFrame(document);
   }
   document = ensureRootStyleProvider(document);
-  return {
+  return finalizeCornerRadius({
     id: blob.id,
     title: blob.title,
     width: blob.width,
@@ -374,7 +391,7 @@ export function hydrateSerializedDesign(blob: SerializedDesignV5): Design | unde
     document,
     presentationOrder: blob.presentationOrder ?? [],
     meta: blob.meta,
-  };
+  });
 }
 
 // ── Local read-cache (server-first present fallback) ───────────────────────
@@ -500,7 +517,7 @@ export function loadDesign(id: string): Design | undefined {
           // until the user touches a picker (which then writes a
           // StyleRef that walks through this provider's tokens map).
           document = ensureRootStyleProvider(document);
-          return {
+          return finalizeCornerRadius({
             id: parsed.id,
             title: parsed.title,
             width: parsed.width,
@@ -509,7 +526,7 @@ export function loadDesign(id: string): Design | undefined {
             document,
             presentationOrder: parsed.presentationOrder ?? [],
             meta: parsed.meta,
-          };
+          });
         }
       }
     } catch {
@@ -523,9 +540,11 @@ export function loadDesign(id: string): Design | undefined {
     const wrapped = wrapDocumentInDesign(v4Doc);
     // v4 docs predate WI-032 paradigm — apply the same frame migration
     // when the WI-032 flag is enabled.
-    return WI032_MIGRATE_ENABLED
-      ? { ...wrapped, document: migrateLegacyKindsToFrame(wrapped.document) }
-      : wrapped;
+    return finalizeCornerRadius(
+      WI032_MIGRATE_ENABLED
+        ? { ...wrapped, document: migrateLegacyKindsToFrame(wrapped.document) }
+        : wrapped,
+    );
   }
 
   return undefined;
@@ -849,6 +868,7 @@ export function createBlankDesign(input: {
     background: input.background ?? NEW_DESIGN_BACKGROUND,
     document,
     presentationOrder: [],
-    meta: { createdAt: now, updatedAt: now, schemaVersion: 5 },
+    // Fresh designs are born in the px corner-radius model (values default to 0).
+    meta: { createdAt: now, updatedAt: now, schemaVersion: 5, cornerRadiusUnit: "px" },
   };
 }

@@ -128,6 +128,7 @@ export const VideoSection: ToolbarSectionComponent = ({
             </Bar.Field>
           </AccordionItem>
           <AccordionItem label="스타일" data-testid="video-style-group">
+            {/* WI-109 — 모서리 곡률은 캔버스 핸들로만 편집(툴바 슬라이더 제거). */}
             {/* DR-028 — shadow decoration unit (shared control). */}
             <Bar.Field label="그림자">
               <ShadowControls editor={editor} ids={ids} />

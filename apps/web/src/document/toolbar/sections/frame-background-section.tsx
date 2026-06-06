@@ -290,175 +290,188 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
           <FlipControls editor={editor} ids={ids} />
         </div>
       </Bar.Quick>
-      {homogeneousSpec?.kind === "auto-flex" ? (
+      {homogeneousSpec?.kind === "auto-flex" || homogeneousSpec?.kind === "auto-grid" ? (
         <Bar.More>
           <Accordion>
-            <AccordionItem label="레이아웃" defaultOpen data-testid="frame-flex-layout-group">
-              <Bar.Field label="방향">
-                <SegmentedControl<FlexDirection>
-                  value={homogeneousSpec.direction}
-                  onValueChange={(v) => onFlexFieldChange("direction", v)}
-                  options={FLEX_DIRECTION_OPTIONS}
-                  aria-label="Flex direction"
-                />
-              </Bar.Field>
-              <Bar.Field label="간격">
-                <NumberSlider
-                  value={homogeneousSpec.gap}
-                  onValueChange={(v) => onFlexFieldChange("gap", v)}
-                  min={0}
-                  max={0.2}
-                  step={0.005}
-                  format={(v) => `${Math.round(v * 1000) / 10}%`}
-                  className="w-full"
-                />
-              </Bar.Field>
-              <Bar.Field label="정렬">
-                <div className="flex items-start gap-3">
-                  <AlignmentPad<FlexJustify, FlexAlign>
-                    horizontal={homogeneousSpec.justify}
-                    vertical={homogeneousSpec.align}
-                    hValues={ALIGN_TRIPLE}
-                    vValues={ALIGN_TRIPLE}
-                    onChange={onFlexAlignPad}
-                    aria-label="Flex 정렬"
-                    data-testid="flex-align-pad"
-                  />
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Select<FlexDistribution>
-                      value={
-                        homogeneousSpec.justify === "space-between" ||
-                        homogeneousSpec.justify === "space-around"
-                          ? homogeneousSpec.justify
-                          : "none"
-                      }
-                      onValueChange={(v) =>
-                        onFlexFieldChange("justify", v === "none" ? "start" : (v as FlexJustify))
-                      }
-                      options={FLEX_DISTRIBUTION_OPTIONS}
-                      aria-label="Flex 분포"
-                      triggerClassName="w-full"
+            {homogeneousSpec?.kind === "auto-flex" ? (
+              <>
+                <AccordionItem label="레이아웃" defaultOpen data-testid="frame-flex-layout-group">
+                  <Bar.Field label="방향">
+                    <SegmentedControl<FlexDirection>
+                      value={homogeneousSpec.direction}
+                      onValueChange={(v) => onFlexFieldChange("direction", v)}
+                      options={FLEX_DIRECTION_OPTIONS}
+                      aria-label="Flex direction"
                     />
-                    <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
-                      <Switch
-                        checked={homogeneousSpec.align === "stretch"}
-                        onCheckedChange={(on) =>
-                          onFlexFieldChange("align", on ? "stretch" : "start")
-                        }
-                        aria-label="교차축 늘이기"
+                  </Bar.Field>
+                  <Bar.Field label="간격">
+                    <NumberSlider
+                      value={homogeneousSpec.gap}
+                      onValueChange={(v) => onFlexFieldChange("gap", v)}
+                      min={0}
+                      max={0.2}
+                      step={0.005}
+                      format={(v) => `${Math.round(v * 1000) / 10}%`}
+                      className="w-full"
+                    />
+                  </Bar.Field>
+                  <Bar.Field label="정렬">
+                    <div className="flex items-start gap-3">
+                      <AlignmentPad<FlexJustify, FlexAlign>
+                        horizontal={homogeneousSpec.justify}
+                        vertical={homogeneousSpec.align}
+                        hValues={ALIGN_TRIPLE}
+                        vValues={ALIGN_TRIPLE}
+                        onChange={onFlexAlignPad}
+                        aria-label="Flex 정렬"
+                        data-testid="flex-align-pad"
                       />
-                      늘이기
-                    </span>
-                  </div>
-                </div>
-              </Bar.Field>
-            </AccordionItem>
-            <AccordionItem label="여백" data-testid="frame-flex-padding-group">
-              <PaddingFields padding={homogeneousSpec.padding} onSideChange={onPaddingSideChange} />
-            </AccordionItem>
-          </Accordion>
-        </Bar.More>
-      ) : null}
-      {homogeneousSpec?.kind === "auto-grid" ? (
-        <Bar.More>
-          <Accordion>
-            <AccordionItem label="격자" defaultOpen data-testid="frame-grid-tracks-group">
-              <Bar.Field label="행 × 열">
-                <GridSizePicker
-                  columns={homogeneousSpec.columns.length}
-                  rows={homogeneousSpec.rows.length}
-                  onChange={(cols, rws) => {
-                    if (homogeneousSpec.kind !== "auto-grid") return;
-                    patchLayoutSpec({
-                      ...homogeneousSpec,
-                      columns: resizeTracks(homogeneousSpec.columns, cols),
-                      rows: resizeTracks(homogeneousSpec.rows, rws),
-                    });
-                  }}
-                  aria-label="그리드 행 열 개수"
-                />
-              </Bar.Field>
-              <Bar.Field label="열 간격">
-                <NumberSlider
-                  value={homogeneousSpec.columnGap}
-                  onValueChange={(v) => onGridFieldChange("columnGap", v)}
-                  min={0}
-                  max={0.2}
-                  step={0.005}
-                  format={(v) => `${Math.round(v * 1000) / 10}%`}
-                  className="w-full"
-                />
-              </Bar.Field>
-              <Bar.Field label="행 간격">
-                <NumberSlider
-                  value={homogeneousSpec.rowGap}
-                  onValueChange={(v) => onGridFieldChange("rowGap", v)}
-                  min={0}
-                  max={0.2}
-                  step={0.005}
-                  format={(v) => `${Math.round(v * 1000) / 10}%`}
-                  className="w-full"
-                />
-              </Bar.Field>
-            </AccordionItem>
-            <AccordionItem label="정렬" data-testid="frame-grid-align-group">
-              <Bar.Field label="정렬">
-                <div className="flex items-start gap-3">
-                  <AlignmentPad<GridJustify, GridAlign>
-                    horizontal={homogeneousSpec.justify}
-                    vertical={homogeneousSpec.align}
-                    hValues={ALIGN_TRIPLE}
-                    vValues={ALIGN_TRIPLE}
-                    onChange={onGridAlignPad}
-                    aria-label="Grid 정렬"
-                    data-testid="grid-align-pad"
+                      <div className="flex flex-1 flex-col gap-1.5">
+                        <Select<FlexDistribution>
+                          value={
+                            homogeneousSpec.justify === "space-between" ||
+                            homogeneousSpec.justify === "space-around"
+                              ? homogeneousSpec.justify
+                              : "none"
+                          }
+                          onValueChange={(v) =>
+                            onFlexFieldChange(
+                              "justify",
+                              v === "none" ? "start" : (v as FlexJustify),
+                            )
+                          }
+                          options={FLEX_DISTRIBUTION_OPTIONS}
+                          aria-label="Flex 분포"
+                          triggerClassName="w-full"
+                        />
+                        <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                          <Switch
+                            checked={homogeneousSpec.align === "stretch"}
+                            onCheckedChange={(on) =>
+                              onFlexFieldChange("align", on ? "stretch" : "start")
+                            }
+                            aria-label="교차축 늘이기"
+                          />
+                          늘이기
+                        </span>
+                      </div>
+                    </div>
+                  </Bar.Field>
+                </AccordionItem>
+                <AccordionItem label="여백" data-testid="frame-flex-padding-group">
+                  <PaddingFields
+                    padding={homogeneousSpec.padding}
+                    onSideChange={onPaddingSideChange}
                   />
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
-                      <Switch
-                        checked={homogeneousSpec.justify === "stretch"}
-                        onCheckedChange={(on) =>
-                          onGridFieldChange("justify", on ? "stretch" : "start")
-                        }
-                        aria-label="가로 늘이기"
+                </AccordionItem>
+              </>
+            ) : null}
+            {homogeneousSpec?.kind === "auto-grid" ? (
+              <>
+                <AccordionItem label="격자" defaultOpen data-testid="frame-grid-tracks-group">
+                  <Bar.Field label="행 × 열">
+                    <GridSizePicker
+                      columns={homogeneousSpec.columns.length}
+                      rows={homogeneousSpec.rows.length}
+                      onChange={(cols, rws) => {
+                        if (homogeneousSpec.kind !== "auto-grid") return;
+                        patchLayoutSpec({
+                          ...homogeneousSpec,
+                          columns: resizeTracks(homogeneousSpec.columns, cols),
+                          rows: resizeTracks(homogeneousSpec.rows, rws),
+                        });
+                      }}
+                      aria-label="그리드 행 열 개수"
+                    />
+                  </Bar.Field>
+                  <Bar.Field label="열 간격">
+                    <NumberSlider
+                      value={homogeneousSpec.columnGap}
+                      onValueChange={(v) => onGridFieldChange("columnGap", v)}
+                      min={0}
+                      max={0.2}
+                      step={0.005}
+                      format={(v) => `${Math.round(v * 1000) / 10}%`}
+                      className="w-full"
+                    />
+                  </Bar.Field>
+                  <Bar.Field label="행 간격">
+                    <NumberSlider
+                      value={homogeneousSpec.rowGap}
+                      onValueChange={(v) => onGridFieldChange("rowGap", v)}
+                      min={0}
+                      max={0.2}
+                      step={0.005}
+                      format={(v) => `${Math.round(v * 1000) / 10}%`}
+                      className="w-full"
+                    />
+                  </Bar.Field>
+                </AccordionItem>
+                <AccordionItem label="정렬" data-testid="frame-grid-align-group">
+                  <Bar.Field label="정렬">
+                    <div className="flex items-start gap-3">
+                      <AlignmentPad<GridJustify, GridAlign>
+                        horizontal={homogeneousSpec.justify}
+                        vertical={homogeneousSpec.align}
+                        hValues={ALIGN_TRIPLE}
+                        vValues={ALIGN_TRIPLE}
+                        onChange={onGridAlignPad}
+                        aria-label="Grid 정렬"
+                        data-testid="grid-align-pad"
                       />
-                      가로 늘이기
-                    </span>
-                    <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
-                      <Switch
-                        checked={homogeneousSpec.align === "stretch"}
-                        onCheckedChange={(on) =>
-                          onGridFieldChange("align", on ? "stretch" : "start")
-                        }
-                        aria-label="세로 늘이기"
-                      />
-                      세로 늘이기
-                    </span>
-                  </div>
-                </div>
-              </Bar.Field>
-            </AccordionItem>
-            <AccordionItem label="트랙 세부" data-testid="frame-grid-tracksize-group">
-              <Bar.Field label="열">
-                <TrackSizeEditor
-                  value={homogeneousSpec.columns as ReadonlyArray<DSTrackSize>}
-                  onValueChange={(next) =>
-                    onGridFieldChange("columns", next as AutoGridSpec["columns"])
-                  }
-                  aria-label="Grid columns"
-                />
-              </Bar.Field>
-              <Bar.Field label="행">
-                <TrackSizeEditor
-                  value={homogeneousSpec.rows as ReadonlyArray<DSTrackSize>}
-                  onValueChange={(next) => onGridFieldChange("rows", next as AutoGridSpec["rows"])}
-                  aria-label="Grid rows"
-                />
-              </Bar.Field>
-            </AccordionItem>
-            <AccordionItem label="여백" data-testid="frame-grid-padding-group">
-              <PaddingFields padding={homogeneousSpec.padding} onSideChange={onPaddingSideChange} />
-            </AccordionItem>
+                      <div className="flex flex-1 flex-col gap-1.5">
+                        <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                          <Switch
+                            checked={homogeneousSpec.justify === "stretch"}
+                            onCheckedChange={(on) =>
+                              onGridFieldChange("justify", on ? "stretch" : "start")
+                            }
+                            aria-label="가로 늘이기"
+                          />
+                          가로 늘이기
+                        </span>
+                        <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                          <Switch
+                            checked={homogeneousSpec.align === "stretch"}
+                            onCheckedChange={(on) =>
+                              onGridFieldChange("align", on ? "stretch" : "start")
+                            }
+                            aria-label="세로 늘이기"
+                          />
+                          세로 늘이기
+                        </span>
+                      </div>
+                    </div>
+                  </Bar.Field>
+                </AccordionItem>
+                <AccordionItem label="트랙 세부" data-testid="frame-grid-tracksize-group">
+                  <Bar.Field label="열">
+                    <TrackSizeEditor
+                      value={homogeneousSpec.columns as ReadonlyArray<DSTrackSize>}
+                      onValueChange={(next) =>
+                        onGridFieldChange("columns", next as AutoGridSpec["columns"])
+                      }
+                      aria-label="Grid columns"
+                    />
+                  </Bar.Field>
+                  <Bar.Field label="행">
+                    <TrackSizeEditor
+                      value={homogeneousSpec.rows as ReadonlyArray<DSTrackSize>}
+                      onValueChange={(next) =>
+                        onGridFieldChange("rows", next as AutoGridSpec["rows"])
+                      }
+                      aria-label="Grid rows"
+                    />
+                  </Bar.Field>
+                </AccordionItem>
+                <AccordionItem label="여백" data-testid="frame-grid-padding-group">
+                  <PaddingFields
+                    padding={homogeneousSpec.padding}
+                    onSideChange={onPaddingSideChange}
+                  />
+                </AccordionItem>
+              </>
+            ) : null}
           </Accordion>
         </Bar.More>
       ) : null}

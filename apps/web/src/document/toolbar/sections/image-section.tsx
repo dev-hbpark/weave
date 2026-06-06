@@ -12,7 +12,6 @@ import {
   IconButton,
   IconImage,
   IconRefresh,
-  NumberSlider,
   Select,
 } from "@weave/design-system";
 import { isMixed, MixedBadge, sharedValue, truncateUrl, updateAll } from "../multi-edit.js";
@@ -35,10 +34,6 @@ export const ImageSection: ToolbarSectionComponent = ({
   onEditMediaSrc,
 }) => {
   const fit = sharedValue<ImageFit>(items, (it) => (it.attrs as unknown as ImageAttrs).fit);
-  const borderRadius = sharedValue<number>(
-    items,
-    (it) => (it.attrs as unknown as ImageAttrs).borderRadius,
-  );
   const src = sharedValue<string>(items, (it) => (it.attrs as unknown as ImageAttrs).src);
   // WI-076 — caption (alt): shown centered in the source-less placeholder and
   // used as the `<img>` alt text once a source is set.
@@ -108,23 +103,8 @@ export const ImageSection: ToolbarSectionComponent = ({
             <Bar.Field label="불투명도">
               <OpacityControl editor={editor} ids={ids} />
             </Bar.Field>
-            <Bar.Field label="모서리 둥글기">
-              <NumberSlider
-                value={isMixed(borderRadius) ? 0 : borderRadius}
-                onValueChange={(v) =>
-                  updateAll(editor, ids, (prev) => ({
-                    attrs: { ...prev.attrs, borderRadius: v },
-                  }))
-                }
-                min={0}
-                max={1}
-                step={0.01}
-                format={(v) => `${Math.round(v * 100)}`}
-                aria-label="Border radius"
-                className="w-full"
-              />
-              <MixedBadge visible={isMixed(borderRadius)} />
-            </Bar.Field>
+            {/* WI-109 — 모서리 곡률은 캔버스 핸들(오른쪽위 그립, 더블클릭→모서리별)로만
+                편집한다. 툴바 슬라이더 제거. */}
             {/* DR-028 — shadow decoration unit (shared control). */}
             <Bar.Field label="그림자">
               <ShadowControls editor={editor} ids={ids} />

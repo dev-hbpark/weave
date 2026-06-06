@@ -99,10 +99,21 @@ export interface FrameAttrs {
   // (DR-028 parity with shapes; supports solid / gradient / image / video),
   // not an `attrs.background` field. Legacy docs are migrated on load by
   // `migrate-frame-only.ts` (`liftFrameBackground`).
-  /** Optional border-radius as 0..1 ratio of `min(width, height)`. Default 0
-   *  = sharp corners. Mirrors `image.attrs.borderRadius` so WI-031's corner
-   *  radius direct-drag works uniformly. */
+  /** Optional corner radius as an ABSOLUTE radius in design-px. Default 0 =
+   *  sharp corners. Drawn circular (rx === ry) and clamped to half the short
+   *  side — a resize keeps the same corner until a side shrinks past 2×radius
+   *  (Figma model; see `corner-radius.ts`). Mirrors `image.attrs.borderRadius`.
+   *  Legacy 0..1-ratio docs are converted to px on load by `migrateCornerRadiusRatioToPx`. */
   readonly cornerRadius?: number;
+  /** WI-109 — optional PER-CORNER override (absolute design-px). Present only
+   *  after the on-canvas radius handle is split into four; the renderer uses it
+   *  instead of `cornerRadius`. Mirrors image/video `borderRadii`. */
+  readonly cornerRadii?: {
+    readonly tl: number;
+    readonly tr: number;
+    readonly br: number;
+    readonly bl: number;
+  };
   /** Optional human-friendly label — ThumbnailPanel / outline display it
    *  next to the frame's position. NOT rendered inside the frame. */
   readonly label?: string;
@@ -578,6 +589,11 @@ export interface Design {
     readonly createdAt: string;
     readonly updatedAt: string;
     readonly schemaVersion: 5;
+    /** Marks that frame `cornerRadius` / image|video `borderRadius` are stored
+     *  as ABSOLUTE design-px (not the legacy 0..1 ratio). Absent on pre-migration
+     *  blobs; `migrateCornerRadiusRatioToPx` converts then stamps `"px"` so the
+     *  conversion runs exactly once. */
+    readonly cornerRadiusUnit?: "px";
   };
 }
 

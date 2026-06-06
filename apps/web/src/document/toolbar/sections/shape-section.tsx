@@ -15,8 +15,6 @@ import {
   AccordionItem,
   ContextualToolbar as Bar,
   Button,
-  CornerRadiusControl,
-  type CornerRadiusValue,
   IconClose,
   IconImage,
   IconShape,
@@ -120,18 +118,8 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
   const fillMediaSrc = fillIsMediaUniform
     ? ((fillPaints[0] as { src?: string } | undefined)?.src ?? "")
     : "";
-  // WI-055 — corner radius is rectangle-only. The control renders only when the
-  // shared sub-kind is uniformly "rectangle". Read the per-corner radii; compare
-  // by component so a 4-tuple match counts as "agree".
-  const isRectangleUniform = !isMixed(shape) && shape === "rectangle";
-  const cornerRadii = sharedValue<CornerRadiusValue>(
-    items,
-    (it) => {
-      const sa = (it.attrs as unknown as ShapeAttrs).subAttrs;
-      return sa.shape === "rectangle" ? sa.cornerRadii : { tl: 0, tr: 0, br: 0, bl: 0 };
-    },
-    (a, b) => a.tl === b.tl && a.tr === b.tr && a.br === b.br && a.bl === b.bl,
-  );
+  // WI-109 — rectangle corner radius moved to the on-canvas handle (toolbar
+  // CornerRadiusControl removed). The `subAttrs.cornerRadii` data is unchanged.
   // Freeform-poly only — `smooth` turns the straight polyline/polygon into a
   // Catmull-Rom curve (곡선 / 자유곡선). The toggle renders only when the shared
   // sub-kind is uniformly "poly".
@@ -253,32 +241,8 @@ export const ShapeSection: ToolbarSectionComponent = ({ editor, items, ids, onEd
             <Bar.Field label="불투명도">
               <OpacityControl editor={editor} ids={ids} />
             </Bar.Field>
-            {isRectangleUniform && (
-              <Bar.Field label="모서리 둥글기">
-                <CornerRadiusControl
-                  value={isMixed(cornerRadii) ? { tl: 0, tr: 0, br: 0, bl: 0 } : cornerRadii}
-                  mixed={isMixed(cornerRadii)}
-                  onChange={(next) =>
-                    updateAll(editor, ids, (prev) => {
-                      const prevAttrs = prev.attrs as unknown as ShapeAttrs;
-                      // Rebuild the COMPLETE subAttrs — the item.attrs reducer
-                      // replaces the whole attrs map, so a partial would drop
-                      // `shape`. Guard keeps non-rectangles untouched.
-                      if (prevAttrs.subAttrs.shape !== "rectangle") {
-                        return { attrs: prev.attrs };
-                      }
-                      return {
-                        attrs: {
-                          ...prev.attrs,
-                          subAttrs: { shape: "rectangle", cornerRadii: next },
-                        } as unknown as Readonly<Record<string, unknown>>,
-                      };
-                    })
-                  }
-                />
-                <MixedBadge visible={isMixed(cornerRadii)} />
-              </Bar.Field>
-            )}
+            {/* WI-109 — 사각형 모서리 곡률은 캔버스 핸들(오른쪽위 그립, 더블클릭→모서리별)로만
+                편집한다. 툴바 CornerRadiusControl 제거. */}
             {isPolyUniform && (
               <Bar.Field label="곡선">
                 <Switch

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { findItemDeep } from "../../../document/agocraft-mirror.js";
 import { migrateEncoding, valueFields } from "../../../document/domains/chart/chart-model.js";
 import { createChartElementViewModel } from "../../../document/selection-chrome/chart-element-view-model.js";
+import { createCornerRadiusViewModel } from "../../../document/selection-chrome/corner-radius-handle.js";
 import { createFrameDefaultViewModel } from "../../../document/selection-chrome/frame-default-view-model.js";
 import { createPolyVertexHandleViewModel } from "../../../document/selection-chrome/poly-vertex-handle.js";
 import { createShapeSelectionViewModel } from "../../../document/selection-chrome/shape-selection-view-model.js";
@@ -58,6 +59,20 @@ export function useSelectionChromeRegistry({
     const disposers = [
       ...(["frame", "image", "video", "qr", "chart"] as const).map((k) =>
         selectionChrome.registerItemViewModel(createFrameDefaultViewModel({ itemKind: k })),
+      ),
+      // WI-109 — on-canvas corner-radius grip (uniform top-right; double-click
+      // splits into four per-corner grips). Merges ABOVE the resize chrome.
+      ...(["frame", "image", "video", "shape"] as const).map((k) =>
+        selectionChrome.registerItemViewModel(
+          createCornerRadiusViewModel({
+            itemKind: k,
+            editor,
+            getItem: (id) => {
+              const it = findItemDeep(docRef.current, id);
+              return it === undefined ? null : { attrs: it.attrs as Record<string, unknown> };
+            },
+          }),
+        ),
       ),
       selectionChrome.registerItemViewModel(
         createTextSelectionViewModel({
