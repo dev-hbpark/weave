@@ -20,8 +20,8 @@ import { useAkuSettings } from "./agent/aku-settings.js";
 import { useAkuAgent } from "./agent/use-aku-agent.js";
 import { gpuSpriteRenderer } from "./expression/gpu-sprite-renderer.js";
 import { useAkuExpression } from "./expression/use-aku-expression.js";
+import { useAkuFrameCamera } from "./useAkuFrameCamera.js";
 import { useAkuGeometry } from "./useAkuGeometry.js";
-import { useAkuNewSlideCamera } from "./useAkuNewSlideCamera.js";
 import { useAkuRoam } from "./useAkuRoam.js";
 import { useAkuTips } from "./useAkuTips.js";
 
@@ -148,11 +148,13 @@ export function AkuAssistant({
     onTap: openPanel,
   });
 
-  // WI-125 — when the agent creates a new top-level slide, fit the camera to it at
-  // its creation moment (so the deck builds slide by slide). Gated on streaming.
-  useAkuNewSlideCamera({
-    document: agoDocument,
+  // WI-126 — keep the camera fitted to the top-level root slide of whatever the
+  // agent is editing (subsumes WI-125's new-slide fit). Aku roams within it; de-duped
+  // by root id, gated on streaming (manual edits never move the camera).
+  useAkuFrameCamera({
+    editor,
     streaming: status === "streaming",
+    getDocument: () => docRef.current,
     onZoomToFrame,
   });
 

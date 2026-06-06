@@ -1,8 +1,13 @@
 # WI-125 — 새 슬라이드 생성 시 카메라 핏
 
+> **Superseded by WI-126** (2026-06-06): 운영자가 "새 슬라이드뿐 아니라 편집 중인 아이템의
+> 최상위 루트 슬라이드를 항상 핏"으로 확장 요청 → `useAkuNewSlideCamera`(문서 diff)는 삭제하고
+> `useAkuFrameCamera`(편집 itemId → 루트, 루트 id 디듀프)로 대체. 새 슬라이드 생성도 그 add가
+> 편집 이벤트라 포함됨.
+
 | Field | Value |
 |---|---|
-| Status | Built (single-session, 2026-06-06) |
+| Status | Superseded by WI-126 |
 | Owner | hbpark |
 | Decision | DR-081(작업 중 카메라 — per-edit 센터링 철회) 보완 · WI-065(턴종료 fit-all) |
 | Relates | use-frame-focus(handleZoomToFrame/cameraFitBox) · agocraft-mirror(absoluteFrameBox) |
