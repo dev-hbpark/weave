@@ -27,7 +27,6 @@ import { randomViewportPoint, roamPointInRect, travelDir } from "./roam-target.j
 
 export const ROAM_TRAVEL_MS = 1100;
 const IDLE_MS = 3600; // cadence of random wander hops while roaming
-const STREAM_DEBOUNCE_MS = 180; // debounce changeStream bursts before flying to a frame
 const DRAG_THRESHOLD = 4;
 const EDIT_SETTLE_MS = 4000; // within this since the last edit gesture → "user is editing"
 const SLEEP_AFTER_MS = 60_000; // no editing for ≥ 1 min → doze (blanket-sleep)
@@ -265,35 +264,26 @@ export function useAkuRoam(opts: {
     goTo(viewportCentre(f.boxW, f.boxH));
   }, [streaming, goTo]);
 
-  // Working ROAM — track the frame the agent is editing; move to it immediately when
-  // the TARGET frame changes (debounced). Intra-frame wander is handled below.
+  // Working — RECORD the frame the agent is editing (latest target only). The wander
+  // loop below is the SOLE mover; a frame change never moves Aku directly, so it can
+  // never cancel an in-progress play. The move to a new target happens at the next
+  // cycle boundary, i.e. only AFTER the current 2-loop play completes (WI-123).
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let pending: string | null = null;
     const off = editor.changeStream.subscribe(
       (change: unknown) => {
         const id = (change as { itemId?: unknown }).itemId;
-        if (typeof id !== "string") return;
-        pending = id;
-        if (timer !== undefined) clearTimeout(timer);
-        timer = setTimeout(() => {
-          if (pending === null) return;
-          const isNewFrame = editFrameRef.current !== pending;
-          editFrameRef.current = pending;
-          if (isNewFrame) flyToFrame(pending); // new target → hop right away
-        }, STREAM_DEBOUNCE_MS);
+        if (typeof id === "string") editFrameRef.current = id;
       },
       { origins: ["user-command"] },
     );
-    return () => {
-      off?.();
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [editor, flyToFrame]);
+    return () => off?.();
+  }, [editor]);
 
-  // Working WANDER — every 2 sprite loops, hop to a fresh random point WITHIN the
-  // frame currently being edited, so Aku keeps moving over the work even between
-  // edit events (WI-121: "두 번 재생마다 이동").
+  // Working WANDER — the single move scheduler. Each cycle = MOVE (glide) → PLAY the
+  // editing spell 2 loops at rest → next MOVE (FRAME_HOP_MS = travel + 2-loop play).
+  // Moving only here guarantees every play runs to completion before the next hop,
+  // whether the target is the same frame (intra-frame wander) or a newly-edited one
+  // (WI-121/WI-122/WI-123: "재생 2번이 무조건 보장").
   useEffect(() => {
     if (!streaming) return;
     const id = setInterval(() => {
