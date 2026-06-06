@@ -2080,3 +2080,71 @@ describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
     if (!b.ok) expect(b.error.code).toBe("item-not-found");
   });
 });
+
+describe("weave.item.add — usable-frame guard (DR-078)", () => {
+  function addCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.add");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+  function frameOf(res: ReturnType<ReturnType<typeof addCmd>["run"]>): {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } {
+    if (!res.ok) throw new Error("add failed");
+    const create = res.patches.find((p) => p.type === "item.create");
+    if (create === undefined) throw new Error("no item.create patch");
+    return (
+      create as unknown as {
+        item: { attrs: { frame: { x: number; y: number; width: number; height: number } } };
+      }
+    ).item.attrs.frame;
+  }
+
+  it("restores a zero WIDTH on a text → never zero-area / unselectable, keeps the given position", () => {
+    const res = addCmd().run(makeCtx(), {
+      kind: "text",
+      frame: { x: 0.1, y: 0.2, width: 0, height: 0.3, rotation: 0 },
+    });
+    const f = frameOf(res);
+    expect(f.width).toBeGreaterThan(0);
+    expect(f.x).toBe(0.1); // valid position preserved
+    expect(f.y).toBe(0.2);
+  });
+
+  it("leaves a finite text HEIGHT (auto-fit) even at 0, but still fixes width", () => {
+    const res = addCmd().run(makeCtx(), {
+      kind: "text",
+      frame: { x: 0, y: 0, width: 0.5, height: 0, rotation: 0 },
+    });
+    const f = frameOf(res);
+    expect(f.width).toBe(0.5);
+    expect(f.height).toBe(0); // text auto-fits its height — left as the caller set it
+  });
+
+  it("restores a zero HEIGHT on a non-text item (image cannot auto-fit)", () => {
+    const res = addCmd().run(makeCtx(), {
+      kind: "image",
+      frame: { x: 0, y: 0, width: 0.5, height: 0, rotation: 0 },
+    });
+    const f = frameOf(res);
+    expect(f.height).toBeGreaterThan(0);
+    expect(f.width).toBe(0.5);
+  });
+
+  it("passes a valid frame through unchanged", () => {
+    const res = addCmd().run(makeCtx(), {
+      kind: "text",
+      frame: { x: 0.1, y: 0.2, width: 0.5, height: 0.3, rotation: 0 },
+    });
+    expect(frameOf(res)).toMatchObject({ x: 0.1, y: 0.2, width: 0.5, height: 0.3 });
+  });
+
+  it("an omitted frame keeps the non-degenerate seed (selectable)", () => {
+    const f = frameOf(addCmd().run(makeCtx(), { kind: "image" }));
+    expect(f.width).toBeGreaterThan(0);
+    expect(f.height).toBeGreaterThan(0);
+  });
+});

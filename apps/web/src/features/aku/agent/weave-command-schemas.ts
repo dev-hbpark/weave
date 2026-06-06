@@ -432,7 +432,9 @@ const FRAME: Json = {
   type: "object",
   description:
     "Bounding box in 0..1 ratios of the PARENT frame's box — a top-level item's parent is the " +
-    "whole DESIGN (canvas). NEVER pixels.",
+    "whole DESIGN (canvas). NEVER pixels. width and height MUST be > 0: a zero or omitted size " +
+    "renders the item at zero area, which makes it invisible AND unselectable (uneditable). " +
+    "(Text auto-fits its height from its content, so for text the WIDTH is what matters.)",
   properties: {
     x: {
       type: "number",
@@ -646,7 +648,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         units: CREATION_UNITS,
       },
       ["kind"],
-      "ADD a new item (frame / text / image / video / shape / line / qr) into the design or a container frame. Pass containerId for a parent frame (omit → design root), frame for the 0..1 box, attrsOverride for per-kind content/style, and units to style it (fill/shadow/…) in the SAME call. For a chart use weave.chart.add instead. This is the primary creation tool.",
+      "ADD a new item (frame / text / image / video / shape / line / qr) into the design or a container frame. Pass containerId for a parent frame (omit → design root), frame for the 0..1 box, attrsOverride for per-kind content/style, and units to style it (fill/shadow/…) in the SAME call. For a chart use weave.chart.add instead. This is the primary creation tool. CHECK THE TARGET CONTAINER'S LAYOUT FIRST (read it from the snapshot): if the container is ABSOLUTE (no auto-layout) you MUST pass a frame with width>0 AND height>0 — an absolute parent does NOT auto-position its children, so a missing/zero frame lands the item at zero size = invisible & uneditable. If the container has an AUTO-LAYOUT (flex/grid), OMIT the frame — the layout positions and sizes the child; do not fight it with an absolute frame. Do not assume a container is grid; verify.",
     ),
   },
   // weave.item.remove → retargeted from kit (see KIT_SCHEMAS).

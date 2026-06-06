@@ -348,6 +348,37 @@ function normalizeShapeAttrs(
   return { ...attrs, shape: kind, subAttrs: merged };
 }
 
+/** Minimum non-degenerate frame side (ratio of the parent box). Below this an
+ *  item's on-screen AREA can fall under the pointer-events hit-test threshold
+ *  (`HIT_THRESHOLD_AREA_PX2`), which sets `pointer-events:none` — the item then
+ *  cannot be clicked, selected, or edited. */
+const MIN_FRAME_SIDE = 1e-3;
+
+/** Guard an added item against a ZERO/degenerate frame that would render at zero
+ *  area and become unselectable / uneditable. The agent sometimes adds an item
+ *  without a usable position+size — especially when it treats an ABSOLUTE
+ *  container as an auto-layout one and omits (or zeroes) the frame, since an
+ *  absolute parent does NOT auto-position its children. We restore the kind's
+ *  seed size for any missing/zero dimension, keeping whatever valid position the
+ *  caller did provide. Text auto-fits its HEIGHT (frame.width drives wrapping),
+ *  so a finite text height (incl. 0) is left to the auto-fit; every other kind
+ *  needs a positive height too. Pure — unit-tested in commands.test. */
+function ensureUsableFrame(kind: string, frame: unknown, seed: ItemFrame): ItemFrame {
+  const f = isPlainObject(frame) ? frame : {};
+  const fin = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+  const positive = (v: unknown, fallback: number): number =>
+    fin(v) && v > MIN_FRAME_SIDE ? v : fallback;
+  const autoHeight = kind === "text";
+  return {
+    x: fin(f.x) ? f.x : seed.x,
+    y: fin(f.y) ? f.y : seed.y,
+    width: positive(f.width, seed.width),
+    // Text height auto-fits — keep a finite caller value; only fill a missing/NaN one.
+    height: autoHeight && fin(f.height) ? f.height : positive(f.height, seed.height),
+    rotation: fin(f.rotation) ? f.rotation : seed.rotation,
+  };
+}
+
 /** Deep-merge `after` over `before`, RECURSING into plain-object values so a
  *  PARTIAL nested object (e.g. a chart's `overrides.datum` carrying one new
  *  category) EXTENDS the existing one instead of replacing it wholesale. A
@@ -529,6 +560,16 @@ export function buildWeaveCommands(
         }
       }
       let weaveItem = createDefaultItem(input.kind, maxOrder + 1);
+      // Seed frame (a non-degenerate default per kind, e.g. FULL_FRAME for text)
+      // — captured before overrides so the guard below can restore a missing/zero
+      // dimension to it.
+      const seedFrame: ItemFrame = (weaveItem.attrs as { frame?: ItemFrame }).frame ?? {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        rotation: 0,
+      };
       if (input.frame !== undefined) {
         weaveItem = {
           ...weaveItem,
@@ -539,6 +580,32 @@ export function buildWeaveCommands(
         weaveItem = {
           ...weaveItem,
           attrs: { ...weaveItem.attrs, ...input.attrsOverride } as typeof weaveItem.attrs,
+        };
+      }
+      // GUARD (DR-078) — never let an item land with a zero-area frame: it would
+      // fail the pointer-events hit-test and be impossible to select/edit. The
+      // agent occasionally adds a text without position/size (often mistaking an
+      // absolute container for an auto-layout one). Restore the seed size for any
+      // missing/zero dimension, keeping any valid position the caller gave.
+      {
+        const fixed = ensureUsableFrame(
+          weaveItem.kind,
+          (weaveItem.attrs as { frame?: unknown }).frame,
+          seedFrame,
+        );
+        const prev = (weaveItem.attrs as { frame?: ItemFrame }).frame;
+        if (
+          import.meta.env.DEV &&
+          (prev === undefined || prev.width !== fixed.width || prev.height !== fixed.height)
+        ) {
+          console.warn(
+            `[weave.item.add] guarded a zero/degenerate frame on a "${weaveItem.kind}" item → restored size`,
+            { provided: prev, restored: fixed },
+          );
+        }
+        weaveItem = {
+          ...weaveItem,
+          attrs: { ...weaveItem.attrs, frame: fixed } as typeof weaveItem.attrs,
         };
       }
       // WI-062 — a shape's attrsOverride may carry a PARTIAL subAttrs that the
