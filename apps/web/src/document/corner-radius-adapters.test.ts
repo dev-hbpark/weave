@@ -14,7 +14,7 @@ function fakeEditor() {
       calls.push({ name, input });
       return { ok: true };
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: minimal partial-editor mock for adapter unit tests
   } as any;
   return { editor, calls };
 }

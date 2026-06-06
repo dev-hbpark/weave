@@ -163,7 +163,6 @@ async function run(page: Page, config: string): Promise<void> {
   expect(n).toBe(COLS * ROWS);
   await page.waitForTimeout(500);
   const snap = await snapshot(page, config);
-  // biome-ignore lint/suspicious/noConsole: measurement output is the point.
   console.log(`PERF::${JSON.stringify(snap)}`);
 }
 

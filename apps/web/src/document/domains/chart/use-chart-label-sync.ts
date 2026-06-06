@@ -27,10 +27,5 @@ export function useChartLabelSync(
   // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     reconcileDerived(project);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: `doc` is an
-    // intentional re-run TRIGGER — each new immutable document snapshot must
-    // re-drive the projection. The transform reads the latest doc via
-    // `reconcileDerived` (prev.document), so `doc` isn't referenced in the body,
-    // but dropping it would stop the controller from reacting to data changes.
   }, [reconcileDerived, project, doc]);
 }

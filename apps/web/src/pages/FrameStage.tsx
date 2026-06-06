@@ -1383,6 +1383,8 @@ export function FrameStage(props: FrameStageProps) {
   return (
     <TotalScaleContext.Provider value={totalScaleMV}>
       <ViewportCullContext.Provider value={cullRegistry}>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: interaction surface (canvas/overlay/affordance), not a control — keyboard & focus are handled by dedicated controls elsewhere */}
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: pointer affordance; keyboard is handled centrally, not as a per-element tab stop */}
         <div
           ref={outerRef}
           className="absolute inset-0 overflow-hidden"

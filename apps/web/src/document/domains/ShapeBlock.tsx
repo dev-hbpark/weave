@@ -258,6 +258,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
               }
             >
               {fill.defs.stops.map((s, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here
                 <stop key={i} offset={`${s.offset * 100}%`} stopColor={s.color} />
               ))}
             </linearGradient>
@@ -265,6 +266,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
           {fill.defs && fill.defs.type === "radial" ? (
             <radialGradient id={fill.defs.id} cx={fill.defs.cx} cy={fill.defs.cy} r={0.5}>
               {fill.defs.stops.map((s, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here
                 <stop key={i} offset={`${s.offset * 100}%`} stopColor={s.color} />
               ))}
             </radialGradient>
@@ -303,6 +305,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
           {strokeFill?.defs && strokeFill.defs.type === "linear" ? (
             <linearGradient id={strokeFill.defs.id}>
               {strokeFill.defs.stops.map((s, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here
                 <stop key={i} offset={`${s.offset * 100}%`} stopColor={s.color} />
               ))}
             </linearGradient>

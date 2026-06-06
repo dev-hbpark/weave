@@ -249,6 +249,7 @@ function CropEditor(props: {
   };
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: interaction surface (canvas/overlay/affordance), not a control — keyboard & focus handled by dedicated controls elsewhere
     <div
       ref={boxRef}
       data-testid="image-crop-editor"

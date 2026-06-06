@@ -102,6 +102,7 @@ export function AkuSettingsMenu({
               </div>
               <div className="px-1.5 py-1">
                 <div className="mb-1 text-[12px] text-[color:var(--text-overlay)]">창의성</div>
+                {/* biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface */}
                 <div
                   className="flex gap-1"
                   role="group"

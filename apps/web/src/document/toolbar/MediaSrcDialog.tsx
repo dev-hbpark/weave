@@ -279,6 +279,7 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
         ) : null}
 
         {/* Drop / pick zone */}
+        {/* biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface */}
         <div
           data-testid="media-src-dropzone"
           role="button"

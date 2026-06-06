@@ -215,9 +215,7 @@ export default function EChartView(props: EChartViewProps): JSX.Element {
     props.innerRadius,
     props.overrides,
   ]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` is the
-  // serialized digest of every option input; depending on it is the intent.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` is the serialized digest of every option input — depending on the digest (not each field) is the intent
   useEffect(() => {
     let cancelled = false;
     const apply = (): void => {

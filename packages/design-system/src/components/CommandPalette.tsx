@@ -1,3 +1,4 @@
+// biome-ignore-all lint/a11y/noNoninteractiveElementToInteractiveRole: <ul role="listbox"> + <li role="option"> is the correct ARIA listbox pattern for the command palette (attribute-level rule can't be suppressed inline)
 // WI-026 Phase 6 — Command palette.
 //
 // Dialog-based palette that lists every CommandMetadata in the registry,
@@ -152,7 +153,6 @@ export function CommandPalette({
             )}
             data-testid="command-palette-input"
           />
-          {/* biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: listbox + option is the correct ARIA pattern for a command palette. */}
           <ul
             className="grid gap-0.5 max-h-[60vh] overflow-y-auto"
             role="listbox"
@@ -165,7 +165,6 @@ export function CommandPalette({
               </li>
             ) : (
               filtered.map((row, idx) => (
-                // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: option role on <li> within role=listbox is the correct ARIA pattern.
                 // biome-ignore lint/a11y/useFocusableInteractive: focus is managed by the input (aria-activedescendant pattern); options are not tab stops.
                 // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard nav is handled centrally on the palette input (↑/↓/Enter), not per-option.
                 <li

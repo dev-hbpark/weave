@@ -70,6 +70,7 @@ function GradientDefs({
         gradientTransform={defs.angle !== undefined ? `rotate(${defs.angle} 0.5 0.5)` : undefined}
       >
         {defs.stops.map((st, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here
           <stop key={i} offset={`${st.offset * 100}%`} stopColor={st.color} />
         ))}
       </linearGradient>
@@ -79,6 +80,7 @@ function GradientDefs({
     return (
       <radialGradient id={defs.id} cx={defs.cx} cy={defs.cy} r={0.5}>
         {defs.stops.map((st, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here
           <stop key={i} offset={`${st.offset * 100}%`} stopColor={st.color} />
         ))}
       </radialGradient>

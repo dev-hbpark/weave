@@ -186,6 +186,7 @@ export function DesignHeader({
         </nav>
       </div>
 
+      {/* biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface */}
       <div className="flex items-center gap-0.5" role="group" aria-label="Edit tools">
         {infiniteCanvas ? (
           <>

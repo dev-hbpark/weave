@@ -107,6 +107,7 @@ export function LinkSection({
   const urlValue = urlDraft ?? currentHref;
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
     <div
       role="group"
       aria-label="Link"

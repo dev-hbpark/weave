@@ -81,6 +81,7 @@ export const TrackSizeEditor = forwardRef<HTMLDivElement, TrackSizeEditorProps>(
         className={cn("flex flex-col gap-1.5", className)}
         {...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {})}
       >
+        {/* biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface */}
         <div role="list" className="flex flex-col gap-1">
           {value.map((track, index) => {
             const key = `${index}-${track.kind}`;
@@ -97,6 +98,7 @@ export const TrackSizeEditor = forwardRef<HTMLDivElement, TrackSizeEditorProps>(
               onValueChange(removeAt(value, index));
             };
             return (
+              // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
               <div
                 key={key}
                 role="listitem"

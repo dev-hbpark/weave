@@ -104,6 +104,7 @@ interface ToolbarQuickProps {
 
 function ToolbarQuick({ children, className }: ToolbarQuickProps): JSX.Element {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
     <div
       role="group"
       aria-label="Quick actions"
@@ -180,6 +181,7 @@ interface ToolbarFieldProps {
 
 function ToolbarField({ label, children, className }: ToolbarFieldProps): JSX.Element {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
     <div role="group" aria-label={label} className={cn("flex flex-col gap-1", className)}>
       <span
         aria-hidden

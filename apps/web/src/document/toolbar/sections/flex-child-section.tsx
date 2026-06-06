@@ -111,6 +111,7 @@ export function FlexChildSection({
   // Rendered INLINE (not in a second More popover — that would add a confusing
   // second "더보기" trigger). Always visible while a flex child is selected.
   return (
+    // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
     <div
       role="group"
       aria-label="Flex child layout"
@@ -200,6 +201,7 @@ export function GridChildSection({
   };
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
     <div
       role="group"
       aria-label="Grid child layout"

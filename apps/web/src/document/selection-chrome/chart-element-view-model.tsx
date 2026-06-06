@@ -422,13 +422,10 @@ function ChartHandles({
   globalSpecs.forEach((spec, i) => {
     const apply = APPLY_BY_KIND[spec.kind]({ deps, chartItemId, ref: null });
     if (apply !== null) {
+      // Per-bar handle: bars never reorder, so a positional key is stable.
+      const handleKey = `global-${i}`;
       rendered.push(
-        <GlobalWidthHandle
-          key={`global-${i}`}
-          spec={spec}
-          chartItemId={chartItemId}
-          apply={apply}
-        />,
+        <GlobalWidthHandle key={handleKey} spec={spec} chartItemId={chartItemId} apply={apply} />,
       );
     }
   });

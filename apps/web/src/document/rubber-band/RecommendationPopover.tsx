@@ -62,6 +62,7 @@ function LayoutTypeToggle({
       {LAYOUT_TYPE_OPTIONS.map(({ value: v, label, Icon }) => {
         const active = value === v;
         return (
+          // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
           <button
             key={v}
             type="button"

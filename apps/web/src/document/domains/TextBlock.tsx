@@ -532,6 +532,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   );
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: interaction surface (canvas/overlay/affordance), not a control — keyboard & focus handled by dedicated controls elsewhere
     <div
       ref={wrapRef}
       // While editing, always let the editor spill (overflow visible) so the
@@ -602,6 +603,7 @@ function renderReadOnly(
   if (textRuns === undefined || textRuns.length === 0) return text;
   const outline = mode === "outline";
   return textRuns.map((run, i) => {
+    // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here
     if (run.insert === "\n") return <br key={`br-${i}`} />;
     const attrs = run.attributes as WeaveRunStyle | undefined;
     const style: CSSProperties = {};
@@ -636,6 +638,7 @@ function renderReadOnly(
       }
     }
     return (
+      // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here
       <span key={i} style={style}>
         {run.insert}
       </span>

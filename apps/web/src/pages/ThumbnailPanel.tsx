@@ -328,6 +328,7 @@ export function ThumbnailPanel({
           group so the focus-toggle nesting clears axe's
           nested-interactive rule; the keyboard nav is now driven by
           the inner activation `<button>`s being Tab-stops in order. */}
+      {/* biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface */}
       <div
         className="relative pl-4 md:pl-6 pr-4 md:pr-6 pt-3 pb-2 flex items-end gap-4 overflow-x-auto"
         role="group"
@@ -396,6 +397,7 @@ export function ThumbnailPanel({
             // inner `<button>`, which sits as a SIBLING of the absolute-
             // positioned focus-toggle `<button>`. Both inner controls
             // remain keyboard-accessible without nesting.
+            // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
             <div
               key={entry.id}
               role="group"
@@ -747,6 +749,7 @@ export function ThumbnailPanel({
               const tileStage: FocusStage = isFocused ? focusStage : 0;
               const isDisabled = disabledFrameIds?.has(entry.id) ?? false;
               return (
+                // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
                 <div
                   key={entry.id}
                   role="group"

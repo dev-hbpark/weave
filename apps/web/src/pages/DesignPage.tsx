@@ -3163,6 +3163,7 @@ function QuickActionBarAnchored({
           if (id === "multi.layout-flex" || id === "multi.layout-grid") {
             const layout: ArrangeLayout = id === "multi.layout-flex" ? "flex" : "grid";
             return (
+              // biome-ignore lint/a11y/noStaticElementInteractions: interaction surface (canvas/overlay/affordance), not a control — keyboard & focus handled by dedicated controls elsewhere
               <span
                 onMouseEnter={() => onArrangeHover(layout)}
                 onMouseLeave={() => onArrangeHover(null)}
@@ -3261,6 +3262,7 @@ function MultiAlignSubmenu(): React.ReactElement {
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: interaction surface (canvas/overlay/affordance), not a control — keyboard & focus are handled by dedicated controls elsewhere */}
       <span onMouseEnter={handleEnter} onMouseLeave={scheduleClose}>
         <DropdownMenuTrigger asChild>
           <CommandIconButton commandId="multi.align" size="sm">
@@ -3375,6 +3377,7 @@ function FrameAddSubmenu({ frameId, onInsert }: FrameAddSubmenuProps): React.Rea
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: interaction surface (canvas/overlay/affordance), not a control — keyboard & focus are handled by dedicated controls elsewhere */}
       <span onMouseEnter={handleEnter} onMouseLeave={scheduleClose}>
         <DropdownMenuTrigger asChild>
           <CommandIconButton commandId="frame.addChild" size="sm">

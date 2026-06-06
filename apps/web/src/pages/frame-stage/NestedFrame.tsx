@@ -804,6 +804,8 @@ export function NestedFrame({
               const hotspotId = String(u.id);
               const isHotSelected = selectedHotspotId === hotspotId;
               return (
+                // biome-ignore lint/a11y/noStaticElementInteractions: interaction surface (canvas/overlay/affordance), not a control — keyboard & focus handled by dedicated controls elsewhere
+                // biome-ignore lint/a11y/useKeyWithClickEvents: pointer affordance; keyboard handled centrally, not a per-element tab stop
                 <div
                   key={hotspotId}
                   data-testid="hotspot-region-overlay"

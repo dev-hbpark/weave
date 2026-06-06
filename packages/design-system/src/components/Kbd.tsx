@@ -59,6 +59,7 @@ export const Kbd = forwardRef<HTMLElement, KbdProps>(function Kbd(
       className={cn("inline-flex items-center gap-1", className)}
     >
       {parts.map((p, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here
         <span key={`${i}-${p}`} className="inline-flex items-center gap-1">
           <kbd className={cn(baseClass, sizeClass[size])}>{p}</kbd>
           {i < parts.length - 1 ? (

@@ -68,7 +68,6 @@ const ACTIONS_KEY = "__actions";
 /** Map weave token CSS vars onto react-data-grid's `--rdg-*` theming hooks so
  *  the grid matches the surrounding panel. */
 const GRID_THEME: React.CSSProperties = {
-  // biome-ignore lint/style/useNamingConvention: react-data-grid CSS custom props.
   ["--rdg-color" as string]: "var(--text-strong)",
   ["--rdg-background-color" as string]: "var(--surface-2)",
   ["--rdg-header-background-color" as string]: "var(--surface-1)",
@@ -226,7 +225,6 @@ export default function DatasetGrid({ editor, datasetId, payload }: DatasetGridP
 
   return (
     // onPasteCapture so we see the Excel block before the grid's own cell paste.
-    // biome-ignore lint/a11y/noStaticElementInteractions: paste affordance wrapper.
     <div
       data-testid="dataset-grid"
       onPasteCapture={onPaste}

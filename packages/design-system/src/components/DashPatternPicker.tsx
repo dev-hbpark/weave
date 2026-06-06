@@ -58,6 +58,7 @@ export const DashPatternPicker = forwardRef<HTMLDivElement, DashPatternPickerPro
         {ALL_PATTERNS.map((p) => {
           const pressed = p.value === value;
           return (
+            // biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface
             <button
               key={p.value}
               type="button"
