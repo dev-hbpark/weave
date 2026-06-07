@@ -27,9 +27,18 @@ types(DomainKind/EmbedAttrs/ItemAttrsByKind) · providers(+테스트) · EmbedBl
 - (−) **oEmbed 메타데이터(제목/썸네일) 미구현** — 네트워크 fetch 필요. MVP는 iframe-by-id.
 - **개인정보**: nocookie + referrerPolicy로 완화하나, 재생 시 YouTube에 IP/디바이스 노출은 불가피.
 
+## 갱신 (2026-06-07) — 썸네일 포스터 + export 폴백 (fetch 없이)
+
+YouTube 썸네일은 video id에서 **결정적으로 파생**(`img.youtube.com/vi/<id>/hqdefault.jpg`) — oEmbed fetch 불필요. provider에 `toThumbnailUrl` 추가, `resolveEmbed`가 `thumbnailUrl` 반환. EmbedBlock 3분기:
+- 미인식 URL → placeholder
+- 인식 + **interactive**(선택/프레젠트) → iframe(재생)
+- 인식 + **inert**(에디터 미선택) → **썸네일 `<img>` 포스터 + 재생 배지**(pointer-inert → 첫 클릭이 프레임 선택)
+
+효과: (a) 미선택 임베드마다 iframe 안 띄워 **가벼움**, (b) **export/static 캡처 폴백**(iframe은 캡처 안 되지만 `<img>`는 됨), (c) 선택 시에만 iframe 마운트 → 재생. oEmbed **제목** 메타는 여전히 fetch 필요라 후속.
+
 ## 후속
 
-- oEmbed fetch(제목/썸네일, graceful fallback), Vimeo/Loom 등 provider, export용 썸네일 폴백, 에디터 미리보기 재생 토글, 자동재생/타임스탬프 옵션.
+- oEmbed fetch(제목 메타, graceful fallback), Vimeo/Loom 등 provider, 자동재생/타임스탬프 옵션, 썸네일 onError 폴백(깨진 이미지 → placeholder).
 
 ## 검증
 

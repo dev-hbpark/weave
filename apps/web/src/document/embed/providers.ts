@@ -15,6 +15,10 @@ export interface EmbedProvider {
   match(url: string): boolean;
   /** The iframe `src` for `url`, or null when it can't be parsed. */
   toEmbedUrl(url: string): string | null;
+  /** A poster/thumbnail image URL DERIVED from `url` (no network fetch), or
+   *  null when the provider has none. Used as the editor poster (before the
+   *  iframe mounts) and as the export/static-capture fallback. */
+  toThumbnailUrl(url: string): string | null;
 }
 
 /** Parse an 11-char YouTube video id from any common URL form:
@@ -43,6 +47,11 @@ const YOUTUBE: EmbedProvider = {
     // Privacy-enhanced embed domain (no cookies until the user plays).
     return id !== null ? `https://www.youtube-nocookie.com/embed/${id}` : null;
   },
+  toThumbnailUrl(url) {
+    const id = youtubeVideoId(url);
+    // Derived poster — `hqdefault` exists for every video (no API key/fetch).
+    return id !== null ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  },
 };
 
 /** Provider SSOT — ordered; first `match` wins. Add a provider = one entry. */
@@ -51,16 +60,20 @@ export const EMBED_PROVIDERS: ReadonlyArray<EmbedProvider> = [YOUTUBE];
 export interface ResolvedEmbed {
   readonly provider: EmbedProvider;
   readonly embedUrl: string;
+  /** Derived poster image, or null when the provider has none. */
+  readonly thumbnailUrl: string | null;
 }
 
-/** Resolve a pasted URL to its provider + iframe src, or null when no provider
- *  recognizes it or it can't be parsed into a concrete embed. */
+/** Resolve a pasted URL to its provider + iframe src (+ poster), or null when
+ *  no provider recognizes it or it can't be parsed into a concrete embed. */
 export function resolveEmbed(url: string): ResolvedEmbed | null {
   if (url.trim() === "") return null;
   for (const provider of EMBED_PROVIDERS) {
     if (!provider.match(url)) continue;
     const embedUrl = provider.toEmbedUrl(url);
-    if (embedUrl !== null) return { provider, embedUrl };
+    if (embedUrl !== null) {
+      return { provider, embedUrl, thumbnailUrl: provider.toThumbnailUrl(url) };
+    }
   }
   return null;
 }

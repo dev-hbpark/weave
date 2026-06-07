@@ -30,6 +30,12 @@ describe("resolveEmbed (YouTube)", () => {
     );
   });
 
+  it("derives a thumbnail poster from the video id (no fetch)", () => {
+    expect(resolveEmbed("https://youtu.be/dQw4w9WgXcQ")?.thumbnailUrl).toBe(
+      "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+    );
+  });
+
   it("returns null for empty / non-YouTube / unparseable URLs", () => {
     expect(resolveEmbed("")).toBeNull();
     expect(resolveEmbed("   ")).toBeNull();

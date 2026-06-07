@@ -4,11 +4,14 @@
 // allow-listed provider (YouTube → youtube-nocookie). Unrecognized / empty URL →
 // MediaPlaceholder.
 //
-// Interactivity (WI-139 — "play only after selecting"): in the EDITOR the iframe
-// is pointer-inert UNTIL the embed is selected — so the FIRST click selects the
-// frame (the press reaches the frame, not the iframe) and a SECOND click, now
-// that it's interactive, plays. In PRESENT / read-only (`onUpdate` undefined)
-// it is always interactive so the viewer can play immediately.
+// Interactivity (WI-139 — "play only after selecting"): the iframe mounts ONLY
+// when interactive — in PRESENT / read-only (`onUpdate` undefined) always, and
+// in the EDITOR only while the embed is SELECTED. Otherwise we show a derived
+// THUMBNAIL poster (img + play badge), which (a) is lighter than loading the
+// iframe for every unselected embed, (b) lets the first click reach the frame to
+// select it, and (c) is the export / static-capture fallback (an <img> is
+// captured; an iframe is not). First click selects → iframe mounts → next click
+// plays.
 
 import type { JSX } from "react";
 import { resolveEmbed } from "../embed/providers.js";
@@ -39,34 +42,61 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
   // so the first click selects (iframe inert) and the next click plays.
   const interactive = onUpdate === undefined || selectedIds.has(String(item.id));
 
+  // Three states: unrecognized URL → placeholder; recognized + interactive →
+  // live iframe (plays); recognized + inert → thumbnail poster.
+  const body =
+    resolved === null ? (
+      <MediaPlaceholder
+        testId="embed-placeholder"
+        alt={
+          (a.url ?? "").trim() !== "" ? "임베드할 수 없는 URL이에요" : "YouTube URL을 붙여넣으세요"
+        }
+        glyph={PLAY_GLYPH}
+      />
+    ) : interactive ? (
+      <iframe
+        title={a.title ?? "Embedded video"}
+        src={resolved.embedUrl}
+        data-testid="embed-iframe"
+        className="absolute inset-0 h-full w-full"
+        style={{ border: 0 }}
+        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen={a.allowFullscreen ?? true}
+        referrerPolicy="strict-origin-when-cross-origin"
+      />
+    ) : resolved.thumbnailUrl !== null ? (
+      // Decorative poster — pointer-inert so the first click selects the frame.
+      // An <img> (not an iframe) is captured by export / static rendering.
+      <div
+        className="absolute inset-0"
+        style={{ pointerEvents: "none" }}
+        data-testid="embed-poster"
+      >
+        <img
+          src={resolved.thumbnailUrl}
+          alt={a.title ?? "YouTube 동영상 미리보기"}
+          draggable={false}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <span className="absolute inset-0 flex items-center justify-center" aria-hidden>
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm">
+            <svg viewBox="0 0 24 24" width={22} height={22} fill="#fff" aria-hidden>
+              <path d="M9 7.5l8 4.5-8 4.5z" />
+            </svg>
+          </span>
+        </span>
+      </div>
+    ) : (
+      <MediaPlaceholder testId="embed-placeholder" alt={a.title ?? "동영상"} glyph={PLAY_GLYPH} />
+    );
+
   return (
     <div
       className="relative h-full w-full overflow-hidden"
       style={{ opacity }}
       data-testid="block-embed-inner"
     >
-      {resolved !== null ? (
-        <iframe
-          title={a.title ?? "Embedded video"}
-          src={resolved.embedUrl}
-          data-testid="embed-iframe"
-          className="absolute inset-0 h-full w-full"
-          style={{ border: 0, pointerEvents: interactive ? "auto" : "none" }}
-          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen={a.allowFullscreen ?? true}
-          referrerPolicy="strict-origin-when-cross-origin"
-        />
-      ) : (
-        <MediaPlaceholder
-          testId="embed-placeholder"
-          alt={
-            (a.url ?? "").trim() !== ""
-              ? "임베드할 수 없는 URL이에요"
-              : "YouTube URL을 붙여넣으세요"
-          }
-          glyph={PLAY_GLYPH}
-        />
-      )}
+      {body}
     </div>
   );
 }
