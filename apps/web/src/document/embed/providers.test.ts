@@ -84,3 +84,26 @@ describe("resolveEmbed (Vimeo — Rule-6 provider extensibility)", () => {
     expect(resolveEmbed("https://vimeo.com/76979871")?.thumbnailUrl).toBeNull();
   });
 });
+
+describe("resolveEmbed (Loom — another registry entry)", () => {
+  it("parses loom.com/share/<32hex> → the loom embed", () => {
+    const id = "a".repeat(32);
+    const r = resolveEmbed(`https://www.loom.com/share/${id}?t=1`);
+    expect(r?.provider.id).toBe("loom");
+    expect(r?.embedUrl).toBe(`https://www.loom.com/embed/${id}`);
+    expect(r?.thumbnailUrl).toBeNull();
+  });
+});
+
+describe("provider oEmbed endpoints", () => {
+  it("each provider builds an oEmbed endpoint for its recognized url", () => {
+    const yt = EMBED_PROVIDERS.find((p) => p.id === "youtube");
+    const vm = EMBED_PROVIDERS.find((p) => p.id === "vimeo");
+    expect(yt?.oembedEndpoint("https://youtu.be/dQw4w9WgXcQ")).toContain("youtube.com/oembed?url=");
+    expect(vm?.oembedEndpoint("https://vimeo.com/76979871")).toContain(
+      "vimeo.com/api/oembed.json?url=",
+    );
+    // No endpoint for a url the provider doesn't recognize.
+    expect(yt?.oembedEndpoint("https://vimeo.com/76979871")).toBeNull();
+  });
+});

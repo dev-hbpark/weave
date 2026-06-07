@@ -14,6 +14,7 @@
 // plays.
 
 import { type JSX, useState } from "react";
+import { useEmbedMeta } from "../embed/oembed.js";
 import { resolveEmbed } from "../embed/providers.js";
 import { useSelection } from "../interactions/selection-context.js";
 import type { AgoItem, EmbedAttrs } from "../types.js";
@@ -41,11 +42,18 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
   // Present/read-only → always playable. Editor → playable ONLY while selected,
   // so the first click selects (iframe inert) and the next click plays.
   const interactive = onUpdate === undefined || selectedIds.has(String(item.id));
+  // oEmbed (title + poster) is fetched ONLY when the provider has no offline
+  // poster (Vimeo / Loom) — YouTube already derives both, so it never fetches.
+  const meta = useEmbedMeta(a.url ?? "", resolved !== null && resolved.thumbnailUrl === null);
+  const title = a.title ?? meta?.title;
   // Holds the thumbnail URL that failed to load (404 / offline) → fall back to
   // the placeholder. Keyed by URL so a new video re-attempts its own poster.
   const [brokenPoster, setBrokenPoster] = useState<string | null>(null);
+  // Poster: derived (YouTube) ?? oEmbed (Vimeo/Loom), dropped if it failed to load.
+  const candidatePoster =
+    resolved !== null ? (resolved.thumbnailUrl ?? meta?.thumbnailUrl ?? null) : null;
   const posterUrl =
-    resolved !== null && resolved.thumbnailUrl !== brokenPoster ? resolved.thumbnailUrl : null;
+    candidatePoster !== null && candidatePoster !== brokenPoster ? candidatePoster : null;
 
   // Three states: unrecognized URL → placeholder; recognized + interactive →
   // live iframe (plays); recognized + inert → thumbnail poster.
@@ -60,7 +68,7 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
       />
     ) : interactive ? (
       <iframe
-        title={a.title ?? "Embedded video"}
+        title={title ?? "Embedded video"}
         src={resolved.embedUrl}
         data-testid="embed-iframe"
         className="absolute inset-0 h-full w-full"
@@ -79,7 +87,7 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
       >
         <img
           src={posterUrl}
-          alt={a.title ?? "동영상 미리보기"}
+          alt={title ?? "동영상 미리보기"}
           draggable={false}
           onError={() => setBrokenPoster(posterUrl)}
           className="absolute inset-0 h-full w-full object-cover"
@@ -93,7 +101,7 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
         </span>
       </div>
     ) : (
-      <MediaPlaceholder testId="embed-placeholder" alt={a.title ?? "동영상"} glyph={PLAY_GLYPH} />
+      <MediaPlaceholder testId="embed-placeholder" alt={title ?? "동영상"} glyph={PLAY_GLYPH} />
     );
 
   return (

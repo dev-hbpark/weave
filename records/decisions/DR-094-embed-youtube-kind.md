@@ -43,10 +43,16 @@ YouTube 썸네일은 video id에서 **결정적으로 파생**(`img.youtube.com/
 - **썸네일 onError 폴백**: 포스터 이미지 로드 실패(404/오프라인) 시 placeholder로(`brokenPoster` 상태, URL별 키).
 - 에이전트 capability + 섹션 안내에 Vimeo 반영.
 
+## 갱신 (2026-06-07) — oEmbed 메타(제목/썸네일) + Loom provider
+
+- **oEmbed lazy fetch**(`embed/oembed.ts`): provider에 `oembedEndpoint(url)` 추가(YouTube/Vimeo/Loom). `fetchEmbedMeta`가 CORS oEmbed에서 `title`+`thumbnail_url` 파싱(실패 시 null, 무해). `useEmbedMeta(url, enabled)` 훅이 **derived 포스터가 없을 때만(Vimeo/Loom) lazy fetch** → YouTube는 fetch 안 함(오프라인 포스터+제목 폴백). 결과: **Vimeo/Loom도 포스터**를 얻고, 모든 임베드가 **실제 제목**(iframe title / img alt → 접근성)을 가짐. iframe 동작엔 절대 불필요(순수 향상).
+- **Loom provider 추가**(엔트리 1개): `loom.com/share/<32hex>` → `loom.com/embed/<id>`.
+- 상태(메타)는 **컴포넌트 state**(문서 미변경) — 히스토리/직렬화 오염 없음. 단점: 비영속(열 때마다 refetch) → 영속 title은 후속.
+
 ## 후속
 
-- oEmbed fetch(제목 메타, graceful fallback), Loom 등 추가 provider, 자동재생/뮤트 옵션.
+- 영속 title(export/오프라인용), 자동재생/뮤트 옵션, 추가 provider.
 
 ## 검증
 
-786 단위 테스트(provider 9 + kind 등록 4 + corner-radius embed 등), typecheck·빌드·Biome 클린. 라이브(iframe 재생/썸네일/추가 UX)는 샌드박스 네트워크 제약으로 별도 환경.
+793 단위 테스트(provider/oEmbed/kind 등록/corner-radius), typecheck·빌드·Biome 클린. 라이브(실제 oEmbed fetch/iframe 재생)는 샌드박스 네트워크 제약으로 별도 환경(파싱·엔드포인트·graceful-fail은 모킹 fetch로 단위 검증).

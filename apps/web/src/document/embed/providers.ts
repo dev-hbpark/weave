@@ -19,6 +19,10 @@ export interface EmbedProvider {
    *  null when the provider has none. Used as the editor poster (before the
    *  iframe mounts) and as the export/static-capture fallback. */
   toThumbnailUrl(url: string): string | null;
+  /** The provider's oEmbed endpoint for `url` (CORS-enabled JSON: title +
+   *  thumbnail), or null. Fetched lazily by `oembed.ts` for accessibility /
+   *  a Vimeo poster — never required for the iframe to work. */
+  oembedEndpoint(url: string): string | null;
 }
 
 /** Parse an 11-char YouTube video id from any common URL form:
@@ -72,6 +76,11 @@ const YOUTUBE: EmbedProvider = {
     // Derived poster — `hqdefault` exists for every video (no API key/fetch).
     return id !== null ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
   },
+  oembedEndpoint(url) {
+    return youtubeVideoId(url) !== null
+      ? `https://www.youtube.com/oembed?url=${encodeURIComponent(url.trim())}&format=json`
+      : null;
+  },
 };
 
 /** Numeric Vimeo id from `vimeo.com/<id>` or `player.vimeo.com/video/<id>`. */
@@ -91,14 +100,45 @@ const VIMEO: EmbedProvider = {
     return id !== null ? `https://player.vimeo.com/video/${id}` : null;
   },
   // Vimeo posters require an oEmbed/API call (no predictable URL) → none here;
-  // the renderer shows a placeholder while inert and the iframe when interactive.
+  // the oEmbed fetch (oembed.ts) supplies the poster + title.
   toThumbnailUrl() {
     return null;
+  },
+  oembedEndpoint(url) {
+    return vimeoVideoId(url) !== null
+      ? `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url.trim())}`
+      : null;
+  },
+};
+
+/** Loom share id (32 hex chars) from `loom.com/share/<id>`. */
+function loomVideoId(url: string): string | null {
+  const m = url.match(/loom\.com\/(?:share|embed)\/([0-9a-f]{32})(?:[?&#/]|$)/i);
+  return m?.[1] ?? null;
+}
+
+const LOOM: EmbedProvider = {
+  id: "loom",
+  label: "Loom",
+  match(url) {
+    return /loom\.com/i.test(url);
+  },
+  toEmbedUrl(url) {
+    const id = loomVideoId(url);
+    return id !== null ? `https://www.loom.com/embed/${id}` : null;
+  },
+  toThumbnailUrl() {
+    return null; // oEmbed supplies the poster.
+  },
+  oembedEndpoint(url) {
+    return loomVideoId(url) !== null
+      ? `https://www.loom.com/v1/oembed?url=${encodeURIComponent(url.trim())}`
+      : null;
   },
 };
 
 /** Provider SSOT — ordered; first `match` wins. Add a provider = one entry. */
-export const EMBED_PROVIDERS: ReadonlyArray<EmbedProvider> = [YOUTUBE, VIMEO];
+export const EMBED_PROVIDERS: ReadonlyArray<EmbedProvider> = [YOUTUBE, VIMEO, LOOM];
 
 export interface ResolvedEmbed {
   readonly provider: EmbedProvider;
