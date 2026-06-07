@@ -37,7 +37,7 @@ const SPRITES: Readonly<Record<AkuMood, SpriteSpec>> = {
   finalizing: { src: "/aku/sprites/puff.png", frames: 6, fps: 9, looping: true }, // 정리 중 (puff)
   celebrating: { src: "/aku/sprites/idea.png", frames: 6, fps: 10, looping: true },
   confused: { src: "/aku/sprites/thinking.png", frames: 6, fps: 8, looping: true }, // 오류 (?)
-  sleeping: { src: "/aku/sprites/idle.png", frames: 6, fps: 3, looping: true }, // 졸음
+  sleeping: { src: "/aku/sprites/sleep.png", frames: 6, fps: 3, looping: true }, // 졸음 (수면 마스크+침대 전용 시트, WI-134)
   looking: { src: "/aku/sprites/move-right.png", frames: 6, fps: 9, looping: true }, // 선택 주목
   dragging: { src: "/aku/sprites/drag.png", frames: 6, fps: 12, looping: true }, // 드래그 중(버둥)
 };

@@ -11,21 +11,21 @@
 | 파일 | 용도 |
 |---|---|
 | `mascot.png` (1131×1391, **투명 PNG**) | **정적 히어로** — `AkuMascot`(패널 헤더 · 코치마크 · 팁 버블 · CSS 폴백 런처) |
-| `sprites/{idle,thinking,idea,move-left,move-right,drag,spell-right,spell-left,puff}.png` (각 **3120×724 = 6프레임 스트립**, 프레임 **520×724**, **투명 PNG**) | **상태별 애니메이션** — 엔진(`@agocraft/sprite-engine`)이 mood→시트로 재생 |
+| `sprites/{idle,thinking,idea,move-left,move-right,drag,spell-right,spell-left,puff,paint,sleep}.png` (각 **3120×724 = 6프레임 스트립**, 프레임 **520×724**, **투명 PNG**) | **상태별 애니메이션** — 엔진(`@agocraft/sprite-engine`)이 mood→시트로 재생 |
 
 스프라이트 ↔ 에이전트 동작 매핑 (`gpu-sprite-renderer.tsx` `SPRITES`):
 `idle`(대기)·`move-left`=connecting(연결 중)/이동(왼쪽)·`thinking`(생각 중).
 **작업 종류별(WI-117)**: `spell-right`=adding(아이템 추가 — 캡션 "추가")·`spell-left`=updating(아이템 수정 —
 캡션 "수정")·`puff`=finalizing(정리 중 — 캡션 "정리")·`idea`=working(그 외 편집: 변경/삭제/설정)
 **및** celebrating(완료 ✨). `move-right`=looking(선택 주목)/이동(오른쪽).
-`drag`=dragging(런처 드래그 중 버둥, WI-108 · 시트 교체 WI-111로 520×724 통일). confused→thinking, **sleeping→idle 재사용**(전용
-수면 시트 도착 시 `gpu-sprite-renderer` 한 줄 교체). 프레임 종횡비 ≈0.72라 렌더 박스도 그에 맞춤
+`drag`=dragging(런처 드래그 중 버둥, WI-108 · 시트 교체 WI-111로 520×724 통일). confused→thinking,
+**sleeping=`sleep.png`**(수면 마스크+침대 전용 시트, WI-134 — 기존 idle 재사용에서 교체). 프레임 종횡비 ≈0.72라 렌더 박스도 그에 맞춤
 (런처 **86×120**) + 엔진 **contain-fit**(agocraft DR-045 / canvas2d+worker 양쪽).
 
 **활동 기반 단계(WI-111)**: 런처 아쿠는 사용자의 실제 편집(포인터/키보드)에 따라
-editing(home idle) → roaming(랜덤 이동) → sleeping(1분 후 **화면 정중앙으로 이동 후** doze, 현재
-idle 시트) 으로 전환하며, 편집 재개 시 home 복귀. 단계/활동 감시는 `useAkuRoam`가 소유하고
-`sleeping`은 `useAkuExpression`에 주입(단일 출처). 수면 mood는 idle.png 재사용.
+editing(home idle) → roaming(랜덤 이동) → sleeping(1분 후 **화면 정중앙으로 이동 후** doze,
+**`sleep.png`** 전용 시트) 으로 전환하며, 편집 재개 시 home 복귀. 단계/활동 감시는 `useAkuRoam`가
+소유하고 `sleeping`은 `useAkuExpression`에 주입(단일 출처).
 
 **편집 중 spotlight(WI-110 → WI-115)**: 작업(streaming) 중 화면을 블러 + **밝기↓**(어둡게)
 처리하고, 아쿠 주변 원은 **밝게**(별도 bright 레이어 `backdrop brightness↑` + 글로우) + 선명.
