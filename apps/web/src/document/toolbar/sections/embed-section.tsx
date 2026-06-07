@@ -14,6 +14,10 @@ export const EmbedSection: ToolbarSectionComponent = ({ editor, items, ids }) =>
     items,
     (it) => (it.attrs as unknown as EmbedAttrs).allowFullscreen ?? true,
   );
+  const autoplay = sharedValue<boolean>(
+    items,
+    (it) => (it.attrs as unknown as EmbedAttrs).autoplay ?? false,
+  );
 
   const setAttr = (patch: Partial<EmbedAttrs>) =>
     updateAll(editor, ids, (prev) => ({
@@ -67,6 +71,14 @@ export const EmbedSection: ToolbarSectionComponent = ({ editor, items, ids }) =>
             aria-label="전체화면 허용"
           />
           <MixedBadge visible={isMixed(allowFullscreen)} />
+        </Bar.Field>
+        <Bar.Field label="자동재생 (프레젠트)">
+          <Switch
+            checked={isMixed(autoplay) ? false : autoplay}
+            onCheckedChange={(v) => setAttr({ autoplay: v })}
+            aria-label="프레젠트 모드 자동재생 (음소거)"
+          />
+          <MixedBadge visible={isMixed(autoplay)} />
         </Bar.Field>
       </Bar.More>
     </>

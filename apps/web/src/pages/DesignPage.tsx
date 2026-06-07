@@ -154,6 +154,7 @@ import {
   migrateEncoding,
 } from "../document/domains/chart/chart-model.js";
 import { useChartLabelSync } from "../document/domains/chart/use-chart-label-sync.js";
+import { useEmbedTitleSync } from "../document/embed/use-embed-title-sync.js";
 import { RotationSnapLayer } from "../document/selection-chrome/RotationSnapLayer.js";
 import { SnapFeedbackLayer } from "../document/selection-chrome/SnapFeedbackLayer.js";
 import { removeVertexAndRefit } from "../document/selection-chrome/vertex-ops.js";
@@ -916,6 +917,9 @@ function DesignPageBody() {
   // WI-078 — keep each chart's category labels materialized as real text Items.
   // Design px size feeds pie's circle-aspect label placement.
   useChartLabelSync(reconcileDerived, docInAgocraft, design.width, design.height);
+  // WI-139 — persist fetched oEmbed titles onto embed items (derived projection,
+  // bypasses history; fetched once per url, then serialized).
+  useEmbedTitleSync(reconcileDerived, docInAgocraft);
 
   // WI-078 — inline-editing a chart LABEL text Item must rename the dataset
   // category (the label's text is derived from data). We intercept the

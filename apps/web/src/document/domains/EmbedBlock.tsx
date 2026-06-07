@@ -15,7 +15,7 @@
 
 import { type JSX, useState } from "react";
 import { useEmbedMeta } from "../embed/oembed.js";
-import { resolveEmbed } from "../embed/providers.js";
+import { appendQuery, resolveEmbed } from "../embed/providers.js";
 import { useSelection } from "../interactions/selection-context.js";
 import type { AgoItem, EmbedAttrs } from "../types.js";
 import { MediaPlaceholder } from "./MediaPlaceholder.js";
@@ -54,6 +54,12 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
     resolved !== null ? (resolved.thumbnailUrl ?? meta?.thumbnailUrl ?? null) : null;
   const posterUrl =
     candidatePoster !== null && candidatePoster !== brokenPoster ? candidatePoster : null;
+  // Auto-play (muted) only in PRESENT mode — never while editing. Provider owns
+  // its param names (mute vs muted).
+  const iframeSrc =
+    resolved !== null && onUpdate === undefined && a.autoplay === true
+      ? appendQuery(resolved.embedUrl, resolved.provider.autoplayParams())
+      : (resolved?.embedUrl ?? "");
 
   // Three states: unrecognized URL → placeholder; recognized + interactive →
   // live iframe (plays); recognized + inert → thumbnail poster.
@@ -69,11 +75,11 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
     ) : interactive ? (
       <iframe
         title={title ?? "Embedded video"}
-        src={resolved.embedUrl}
+        src={iframeSrc}
         data-testid="embed-iframe"
         className="absolute inset-0 h-full w-full"
         style={{ border: 0 }}
-        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen={a.allowFullscreen ?? true}
         referrerPolicy="strict-origin-when-cross-origin"
       />

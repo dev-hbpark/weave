@@ -23,6 +23,16 @@ export interface EmbedProvider {
    *  thumbnail), or null. Fetched lazily by `oembed.ts` for accessibility /
    *  a Vimeo poster — never required for the iframe to work. */
   oembedEndpoint(url: string): string | null;
+  /** The query fragment (no leading `?`/`&`) that auto-plays MUTED for this
+   *  provider — the param names differ (YouTube `mute`, Vimeo `muted`). Applied
+   *  by the renderer in PRESENT mode only. */
+  autoplayParams(): string;
+}
+
+/** Append a query fragment to a URL, choosing `?` vs `&` from the existing one. */
+export function appendQuery(url: string, query: string): string {
+  if (query === "") return url;
+  return `${url}${url.includes("?") ? "&" : "?"}${query}`;
 }
 
 /** Parse an 11-char YouTube video id from any common URL form:
@@ -81,6 +91,9 @@ const YOUTUBE: EmbedProvider = {
       ? `https://www.youtube.com/oembed?url=${encodeURIComponent(url.trim())}&format=json`
       : null;
   },
+  autoplayParams() {
+    return "autoplay=1&mute=1";
+  },
 };
 
 /** Numeric Vimeo id from `vimeo.com/<id>` or `player.vimeo.com/video/<id>`. */
@@ -109,6 +122,9 @@ const VIMEO: EmbedProvider = {
       ? `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url.trim())}`
       : null;
   },
+  autoplayParams() {
+    return "autoplay=1&muted=1";
+  },
 };
 
 /** Loom share id (32 hex chars) from `loom.com/share/<id>`. */
@@ -134,6 +150,9 @@ const LOOM: EmbedProvider = {
     return loomVideoId(url) !== null
       ? `https://www.loom.com/v1/oembed?url=${encodeURIComponent(url.trim())}`
       : null;
+  },
+  autoplayParams() {
+    return "autoplay=1";
   },
 };
 

@@ -267,6 +267,8 @@ export interface EmbedAttrs {
   readonly title?: string;
   /** Allow the iframe to go fullscreen (default true). */
   readonly allowFullscreen?: boolean;
+  /** Auto-play (muted) in PRESENT mode only — never in the editor. Default off. */
+  readonly autoplay?: boolean;
   readonly opacity?: number;
 }
 

@@ -1,7 +1,7 @@
 // WI-139 — embed provider URL parsing contracts.
 
 import { describe, expect, it } from "vitest";
-import { EMBED_PROVIDERS, resolveEmbed } from "./providers.js";
+import { appendQuery, EMBED_PROVIDERS, resolveEmbed } from "./providers.js";
 
 const EMBED = "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ";
 
@@ -105,5 +105,22 @@ describe("provider oEmbed endpoints", () => {
     );
     // No endpoint for a url the provider doesn't recognize.
     expect(yt?.oembedEndpoint("https://vimeo.com/76979871")).toBeNull();
+  });
+});
+
+describe("autoplay params + appendQuery", () => {
+  it("each provider mutes when it autoplays (mute vs muted)", () => {
+    const byId = (id: string) => EMBED_PROVIDERS.find((p) => p.id === id);
+    expect(byId("youtube")?.autoplayParams()).toBe("autoplay=1&mute=1");
+    expect(byId("vimeo")?.autoplayParams()).toBe("autoplay=1&muted=1");
+    expect(byId("loom")?.autoplayParams()).toBe("autoplay=1");
+  });
+
+  it("appendQuery picks ? or & based on the existing url", () => {
+    expect(appendQuery("https://x/embed/i", "autoplay=1")).toBe("https://x/embed/i?autoplay=1");
+    expect(appendQuery("https://x/embed/i?start=90", "autoplay=1&mute=1")).toBe(
+      "https://x/embed/i?start=90&autoplay=1&mute=1",
+    );
+    expect(appendQuery("https://x/embed/i", "")).toBe("https://x/embed/i");
   });
 });
