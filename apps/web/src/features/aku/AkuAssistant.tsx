@@ -247,11 +247,12 @@ export function AkuAssistant({
       <AkuInteractionLock locked={status === "streaming"} spotlight={status === "streaming"} />
       {/* The roaming launcher Aku. Shown when the panel is CLOSED and — WI-127 —
           ALSO while the agent is streaming even if the panel is open, so starting
-          an edit visibly summons Aku (it flies to the edited frame). Rendered BEFORE
-          the panel so the panel stays on top where they overlap (Aku roams the
-          canvas, not the panel surface). The first-run coachmark anchors only when
-          closed — showCoachmark already requires !open. */}
-      {!open || status === "streaming" ? (
+          an edit visibly summons Aku (it flies to the edited frame). WI-137: ALSO
+          kept through the turn-end celebration window, so the finale plays before Aku
+          disappears (otherwise idle+panel-open unmounts it mid-celebration). Rendered
+          BEFORE the panel so the panel stays on top where they overlap. The first-run
+          coachmark anchors only when closed — showCoachmark already requires !open. */}
+      {!open || status === "streaming" || celebrating ? (
         showCoachmark ? (
           // First-run nudge to drive discovery — one-shot, anchored to the launcher
           // (persisted under weave.coachmark.aku-intro; silent on later visits).
