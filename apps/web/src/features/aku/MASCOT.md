@@ -11,13 +11,15 @@
 | 파일 | 용도 |
 |---|---|
 | `mascot.png` (1131×1391, **투명 PNG**) | **정적 히어로** — `AkuMascot`(패널 헤더 · 코치마크 · 팁 버블 · CSS 폴백 런처) |
-| `sprites/{idle,thinking,idea,move-left,move-right,drag,spell-right,spell-left,puff,paint,sleep}.png` (각 **3120×724 = 6프레임 스트립**, 프레임 **520×724**, **투명 PNG**) | **상태별 애니메이션** — 엔진(`@agocraft/sprite-engine`)이 mood→시트로 재생 |
+| `sprites/{idle,thinking,idea,move-left,move-right,drag,spell-right,spell-left,puff,paint,sleep,celebrate}.png` (각 **3120×724 = 6프레임 스트립**, 프레임 **520×724**, **투명 PNG**) | **상태별 애니메이션** — 엔진(`@agocraft/sprite-engine`)이 mood→시트로 재생 |
 
 스프라이트 ↔ 에이전트 동작 매핑 (`gpu-sprite-renderer.tsx` `SPRITES`):
 `idle`(대기)·`move-left`=connecting(연결 중)/이동(왼쪽)·`thinking`(생각 중).
 **작업 종류별(WI-117)**: `spell-right`=adding(아이템 추가 — 캡션 "추가")·`spell-left`=updating(아이템 수정 —
-캡션 "수정")·`puff`=finalizing(정리 중 — 캡션 "정리")·`idea`=working(그 외 편집: 변경/삭제/설정)
-**및** celebrating(완료 ✨). `move-right`=looking(선택 주목)/이동(오른쪽).
+캡션 "수정")·`puff`=finalizing(정리 중 — 캡션 "정리")·`idea`=working(그 외 편집: 변경/삭제/설정).
+`move-right`=looking(선택 주목)/이동(오른쪽).
+**턴 종료 피날레(WI-135)**: `celebrate`=celebrating — 작업 최종 종료 시 화면 정중앙·2배 크기로
+짜잔~ tada 2루프 재생 후 idle 복귀(`AkuAssistant`가 celebrate 윈도우에 위치/크기 override).
 `drag`=dragging(런처 드래그 중 버둥, WI-108 · 시트 교체 WI-111로 520×724 통일). confused→thinking,
 **sleeping=`sleep.png`**(수면 마스크+침대 전용 시트, WI-134 — 기존 idle 재사용에서 교체). 프레임 종횡비 ≈0.72라 렌더 박스도 그에 맞춤
 (런처 **86×120**) + 엔진 **contain-fit**(agocraft DR-045 / canvas2d+worker 양쪽).

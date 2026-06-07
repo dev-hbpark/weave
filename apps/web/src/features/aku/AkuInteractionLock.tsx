@@ -8,7 +8,8 @@
 // all app chrome. Effects engage #root `inert` + the window keyboard/wheel guard;
 // everything reverses when `locked` goes false (status → idle), so it never traps.
 //
-// WI-110/WI-115 — `spotlight`: while the working Aku is centered (panel closed), a
+// WI-110/WI-115 — `spotlight`: while the working Aku is on the canvas (whether the
+// panel is open or closed — WI-127 keeps the launcher alive while streaming), a
 // circle around it stays sharp + BRIGHT while the rest is blurred + DARKENED:
 //   - DIM layer  — blur + brightness↓ + dark tint, masked to EXCLUDE the centre
 //     (masked-out pixels paint nothing → no blur/dim over Aku).
@@ -77,7 +78,7 @@ export function AkuInteractionLock({
         className="absolute inset-0 bg-[color:var(--bg)]/55 backdrop-blur-[3px] backdrop-brightness-[0.5]"
         style={spotlight ? { maskImage: DIM_MASK, WebkitMaskImage: DIM_MASK } : undefined}
       />
-      {/* BRIGHT — lift the Aku circle above normal (panel-closed spotlight only). */}
+      {/* BRIGHT — lift the Aku circle above normal (engaged whenever streaming). */}
       {spotlight ? (
         <div
           aria-hidden="true"

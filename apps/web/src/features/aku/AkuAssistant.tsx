@@ -194,23 +194,45 @@ export function AkuAssistant({
     sleeping: roam.sleeping,
   });
 
-  // Drag → drag-struggle sprite; travel → move-left/right; else the agent/idle mood
-  // (which already resolves to `sleeping` when the roam controller is dozing).
-  const spriteMood = roam.dragging
-    ? "dragging"
-    : roam.moving
-      ? roam.dir === "left"
-        ? "connecting"
-        : "looking"
-      : expression.mood;
+  // WI-135 — turn-end FINALE: the moment the agent's work fully settles, Aku plays the
+  // 짜잔~ tada at viewport centre, 2× size, for ~2 loops, then returns to idle. The
+  // `celebrating` mood (CELEBRATE_MS window) drives it; here we override position/size
+  // and pin the sprite so the home-glide locomotion doesn't steal the celebration.
+  const celebrating = expression.mood === "celebrating";
+  const celebrateStyle =
+    celebrating && typeof window !== "undefined"
+      ? {
+          left: Math.max(4, (window.innerWidth - 86) / 2),
+          top: Math.max(4, (window.innerHeight - 120) / 2),
+          transform: "scale(2)",
+          transformOrigin: "center" as const,
+          transition: "left 400ms ease-out, top 400ms ease-out, transform 400ms ease-out",
+        }
+      : null;
+
+  // Celebrate → tada; drag → struggle; travel → move-left/right; else the agent/idle
+  // mood (which already resolves to `sleeping` when the roam controller is dozing).
+  const spriteMood = celebrating
+    ? "celebrating"
+    : roam.dragging
+      ? "dragging"
+      : roam.moving
+        ? roam.dir === "left"
+          ? "connecting"
+          : "looking"
+        : expression.mood;
 
   // The single Aku: drag to move it (follows pointer), tap to open the panel,
   // auto-roams otherwise. `caption` = work말풍선 / idle tip.
   const launcherProps = {
-    style: { left: roam.x, top: roam.y, ...(roam.dragging ? { transition: "none" as const } : {}) },
+    style: celebrateStyle ?? {
+      left: roam.x,
+      top: roam.y,
+      ...(roam.dragging ? { transition: "none" as const } : {}),
+    },
     onPointerDown: roam.onPointerDown,
     mascot: gpuSpriteRenderer.render({ mood: spriteMood, intensity: expression.intensity }),
-    // work caption while streaming; a Zzz hint while dozing; idle tip otherwise.
+    // celebration 말풍선 while finishing; work caption while streaming; Zzz when dozing; else tip.
     caption: expression.caption ?? (roam.sleeping ? "Zzz… (눌러서 깨우기)" : tip),
   };
 
@@ -218,12 +240,11 @@ export function AkuAssistant({
   return createPortal(
     <>
       {/* WI-105: lock the app to the Aku surface while the agent streams.
-          WI-110: when the panel is closed, keep a clear circle around the
-          roaming launcher Aku so its live edit stays sharp inside the dim. */}
-      <AkuInteractionLock
-        locked={status === "streaming"}
-        spotlight={status === "streaming" && !open}
-      />
+          WI-110: keep a clear, BRIGHT circle around the roaming launcher Aku so
+          its live edit stays sharp inside the dim. The launcher renders while
+          streaming whether or not the panel is open (WI-127), so the spotlight
+          tracks it in both cases — it is gated on streaming alone, not on `!open`. */}
+      <AkuInteractionLock locked={status === "streaming"} spotlight={status === "streaming"} />
       {/* The roaming launcher Aku. Shown when the panel is CLOSED and — WI-127 —
           ALSO while the agent is streaming even if the panel is open, so starting
           an edit visibly summons Aku (it flies to the edited frame). Rendered BEFORE
@@ -244,8 +265,8 @@ export function AkuAssistant({
             onDismissed={() => setCoachmarkSeen(true)}
             anchor={<AkuLauncher {...launcherProps} />}
           >
-            배경 변경, 텍스트·슬라이드 추가 같은 편집을 대화로 처리해 드려요. 드래그로 옮기고 모서리로
-            크기를 바꿀 수 있어요.
+            배경 변경, 텍스트·슬라이드 추가 같은 편집을 대화로 처리해 드려요. 드래그로 옮기고
+            모서리로 크기를 바꿀 수 있어요.
           </OnboardingCoachmark>
         ) : (
           <AkuLauncher {...launcherProps} />

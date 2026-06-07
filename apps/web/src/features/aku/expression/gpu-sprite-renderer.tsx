@@ -35,7 +35,7 @@ const SPRITES: Readonly<Record<AkuMood, SpriteSpec>> = {
   // 1s/loop so the roam wander's 2-loop (2000ms) rest-play stays aligned with the casts.
   painting: { src: "/aku/sprites/paint.png", frames: 6, fps: 6, looping: true }, // 편집 (paint)
   finalizing: { src: "/aku/sprites/puff.png", frames: 6, fps: 9, looping: true }, // 정리 중 (puff)
-  celebrating: { src: "/aku/sprites/idea.png", frames: 6, fps: 10, looping: true },
+  celebrating: { src: "/aku/sprites/celebrate.png", frames: 6, fps: 6, looping: true }, // 완료 짜잔~ (tada 전용 시트, 1초/루프, WI-135)
   confused: { src: "/aku/sprites/thinking.png", frames: 6, fps: 8, looping: true }, // 오류 (?)
   sleeping: { src: "/aku/sprites/sleep.png", frames: 6, fps: 3, looping: true }, // 졸음 (수면 마스크+침대 전용 시트, WI-134)
   looking: { src: "/aku/sprites/move-right.png", frames: 6, fps: 9, looping: true }, // 선택 주목

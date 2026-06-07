@@ -24,7 +24,9 @@ import { type AkuMood, moodIntensity, resolveAkuMood } from "./mood.js";
 import { pickPhrase } from "./phrases.js";
 import type { AkuExpressionState } from "./renderer-types.js";
 
-const CELEBRATE_MS = 1800;
+// Turn-end finale window (WI-135): a quick grow/glide to centre (~400ms) + 2 loops of
+// the 짜잔~ tada cast (6 frames @ 6fps = 1s/loop). Aku returns to idle when it ends.
+const CELEBRATE_MS = 2400;
 const LOOKING_MS = 1400;
 // Minimum time a per-operation edit mood stays on screen (WI-118). Agent tools
 // settle in milliseconds, so the edit casts (adding/updating/working/finalizing)
@@ -42,10 +44,11 @@ const EDIT_MOODS: ReadonlySet<AkuMood> = new Set([
   "finalizing",
   "painting",
 ]);
-// "idea situations" — generic edits (`working`) and the completion ✨ (`celebrating`)
-// used to all show idea.png. Operator: show one of the spell casts at RANDOM instead
-// (WI-119; WI-124 added puff as a third cast). One pick per entry, held stable.
-const IDEA_MOODS: ReadonlySet<AkuMood> = new Set(["working", "celebrating"]);
+// "idea situations" — generic edits (`working`) show one of the spell casts at RANDOM
+// instead of idle (WI-119; WI-124 added puff). `celebrating` was here too, but WI-135
+// gives the turn-end finale its own 짜잔~ tada sprite, so it's no longer remapped.
+// One pick per entry, held stable.
+const IDEA_MOODS: ReadonlySet<AkuMood> = new Set(["working"]);
 // The random spell-cast pool for idea situations: spell-right (adding), spell-left
 // (updating), puff (finalizing), paint brush (painting) — all play during edit
 // actions (WI-124, +paint WI-129).
