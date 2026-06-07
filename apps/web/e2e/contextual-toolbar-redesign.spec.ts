@@ -69,8 +69,8 @@ async function setLayoutProgrammatically(
 }
 
 test("DR-021 — frame layout Combobox switches the paradigm (absolute → flex)", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "DR021-combobox" });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await addFrame(page, "frame", {
     frame: { x: 0.2, y: 0.2, width: 0.5, height: 0.4, rotation: 0 },
   });
@@ -89,8 +89,8 @@ test("DR-021 — frame layout Combobox switches the paradigm (absolute → flex)
 });
 
 test("DR-021 — grid size picker matrix sets column × row counts", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "DR021-grid" });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await addFrame(page, "frame", {
     frame: { x: 0.2, y: 0.2, width: 0.6, height: 0.5, rotation: 0 },
   });
@@ -127,8 +127,8 @@ test("DR-021 — grid size picker matrix sets column × row counts", async ({ pa
 test("DR-021 — text More popover groups fields into accordions (정렬 collapsed until expanded)", async ({
   page,
 }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "DR021-accordion" });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-text").click();
 
@@ -140,22 +140,24 @@ test("DR-021 — text More popover groups fields into accordions (정렬 collaps
   const popover = page.getByTestId("toolbar-more-content");
   await expect(popover).toBeVisible();
 
-  // 타이포 group is open by default → its content (Family) is visible.
+  // 타이포 group is open by default → its content (글꼴 family) is visible.
+  // DR-design-016 — the Family control is a DropdownMenu (text-font-family-trigger).
   await expect(popover.getByTestId("text-typo-group-content")).toBeVisible();
-  await expect(popover.locator('[role="group"][aria-label="Family"]')).toBeVisible();
+  await expect(popover.getByTestId("text-font-family-trigger")).toBeVisible();
 
   // 정렬 group is collapsed by default → its content is not rendered.
   await expect(popover.getByTestId("text-align-group-content")).toHaveCount(0);
 
-  // Expand it → the 2D alignment pad appears.
+  // Expand it → the 가로/세로 align SegmentedControls appear (DR-design-016
+  // replaced the 2D pad with two compact icon SegmentedControls).
   await popover.getByTestId("text-align-group-trigger").click();
   await expect(popover.getByTestId("text-align-group-content")).toBeVisible();
-  await expect(popover.getByTestId("text-align-pad")).toBeVisible();
+  await expect(popover.getByLabel("양쪽")).toBeVisible(); // 가로 justify segment
 });
 
 test("DR-021 — AlignmentPad sets text align × valign in one control", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "DR021-text-pad" });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.getByTestId("toolbar-add").click();
   await page.getByTestId("add-text").click();
   const id = await page.evaluate(() => {
@@ -172,8 +174,12 @@ test("DR-021 — AlignmentPad sets text align × valign in one control", async (
   await page.getByTestId("toolbar-more-trigger").click();
   const popover = page.getByTestId("toolbar-more-content");
   await popover.getByTestId("text-align-group-trigger").click();
-  // Cell col=1 (center), row=2 (bottom) → textAlign center, valign BOTTOM.
-  await popover.getByTestId("text-align-pad-cell-1-2").click();
+  // DR-design-016 — set 가로=center + 세로=BOTTOM via the two SegmentedControls.
+  // SegmentedControl options are Radix items whose accessible name is the label;
+  // "가운데" appears in both 가로 + 세로, so .first() targets the 가로 control
+  // (it renders first); "아래" is unique to 세로.
+  await popover.getByLabel("가운데").first().click();
+  await popover.getByLabel("아래").click();
 
   const attrs = await page.evaluate((tid) => {
     type Ch = { id: unknown; attrs?: { textAlign?: string; textAlignVertical?: string } };
@@ -186,8 +192,8 @@ test("DR-021 — AlignmentPad sets text align × valign in one control", async (
 });
 
 test("DR-021 — flex AlignmentPad sets justify × align in one patch", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "DR021-flex-pad" });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await addFrame(page, "frame", {
     frame: { x: 0.2, y: 0.2, width: 0.6, height: 0.5, rotation: 0 },
   });

@@ -64,7 +64,9 @@ const TEXT_ATTRS_NOTE =
   "For text items: size via attrs.fontSizeSpec { kind:'ratio', value } (value = 0..1 of the height of the " +
   "text's IMMEDIATE parent frame — its containerId frame, NOT the slide/canvas; responsive, preferred) or " +
   "{ kind:'px', value }; NEVER put a fraction in the plain fontSize " +
-  "number (0.07 → sub-pixel text). Other WHOLE-BOX fields: text, fontFamily, fontWeight, fontStyle, color, " +
+  "number (0.07 → sub-pixel text). UNIT CHECK both ways: a ratio value is a 0..1 fraction (≈0.03–0.09), so " +
+  "for an ABSOLUTE size like 24px use { kind:'px', value:24 } — putting a px magnitude in a ratio " +
+  "({ kind:'ratio', value:24 }) renders parentHeight× too big (~25000px). Other WHOLE-BOX fields: text, fontFamily, fontWeight, fontStyle, color, " +
   "textAlignHorizontal/Vertical, lineHeightSpec, letterSpacing. " +
   "PARTIAL/PER-RANGE styling (부분편집 — color/bold/etc. on PART of the text, e.g. one emphasized word or " +
   "number): set attrs.textRuns = ordered [{ insert:'<segment>', attributes?:{ color?, fontSize?(px), " +
@@ -486,16 +488,21 @@ const LAYOUT_SPEC: Json = {
   type: "object",
   additionalProperties: true,
   description:
-    "A LayoutSpec, discriminated on `kind` (like CSS flexbox / grid). One of:\n" +
+    "A LayoutSpec, discriminated on `kind` (faithful CSS flexbox / grid). One of:\n" +
     "• { kind:'absolute-constraints' } — free placement; each child keeps its own frame (default).\n" +
-    "• { kind:'auto-flex', direction:'row'|'column', gap, justify, align, padding } — single-axis flow. " +
+    "• { kind:'auto-flex', direction:'row'|'column', gap, justify, align, padding, wrap?, alignContent? } — flexbox. " +
     "gap = child spacing as a 0..1 ratio of the frame's MAIN axis; " +
-    "justify (main-axis) = 'start'|'center'|'end'|'space-between'|'space-around'; " +
-    "align (cross-axis) = 'start'|'center'|'end'|'stretch' — 'stretch' makes a child FILL the cross axis; for a TEXT child in a COLUMN this is what BOUNDS its WIDTH so it WRAPS (use 'stretch' for text) and it does NOT change the text's height (the main axis); " +
+    "justify (main-axis) = 'start'|'center'|'end'|'space-between'|'space-around'|'space-evenly'; " +
+    "align (cross-axis) = 'start'|'center'|'end'|'stretch'|'baseline' — 'stretch' makes a child FILL the cross axis; for a TEXT child in a COLUMN this is what BOUNDS its WIDTH so it WRAPS (use 'stretch' for text) and it does NOT change the text's height (the main axis); 'baseline' behaves as 'start' here (frames have no text baseline); " +
+    "wrap = 'nowrap' (default) | 'wrap' — 'wrap' flows children that overflow the main axis onto NEW LINES (e.g. a tag cloud / chip row / responsive card row that should reflow instead of shrink); " +
+    "alignContent = 'start'|'center'|'end'|'stretch'|'space-between'|'space-around'|'space-evenly' — how the wrapped LINES are distributed on the cross axis (only when wrap='wrap' AND there are ≥2 lines; default 'start'); " +
     "padding = { top, right, bottom, left } each a 0..1 ratio of the frame (top/bottom of its height, left/right of its width).\n" +
-    "• { kind:'auto-grid', columns, rows, columnGap, rowGap, justify, align, padding } — track grid; the right layout for ANY table / matrix / comparison or card grid (NOT a stack of nested auto-flex rows). " +
-    "columns/rows = arrays of TrackSize, each { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the frame's track axis) | { kind:'auto' } (fit children — use for a row of auto-height text so the row follows the wrapped height); empty array = one full track. " +
-    "columnGap/rowGap = 0..1 ratios of the frame (columnGap of its width, rowGap of its height); justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch' — for a TEXT cell the column track bounds the WIDTH (text wraps to it) so leave justifySelf at the cell width, and keep an 'auto' row track so the HEIGHT follows content; 'stretch' fills the cell — handy for backgrounds/panels; padding as above.",
+    "• { kind:'auto-grid', columns, rows, columnGap, rowGap, justify, align, padding, columnsRepeat?, rowsRepeat?, autoFlow?, dense?, areas? } — track grid; the right layout for ANY table / matrix / comparison or card grid (NOT a stack of nested auto-flex rows). " +
+    "columns/rows = arrays of TrackSize: { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the track axis) | { kind:'auto' } (fit children — use for a row of auto-height text) | { kind:'minmax', min, max } (size between two bounds; each bound is { kind:'ratio', value } | { kind:'fr', value } | { kind:'auto' } — the responsive idiom is minmax({kind:'ratio',value:0.2}, {kind:'fr',value:1})); empty array = one full track. " +
+    "columnsRepeat/rowsRepeat = { mode:'auto-fill'|'auto-fit', track:TrackSize } — auto-generate as many copies of `track` as fit the axis (track needs a definite ratio base, e.g. {kind:'ratio',value:0.25}); when set it REPLACES that axis's columns/rows list (responsive card grids). " +
+    "autoFlow = 'row' (default) | 'column' and dense = true|false control auto-placement order / hole backfill for children without an explicit cell. " +
+    "areas = array of strings, one per row, each space-separated area names ('.' = empty cell) e.g. ['header header','nav main'] — name regions, then place a child with policy.area:'header'. " +
+    "columnGap/rowGap = 0..1 ratios of the frame; justify (column-axis) / align (row-axis) = 'start'|'center'|'end'|'stretch' — for a TEXT cell the column track bounds the WIDTH (text wraps to it) so keep an 'auto' row track so the HEIGHT follows content; 'stretch' fills the cell — handy for backgrounds/panels; padding as above.",
 };
 
 /** Child policy inside a parent's layout (LayoutChildPolicy). `kind` SHOULD
@@ -509,9 +516,10 @@ const LAYOUT_CHILD_POLICY: Json = {
     "• { kind:'absolute-constraints', anchor:{ horizontal, vertical } } — pin within the parent.\n" +
     "• { kind:'auto-flex', grow, shrink, basis, alignSelf? } — grow/shrink are flex weights (≥0): grow ≥1 makes the child EXPAND to fill free space on the main axis (use on FRAMES for equal-size regions, NOT on auto-height text — text keeps its content height); " +
     "basis = main-axis base size (a 0..1 ratio of the parent frame's main axis, or 'auto' = use the child's own size — the default for auto-height text); " +
-    "alignSelf overrides the parent's cross-axis align for this child ('start'|'center'|'end'|'stretch'; 'stretch' = fill the cross axis — for TEXT in a COLUMN this bounds its WIDTH so it wraps).\n" +
-    "• { kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf? } — " +
+    "alignSelf overrides the parent's cross-axis align for this child ('start'|'center'|'end'|'stretch'|'baseline'; 'stretch' = fill the cross axis — for TEXT in a COLUMN this bounds its WIDTH so it wraps).\n" +
+    "• { kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf?, area? } — " +
     "column/row are 1-based cell indices; columnSpan/rowSpan (≥1) merge cells; " +
+    "area = a name from the parent's `areas` template (e.g. 'header') — when set it PLACES the child into that named region, overriding column/row/span; " +
     "alignSelf (row-axis) / justifySelf (column-axis) override the parent align/justify for this child. The column track bounds a TEXT cell's WIDTH (text wraps to it); keep an 'auto' row track so its HEIGHT follows content — don't vertically stretch text. 'stretch' fully fills the cell — handy for backgrounds/panels.",
 };
 

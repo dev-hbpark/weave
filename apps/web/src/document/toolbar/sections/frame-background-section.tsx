@@ -109,8 +109,28 @@ const FLEX_DISTRIBUTION_OPTIONS = [
   { value: "none", label: "분포 없음" },
   { value: "space-between", label: "사이 띄움" },
   { value: "space-around", label: "둘레 띄움" },
+  { value: "space-evenly", label: "균등 띄움" },
 ] as const;
 type FlexDistribution = (typeof FLEX_DISTRIBUTION_OPTIONS)[number]["value"];
+
+/** justify values that the distribution Select owns (vs. the AlignmentPad). */
+const FLEX_DISTRIBUTION_VALUES = ["space-between", "space-around", "space-evenly"] as const;
+
+/** align-content distribution of wrapped lines (CSS align-content). */
+const FLEX_ALIGN_CONTENT_OPTIONS = [
+  { value: "start", label: "시작" },
+  { value: "center", label: "가운데" },
+  { value: "end", label: "끝" },
+  { value: "stretch", label: "늘이기" },
+  { value: "space-between", label: "사이 띄움" },
+  { value: "space-around", label: "둘레 띄움" },
+  { value: "space-evenly", label: "균등 띄움" },
+] as const;
+
+const GRID_AUTO_FLOW_OPTIONS = [
+  { value: "row", label: "행 우선" },
+  { value: "column", label: "열 우선" },
+] as const;
 
 const FLEX_DIRECTION_OPTIONS: ReadonlyArray<{ value: FlexDirection; label: string }> = [
   { value: "row", label: "Row" },
@@ -329,9 +349,10 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                       <div className="flex flex-1 flex-col gap-1.5">
                         <Select<FlexDistribution>
                           value={
-                            homogeneousSpec.justify === "space-between" ||
-                            homogeneousSpec.justify === "space-around"
-                              ? homogeneousSpec.justify
+                            (FLEX_DISTRIBUTION_VALUES as ReadonlyArray<string>).includes(
+                              homogeneousSpec.justify,
+                            )
+                              ? (homogeneousSpec.justify as FlexDistribution)
                               : "none"
                           }
                           onValueChange={(v) =>
@@ -355,6 +376,30 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                           늘이기
                         </span>
                       </div>
+                    </div>
+                  </Bar.Field>
+                  <Bar.Field label="줄바꿈">
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                        <Switch
+                          checked={(homogeneousSpec.wrap ?? "nowrap") === "wrap"}
+                          onCheckedChange={(on) =>
+                            onFlexFieldChange("wrap", on ? "wrap" : "nowrap")
+                          }
+                          aria-label="줄바꿈"
+                          data-testid="flex-wrap-toggle"
+                        />
+                        줄바꿈
+                      </span>
+                      {(homogeneousSpec.wrap ?? "nowrap") === "wrap" ? (
+                        <Select<AutoFlexSpec["alignContent"] & string>
+                          value={homogeneousSpec.alignContent ?? "start"}
+                          onValueChange={(v) => onFlexFieldChange("alignContent", v)}
+                          options={FLEX_ALIGN_CONTENT_OPTIONS}
+                          aria-label="줄 분포 (align-content)"
+                          triggerClassName="flex-1"
+                        />
+                      ) : null}
                     </div>
                   </Bar.Field>
                 </AccordionItem>
@@ -441,6 +486,27 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                           세로 늘이기
                         </span>
                       </div>
+                    </div>
+                  </Bar.Field>
+                  <Bar.Field label="자동 배치">
+                    <div className="flex items-center gap-2">
+                      <Select<"row" | "column">
+                        value={homogeneousSpec.autoFlow ?? "row"}
+                        onValueChange={(v) => onGridFieldChange("autoFlow", v)}
+                        options={GRID_AUTO_FLOW_OPTIONS}
+                        aria-label="자동 배치 방향"
+                        data-testid="grid-autoflow-select"
+                        triggerClassName="flex-1"
+                      />
+                      <span className="flex items-center gap-2 text-[11px] text-[color:var(--text-overlay-soft)]">
+                        <Switch
+                          checked={homogeneousSpec.dense === true}
+                          onCheckedChange={(on) => onGridFieldChange("dense", on)}
+                          aria-label="빈칸 채우기 (dense)"
+                          data-testid="grid-dense-toggle"
+                        />
+                        빈칸 채우기
+                      </span>
                     </div>
                   </Bar.Field>
                 </AccordionItem>
