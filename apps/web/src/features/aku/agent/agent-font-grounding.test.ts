@@ -111,4 +111,40 @@ describe("groundAgentFontSize", () => {
     const input = { itemIds: ["txt"], attrs: { fontSizeSpec: { kind: "px", value: 50 } } };
     expect(groundAgentFontSize("weave.items.update", input, makeDoc(), design)).toBe(input);
   });
+
+  // VERIFICATION (nested): grounding must divide by the IMMEDIATE parent's
+  // GEOMETRIC px height — exactly what the renderer (NestedFrame) uses for
+  // ParentFrameHeightContext (= product of frame.height up the chain × designH).
+  // So ratio × rendererParentH === intended px at any nesting depth.
+  it("deeply nested add: px ÷ inner-frame geometric height (root→outer .6→inner .5)", () => {
+    // root → outer(h 0.6) → inner(h 0.5). inner px h = 0.5 × 0.6 × 1000 = 300.
+    const inner = {
+      id: "inner",
+      kind: "frame",
+      attrs: { frame: frame(0, 0, 1, 0.5) },
+      children: [],
+    };
+    const outer = {
+      id: "outer",
+      kind: "frame",
+      attrs: { frame: frame(0, 0, 1, 0.6) },
+      children: [inner],
+    };
+    const doc = {
+      root: { id: "root", kind: "frame", attrs: {}, children: [outer] },
+    } as unknown as AgocraftDocument;
+    const out = groundAgentFontSize(
+      "weave.item.add",
+      {
+        kind: "text",
+        containerId: "inner",
+        attrsOverride: { fontSizeSpec: { kind: "px", value: 40 } },
+      },
+      doc,
+      design,
+    );
+    // 40 / 300 = 0.1333… → renderer resolves 0.1333 × 300 = 40 (intended px).
+    expect(attrsOf(out, "attrsOverride").fontSizeSpec.value).toBeCloseTo(40 / 300, 10);
+    expect(attrsOf(out, "attrsOverride").fontSizeSpec.kind).toBe("ratio");
+  });
 });

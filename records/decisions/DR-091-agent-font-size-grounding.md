@@ -32,6 +32,14 @@
 - (−) `items.update` 폰트 그라운딩 미적용(혼합 부모) — 가드에 위임.
 - (−) 변환은 add 시점 `containerId` 부모 기준 — 이후 reparent는 기존 WI-135/DR-086 ratio 보존이 담당.
 
+## 갱신 (2026-06-07) — 프롬프트 완성: 모델이 px를 emit하게
+
+초기 구현은 그라운딩(코드)만 넣고 `weave-command-schemas.ts`의 짧은 노트만 px로 바꿨다. 그러나 **`weave-capabilities.ts`의 비중 큰 사이징 지시(itemKind text SIZING, TASK_PRIMER #2, 도메인 지식 라인)는 여전히 "FONT SIZE IS A RATIO… px 금지"** 였다. 모델은 더 길고 강한 캐퍼빌리티 essay를 따라 계속 ratio를 emit → 그라운딩은 `{kind:'px'}` / `{kind:'ratio', value>1}`에만 작동하므로 **모델의 (중첩 프레임에서 자주 틀리는) 작은 ratio는 그대로 통과** → "중첩 안쪽 프레임 텍스트가 여전히 너무 큼"이 지속.
+
+수정: 세 곳의 사이징 지시를 전부 **"px 타깃을 줘라; weave가 즉시-부모 기준 반응형 ratio로 그라운딩한다"** 로 뒤집음(역할별 px 가이드: heading ~6–9% of canvas px 등; 중첩이라고 px를 줄이지 말 것 — weave가 부모별로 re-base). ratio 직접 전달도 여전히 허용(하위호환). 이제 모든 에이전트 텍스트가 px→그라운딩 경로를 타 결정적으로 사이즈가 정해진다.
+
+**정적 중첩 검증**: `agent-font-grounding.test.ts`에 다단계 중첩(root→outer .6→inner .5, px40÷300=0.133) 테스트 추가 — 그라운딩이 즉시-부모의 기하학 높이(렌더러 `ParentFrameHeightContext`와 동일)로 나눔을 증명.
+
 ## 검증
 
-763 단위 테스트(신규 grounding 7 + round-grouping 시그니처 갱신), typecheck·빌드·Biome 클린. e2e는 샌드박스 네트워크 제약으로 별도(환경 가능 시 재검증).
+764 단위 테스트(신규 grounding 8 + round-grouping 시그니처), typecheck·빌드·Biome 클린. e2e/라이브 에이전트는 샌드박스 네트워크 제약으로 별도(환경 가능 시 재검증).
