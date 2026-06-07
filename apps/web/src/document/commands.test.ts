@@ -2149,3 +2149,107 @@ describe("weave.item.add — usable-frame guard (DR-078)", () => {
     expect(f.height).toBeGreaterThan(0);
   });
 });
+
+describe("px ↔ ratio unit-confusion guard (DR-082 / WI-127)", () => {
+  function addCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.add");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+  function attrsOf(res: ReturnType<ReturnType<typeof addCmd>["run"]>): Record<string, unknown> {
+    if (!res.ok) throw new Error("add failed");
+    const create = res.patches.find((p) => p.type === "item.create");
+    if (create === undefined) throw new Error("no item.create patch");
+    return (create as unknown as { item: { attrs: Record<string, unknown> } }).item.attrs;
+  }
+
+  // ── A. fontSizeSpec ──────────────────────────────────────────────────────
+  it("add: a px size mis-tagged as a ratio (value 24) is re-tagged as px", () => {
+    const a = attrsOf(
+      addCmd().run(makeCtx(), {
+        kind: "text",
+        frame: { x: 0, y: 0, width: 0.5, height: 0.1, rotation: 0 },
+        attrsOverride: { fontSizeSpec: { kind: "ratio", value: 24 } },
+      }),
+    );
+    expect(a.fontSizeSpec).toEqual({ kind: "px", value: 24 });
+  });
+
+  it("add: a genuine ratio fontSize (0.06) passes through unchanged", () => {
+    const a = attrsOf(
+      addCmd().run(makeCtx(), {
+        kind: "text",
+        frame: { x: 0, y: 0, width: 0.5, height: 0.1, rotation: 0 },
+        attrsOverride: { fontSizeSpec: { kind: "ratio", value: 0.06 } },
+      }),
+    );
+    expect(a.fontSizeSpec).toEqual({ kind: "ratio", value: 0.06 });
+  });
+
+  it("add: an explicit px fontSize is left alone", () => {
+    const a = attrsOf(
+      addCmd().run(makeCtx(), {
+        kind: "text",
+        frame: { x: 0, y: 0, width: 0.5, height: 0.1, rotation: 0 },
+        attrsOverride: { fontSizeSpec: { kind: "px", value: 24 } },
+      }),
+    );
+    expect(a.fontSizeSpec).toEqual({ kind: "px", value: 24 });
+  });
+
+  it("update: a px size mis-tagged as a ratio is re-tagged as px (item.update)", () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.update");
+    if (cmd === undefined) throw new Error("command not found");
+    const res = cmd.run(makePartialEditCtx(), {
+      itemId: "text-1",
+      attrs: { fontSizeSpec: { kind: "ratio", value: 48 } },
+    });
+    if (!res.ok) throw new Error("update failed");
+    const patch = res.patches.find((p) => p.type === "item.attrs");
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect((patch.after as Record<string, unknown>).fontSizeSpec).toEqual({
+      kind: "px",
+      value: 48,
+    });
+  });
+
+  // ── B. frame side oversize ───────────────────────────────────────────────
+  it("add: a frame width of 24 (2400% of parent) is restored to a sane seed side", () => {
+    const f = frameOf(
+      addCmd().run(makeCtx(), {
+        kind: "image",
+        frame: { x: 0.1, y: 0.1, width: 24, height: 0.4, rotation: 0 },
+      }),
+    );
+    expect(f.width).toBeLessThanOrEqual(3);
+    expect(f.width).toBeGreaterThan(0);
+    expect(f.x).toBe(0.1); // position preserved
+    expect(f.height).toBe(0.4); // valid side untouched
+  });
+
+  it("add: modest overflow (width 1.05, intentional bleed) passes through", () => {
+    const f = frameOf(
+      addCmd().run(makeCtx(), {
+        kind: "image",
+        frame: { x: 0, y: 0, width: 1.05, height: 0.4, rotation: 0 },
+      }),
+    );
+    expect(f.width).toBe(1.05);
+  });
+
+  function frameOf(res: ReturnType<ReturnType<typeof addCmd>["run"]>): {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } {
+    if (!res.ok) throw new Error("add failed");
+    const create = res.patches.find((p) => p.type === "item.create");
+    if (create === undefined) throw new Error("no item.create patch");
+    return (
+      create as unknown as {
+        item: { attrs: { frame: { x: number; y: number; width: number; height: number } } };
+      }
+    ).item.attrs.frame;
+  }
+});
