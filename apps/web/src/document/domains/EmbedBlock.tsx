@@ -4,12 +4,15 @@
 // allow-listed provider (YouTube → youtube-nocookie). Unrecognized / empty URL →
 // MediaPlaceholder.
 //
-// Interactivity: in the EDITOR (`onUpdate` defined) the iframe is pointer-inert
-// so the frame stays selectable / draggable; in PRESENT / read-only
-// (`onUpdate` undefined) it is interactive so the viewer can play.
+// Interactivity (WI-139 — "play only after selecting"): in the EDITOR the iframe
+// is pointer-inert UNTIL the embed is selected — so the FIRST click selects the
+// frame (the press reaches the frame, not the iframe) and a SECOND click, now
+// that it's interactive, plays. In PRESENT / read-only (`onUpdate` undefined)
+// it is always interactive so the viewer can play immediately.
 
 import type { JSX } from "react";
 import { resolveEmbed } from "../embed/providers.js";
+import { useSelection } from "../interactions/selection-context.js";
 import type { AgoItem, EmbedAttrs } from "../types.js";
 import { MediaPlaceholder } from "./MediaPlaceholder.js";
 
@@ -30,8 +33,11 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
   const a = item.attrs;
   const resolved = resolveEmbed(a.url ?? "");
   const opacity = a.opacity ?? 1;
-  // Editor → inert iframe (frame selectable); present/read-only → interactive.
-  const interactive = onUpdate === undefined;
+  // Safe outside an editor session too (no-op vm fallback → empty selection).
+  const { selectedIds } = useSelection();
+  // Present/read-only → always playable. Editor → playable ONLY while selected,
+  // so the first click selects (iframe inert) and the next click plays.
+  const interactive = onUpdate === undefined || selectedIds.has(String(item.id));
 
   return (
     <div

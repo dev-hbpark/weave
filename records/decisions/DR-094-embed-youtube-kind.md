@@ -11,7 +11,7 @@
 2. **provider 레지스트리**(`document/embed/providers.ts`, Rule 6): URL→embed 변환을 렌더러 내 분기 대신 provider 어댑터로. YouTube가 첫 provider. 추가(Vimeo 등) = 엔트리 1개.
 3. **embed src 비저장**: `attrs.url`(사용자 입력)만 저장, iframe `src`는 `resolveEmbed(url)`로 **렌더 시 파생**. URL 편집이 곧 재파생 → 드리프트 없음, allow-list 외 URL은 src 미생성(보안).
 4. **YouTube → `youtube-nocookie.com/embed/<id>`**: privacy-enhanced 도메인(재생 전 쿠키 없음). `watch?v=`, `youtu.be/`, `embed/`, `shorts/`, `live/`에서 11자 id 파싱.
-5. **에디터 비활성 / 프레젠트 활성 iframe**: `onUpdate===undefined`(읽기전용/프레젠트)면 iframe interactive(재생 가능), 에디터면 `pointer-events:none`(프레임 선택/이동 가능). iframe `allow` 최소권한 + `referrerPolicy`.
+5. **"선택 후 클릭에서만 재생"** (갱신): 에디터에서 iframe은 **선택 전 inert**(`pointer-events:none`) → 첫 클릭은 프레임을 선택, **선택된 상태에서만 interactive** → 다음 클릭이 재생. 프레젠트/읽기전용(`onUpdate===undefined`)은 항상 interactive(바로 재생). `EmbedBlock`이 `useSelection()`(provider 없으면 no-op 폴백)로 자기 `item.id` 선택 여부 판정: `interactive = onUpdate===undefined || selectedIds.has(item.id)`. 이동/리사이즈는 선택 핸들(iframe 위)로. iframe `allow` 최소권한 + `referrerPolicy`.
 6. **추가 UX**: 추가 메뉴에서 빈 embed 생성(video처럼 파일 picker 아님) → 툴바 `embed-section`에서 URL 붙여넣기 + 인식 배지 + 전체화면 토글.
 
 ## Touch points (qr 미러, 모두 적용)
