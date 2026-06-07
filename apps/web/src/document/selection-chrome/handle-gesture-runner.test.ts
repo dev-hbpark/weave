@@ -22,6 +22,7 @@ describe("HANDLE_INTERACTIONS registry (WI-067)", () => {
         "discrete-action",
         "frame-resize",
         "frame-rotate",
+        "layout-line-drag",
         "vertex-drag",
         "vertex-insert",
       ].sort(),

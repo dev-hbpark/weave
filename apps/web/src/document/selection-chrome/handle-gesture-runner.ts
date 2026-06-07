@@ -124,6 +124,9 @@ HANDLE_INTERACTIONS.register({ kind: "chart-value-drag", buildStates: dragGestur
 // WI-109 — dragging a corner-radius grip (uniform top-right, or one of the four
 // after a split). Same drag FSM; the sink maps the pointer to a new radius.
 HANDLE_INTERACTIONS.register({ kind: "corner-radius-drag", buildStates: dragGestureStates });
+// WI-146 — dragging a layout boundary line (flex gap / grid track). Same drag FSM;
+// the sink maps the pointer to a new gap / track-pair split.
+HANDLE_INTERACTIONS.register({ kind: "layout-line-drag", buildStates: dragGestureStates });
 HANDLE_INTERACTIONS.register({ kind: "discrete-action", buildStates: discreteActionStates });
 
 // ───── Dispatcher ─────────────────────────────────────────────────────────────

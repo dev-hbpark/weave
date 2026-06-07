@@ -1,4 +1,4 @@
-import type { Document as AgocraftDocument, LayoutChildPolicy } from "@agocraft/core";
+import type { Document as AgocraftDocument, LayoutChildPolicy, LayoutSpec } from "@agocraft/core";
 import type { Editor, SelectionChromeRegistry } from "@agocraft/editor";
 import { useEffect, useRef } from "react";
 import { findItemDeep } from "../../../document/agocraft-mirror.js";
@@ -6,6 +6,7 @@ import { migrateEncoding, valueFields } from "../../../document/domains/chart/ch
 import { createChartElementViewModel } from "../../../document/selection-chrome/chart-element-view-model.js";
 import { createCornerRadiusViewModel } from "../../../document/selection-chrome/corner-radius-handle.js";
 import { createFrameDefaultViewModel } from "../../../document/selection-chrome/frame-default-view-model.js";
+import { createLayoutEditHandlesViewModel } from "../../../document/selection-chrome/LayoutEditHandles.js";
 import { createPolyVertexHandleViewModel } from "../../../document/selection-chrome/poly-vertex-handle.js";
 import { createShapeSelectionViewModel } from "../../../document/selection-chrome/shape-selection-view-model.js";
 import { createSlideBulletHandleViewModel } from "../../../document/selection-chrome/slide-bullet-handle.js";
@@ -73,6 +74,31 @@ export function useSelectionChromeRegistry({
             },
           }),
         ),
+      ),
+      // WI-146 — on-canvas layout-edit handles: drag the line between children to
+      // distribute area (flex gap / grid track resize). Renders only when the
+      // selected frame has an auto-flex / auto-grid layout.
+      selectionChrome.registerItemViewModel(
+        createLayoutEditHandlesViewModel({
+          editor,
+          getFrame: (id) => {
+            const it = findItemDeep(docRef.current, id);
+            if (it === undefined) return null;
+            const layout = (it.attrs as { layout?: LayoutSpec }).layout;
+            if (
+              layout === undefined ||
+              (layout.kind !== "auto-flex" && layout.kind !== "auto-grid")
+            )
+              return null;
+            const p = (
+              layout as { padding?: { top: number; right: number; bottom: number; left: number } }
+            ).padding;
+            return {
+              layout,
+              pad: { l: p?.left ?? 0, r: p?.right ?? 0, t: p?.top ?? 0, b: p?.bottom ?? 0 },
+            };
+          },
+        }),
       ),
       selectionChrome.registerItemViewModel(
         createTextSelectionViewModel({
