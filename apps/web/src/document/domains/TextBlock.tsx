@@ -207,14 +207,23 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     return () => ro.disconnect();
   }, []);
 
-  // On edit-exit, reconcile the model frame to the final content once (the
-  // observer was muted during editing). rAF lets the read-only render settle
-  // first so the measurement reflects the committed text.
+  // Reconcile the model frame to the rendered content with one deferred auto-fit
+  // (the `measureAndCommit` no-ops for Fixed/NONE and while editing). Runs on:
+  //   • edit-exit — the ResizeObserver was muted during editing; and
+  //   • a LAYOUT change — the resize MODE or the box WIDTH changed. This is the
+  //     fix for agent "add text → then setLayout" (WI-145): the observer's
+  //     INITIAL auto-fit gets grouped into the agent transaction and clobbered by
+  //     setLayout's child-frame patch, and because the inner content size doesn't
+  //     change afterwards the observer never re-fires — so the box keeps its
+  //     oversized stored height until a manual edit. Re-running the fit when the
+  //     layout context changes corrects the height without needing the user to
+  //     edit. rAF lets the new width/wrapping settle before measuring.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: autoResizeMode and a.frame.width are intentional RE-RUN TRIGGERS (the effect re-fits when the layout context changes), not values read in the body — removing them defeats the fix.
   useEffect(() => {
     if (isEditing) return;
     const raf = requestAnimationFrame(() => measureCommitRef.current?.());
     return () => cancelAnimationFrame(raf);
-  }, [isEditing]);
+  }, [isEditing, autoResizeMode, a.frame.width]);
 
   // Phase 1 (WI-029) — Figma-equivalent text attrs:
   //   textAlignVertical → flex justify-content
