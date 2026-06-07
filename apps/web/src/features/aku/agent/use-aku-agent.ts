@@ -43,6 +43,7 @@ import type {
   AkuMessage,
   AkuStatus,
 } from "../types.js";
+import { groundAgentFontSize } from "./agent-font-grounding.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
 import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./design-styles.js";
 import { makeRoundGroupingEditor } from "./round-grouping-editor.js";
@@ -360,7 +361,19 @@ export function useAkuAgent(deps: {
   // drives THIS proxy editor (begin/end an async-spanning transaction group per
   // round); history/undo elsewhere keep using the real `editor`. `close()` is
   // called on every run end / stop / unmount so a group never outlives a run.
-  const roundGroup = useMemo(() => makeRoundGroupingEditor(editor), [editor]);
+  const roundGroup = useMemo(
+    () =>
+      makeRoundGroupingEditor(editor, {
+        // DR-091 — ground a px font target into a responsive ratio using the live
+        // geometry (agent-only; the toolbar never goes through this proxy).
+        transformInput: (commandName, input) => {
+          const design = depsRef.current.getDesignInfo?.();
+          if (design === undefined) return input;
+          return groundAgentFontSize(commandName, input, depsRef.current.getDocument(), design);
+        },
+      }),
+    [editor],
+  );
   const roundGroupRef = useRef(roundGroup);
   roundGroupRef.current = roundGroup;
   const history = useMemo<AkuHistoryController>(

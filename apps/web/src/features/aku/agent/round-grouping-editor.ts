@@ -35,10 +35,21 @@ export interface RoundGroupingEditor {
 
 type ExecFn = (commandName: string, input: unknown, opts?: unknown) => unknown;
 
+export interface RoundGroupingOptions {
+  readonly idleMs?: number;
+  /** Optional pure transform applied to EVERY agent tool call's input before it
+   *  runs (e.g. WI-136/DR-091 font-size grounding: px target → responsive ratio
+   *  using the live geometry). Agent-only — the UI never goes through this proxy,
+   *  so its explicit px/% choices are never touched. Must not throw. */
+  readonly transformInput?: (commandName: string, input: unknown) => unknown;
+}
+
 export function makeRoundGroupingEditor(
   editor: Editor,
-  idleMs: number = ROUND_IDLE_MS,
+  options: RoundGroupingOptions = {},
 ): RoundGroupingEditor {
+  const idleMs = options.idleMs ?? ROUND_IDLE_MS;
+  const transformInput = options.transformInput;
   let open = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -64,8 +75,18 @@ export function makeRoundGroupingEditor(
     timer = setTimeout(close, idleMs);
   };
 
-  const proxiedExec: ExecFn = (commandName, input, opts) => {
+  const proxiedExec: ExecFn = (commandName, rawInput, opts) => {
     touch();
+    // DR-091 — ground the agent's input (px font target → ratio) before running.
+    // Defensive: a transform error must never block the edit.
+    let input = rawInput;
+    if (transformInput !== undefined) {
+      try {
+        input = transformInput(commandName, rawInput);
+      } catch {
+        input = rawInput;
+      }
+    }
     // Run immediately and synchronously — the editor records this exec under the
     // open group's shared transactionId. No deferral → no deadlock.
     try {

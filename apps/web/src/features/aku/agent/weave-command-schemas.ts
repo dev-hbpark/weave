@@ -61,12 +61,12 @@ const FRAME_ATTRS_NOTE =
 // resize modes, role-based fontSize guidance) lives in WEAVE_CAPABILITIES'
 // `text` itemKind; this is the one-line reminder the agent sees on the command.
 const TEXT_ATTRS_NOTE =
-  "For text items: size via attrs.fontSizeSpec { kind:'ratio', value } (value = 0..1 of the height of the " +
-  "text's IMMEDIATE parent frame — its containerId frame, NOT the slide/canvas; responsive, preferred) or " +
-  "{ kind:'px', value }; NEVER put a fraction in the plain fontSize " +
-  "number (0.07 → sub-pixel text). UNIT CHECK both ways: a ratio value is a 0..1 fraction (≈0.03–0.09), so " +
-  "for an ABSOLUTE size like 24px use { kind:'px', value:24 } — putting a px magnitude in a ratio " +
-  "({ kind:'ratio', value:24 }) renders parentHeight× too big (~25000px). Other WHOLE-BOX fields: text, fontFamily, fontWeight, fontStyle, color, " +
+  "For text items: size with attrs.fontSizeSpec { kind:'px', value } — give the ABSOLUTE design-px size you " +
+  "want (e.g. 48 for a heading, 18 for body, off the canvas px in the [디자인] line). weave AUTOMATICALLY " +
+  "grounds that px into a responsive ratio against the text's IMMEDIATE parent frame, so you do NOT compute " +
+  "the fraction yourself. (You MAY pass { kind:'ratio', value } directly if you already have the 0..1 " +
+  "fraction of the parent frame height.) NEVER put a fraction in the plain fontSize number (0.07 → sub-pixel " +
+  "text). Other WHOLE-BOX fields: text, fontFamily, fontWeight, fontStyle, color, " +
   "textAlignHorizontal/Vertical, lineHeightSpec, letterSpacing. " +
   "PARTIAL/PER-RANGE styling (부분편집 — color/bold/etc. on PART of the text, e.g. one emphasized word or " +
   "number): set attrs.textRuns = ordered [{ insert:'<segment>', attributes?:{ color?, fontSize?(px), " +

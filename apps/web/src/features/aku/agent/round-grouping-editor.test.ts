@@ -69,7 +69,7 @@ describe("makeRoundGroupingEditor (WI-060)", () => {
 
   it("keeps the group open while calls keep arriving within the window", () => {
     const { editor, state } = fakeEditor();
-    const rg = makeRoundGroupingEditor(editor, 100);
+    const rg = makeRoundGroupingEditor(editor, { idleMs: 100 });
     rg.editor.exec("a", {});
     vi.advanceTimersByTime(60); // < window — timer re-armed by next call
     rg.editor.exec("b", {});
