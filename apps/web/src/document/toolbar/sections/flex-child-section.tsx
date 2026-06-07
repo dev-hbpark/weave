@@ -34,6 +34,7 @@ import { ContextualToolbar as Bar, SegmentedControl, Select } from "@weave/desig
 import type { JSX } from "react";
 import { nn } from "../../../lib/nn.js";
 import { findParentAndIndex } from "../../agocraft-mirror.js";
+import { clampSpan } from "../../selection-chrome/layout-spec-edit.js";
 import type { ItemSnapshot } from "../multi-edit.js";
 
 type GrowChoice = "fixed" | "fill";
@@ -178,6 +179,21 @@ export function GridChildSection({
   const justifySelf: GridJustify = gridPolicy?.justifySelf ?? parentSpec.justify;
   const alignSelf: GridAlign = gridPolicy?.alignSelf ?? parentSpec.align;
 
+  // WI-146 — cell MERGE: column/row span, clamped so the span stays within the
+  // tracks from this child's start cell. Hidden on the axis when ≤ 1 cell is
+  // available (or the axis uses repeat() with no explicit tracks).
+  const col = gridPolicy?.column ?? 1;
+  const rowStart = gridPolicy?.row ?? 1;
+  const colSpan = gridPolicy?.columnSpan ?? 1;
+  const rowSpan = gridPolicy?.rowSpan ?? 1;
+  const colMax = Math.max(1, parentSpec.columns.length - (col - 1));
+  const rowMax = Math.max(1, parentSpec.rows.length - (rowStart - 1));
+  const spanOptions = (max: number): ReadonlyArray<{ value: string; label: string }> =>
+    Array.from({ length: max }, (_, i) => ({
+      value: String(i + 1),
+      label: i === 0 ? "1 (단일)" : `${i + 1}칸`,
+    }));
+
   const apply = (overrides: Partial<Omit<AutoGridChildPolicy, "kind">>) => {
     // Preserve placement (column/row/span) + intrinsic (sizeW/sizeH) so a
     // justify/align change is reversible; apply only the changed field.
@@ -226,6 +242,28 @@ export function GridChildSection({
           triggerClassName="min-w-[88px]"
         />
       </Bar.Field>
+      {colMax > 1 ? (
+        <Bar.Field label="열 병합">
+          <Select<string>
+            value={String(clampSpan(colSpan, colMax))}
+            onValueChange={(v) => apply({ columnSpan: clampSpan(Number(v), colMax) })}
+            options={spanOptions(colMax)}
+            aria-label="Grid child column span"
+            triggerClassName="min-w-[88px]"
+          />
+        </Bar.Field>
+      ) : null}
+      {rowMax > 1 ? (
+        <Bar.Field label="행 병합">
+          <Select<string>
+            value={String(clampSpan(rowSpan, rowMax))}
+            onValueChange={(v) => apply({ rowSpan: clampSpan(Number(v), rowMax) })}
+            options={spanOptions(rowMax)}
+            aria-label="Grid child row span"
+            triggerClassName="min-w-[88px]"
+          />
+        </Bar.Field>
+      ) : null}
     </div>
   );
 }
