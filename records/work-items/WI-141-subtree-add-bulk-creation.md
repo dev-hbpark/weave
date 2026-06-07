@@ -1,6 +1,7 @@
 # WI-141 — weave.subtree.add: 중첩 서브트리 원자 생성 도구
 
-- **Status:** Done · **DR:** DR-096 · **From:** HANDOFF-026 (small-think) · **Relates:** HANDOFF-003/004(serializeItemSubtree/item.create), weave.batch, weave.item.add
+- **Status:** RETIRED (DR-099) · **DR:** DR-096(superseded) · **From:** HANDOFF-026 (small-think) · **Relates:** HANDOFF-003/004(serializeItemSubtree/item.create), weave.batch, weave.item.add
+> 은퇴(2026-06-08, DR-099): 단일 add 대비 parity(이득 없음), 다른 소비자 없어 에이전트에서 제거.
 
 ## Problem
 

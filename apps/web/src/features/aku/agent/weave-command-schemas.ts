@@ -591,7 +591,6 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.dropGridCell": "그리드 셀 이동",
   "weave.item.setDecoration": "장식 설정",
   "weave.batch": "일괄 실행",
-  "weave.subtree.add": "서브트리 추가",
 };
 
 const label = (name: string): string => WEAVE_COMMAND_LABELS[name] ?? name;
@@ -1427,44 +1426,5 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       ["ops"],
       "Run SEVERAL commands as ONE ATOMIC transaction (single Cmd+Z). Prefer this to fire many edits together: ops apply in order, each sees the previous ops' effects, and if ANY op fails NOTHING is applied (all-or-nothing — unlike separate calls where some land and some don't). Returns each op's result value in order. LIMITATION: an item created in one op cannot be targeted by id in a LATER op of the same batch (ids are assigned on apply) — do that creation, then a follow-up edit.",
     ),
-  },
-  // WI-141 (DR-096) — create a whole nested frame tree in ONE call. The `node` shape
-  // is recursive ($defs/$ref): each node mirrors weave.item.add (kind/frame/attrsOverride/
-  // units) plus `children`. This is the PRIMARY way to build a slide — do NOT chain many
-  // single weave.item.add calls; nest the whole frame tree here and fire it once.
-  "weave.subtree.add": {
-    label: label("weave.subtree.add"),
-    inputSchema: {
-      type: "object",
-      $defs: {
-        node: {
-          type: "object",
-          description:
-            "One item plus its nested children. Same fields as weave.item.add (kind / frame / attrsOverride / units) PLUS `layout` and `children`. Set `layout` on a FRAME to auto-arrange (flex/grid) its children AT creation — then OMIT each child's frame (the layout sizes & positions it). For an ABSOLUTE frame (no `layout`) give each child a frame (width>0, height>0). ALWAYS set `layout` on a frame whose children should be auto-arranged — otherwise children land at tiny default sizes (small text, misfit shapes).",
-          properties: {
-            kind: ITEM_KIND,
-            frame: FRAME,
-            layout: LAYOUT_SPEC,
-            attrsOverride: ATTRS_WITH_TEXT_NOTE,
-            units: CREATION_UNITS,
-            children: {
-              type: "array",
-              description: "Child nodes created INSIDE this node (recursive).",
-              items: { $ref: "#/$defs/node" },
-            },
-          },
-          required: ["kind"],
-          additionalProperties: false,
-        },
-      },
-      properties: {
-        containerId: STR,
-        node: { $ref: "#/$defs/node" },
-      },
-      required: ["node"],
-      additionalProperties: false,
-      description:
-        "Create a WHOLE nested frame tree (a slide / section and all its items) in ONE atomic call (single Cmd+Z). `node` is a recursive { kind, frame?, attrsOverride?, units?, children?[] } — same per-item fields as weave.item.add. This is the PRIMARY creation tool for structured content: prefer it over chaining many weave.item.add calls (each of those is a separate model turn; this collapses them into one). Each node runs the same guards/layout as weave.item.add; children are created inside their parent (the parent's id is resolved internally, so unlike weave.batch you CAN build deep trees here). If any node is invalid, nothing is applied.",
-    },
   },
 };

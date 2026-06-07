@@ -1,8 +1,11 @@
 # DR-096 — weave.subtree.add: 중첩 서브트리 원자 생성 (build turn 절감)
 
-- 상태: ACCEPTED
-- 날짜: 2026-06-07
+- 상태: SUPERSEDED (DR-099에서 은퇴) · 날짜: 2026-06-07
 - WI: WI-141 · From: HANDOFF-026 (small-think) · 관련: HANDOFF-003/004(serializeItemSubtree/item.create patch), weave.batch, weave.item.add, WI-021(layout onChildAdd)
+
+> **SUPERSEDED (2026-06-08, DR-099):** `weave.subtree.add`는 small-think 실측에서 단일 add 대비
+> 기껏해야 parity(이득 없음, v1은 net-negative; small-think DR-046/048)였고, 다른 소비자가 없어
+> **에이전트에서 은퇴(un-register + 스키마/테스트 제거)**했다. 아래 본문은 역사적 기록.
 
 ## 맥락
 

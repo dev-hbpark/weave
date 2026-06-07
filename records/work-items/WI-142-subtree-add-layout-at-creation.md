@@ -1,6 +1,7 @@
 # WI-142 — weave.subtree.add: 생성 시점 레이아웃(layout-at-creation)
 
-- **Status:** Done · **DR:** DR-097 · **Relates:** WI-141/DR-096(subtree.add v1), small-think DR-048(롤백 근거)
+- **Status:** RETIRED (DR-099) · **DR:** DR-097(superseded) · **Relates:** WI-141/DR-096(subtree.add v1), small-think DR-048(롤백 근거)
+> 은퇴(2026-06-08, DR-099): 회귀는 고쳤으나 parity, subtree.add 전체가 에이전트에서 제거됨.
 
 ## Problem
 

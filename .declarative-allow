@@ -21,7 +21,7 @@
 # agocraft Change variant to its Patch shape for the sync mirror (same category
 # as serializer.invertPatch). Documented inline at the call site. The Change
 # union is the (de)serialization boundary, not registrable per-kind behavior.
-^apps/web/src/document/use-weave-editor\.ts:449$
+^apps/web/src/document/use-weave-editor\.ts:457$
 
 # ── AUDIT-007 — pure value-transforms over closed/frozen intrinsic unions ────
 # Surfaced when AUDIT-007 widened the gate to catch bare `switch (mode)`. Both
@@ -32,9 +32,9 @@
 # layoutChildFromTextAutoResize — maps the FROZEN legacy `LegacyTextAutoResize`
 # mode (agocraft v10 removed `TextAttrs.textAutoResize`; this is the compat shim)
 # to a canonical `LayoutChildPolicy`. Retired union — will never grow.
-^apps/web/src/document/domains/derive-text-auto-resize\.ts:52$
+^apps/web/src/document/domains/derive-text-auto-resize\.ts:56$
 
 # entranceKeyframes — maps the closed `EntranceAnimationBehavior["mode"]`
 # (fade / slide-up / slide-down / zoom-in) to Web-Animations keyframes. Pure
 # render transform over a single behavior's own intrinsic animation vocabulary.
-^apps/web/src/pages/PresentPage\.tsx:27$
+^apps/web/src/pages/PresentPage\.tsx:28$

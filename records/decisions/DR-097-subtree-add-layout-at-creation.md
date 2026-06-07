@@ -1,8 +1,10 @@
 # DR-097 — weave.subtree.add 생성 시점 레이아웃 (v1 회귀 수정)
 
-- 상태: ACCEPTED
-- 날짜: 2026-06-07
+- 상태: SUPERSEDED (DR-099에서 은퇴) · 날짜: 2026-06-07
 - WI: WI-142 · 관련: WI-141/DR-096(subtree.add v1), small-think DR-048(롤백·근거), DR-046(계측)
+
+> **SUPERSEDED (2026-06-08, DR-099):** 이 layout 수정으로 회귀는 해소됐으나 결과는 단일 add와
+> parity(이득 없음). subtree.add 전체가 DR-099로 에이전트에서 은퇴됐다. 역사적 기록.
 
 ## 맥락
 
