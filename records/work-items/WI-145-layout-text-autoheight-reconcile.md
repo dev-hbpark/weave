@@ -43,6 +43,25 @@ DR-098의 Fixed 주입은 여기선 덮여 무관. 핵심은 옵저버 최초 �
 - ⚠️ 라이브(에이전트 add→setLayout 실제 브라우저 재현)은 에이전트 서버+브라우저 필요라 샌드박스에서
   완전 재현 불가 — 근본 원인 추적 + 회귀 스위트로 검증. 실제 환경 1회 확인 권장.
 
+## 에이전트 가이드 보강 (3-레버 결정)
+
+렌더 보정(위)과 별개로, 에이전트가 텍스트 크기 결정을 **상황별로** 처리하도록 프롬프트를 명확화
+(`weave-command-schemas.ts` TEXT_ATTRS_NOTE BOX SIZING + `weave-capabilities.ts` text itemKind):
+
+1. **자유 배치 텍스트**(root/absolute-constraints) = FIXED 박스 → frame.width+height를 주고
+   필요 시 textOverflow:'VISIBLE'. (DR-098)
+2. **flex/grid 안 텍스트** = AUTO-HEIGHT → **frame.height를 지정/고정하지 말 것**(추측 높이가
+   과대 영역을 만든다 — 본 WI 버그의 입력 측 원인).
+3. **레이아웃 안 여유/고정 영역** = **셀을 키운다**(grid ratio/fr 트랙, flex grow/basis, 또는 래퍼
+   프레임) + 텍스트는 그 안에서 auto-fit & 정렬(textAlignVertical/cell align). leaf 텍스트 높이로
+   만들지 않는다.
+
+이로써 "여유있는 고정 영역"과 "콘텐츠 맞춤"이 충돌 없이 모두 표현 가능(레버가 분리됨).
+
+## 검증 (보강분)
+
+- biome·typecheck 클린, agent 스위트 **74/74**(capabilities/command-schemas coverage 포함).
+
 ## 후속
 
 - 더 견고히 하려면: 옵저버 최초 커밋이 에이전트 라운드에 묶이지 않도록 라운드 종료 후 일괄 텍스트

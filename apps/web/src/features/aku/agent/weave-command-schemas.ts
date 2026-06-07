@@ -81,10 +81,14 @@ const TEXT_ATTRS_NOTE =
   "outlineWidth inside that textRuns run. attrs.textOverflow = 'VISIBLE'|'HIDDEN' (clip vs spill). attrs.hyperlink " +
   "= a URL makes the whole text a link (null = none; per-range link → a run; non-text item link → a button-trigger " +
   "behavior). " +
-  // DR-098 — agent text boxes are FIXED-size (no auto-grow).
-  "BOX SIZING: a text box you add is a FIXED-size box (it does NOT auto-grow to fit content), so give frame.width " +
-  "AND frame.height enough room for the text at the chosen fontSize; if it may overflow, set attrs.textOverflow " +
-  "'VISIBLE'. (Applies to free-placed text; text inside a flex/grid frame is sized by the layout.) " +
+  // DR-098 — match the box-sizing lever to the text's context (3 cases).
+  "BOX SIZING — pick by context: (1) FREE-PLACED text (added to the root or an absolute-constraints frame) is a " +
+  "FIXED box that does NOT auto-grow — give frame.width AND frame.height enough room at the chosen fontSize and " +
+  "set attrs.textOverflow 'VISIBLE' if it may spill. (2) Text added into a FLEX/GRID frame is AUTO-HEIGHT — do NOT " +
+  "set or pin frame.height (the layout + content own the height; a guessed height makes the box occupy excessive " +
+  "area). (3) For a deliberately ROOMY/FIXED region inside a layout, size the CELL — a grid ratio/fr row track, a " +
+  "flex grow/basis on a FRAME, or a wrapper frame — and let the text auto-fit and align inside it " +
+  "(textAlignVertical + the cell's align), NEVER a big leaf-text height. " +
   "See the text itemKind capabilities for roles, defaults and full detail.";
 
 // WI-058 — data-driven QR. The code regenerates from `data` on every render.
