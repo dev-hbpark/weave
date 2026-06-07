@@ -1,5 +1,6 @@
 // WI-136 — catalog registry + on-demand loader contracts.
 
+import { THEMES } from "@weave/design-system";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_TEXT_FONT_FAMILY,
@@ -86,6 +87,19 @@ describe("theme typography defaults", () => {
       for (const fontId of Object.values(roles)) {
         expect(byId(fontId).source).toBe("google");
       }
+    }
+  });
+
+  // DR-090: every registered theme must ship a deliberate type identity so no
+  // theme falls back to the bare base font. A new theme added without a
+  // typography entry fails here (CI gate against shipping a font-less theme).
+  it("every registered theme ships a non-empty typography identity", () => {
+    for (const { name } of THEMES) {
+      const roles = THEME_TYPOGRAPHY_DEFAULTS[name];
+      expect(roles, `theme "${name}" has no typography default`).toBeDefined();
+      expect(Object.keys(roles ?? {}).length, `theme "${name}" identity is empty`).toBeGreaterThan(
+        0,
+      );
     }
   });
 });
