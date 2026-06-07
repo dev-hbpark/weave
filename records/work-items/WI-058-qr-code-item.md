@@ -65,6 +65,7 @@ more modules, Cmd+Z reverts, empty → placeholder).
 ## Workflow trail
 
 - Feasibility: [FR-012](../feasibility-reviews/FR-012-qr-code-item.md).
+- Follow-up (로고 오버레이, v1 보류분): [WI-140](WI-140-qr-center-logo.md) / [DR-095](../decisions/DR-095-qr-center-logo.md).
 
 ## Gotcha recorded
 

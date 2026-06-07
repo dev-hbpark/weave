@@ -74,3 +74,39 @@ test("WI-058 — empty data shows the placeholder, not a QR", async ({ page }) =
   await setData(page, id, "");
   await expect(page.locator('[data-testid="qr-block"][data-qr-empty="true"]')).toBeVisible();
 });
+
+async function setLogo(page: Page, itemId: string, iconId: string | null): Promise<void> {
+  await page.evaluate(
+    ({ id, icon }) => {
+      const w = window as unknown as {
+        __weaveEditor?: { exec: (n: string, i: unknown) => unknown };
+      };
+      w.__weaveEditor?.exec("weave.item.update", {
+        itemId: id,
+        attrs: { logo: icon ? { iconId: icon, scale: 0.2 } : undefined },
+      });
+    },
+    { id: itemId, icon: iconId },
+  );
+  await page.waitForTimeout(120);
+}
+
+test("WI-140 — setting a centre logo overlays it and Cmd+Z reverts", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-140-qr-logo" });
+  const id = await addQr(page);
+
+  const block = page.locator('[data-testid="qr-block"]');
+  await expect(block).toBeVisible();
+  // No logo at first.
+  await expect(block).not.toHaveAttribute("data-qr-logo", /.+/);
+
+  await setLogo(page, id, "link");
+  await expect(block).toHaveAttribute("data-qr-logo", "link");
+  // The overlay draws a nested <svg> (the icon) inside the QR <svg>.
+  await expect(page.locator('[data-testid="qr-block"] svg svg')).toBeVisible();
+
+  // One undo removes the logo.
+  await page.keyboard.press("ControlOrMeta+z");
+  await page.waitForTimeout(100);
+  await expect(block).not.toHaveAttribute("data-qr-logo", /.+/);
+});

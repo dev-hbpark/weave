@@ -87,7 +87,12 @@ const QR_ATTRS_NOTE =
   "For qr items: attrs.data is the encoded URL/text (the QR regenerates from it). " +
   "Optional: ecLevel ('L'|'M'|'Q'|'H', default M), moduleStyle ('square'|'dot'|'rounded'), " +
   "margin (quiet-zone modules, default 4), foreground/background (PaintSpec: " +
-  "{type:'solid',color} or a linear/radial gradient; background null = transparent).";
+  "{type:'solid',color} or a linear/radial gradient; background null = transparent). " +
+  // WI-140 — built-in centre logo (no upload).
+  "Optional logo: {iconId, scale?} centre overlay; iconId is one of " +
+  "'link'|'heart'|'star'|'play'|'camera'|'image'|'chart'|'sparkle'|'check'|'diamond'; " +
+  "scale is the logo width as a fraction of the code (clamped <=0.25, default 0.2). " +
+  "A logo is encoded at EC>=Q automatically so it stays scannable — keep it small.";
 
 // WI-077 — chart items are DATA-DRIVEN and reference a dataset by id; they own
 // no data inline. Creation is its own tool (weave.chart.add), so the note steers
@@ -155,6 +160,17 @@ const VIDEO_ATTRS_NOTE =
   "(attrs.poster renders as a cover still + play badge, else a play glyph). attrs.alt = short clip " +
   "description (e.g. '제품 데모 영상'), drawn as a centered caption when src is empty — ALWAYS set it. " +
   "attrs.fit = cover|contain|fill; autoplay/loop/muted/controls boolean. See the video itemKind capabilities.";
+
+// WI-139 — oEmbed / iframe embed (YouTube / Vimeo / Loom). Stores attrs.url; the
+// iframe src is DERIVED per-render via the provider registry. Full model in
+// WEAVE_CAPABILITIES' `embed` itemKind; this is the reminder on item.add/update.
+const EMBED_ATTRS_NOTE =
+  "For embed items (kind:'embed' — an embedded YouTube/Vimeo/Loom video): attrs.url is the page URL " +
+  "(YouTube watch / youtu.be / shorts / live, vimeo.com/<id>, loom.com/share/<id>; a YouTube t/start " +
+  "timestamp is carried through). The iframe src is DERIVED from the url — only recognized providers " +
+  "render, else a placeholder. attrs.allowFullscreen (boolean, default true), attrs.autoplay (boolean — " +
+  "auto-plays MUTED in PRESENT mode only, default off), attrs.opacity (0..1). Give it a 16:9-ish frame. " +
+  "Plays in PRESENT mode / when selected in the editor; otherwise shows the thumbnail. See the embed itemKind capabilities.";
 
 // WI-077 — `line` kind attrs (직선 / 자유선 / 곡선 / 자유곡선). The `line` kind is
 // STROKE-ONLY (no fill, distinct from shape); colour/width is a decoration.stroke
@@ -335,7 +351,7 @@ const ATTRS_WITH_TEXT_NOTE: Json = {
     },
     subAttrs: SHAPE_SUBATTRS_SCHEMA,
   },
-  description: `${FRAME_BASE_NOTE} ${FRAME_ATTRS_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${CHART_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
+  description: `${FRAME_BASE_NOTE} ${FRAME_ATTRS_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${CHART_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${EMBED_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
 };
 
 // WI-063 / WI-078 — units (decoration + transform) attached in ONE call so an item
@@ -656,7 +672,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         units: CREATION_UNITS,
       },
       ["kind"],
-      "ADD a new item (frame / text / image / video / shape / line / qr) into the design or a container frame. Pass containerId for a parent frame (omit → design root), frame for the 0..1 box, attrsOverride for per-kind content/style, and units to style it (fill/shadow/…) in the SAME call. For a chart use weave.chart.add instead. This is the primary creation tool. CHECK THE TARGET CONTAINER'S LAYOUT FIRST (read it from the snapshot): if the container is ABSOLUTE (no auto-layout) you MUST pass a frame with width>0 AND height>0 — an absolute parent does NOT auto-position its children, so a missing/zero frame lands the item at zero size = invisible & uneditable. If the container has an AUTO-LAYOUT (flex/grid), OMIT the frame — the layout positions and sizes the child; do not fight it with an absolute frame. Do not assume a container is grid; verify.",
+      "ADD a new item (frame / text / image / video / shape / line / qr / embed) into the design or a container frame. Pass containerId for a parent frame (omit → design root), frame for the 0..1 box, attrsOverride for per-kind content/style, and units to style it (fill/shadow/…) in the SAME call. For a chart use weave.chart.add instead. This is the primary creation tool. CHECK THE TARGET CONTAINER'S LAYOUT FIRST (read it from the snapshot): if the container is ABSOLUTE (no auto-layout) you MUST pass a frame with width>0 AND height>0 — an absolute parent does NOT auto-position its children, so a missing/zero frame lands the item at zero size = invisible & uneditable. If the container has an AUTO-LAYOUT (flex/grid), OMIT the frame — the layout positions and sizes the child; do not fight it with an absolute frame. Do not assume a container is grid; verify.",
     ),
   },
   // weave.item.remove → retargeted from kit (see KIT_SCHEMAS).

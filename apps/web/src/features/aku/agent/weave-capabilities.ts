@@ -241,9 +241,10 @@ export const WEAVE_CAPABILITIES = {
     },
     {
       // WI-058 — data-driven QR code (regenerates from `data` on every render).
+      // WI-140 — optional built-in centre logo (attrs.logo).
       kind: "qr",
       description:
-        "A QR code. attrs.data is the encoded URL/text (the matrix regenerates from it; empty → placeholder) — set it to the link you want scannable. attrs.ecLevel ('L'|'M'|'Q'|'H', default M) is the error-correction level. STYLE: attrs.foreground is the dark-module paint (a PaintSpec — { type:'solid', color } or a linear/radial gradient), attrs.background the light/background paint (PaintSpec or null = transparent), attrs.moduleStyle ('square'|'dot'|'rounded') the module glyph, attrs.margin the quiet-zone width in modules (default 4), attrs.opacity (0..1). Size/position via attrs.frame. Use for a scannable link/contact/Wi-Fi on a slide.",
+        "A QR code. attrs.data is the encoded URL/text (the matrix regenerates from it; empty → placeholder) — set it to the link you want scannable. attrs.ecLevel ('L'|'M'|'Q'|'H', default M) is the error-correction level. STYLE: attrs.foreground is the dark-module paint (a PaintSpec — { type:'solid', color } or a linear/radial gradient), attrs.background the light/background paint (PaintSpec or null = transparent), attrs.moduleStyle ('square'|'dot'|'rounded') the module glyph, attrs.margin the quiet-zone width in modules (default 4), attrs.opacity (0..1). LOGO: attrs.logo = { iconId, scale? } draws a built-in icon in the CENTRE — iconId is one of 'link'|'heart'|'star'|'play'|'camera'|'image'|'chart'|'sparkle'|'check'|'diamond' (built-in only, no image upload), scale is the logo width as a fraction of the code (clamped ≤0.25, default 0.2). A logo is auto-encoded at EC≥Q so it stays scannable — keep it small. Omit logo (or unset it) for no logo. Size/position via attrs.frame. Use for a scannable link/contact/Wi-Fi on a slide.",
       editableAttrs: [
         "frame",
         "data",
@@ -252,6 +253,7 @@ export const WEAVE_CAPABILITIES = {
         "background",
         "margin",
         "moduleStyle",
+        "logo",
         "opacity",
       ],
     },

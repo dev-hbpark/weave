@@ -55,3 +55,11 @@ Discovery → **Feasibility: FEASIBLE** (qr/chart가 weave-로컬 kind 선례; i
 
 - typecheck·Biome 클린, 단위 테스트 **782건 통과**(provider 5 + kind 등록 4 + corner-radius embed), 프로덕션 빌드 성공.
 - 라이브(실제 iframe 재생 / 추가→URL 붙여넣기 UX)는 샌드박스 네트워크(youtube-nocookie 접근 불가) 제약으로 네트워크 환경에서 재검증 필요.
+
+## 에이전트 스키마 점검 (2026-06-07, 후속 보강)
+
+WI-140(QR) 점검과 동일 기준으로 `embed`의 에이전트 스키마 2레이어를 재확인:
+- `ITEM_KIND` enum에 `embed` 포함 ✅ / `weave-capabilities.ts` `embed` itemKind(description+`editableAttrs:[frame,url,allowFullscreen,autoplay,opacity]`) 완비 ✅ (정본 모델 정상).
+- **누락 발견 → 보강**(`weave-command-schemas.ts`): (a) `EMBED_ATTRS_NOTE` 신설 + `ATTRS_WITH_TEXT_NOTE` 설명에 연결(생성 가능 kind 중 유일하게 attrs-bag 노트가 없었음), (b) `weave.item.add` 프로즈 kind 목록에 `embed` 추가(qr만 있고 embed 누락이었음).
+- attrs 검증은 open bag(`additionalProperties:true`)이라 url/autoplay 등은 이미 기계적 수용 — 거부 없음 확인.
+- 검증: typecheck·biome 클린, agent 테스트 **66/66**(coverage 포함).

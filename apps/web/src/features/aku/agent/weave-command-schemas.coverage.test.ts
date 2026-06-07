@@ -70,4 +70,35 @@ describe("agent command coverage (WI-095 / DR-064)", () => {
       ?.properties;
     expect(props?.presetId?.enum?.length).toBe(25);
   });
+
+  // WI-140 — every kind the agent can CREATE via weave.item.add must be
+  // discoverable on that command: its attrsOverride bag carries a "For <kind>
+  // items" note AND the command prose lists it. The WI-099 capability test guards
+  // SEEDED attrs → editableAttrs, but NOT these command-schema notes — so a new
+  // kind (qr's logo, embed) could be mechanically creatable (open attrs bag) yet
+  // invisible in the command's own guidance. This guard closes that gap.
+  it("every creatable item.add kind has a note in the attrs bag AND in the command prose", () => {
+    const add = WEAVE_COMMAND_SCHEMAS["weave.item.add"];
+    const input = add?.inputSchema as {
+      description?: string;
+      properties?: {
+        kind?: { enum?: string[] };
+        attrsOverride?: { description?: string };
+      };
+    };
+    const kinds = input?.properties?.kind?.enum ?? [];
+    const attrsDesc = input?.properties?.attrsOverride?.description ?? "";
+    const prose = input?.description ?? "";
+
+    expect(kinds.length).toBeGreaterThan(0);
+    const missingNote = kinds.filter((k) => !attrsDesc.includes(`For ${k} items`));
+    expect(
+      missingNote,
+      `kinds missing a "For <kind> items" attrs note: ${missingNote.join(", ")}`,
+    ).toEqual([]);
+    const missingProse = kinds.filter((k) => !prose.includes(k));
+    expect(missingProse, `kinds not listed in item.add prose: ${missingProse.join(", ")}`).toEqual(
+      [],
+    );
+  });
 });

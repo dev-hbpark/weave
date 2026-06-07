@@ -7,6 +7,8 @@
 import { type PaintSpec, paintToSvgFill } from "@agocraft/core";
 import { type SVGAttributes, useId } from "react";
 import { nn } from "../../lib/nn.js";
+import { clampLogoScale, effectiveQrEcLevel } from "../qr/qr-logo.js";
+import { qrLogoIcon } from "../qr/qr-logo-icons.js";
 import { qrMatrix } from "../qr/qr-matrix.js";
 import type { AgoItem, QrAttrs } from "../types.js";
 
@@ -92,7 +94,9 @@ function GradientDefs({
 export function QrBlock({ item }: QrBlockProps): JSX.Element {
   const uid = useId();
   const a = item.attrs;
-  const ecLevel = a.ecLevel ?? "M";
+  // WI-140 — a logo covers centre modules, so encode at EC ≥ Q (safety net for
+  // agent-set logos; the UI raises the stored level to H).
+  const ecLevel = effectiveQrEcLevel(a);
   const margin = a.margin ?? 4;
   const style = a.moduleStyle ?? "square";
   const matrix = qrMatrix(a.data, ecLevel);
@@ -121,10 +125,45 @@ export function QrBlock({ item }: QrBlockProps): JSX.Element {
 
   const fgProps: SVGAttributes<SVGPathElement> = { fill: fg.value };
 
+  // WI-140 — centre logo overlay: a knockout (quiet-patch) rect in the
+  // background colour separates the glyph from the modules, with the icon drawn
+  // on top in the foreground colour. Sizes are in module units; the icon is a
+  // nested <svg> whose own 0..24 viewBox scales into the box.
+  const logoEntry = qrLogoIcon(a.logo?.iconId);
+  let logoNode: JSX.Element | null = null;
+  if (logoEntry && a.logo) {
+    const LogoIcon = logoEntry.Icon;
+    const side = clampLogoScale(a.logo.scale) * matrix.length;
+    const pad = a.logo.padding ?? 0.5;
+    const knockSide = side + pad * 2;
+    const centre = total / 2;
+    const knockFill = bg ? bg.value : "#ffffff";
+    logoNode = (
+      <>
+        <rect
+          x={centre - knockSide / 2}
+          y={centre - knockSide / 2}
+          width={knockSide}
+          height={knockSide}
+          rx={Math.min(knockSide / 4, 0.8)}
+          fill={knockFill}
+        />
+        <LogoIcon
+          x={centre - side / 2}
+          y={centre - side / 2}
+          width={side}
+          height={side}
+          stroke={fg.value}
+        />
+      </>
+    );
+  }
+
   return (
     <div
       data-testid="qr-block"
       data-qr-modules={matrix.length}
+      data-qr-logo={logoEntry ? logoEntry.id : undefined}
       className="absolute inset-0"
       style={{ opacity: a.opacity ?? 1 }}
     >
@@ -146,6 +185,7 @@ export function QrBlock({ item }: QrBlockProps): JSX.Element {
           {...fgProps}
           shapeRendering={style === "square" ? "crispEdges" : "geometricPrecision"}
         />
+        {logoNode}
       </svg>
     </div>
   );

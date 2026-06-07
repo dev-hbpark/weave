@@ -248,6 +248,18 @@ export interface QrAttrs {
   readonly margin?: number;
   /** Module glyph shape (default "square"). */
   readonly moduleStyle?: "square" | "dot" | "rounded";
+  /** WI-140 — optional centre logo. `iconId` indexes the built-in whitelist
+   *  (`qr/qr-logo-icons.tsx`); `scale` is the logo width as a fraction of the
+   *  code (clamped ≤ 0.25). v1 = built-in icons only (no upload), so only an id
+   *  is stored — no blob/data-URL. A logo forces EC ≥ Q at render time
+   *  (`effectiveQrEcLevel`) so the covered modules stay recoverable. Unknown to
+   *  agocraft; survives `onUnknown: "preserve"`. */
+  readonly logo?: {
+    readonly iconId: string;
+    readonly scale?: number;
+    /** Knockout (quiet-patch) padding around the logo, in modules. Default 0.5. */
+    readonly padding?: number;
+  };
   readonly opacity?: number;
 }
 
