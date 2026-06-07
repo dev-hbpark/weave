@@ -1,9 +1,10 @@
-# DR-096 — 에이전트 추가 텍스트 = 고정 크기 박스
+# DR-098 — 에이전트 추가 텍스트 = 고정 크기 박스
 
 - 상태: ACCEPTED
 - 날짜: 2026-06-07
-- 관련: WI-141, 선례 DR-091(agent px→ratio 폰트 그라운딩, 동일한 transformInput 파이프라인)
+- 관련: WI-143, 선례 DR-091(agent px→ratio 폰트 그라운딩, 동일한 transformInput 파이프라인)
 - 무관(미변경): DR-091(폰트 크기 처리), DR-093(fontSize 단일 진실)
+- 리넘버링(2026-06-08): WI-141/DR-096이 weave.subtree.add와 충돌 → 이 작업을 WI-143/DR-098로 이동.
 
 ## 맥락
 

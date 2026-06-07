@@ -1,6 +1,6 @@
 // 아쿠 (Aku) — agent text-box sizing (fixed-size box for agent-created text).
 //
-// DECISION (DR-096): when the AGENT adds a text item, the box should be a
+// DECISION (DR-098): when the AGENT adds a text item, the box should be a
 // FIXED-size box, not the auto-height default. In weave's model a text box's
 // resize behaviour is derived from `attrs.layoutChild` (see
 // `document/domains/derive-text-auto-resize.ts`): undefined → auto-height

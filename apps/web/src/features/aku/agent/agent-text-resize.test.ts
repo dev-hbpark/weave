@@ -1,4 +1,4 @@
-// 아쿠 — agent text-box sizing (DR-096: agent-added text → Fixed box). Pure transform.
+// 아쿠 — agent text-box sizing (DR-098: agent-added text → Fixed box). Pure transform.
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import { describe, expect, it } from "vitest";

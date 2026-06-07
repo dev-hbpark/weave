@@ -366,7 +366,7 @@ export function useAkuAgent(deps: {
     () =>
       makeRoundGroupingEditor(editor, {
         // Agent-only input transforms (the toolbar never goes through this proxy):
-        //  • DR-096 — agent-created text gets a FIXED-size box (free placement only).
+        //  • DR-098 — agent-created text gets a FIXED-size box (free placement only).
         //  • DR-091 — a px font target is grounded into a responsive ratio using
         //    the live geometry.
         transformInput: (commandName, input) => {

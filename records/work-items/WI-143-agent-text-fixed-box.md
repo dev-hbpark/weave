@@ -1,9 +1,10 @@
-# WI-141 — 에이전트 추가 텍스트 고정 크기 박스
+# WI-143 — 에이전트 추가 텍스트 고정 크기 박스
 
 Status: **Done**
 Owner: hbpark
 Updated: 2026-06-07
-관련: [DR-096](../decisions/DR-096-agent-text-fixed-box.md), 선례 DR-091(agent transformInput 파이프라인)
+관련: [DR-098](../decisions/DR-098-agent-text-fixed-box.md), 선례 DR-091(agent transformInput 파이프라인)
+> 리넘버링(2026-06-08): WI-141/DR-096이 weave.subtree.add와 번호 충돌 → 이 작업을 WI-143/DR-098로 이동.
 
 ## Problem
 
