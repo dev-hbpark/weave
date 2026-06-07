@@ -54,12 +54,12 @@ YouTube 썸네일은 video id에서 **결정적으로 파생**(`img.youtube.com/
 ## 갱신 (2026-06-07) — 자동재생/뮤트 + 영속 title (convergent controller)
 
 - **자동재생(뮤트)**: `EmbedAttrs.autoplay`. provider별 `autoplayParams()`(YouTube `mute`, Vimeo `muted`, Loom) — param 이름 차이를 provider가 소유(Rule 6). EmbedBlock이 **PRESENT 모드에서만** `appendQuery(embedUrl, autoplayParams())` 적용(에디터에선 자동재생 안 함). iframe `allow`에 `autoplay` 추가. 섹션에 "자동재생 (프레젠트)" Switch.
-- **영속 title**: `useEmbedTitleSync`(`reconcileDerived` 기반 convergent controller, `useChartLabelSync` 선례) — 인식된 embed url 중 title 없는 것을 url당 1회 oEmbed fetch → `setEmbedTitle`로 attrs.title 영속(히스토리 미오염, 직렬화됨, 재fetch 없음). DesignPage에 마운트. `setEmbedTitle`은 변경 없을 때 SAME doc ref 반환(수렴). 이로써 title이 export/오프라인/재오픈에서 유지(EmbedBlock의 state-only meta는 Vimeo/Loom **포스터**용으로 잔존).
+- **영속 메타(title + Vimeo/Loom 포스터)**: `useEmbedMetaSync`(`reconcileDerived` convergent controller, `useChartLabelSync` 선례) — oEmbed는 1회 fetch로 title+thumbnail을 주므로, url당 1회 fetch해 `setEmbedMeta`로 **title(전 provider) + posterUrl(derived 포스터 없는 Vimeo/Loom만)** 영속(히스토리 미오염, 직렬화, 재fetch 없음). `setEmbedMeta`는 **누락 필드만** 채우고(사용자값 미덮어씀), 변경 없을 때 SAME doc ref 반환(수렴). DesignPage 마운트. EmbedBlock: 포스터 = derived(YouTube) ?? 영속(`a.posterUrl`) ?? **live oEmbed(present-미편집 폴백)**. → title·포스터가 export/오프라인/재오픈에서 유지. (구 `embed-title-sync.*` → `embed-meta-sync.*`로 일반화)
 
 ## 후속
 
-- Vimeo/Loom **포스터 영속**(현재 세션 state-only), 추가 provider, 자막/품질 옵션.
+- 추가 provider, 자막/품질 옵션.
 
 ## 검증
 
-800 단위 테스트(provider/oEmbed/title-sync/autoplay/kind 등록/corner-radius), typecheck·빌드·Biome 클린. 라이브(실제 oEmbed fetch/iframe 재생/자동재생)는 샌드박스 네트워크 제약으로 별도 환경(파싱·엔드포인트·graceful-fail·title 변환 수렴은 단위 검증).
+802 단위 테스트(provider/oEmbed/meta-sync/autoplay/kind 등록/corner-radius), typecheck·빌드·Biome 클린. 라이브(실제 oEmbed fetch/iframe 재생/자동재생)는 샌드박스 네트워크 제약으로 별도 환경(파싱·엔드포인트·graceful-fail·메타 변환 수렴은 단위 검증).

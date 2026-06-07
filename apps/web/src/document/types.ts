@@ -263,8 +263,12 @@ export interface EmbedAttrs {
   /** Cached provider id ("youtube", …) for display; the renderer re-resolves
    *  from `url` so this is advisory, not authoritative. */
   readonly provider?: string;
-  /** Optional oEmbed title (follow-up; needs a network fetch). */
+  /** oEmbed title, persisted once by the meta-sync controller (accessibility /
+   *  export / offline). */
   readonly title?: string;
+  /** Persisted oEmbed poster URL for providers with NO derivable thumbnail
+   *  (Vimeo / Loom). YouTube derives its poster, so this stays unset there. */
+  readonly posterUrl?: string;
   /** Allow the iframe to go fullscreen (default true). */
   readonly allowFullscreen?: boolean;
   /** Auto-play (muted) in PRESENT mode only — never in the editor. Default off. */

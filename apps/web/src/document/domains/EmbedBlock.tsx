@@ -42,16 +42,20 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
   // Present/read-only → always playable. Editor → playable ONLY while selected,
   // so the first click selects (iframe inert) and the next click plays.
   const interactive = onUpdate === undefined || selectedIds.has(String(item.id));
-  // oEmbed (title + poster) is fetched ONLY when the provider has no offline
-  // poster (Vimeo / Loom) — YouTube already derives both, so it never fetches.
-  const meta = useEmbedMeta(a.url ?? "", resolved !== null && resolved.thumbnailUrl === null);
+  // Live oEmbed fetch is a FALLBACK only — for a provider with no derived poster
+  // (Vimeo / Loom) whose poster hasn't been persisted yet by the meta-sync
+  // controller (e.g. present-mode, never edited). YouTube derives both; an
+  // edited deck already has `a.posterUrl` / `a.title` persisted → no fetch.
+  const needsLiveMeta =
+    resolved !== null && resolved.thumbnailUrl === null && a.posterUrl === undefined;
+  const meta = useEmbedMeta(a.url ?? "", needsLiveMeta);
   const title = a.title ?? meta?.title;
   // Holds the thumbnail URL that failed to load (404 / offline) → fall back to
   // the placeholder. Keyed by URL so a new video re-attempts its own poster.
   const [brokenPoster, setBrokenPoster] = useState<string | null>(null);
-  // Poster: derived (YouTube) ?? oEmbed (Vimeo/Loom), dropped if it failed to load.
+  // Poster: derived (YouTube) ?? persisted (Vimeo/Loom) ?? live oEmbed fallback.
   const candidatePoster =
-    resolved !== null ? (resolved.thumbnailUrl ?? meta?.thumbnailUrl ?? null) : null;
+    resolved !== null ? (resolved.thumbnailUrl ?? a.posterUrl ?? meta?.thumbnailUrl ?? null) : null;
   const posterUrl =
     candidatePoster !== null && candidatePoster !== brokenPoster ? candidatePoster : null;
   // Auto-play (muted) only in PRESENT mode — never while editing. Provider owns
