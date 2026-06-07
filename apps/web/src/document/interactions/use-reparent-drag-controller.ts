@@ -31,7 +31,6 @@ import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findDescendantSet, findItemDeep } from "../agocraft-mirror.js";
-import { reparentPreservingRatioFont } from "../reparent-font.js";
 import { isItemLocked } from "../types.js";
 
 const REPARENT_ACTIVE_ATTR = "data-reparent-drop-target";
@@ -268,22 +267,15 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
       const valid = candidateId !== null && !session.blocked.has(candidateId);
       if (valid && candidateId !== null && editor !== null) {
         const size = getDesignSizeRef.current?.();
-        const doc = getDocumentRef.current();
-        const entries = session.entries.map((x) => ({
-          itemId: x.itemId,
-          newParentId: candidateId,
-        }));
-        // Preserve ratio-font visual size across the parent change (px fonts and
-        // the box are already preserved by the command). Falls back to a bare
-        // reparent when the doc is unavailable.
-        if (doc !== null) {
-          reparentPreservingRatioFont(editor, doc, entries, size);
-        } else {
-          editor.exec("weave.item.reparent", {
-            entries,
-            ...(size !== undefined ? { designWidth: size.width, designHeight: size.height } : {}),
-          });
-        }
+        // Ratio-font visual size is preserved by the `weave.item.reparent`
+        // command itself (WI-135 / DR-086) — no per-gesture handling needed.
+        editor.exec("weave.item.reparent", {
+          entries: session.entries.map((x) => ({
+            itemId: x.itemId,
+            newParentId: candidateId,
+          })),
+          ...(size !== undefined ? { designWidth: size.width, designHeight: size.height } : {}),
+        });
       }
       endGesture();
     };

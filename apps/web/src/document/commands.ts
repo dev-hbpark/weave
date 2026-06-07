@@ -106,6 +106,7 @@ import {
 } from "./multi/align-ops.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
+import { ratioFontReparentPatches } from "./reparent-font.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
 import { CROP_OFFSET_UNIT_KIND } from "./transform-crop-offset.js";
@@ -354,6 +355,47 @@ function normalizeShapeAttrs(
  *  (`HIT_THRESHOLD_AREA_PX2`), which sets `pointer-events:none` — the item then
  *  cannot be clicked, selected, or edited. */
 const MIN_FRAME_SIDE = 1e-3;
+// DR-082 — a frame side (ratio of the parent, 0..1) above this is almost
+// certainly a px / percent magnitude the caller mis-entered into a RATIO slot
+// (e.g. width:24 meaning 24px/24% → 2400% of the parent). Intentional bleed /
+// overflow stays well under this, so we only restore the obviously-wrong ones.
+const MAX_FRAME_SIDE = 3;
+// DR-082 — a fontSizeSpec `{kind:'ratio'}` value is a fraction of the parent
+// frame's height (0..~1 in every real design). A value above this is a px size
+// the caller mis-tagged as ratio: resolveFontSize would blow it up to
+// value × parentHeight (24 → ~25000px). We re-tag those as px.
+const MAX_FONT_RATIO = 1;
+
+/** DR-082 — re-tag a px size mis-declared as a ratio fontSize. A `fontSizeSpec`
+ *  `{ kind:'ratio', value }` resolves to `value × parentHeight`, so a whole-number
+ *  magnitude (24, 48) is the #1 "text drawn ~1000× too large" agent bug: the
+ *  caller meant 24px but tagged it ratio. We coerce `{kind:'ratio', value>1}` to
+ *  `{kind:'px', value}` so it renders at the intended absolute size. Pure; the
+ *  inverse error (a 0..1 fraction in the legacy plain `fontSize` → sub-pixel) is
+ *  left to prompt guidance — the command can't recover the intended px without the
+ *  parent height. Applied on the merged attrs of every text add / update. */
+function sanitizeFontSizeSpec(
+  attrs: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const spec = attrs.fontSizeSpec;
+  if (
+    isPlainObject(spec) &&
+    spec.kind === "ratio" &&
+    typeof spec.value === "number" &&
+    Number.isFinite(spec.value) &&
+    spec.value > MAX_FONT_RATIO
+  ) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        `[weave] fontSizeSpec ratio value ${spec.value} > ${MAX_FONT_RATIO} — re-tagged as px ` +
+          "(a ratio fontSize is a 0..1 fraction of the parent height; this looked like a px size mis-tagged as ratio)",
+        spec,
+      );
+    }
+    return { ...attrs, fontSizeSpec: { kind: "px", value: spec.value } };
+  }
+  return attrs;
+}
 
 /** Guard an added item against a ZERO/degenerate frame that would render at zero
  *  area and become unselectable / uneditable. The agent sometimes adds an item
@@ -370,12 +412,30 @@ function ensureUsableFrame(kind: string, frame: unknown, seed: ItemFrame): ItemF
   const positive = (v: unknown, fallback: number): number =>
     fin(v) && v > MIN_FRAME_SIDE ? v : fallback;
   const autoHeight = kind === "text";
+  // DR-082 — a side > MAX_FRAME_SIDE is a px / percent magnitude mis-entered into
+  // a 0..1 ratio slot (width:24 → 2400% of the parent). Restore the seed size for
+  // those; positions (x/y) and modest overflow (≤300%, intentional bleed) pass
+  // through. Keeps the same "make it usable + DEV warn" contract as the zero guard.
+  const sane = (v: unknown, fallback: number): number => {
+    const w = positive(v, fallback);
+    if (w > MAX_FRAME_SIDE) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          `[weave] frame side ${w} > ${MAX_FRAME_SIDE} (ratio of parent) — restored seed ` +
+            "(frame sides are 0..1 of the parent; this looked like a px/percent value mis-entered as a ratio)",
+          { side: w, restored: fallback },
+        );
+      }
+      return fallback;
+    }
+    return w;
+  };
   return {
     x: fin(f.x) ? f.x : seed.x,
     y: fin(f.y) ? f.y : seed.y,
-    width: positive(f.width, seed.width),
+    width: sane(f.width, seed.width),
     // Text height auto-fits — keep a finite caller value; only fill a missing/NaN one.
-    height: autoHeight && fin(f.height) ? f.height : positive(f.height, seed.height),
+    height: autoHeight && fin(f.height) ? f.height : sane(f.height, seed.height),
     rotation: fin(f.rotation) ? f.rotation : seed.rotation,
   };
 }
@@ -445,6 +505,10 @@ function normalizeTextAttrs(
   after: Readonly<Record<string, unknown>>,
   provided: Readonly<Record<string, unknown>> | undefined,
 ): Readonly<Record<string, unknown>> {
+  // DR-082 — re-tag a px font size mis-declared as a ratio, regardless of whether
+  // text/textRuns also changed (and even on the UI `patch` path, where it is a
+  // no-op since the toolbar never emits a >1 ratio).
+  after = sanitizeFontSizeSpec(after);
   if (provided === undefined) return after;
   if ("textRuns" in provided) {
     const runs = after.textRuns;
@@ -616,6 +680,16 @@ export function buildWeaveCommands(
         weaveItem = {
           ...weaveItem,
           attrs: normalizeShapeAttrs(
+            weaveItem.attrs as unknown as Readonly<Record<string, unknown>>,
+          ) as unknown as typeof weaveItem.attrs,
+        };
+      }
+      // DR-082 — re-tag a px font size mis-declared as a ratio (the #1 "text drawn
+      // ~1000× too large" agent bug) before the item is serialized.
+      if (weaveItem.kind === "text") {
+        weaveItem = {
+          ...weaveItem,
+          attrs: sanitizeFontSizeSpec(
             weaveItem.attrs as unknown as Readonly<Record<string, unknown>>,
           ) as unknown as typeof weaveItem.attrs,
         };
@@ -1297,7 +1371,14 @@ export function buildWeaveCommands(
           }
           const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
           const mergedRaw: Readonly<Record<string, unknown>> = { ...prevAttrs, ...input.attrs };
-          const after = child.kind === "shape" ? normalizeShapeAttrs(mergedRaw) : mergedRaw;
+          // DR-082 — same per-kind safety as weave.item.update: shape keeps subAttrs
+          // geometry complete; text re-tags a px font mis-declared as a ratio.
+          const after =
+            child.kind === "shape"
+              ? normalizeShapeAttrs(mergedRaw)
+              : child.kind === "text"
+                ? sanitizeFontSizeSpec(mergedRaw)
+                : mergedRaw;
           patches.push({ type: "item.attrs", itemId: child.id, before: child.attrs, after });
           const oldFrame = (prevAttrs as { frame?: AgocraftItemFrame }).frame;
           const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
@@ -1788,11 +1869,29 @@ export function buildWeaveCommands(
   // LAYOUT_FEATURE_ENABLED). The kit owns dedupe + cycle guard (HANDOFF-002
   // middle tier) + the item.reparent assembly; same behavior + `reparent-cycle`
   // error code as the prior inline body.
-  const reparentItem = createReparentCommand({
+  const baseReparentItem = createReparentCommand({
     name: "weave.item.reparent",
     computeFrameRatio: computeReparentFrameRatio,
     onReparentLayout: (args) => (LAYOUT_FEATURE_ENABLED ? getLayoutEngine().onReparent(args) : []),
   });
+  // WI-135 / DR-086 — universal ratio-font preservation. The kit command keeps
+  // the BOX but a `fontSizeSpec.kind:'ratio'` resolves to value × parentHeight,
+  // so a reparent into a different-height parent would rescale the glyphs. Wrap
+  // the command (covers EVERY caller — UI gesture, Aku agent tool path,
+  // programmatic exec) to append `item.attrs` patches that re-base the value in
+  // the SAME transaction, so the rendered px is preserved and one Cmd+Z reverts.
+  const reparentItem: Command<
+    { entries: ReadonlyArray<{ itemId: string; newParentId: string }> },
+    void
+  > = {
+    name: "weave.item.reparent",
+    run(ctx, input) {
+      const base = baseReparentItem.run(ctx, input as never);
+      if (!base.ok || base.patches.length === 0) return base;
+      const fontPatches = ratioFontReparentPatches(ctx.document, input.entries, base.patches);
+      return fontPatches.length === 0 ? base : ok(base.value, [...base.patches, ...fontPatches]);
+    },
+  };
 
   // WI-057 — set freeform polygon vertices (agocraft kit command, registered
   // under weave's vocabulary). All item mutation goes through a command.

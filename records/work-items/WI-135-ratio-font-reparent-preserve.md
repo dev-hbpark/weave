@@ -17,25 +17,26 @@
 
 ## Change (weave-only, agocraft 재벤더 없음 — DR-086)
 
+**v2 (operator follow-up "raw … 도 재기준화"): 명령 자체를 래핑 → 모든 경로 커버.**
+
 - 신규 `apps/web/src/document/reparent-font.ts`:
   - `computeRatioFontReparentUpdates(doc, entries)` (순수) — `newValue = oldValue × oldParentH/newParentH`
-  - `reparentPreservingRatioFont(editor, doc, entries, designSize)` — `editor.runBatch` 안에서
-    reparent + per-ratio-text `weave.item.update`(post-reparent 상태 읽어 fontSizeSpec만 merge,
-    frame 클로버 없음). 단일 undo.
-- `agocraft-mirror.ts`: `frameHeightRatio(doc, frameId)` export (프레임 높이=design 분수).
-- 제스처 2곳 배선: `use-reparent-drag-controller`(드래그-부모변경), `DesignPage`(레이어/컨텍스트메뉴).
-- DEV 전역 `__weaveReparentPreservingRatioFont` (e2e 용).
+  - `ratioFontReparentPatches(doc, entries, basePatches)` — kit reparent 의 base 패치에 덧붙일
+    `item.attrs` 패치 생성. 옮긴 아이템의 **최종 attrs**(layout 부모면 fullAttrsPatch.after,
+    아니면 reparent entry 의 newFrameRatio)를 읽어 `fontSizeSpec` 만 바꿈 → frame 클로버 없음,
+    self-invert, 단일 트랜잭션.
+- `commands.ts`: `weave.item.reparent` 를 weave 래퍼로 등록 — kit run 호출 후 폰트 패치 append.
+  **UI 제스처·아쿠 에이전트 tool path·프로그램 exec 모두 동일하게 커버.**
+- `agocraft-mirror.ts`: `frameHeightRatio(doc, frameId)` export.
 
 ## Acceptance
 
 - [x] 단위 `reparent-font.test.ts` 3 pass (re-base 수식 · px 무시 · 동일높이 no-op)
-- [x] e2e `fontsize-reparent.spec.ts` 3 pass: 제스처 reparent 가 ratio(54→54)+px(30→30) 보존,
-      단일 Cmd+Z 가 부모+value 0.2 복원, 대조군(raw command)은 여전히 ×2
-- [x] weave typecheck 0
+- [x] e2e `fontsize-reparent.spec.ts` 3 pass: **raw 명령**이 ratio(54→54)+px(30→30) 보존,
+      단일 Cmd+Z 가 부모+value 0.2 복원, **에이전트/프로그램 raw-exec 경로도 보존**
+- [x] weave typecheck 0, 회귀 없음(기존 reparent e2e + commands.test)
 - [x] WI-133 레이아웃 테스트의 기존 `childConstraints` 타입오류도 함께 수정
 
-## 알려진 범위 (DR-086)
+## 남은 범위
 
-raw `weave.item.reparent`(아쿠 에이전트 tool path / 프로그램 호출)는 re-base 안 함 — 에이전트가
-키 다른 프레임 간 비율 텍스트를 옮기는 경우는 드묾. 보편 수정은 agocraft attr 변환 훅 + 재벤더가
-필요해 deferred.
+`dissolveFrame`(프레임 삭제→자식 상승)은 별도 제스처라 래핑 안 함(기존 동작 유지). 필요 시 후속.

@@ -1,11 +1,10 @@
-// Investigation (font-size kind issue) — does reparenting a text into a
-// DIFFERENT-height parent frame keep its on-screen size? The reparent command
-// promises "preserving its on-screen position", and `computeReparentFrameRatio`
-// preserves the BOX. But a `fontSizeSpec.kind:'ratio'` resolves to
-// value × parentHeight (resolve-font-size.ts), and reparent does NOT convert
-// the ratio value — so the glyphs resize while the box stays. A `kind:'px'`
-// font is absolute and stays. This spec measures the rendered font px before /
-// after a reparent A(height 0.25) → B(height 0.5) to expose the mismatch.
+// Font-size kind fix (WI-135 / DR-086) — reparenting a text into a
+// DIFFERENT-height parent keeps its on-screen size for BOTH kinds. A
+// `fontSizeSpec.kind:'ratio'` resolves to value × parentHeight; the
+// `weave.item.reparent` command now re-bases that value in the same transaction
+// so the rendered px is preserved (px fonts + the box were already preserved).
+// The fix lives IN the command, so the raw exec (Aku agent / programmatic) path
+// is covered too. Reparent A(height 0.25) → B(height 0.5).
 
 import { expect, type Page, test } from "@playwright/test";
 import { clearAllDesigns, prepareDesign } from "./helpers.js";
@@ -65,25 +64,10 @@ async function addText(page: Page, parent: string, text: string, spec: unknown):
   return id;
 }
 
-/** Reparent through the REAL UI gesture path (drag controller / context menu
- *  use `reparentPreservingRatioFont`), exposed for e2e via a DEV global. */
+/** The RAW `weave.item.reparent` command — the same path the Aku agent tool and
+ *  any programmatic caller use. Ratio-font preservation is built INTO the command
+ *  now (WI-135 / DR-086), so this is the path under test. */
 async function reparent(page: Page, itemId: string, newParentId: string): Promise<void> {
-  await page.evaluate(
-    ({ itemId, newParentId }) => {
-      const w = window as unknown as {
-        __weaveReparentPreservingRatioFont?: (
-          e: ReadonlyArray<{ itemId: string; newParentId: string }>,
-        ) => void;
-      };
-      w.__weaveReparentPreservingRatioFont!([{ itemId, newParentId }]);
-    },
-    { itemId, newParentId },
-  );
-  await page.waitForTimeout(150);
-}
-
-/** A bare reparent (no font preservation) — the raw kit command, for contrast. */
-async function reparentRaw(page: Page, itemId: string, newParentId: string): Promise<void> {
   await page.evaluate(
     ({ itemId, newParentId }) => {
       const w = window as unknown as {
@@ -203,16 +187,19 @@ test("one Cmd+Z restores BOTH the reparent and the ratio-font re-base (single tr
   expect(await renderedFontPx(page, "UNDOZZ")).toBeCloseTo(before!, 0);
 });
 
-test("contrast: the RAW reparent command still rescales a ratio font (fix lives in the gesture path)", async ({
+test("the AGENT / programmatic path (raw weave.item.reparent) also preserves the ratio font", async ({
   page,
 }) => {
+  // The Aku agent + any programmatic caller exec the raw command directly. The
+  // fix lives IN the command, so this path is preserved too (WI-135 follow-up).
   await prepareDesign(page, { flavor: "slide-deck", title: "fontsize-reparent-raw" });
   const slide = await rootFrameId(page);
   const a = await addFrame(page, slide, 0.25);
   const b = await addFrame(page, slide, 0.5);
   const ratioText = await addText(page, a, "RAWRATIO", { kind: "ratio", value: 0.2 });
   const before = await renderedFontPx(page, "RAWRATIO");
-  await reparentRaw(page, ratioText, b);
+  await reparent(page, ratioText, b); // raw exec
   const after = await renderedFontPx(page, "RAWRATIO");
-  expect(after! / before!, "raw command rescales by ~B/A height").toBeGreaterThan(1.7);
+  expect(after!, "raw command now preserves the ratio font").toBeCloseTo(before!, 0);
+  expect((await itemInfo(page, ratioText))?.spec).toMatchObject({ kind: "ratio", value: 0.1 });
 });
