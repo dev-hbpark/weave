@@ -19,7 +19,9 @@ function schemaText(command: string): string {
 }
 
 function layoutKindText(kind: string): string {
-  const lk = WEAVE_CAPABILITIES.layoutKinds.find((k) => k.kind === kind);
+  const lk = WEAVE_CAPABILITIES.layoutKinds.find((k) => k.kind === kind) as
+    | { description?: string; childConstraints?: string }
+    | undefined;
   expect(lk, `no capability layoutKind ${kind}`).toBeDefined();
   return `${lk?.description ?? ""} ${lk?.childConstraints ?? ""}`;
 }

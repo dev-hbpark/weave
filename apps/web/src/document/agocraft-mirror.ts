@@ -413,6 +413,19 @@ function frameTrail(doc: AgocraftDocument, id: string): FrameRect[] | null {
   return frames;
 }
 
+/** Height of the frame `frameId` as a fraction of the DESIGN height — i.e. the
+ *  product of `frame.height` ratios from the root-direct-child down to `frameId`
+ *  inclusive. This equals `parentHeightPx / designHeight` for a text whose
+ *  direct parent is `frameId` (the value `resolveFontSize` multiplies a
+ *  `kind:'ratio'` font by, modulo the constant `designHeight`). The document
+ *  root → 1. Returns `null` if the frame or any ancestor lacks a frame. */
+export function frameHeightRatio(doc: AgocraftDocument, frameId: string): number | null {
+  if (frameId === String(doc.root.id)) return 1;
+  const trail = frameTrail(doc, frameId);
+  if (trail === null) return null;
+  return trail.reduce((p, f) => p * f.height, 1);
+}
+
 /** Absolute axis-aligned bbox of an item in design-space pixels (rotation
  *  ignored — v1 hit-test is axis-aligned). `null` when the item is missing or
  *  any ancestor lacks a `frame`. The document root maps to

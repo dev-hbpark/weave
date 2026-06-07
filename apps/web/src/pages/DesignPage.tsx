@@ -104,6 +104,7 @@ import {
   isDomainItem,
 } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
+import { reparentPreservingRatioFont } from "../document/reparent-font.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import {
   basisFromFrameSample,
@@ -991,6 +992,18 @@ function DesignPageBody() {
     (window as unknown as { __weaveDoc?: typeof docInAgocraft }).__weaveDoc = docInAgocraft;
     (window as unknown as { __weaveDesign?: typeof design }).__weaveDesign = design;
     (window as unknown as { __weaveVm?: typeof vm }).__weaveVm = vm;
+    // Ratio-font-preserving reparent (the real UI gesture path) — for e2e.
+    (
+      window as unknown as {
+        __weaveReparentPreservingRatioFont?: (
+          entries: ReadonlyArray<{ itemId: string; newParentId: string }>,
+        ) => void;
+      }
+    ).__weaveReparentPreservingRatioFont = (entries) =>
+      reparentPreservingRatioFont(editor, docInAgocraft, entries, {
+        width: design.width,
+        height: design.height,
+      });
     // WI-041 Phase 4 — clipboard peek shim for the cross-tab e2e.
     // `clipboardStore.peek()` is module state; this surface lets a
     // second-tab assertion observe whether the BroadcastChannel /
@@ -1977,16 +1990,15 @@ function DesignPageBody() {
     const reparentTree = buildFrameTree(docInAgocraft, movedIds);
     const handleReparent = (targetPickerId: string) => {
       const newParentId = resolvePickerTargetId(docInAgocraft, targetPickerId);
-      editor.exec("weave.item.reparent", {
-        entries: movedIds.map((id) => ({
-          itemId: id,
-          newParentId,
-        })),
-        // Real design size → rotation-aware reparent
-        // stays correct across rotated, non-square ancestors.
-        designWidth: design.width,
-        designHeight: design.height,
-      });
+      // Preserve ratio-font visual size across the parent change (same undo
+      // transaction). Real design size keeps the rotation-aware reparent
+      // correct across rotated, non-square ancestors.
+      reparentPreservingRatioFont(
+        editor,
+        docInAgocraft,
+        movedIds.map((id) => ({ itemId: id, newParentId })),
+        { width: design.width, height: design.height },
+      );
     };
     // WI-065 / DR-031 — shape ↔ line conversion. Gate each
     // row on the live item's convertibility (core decides).
