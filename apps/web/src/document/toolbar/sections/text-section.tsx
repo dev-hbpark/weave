@@ -300,6 +300,85 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     <>
       <Bar.Kind icon={<IconText size={18} />} label="텍스트" />
       <Bar.Quick>
+        {/* WI-136 — font family promoted to Quick, BEFORE size: the most common
+            typographic choice is now one click away instead of inside More 타이포.
+            Compact trigger (label truncates); full role/catalog/browse menu. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="md"
+              data-testid="text-font-family-trigger"
+              data-tip="글꼴"
+              style={{
+                fontFamily: editing
+                  ? (editFontFamily?.value as string | undefined)
+                  : isMixed(fontFamily)
+                    ? undefined
+                    : fontFamily,
+              }}
+              className="w-[132px] justify-between gap-1"
+            >
+              <span className="truncate">
+                {editing
+                  ? editFontFamily?.mixed
+                    ? "여러 폰트"
+                    : fontLabel(
+                        (editFontFamily?.value as string | undefined) ??
+                          (isMixed(fontFamily) ? "" : fontFamily),
+                      )
+                  : isMixed(fontFamily)
+                    ? "여러 폰트"
+                    : fontLabel(fontFamily)}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            sideOffset={6}
+            className="max-h-[60vh] overflow-y-auto"
+          >
+            <DropdownMenuLabel>테마 역할</DropdownMenuLabel>
+            {FONT_ROLES.map((r) => (
+              <DropdownMenuItem
+                key={r.id}
+                onSelect={() => applyFontFamily(r.value)}
+                data-testid={`text-font-role-${r.id}`}
+              >
+                <span style={{ fontFamily: r.value }}>{r.label}</span>
+              </DropdownMenuItem>
+            ))}
+            {FONT_GROUPS.map((g) => (
+              <Fragment key={g.category}>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>{g.label}</DropdownMenuLabel>
+                {g.fonts.map((f) => (
+                  <DropdownMenuItem
+                    key={f.id}
+                    onPointerEnter={() => ensureFontByStack(f.stack)}
+                    onSelect={() => applyFontFamily(f.stack)}
+                    data-testid={`text-font-family-${f.id}`}
+                  >
+                    <span style={{ fontFamily: f.stack }}>{f.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </Fragment>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => setBrowseOpen(true)}
+              data-testid="text-font-browse-all"
+            >
+              모든 폰트 찾아보기…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <FontBrowseDialog
+          open={browseOpen}
+          onOpenChange={setBrowseOpen}
+          onPick={(entry) => applyFontFamily(entry.stack)}
+        />
+        <MixedBadge visible={editing ? !!editFontFamily?.mixed : isMixed(fontFamily)} />
         {/* DR-design-016 — font size promoted to Quick (the most frequent text
             edit after B/I/U); writes px (fine-grained px/% unit toggle stays in
             More 크기). */}
@@ -469,83 +548,6 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
       <Bar.More>
         <Accordion>
           <AccordionItem label="타이포" defaultOpen data-testid="text-typo-group">
-            <Bar.Field label="글꼴">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="md"
-                    data-testid="text-font-family-trigger"
-                    style={{
-                      fontFamily: editing
-                        ? (editFontFamily?.value as string | undefined)
-                        : isMixed(fontFamily)
-                          ? undefined
-                          : fontFamily,
-                    }}
-                    className="w-full justify-between"
-                  >
-                    {editing
-                      ? editFontFamily?.mixed
-                        ? "여러 폰트"
-                        : fontLabel(
-                            (editFontFamily?.value as string | undefined) ??
-                              (isMixed(fontFamily) ? "" : fontFamily),
-                          )
-                      : isMixed(fontFamily)
-                        ? "여러 폰트"
-                        : fontLabel(fontFamily)}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  sideOffset={6}
-                  className="max-h-[60vh] overflow-y-auto"
-                >
-                  <DropdownMenuLabel>테마 역할</DropdownMenuLabel>
-                  {FONT_ROLES.map((r) => (
-                    <DropdownMenuItem
-                      key={r.id}
-                      onSelect={() => applyFontFamily(r.value)}
-                      data-testid={`text-font-role-${r.id}`}
-                    >
-                      <span style={{ fontFamily: r.value }}>{r.label}</span>
-                    </DropdownMenuItem>
-                  ))}
-                  {FONT_GROUPS.map((g) => (
-                    <Fragment key={g.category}>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>{g.label}</DropdownMenuLabel>
-                      {g.fonts.map((f) => (
-                        <DropdownMenuItem
-                          key={f.id}
-                          // Hover loads the webfont so the row previews in its
-                          // own face (on-demand — no static bulk load).
-                          onPointerEnter={() => ensureFontByStack(f.stack)}
-                          onSelect={() => applyFontFamily(f.stack)}
-                          data-testid={`text-font-family-${f.id}`}
-                        >
-                          <span style={{ fontFamily: f.stack }}>{f.label}</span>
-                        </DropdownMenuItem>
-                      ))}
-                    </Fragment>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={() => setBrowseOpen(true)}
-                    data-testid="text-font-browse-all"
-                  >
-                    모든 폰트 찾아보기…
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <FontBrowseDialog
-                open={browseOpen}
-                onOpenChange={setBrowseOpen}
-                onPick={(entry) => applyFontFamily(entry.stack)}
-              />
-              <MixedBadge visible={editing ? !!editFontFamily?.mixed : isMixed(fontFamily)} />
-            </Bar.Field>
             <Bar.Field label="크기">
               {(() => {
                 const tip = fontSizeTooltipCopy();

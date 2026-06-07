@@ -140,10 +140,12 @@ test("DR-021 — text More popover groups fields into accordions (정렬 collaps
   const popover = page.getByTestId("toolbar-more-content");
   await expect(popover).toBeVisible();
 
-  // 타이포 group is open by default → its content (글꼴 family) is visible.
-  // DR-design-016 — the Family control is a DropdownMenu (text-font-family-trigger).
+  // 타이포 group is open by default → its content (크기 size) is visible.
   await expect(popover.getByTestId("text-typo-group-content")).toBeVisible();
-  await expect(popover.getByTestId("text-font-family-trigger")).toBeVisible();
+  // WI-136 — the Family control was promoted OUT of More into the always-visible
+  // Quick strip (before size), so it now lives on the toolbar, not the popover.
+  await expect(toolbar.getByTestId("text-font-family-trigger")).toBeVisible();
+  await expect(popover.getByTestId("text-font-family-trigger")).toHaveCount(0);
 
   // 정렬 group is collapsed by default → its content is not rendered.
   await expect(popover.getByTestId("text-align-group-content")).toHaveCount(0);

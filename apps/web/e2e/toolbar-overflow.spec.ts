@@ -40,8 +40,9 @@ test("Text bar quick area exposes Bold/Italic/Underline + color, More opens the 
   const more = page.getByTestId("toolbar-more-trigger");
   await expect(more).toBeVisible();
 
-  // Family / Size / Align are NOT in the visible bar — they live in More.
-  await expect(toolbar.locator('[data-testid="text-font-family-trigger"]')).toHaveCount(0);
+  // WI-136 — Family is promoted to the visible Quick strip (before size). The
+  // fine-grained Size px/% toggle (text-size-section) and Align still live in More.
+  await expect(toolbar.locator('[data-testid="text-font-family-trigger"]')).toBeVisible();
   await expect(toolbar.locator('[data-testid="text-size-section"]')).toHaveCount(0);
 
   // Click More → popover appears with the field rows.
@@ -49,9 +50,9 @@ test("Text bar quick area exposes Bold/Italic/Underline + color, More opens the 
   const popover = page.getByTestId("toolbar-more-content");
   await expect(popover).toBeVisible();
   // DR-design-021 — the More popover groups fields into accordions. The
-  // "타이포" group is open by default, so Family / Size show immediately.
-  await expect(popover.locator('[role="group"][aria-label="Family"]')).toBeVisible();
-  await expect(popover.locator('[role="group"][aria-label="Size"]')).toBeVisible();
+  // "타이포" group is open by default. WI-136 moved Family to Quick, so only the
+  // Size (크기) field remains here.
+  await expect(popover.locator('[role="group"][aria-label="크기"]')).toBeVisible();
   // Alignment lives in the collapsed "정렬" group — expand it, then the 2D
   // alignment pad (align × valign) shows. (DR-design-021 — the two separate
   // Align / V-Align rows were merged into one AlignmentPad.)

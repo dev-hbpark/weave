@@ -378,9 +378,8 @@ test("font-family picker offers presets and applies the selected stack", async (
   await prepareDesign(page, { flavor: "mixed", title: "Text-Font" });
   const id = await addTextViaMenu(page);
 
-  // The font-family picker lives in the "더보기" (More) popover, not in the
-  // always-visible quick-action strip — open it first.
-  await page.getByTestId("toolbar-more-trigger").click();
+  // WI-136 — the font-family picker now lives in the always-visible Quick strip
+  // (promoted out of More, before the size control), so no need to open 더보기.
   const trigger = page.getByTestId("text-font-family-trigger");
   await expect(trigger).toBeVisible();
   await trigger.click();
