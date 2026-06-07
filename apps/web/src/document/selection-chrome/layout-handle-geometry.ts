@@ -4,47 +4,21 @@
 // the math is unit-tested independently of the canvas wiring.
 
 import type { TrackSize } from "@agocraft/core";
-
-/** A track's effective fr weight when it has no fixed ratio: `fr` uses its value,
- *  `auto` behaves as `fr:1`, `minmax` uses its `fr` max (else 1). `ratio` = 0
- *  (it is fixed, not a share). */
-function frWeight(t: TrackSize): number {
-  if (t.kind === "fr") return Math.max(0, t.value);
-  if (t.kind === "auto") return 1;
-  if (t.kind === "minmax") return t.max.kind === "fr" ? Math.max(0, t.max.value) : 1;
-  return 0; // ratio
-}
-
-/** A track's fixed ratio size if it is `ratio` (or `minmax` whose min is a
- *  ratio floor), else null (it is a flexible share). */
-function fixedRatio(t: TrackSize): number | null {
-  if (t.kind === "ratio") return Math.max(0, t.value);
-  return null;
-}
+import { resolveTrackSizes as engineResolveTrackSizes } from "@agocraft/layout";
 
 /**
- * Resolve each track to a 0..1 ratio of the available main-axis extent
- * (CSS-grid-ish): fixed `ratio` tracks take their value; the remainder (after
- * fixed tracks + gaps) is shared among the flexible tracks by fr weight.
- * `available` and `gap` are 0..1 ratios of the same axis. Always returns one
- * size per track (≥ 0); an empty list → `[]`.
+ * Resolve each track to a 0..1 parent-ratio size, delegating to the SAME
+ * algorithm the layout engine renders with (`@agocraft/layout`) so a handle
+ * drawn from these sizes sits exactly on the rendered track boundary. `available`
+ * is net of padding; an empty list → `[]`.
  */
 export function resolveTrackSizes(
   tracks: ReadonlyArray<TrackSize>,
   gap: number,
   available = 1,
 ): number[] {
-  const n = tracks.length;
-  if (n === 0) return [];
-  const gaps = Math.max(0, n - 1) * Math.max(0, gap);
-  const fixedTotal = tracks.reduce((s, t) => s + (fixedRatio(t) ?? 0), 0);
-  const frTotal = tracks.reduce((s, t) => s + frWeight(t), 0);
-  const free = Math.max(0, available - gaps - fixedTotal);
-  return tracks.map((t) => {
-    const fixed = fixedRatio(t);
-    if (fixed !== null) return fixed;
-    return frTotal > 0 ? (frWeight(t) / frTotal) * free : 0;
-  });
+  if (tracks.length === 0) return [];
+  return [...engineResolveTrackSizes({ tracks, gap, available })];
 }
 
 /**

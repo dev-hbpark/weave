@@ -210,7 +210,12 @@ function LayoutLine({
           { x: 1, y: 0 },
           fs.zoom,
         );
-        const nextGap = layout.gap + deltaDesign / Math.max(1, frameMain);
+        // Boundary k sits at offset = padStart + Σchild + (k+0.5)·gap, so a uniform
+        // gap change Δ moves it by (k+0.5)·Δ. Divide by (k+0.5) so the dragged
+        // boundary follows the cursor 1:1 (no grow children); without it the common
+        // 2-child case moves at half the cursor speed.
+        const factor = line.boundaryIndex + 0.5;
+        const nextGap = layout.gap + deltaDesign / Math.max(1, frameMain) / factor;
         editor.exec("weave.frame.setLayout", {
           itemId: frameId,
           layout: setFlexGap(layout, nextGap),
@@ -218,11 +223,14 @@ function LayoutLine({
         return;
       }
       if (layout.kind === "auto-grid") {
-        // New boundary start = pointer position as a ratio from the inner start.
+        // Pointer ratio from the inner start. The handle LINE sits at the gap
+        // CENTRE; the dragged track's new END is gap/2 BEFORE the cursor — subtract
+        // it so the boundary tracks the pointer exactly (was the "어긋남" cause).
         const designPos = vertical ? (clientX - fs.left) / fs.zoom : (clientY - fs.top) / fs.zoom;
         const frameCross = vertical ? fs.dw : fs.dh;
         const padStart = vertical ? info.pad.l : info.pad.t;
-        const ratioFromInner = designPos / Math.max(1, frameCross) - padStart;
+        const gap = vertical ? layout.columnGap : layout.rowGap;
+        const newBoundaryStart = designPos / Math.max(1, frameCross) - padStart - gap / 2;
         const avail = vertical
           ? Math.max(0, 1 - info.pad.l - info.pad.r)
           : Math.max(0, 1 - info.pad.t - info.pad.b);
@@ -231,7 +239,7 @@ function LayoutLine({
           vertical ? "column" : "row",
           avail,
           line.boundaryIndex,
-          ratioFromInner,
+          newBoundaryStart,
         );
         editor.exec("weave.frame.setLayout", { itemId: frameId, layout: next });
       }
