@@ -505,11 +505,18 @@ function normalizeTextAttrs(
   after: Readonly<Record<string, unknown>>,
   provided: Readonly<Record<string, unknown>> | undefined,
 ): Readonly<Record<string, unknown>> {
-  // DR-082 — re-tag a px font size mis-declared as a ratio, regardless of whether
-  // text/textRuns also changed (and even on the UI `patch` path, where it is a
-  // no-op since the toolbar never emits a >1 ratio).
-  after = sanitizeFontSizeSpec(after);
+  // The UI px/% toggle + slider go through the `patch` form (`provided`
+  // undefined). They compute the ratio from the parent height EXPLICITLY and may
+  // LEGITIMATELY emit value > 1 — a font taller than a SMALL nested parent frame
+  // (curPx / parentHeightPx > 1). Trust that path: running the DR-082 px-mis-tag
+  // guard there would re-tag the user's just-chosen ratio back to px, so toggling
+  // to "%" on a small-parent text snaps back and the unit flickers px↔% mid-drag.
+  // The guard is for the DECLARATIVE / agent path only (where a >1 ratio is a px
+  // magnitude the model mis-tagged; DR-091 grounding usually converts it first,
+  // this is the fallback).
   if (provided === undefined) return after;
+  // DR-082 — re-tag a px font size the agent mis-declared as a ratio (value > 1).
+  after = sanitizeFontSizeSpec(after);
   if ("textRuns" in provided) {
     const runs = after.textRuns;
     const text = Array.isArray(runs)

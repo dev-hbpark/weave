@@ -2213,6 +2213,31 @@ describe("px ↔ ratio unit-confusion guard (DR-082 / WI-127)", () => {
     });
   });
 
+  it("update: the UI `patch` form PRESERVES a >1 ratio (small-parent toggle, not re-tagged)", () => {
+    // The px/% toggle goes through `patch`; a font taller than a small nested
+    // parent legitimately yields ratio > 1. It must NOT be coerced to px (that
+    // snapped the unit back and flickered px↔% mid-drag — the reported bug).
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.update");
+    if (cmd === undefined) throw new Error("command not found");
+    const res = cmd.run(makePartialEditCtx(), {
+      itemId: "text-1",
+      patch: (it: Item) => ({
+        ...it,
+        attrs: {
+          ...(it.attrs as unknown as Record<string, unknown>),
+          fontSizeSpec: { kind: "ratio", value: 1.2 },
+        } as unknown as Item["attrs"],
+      }),
+    });
+    if (!res.ok) throw new Error("update failed");
+    const patch = res.patches.find((p) => p.type === "item.attrs");
+    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
+    expect((patch.after as Record<string, unknown>).fontSizeSpec).toEqual({
+      kind: "ratio",
+      value: 1.2,
+    });
+  });
+
   // ── B. frame side oversize ───────────────────────────────────────────────
   it("add: a frame width of 24 (2400% of parent) is restored to a sane seed side", () => {
     const f = frameOf(
