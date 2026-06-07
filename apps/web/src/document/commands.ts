@@ -540,10 +540,17 @@ function normalizeTextAttrs(
   after = sanitizeFontSizeSpec(after);
   if ("textRuns" in provided) {
     const runs = after.textRuns;
-    const text = Array.isArray(runs)
-      ? runs.map((r) => (isPlainObject(r) && typeof r.insert === "string" ? r.insert : "")).join("")
-      : "";
-    return { ...after, text };
+    if (Array.isArray(runs)) {
+      const text = runs
+        .map((r) => (isPlainObject(r) && typeof r.insert === "string" ? r.insert : ""))
+        .join("");
+      return { ...after, text };
+    }
+    // textRuns supplied as null / non-array (e.g. an agent edit clearing runs):
+    // treat it as "reset runs" — derive a valid runs array from the current text
+    // so a null never persists onto the item (the renderer would deref-crash).
+    const text = typeof after.text === "string" ? after.text : "";
+    return { ...after, text, textRuns: text.length > 0 ? [{ insert: text }] : [] };
   }
   if ("text" in provided) {
     const text = typeof after.text === "string" ? after.text : "";

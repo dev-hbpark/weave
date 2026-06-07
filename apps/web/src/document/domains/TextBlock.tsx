@@ -68,7 +68,10 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // with no bold attr renders normal (the explicit un-bold that the inherited
   // item-level weight previously made impossible). With no runs (plain /
   // legacy) the container keeps applying the item-level attrs unchanged.
-  const hasRuns = a.textRuns !== undefined && a.textRuns.length > 0;
+  // `textRuns` is typed `TextRun[] | undefined`, but the agent's open attrs bag
+  // can inject `null` (e.g. an edit that tries to clear runs); guard with
+  // Array.isArray so a null never deref-crashes the renderer.
+  const hasRuns = Array.isArray(a.textRuns) && a.textRuns.length > 0;
 
   // Phase 2 (fontSizeSpec) — resolve the font size to design-px. A `ratio`
   // spec scales with the parent frame's height (provided via context by the
@@ -453,7 +456,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         <LexicalTextEditor
           anchorId={String(item.id)}
           value={a.text}
-          {...(a.textRuns !== undefined ? { initialTextRuns: a.textRuns } : {})}
+          {...(Array.isArray(a.textRuns) ? { initialTextRuns: a.textRuns } : {})}
           {...(baseInlineFormat !== undefined ? { baseInlineFormat } : {})}
           contentStyle={editorContentStyle}
           baseRangeStyle={baseRangeStyle}
@@ -600,7 +603,7 @@ function renderReadOnly(
   // outline when this is true, else renders transparent (paints no halo).
   itemHasOutline = false,
 ): ReactNode {
-  if (textRuns === undefined || textRuns.length === 0) return text;
+  if (!Array.isArray(textRuns) || textRuns.length === 0) return text;
   const outline = mode === "outline";
   return textRuns.map((run, i) => {
     // biome-ignore lint/suspicious/noArrayIndexKey: static list with stable order — the array index is a valid, stable key here

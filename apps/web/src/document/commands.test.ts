@@ -447,6 +447,27 @@ describe("weave.item.update — partial-edit normalization (WI-094)", () => {
     expect(after.text).toBe("Q3 sales up");
   });
 
+  it("text: textRuns provided as null is coerced to a valid runs array (never persists null)", () => {
+    // The agent's open attrs bag can send textRuns:null (e.g. clearing runs).
+    // It must be normalized to a valid array so the renderer never deref-crashes.
+    const after = updateAttrs(makePartialEditCtx(), "text-1", {
+      textRuns: null as unknown as Record<string, unknown>,
+    });
+    expect(after.textRuns).toEqual([{ insert: "Q3 sales up" }]); // derived from current text
+    expect(after.text).toBe("Q3 sales up");
+  });
+
+  it("text: textRuns:null with empty text → empty runs array (not null)", () => {
+    const ctx = makePartialEditCtx();
+    const cleared = updateAttrs(ctx, "text-1", { text: "" });
+    expect(cleared.textRuns).toEqual([]);
+    // and a direct null on an item — still an array, never null
+    const after = updateAttrs(ctx, "text-1", {
+      textRuns: null as unknown as Record<string, unknown>,
+    });
+    expect(Array.isArray(after.textRuns)).toBe(true);
+  });
+
   it("text: the UI `patch` form is untouched (no re-derive) — provided is undefined", () => {
     const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.update");
     if (cmd === undefined) throw new Error("command not found");
