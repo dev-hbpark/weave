@@ -13,7 +13,7 @@
 // captured; an iframe is not). First click selects → iframe mounts → next click
 // plays.
 
-import type { JSX } from "react";
+import { type JSX, useState } from "react";
 import { resolveEmbed } from "../embed/providers.js";
 import { useSelection } from "../interactions/selection-context.js";
 import type { AgoItem, EmbedAttrs } from "../types.js";
@@ -41,6 +41,11 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
   // Present/read-only → always playable. Editor → playable ONLY while selected,
   // so the first click selects (iframe inert) and the next click plays.
   const interactive = onUpdate === undefined || selectedIds.has(String(item.id));
+  // Holds the thumbnail URL that failed to load (404 / offline) → fall back to
+  // the placeholder. Keyed by URL so a new video re-attempts its own poster.
+  const [brokenPoster, setBrokenPoster] = useState<string | null>(null);
+  const posterUrl =
+    resolved !== null && resolved.thumbnailUrl !== brokenPoster ? resolved.thumbnailUrl : null;
 
   // Three states: unrecognized URL → placeholder; recognized + interactive →
   // live iframe (plays); recognized + inert → thumbnail poster.
@@ -64,7 +69,7 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
         allowFullScreen={a.allowFullscreen ?? true}
         referrerPolicy="strict-origin-when-cross-origin"
       />
-    ) : resolved.thumbnailUrl !== null ? (
+    ) : posterUrl !== null ? (
       // Decorative poster — pointer-inert so the first click selects the frame.
       // An <img> (not an iframe) is captured by export / static rendering.
       <div
@@ -73,9 +78,10 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
         data-testid="embed-poster"
       >
         <img
-          src={resolved.thumbnailUrl}
-          alt={a.title ?? "YouTube 동영상 미리보기"}
+          src={posterUrl}
+          alt={a.title ?? "동영상 미리보기"}
           draggable={false}
+          onError={() => setBrokenPoster(posterUrl)}
           className="absolute inset-0 h-full w-full object-cover"
         />
         <span className="absolute inset-0 flex items-center justify-center" aria-hidden>

@@ -38,7 +38,7 @@ export const EmbedSection: ToolbarSectionComponent = ({ editor, items, ids }) =>
           type="text"
           inputMode="url"
           aria-label="임베드 URL"
-          placeholder="YouTube URL 붙여넣기"
+          placeholder="YouTube · Vimeo URL 붙여넣기"
           value={urlValue}
           // Store only the url; the renderer re-derives provider + iframe src.
           onChange={(e) => setAttr({ url: e.currentTarget.value })}

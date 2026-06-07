@@ -287,7 +287,7 @@ export const WEAVE_CAPABILITIES = {
       // iframe src is derived per-render via the provider registry.
       kind: "embed",
       description:
-        "An embedded video (YouTube). attrs.url is the page URL the user wants embedded (watch / youtu.be / shorts / live forms all work; the iframe src is derived from it — only recognized providers render, otherwise a placeholder). attrs.allowFullscreen (boolean, default true), attrs.opacity (0..1). Size/position via attrs.frame (give it a 16:9-ish box). Use to drop a YouTube video onto a slide. Note: it plays in PRESENT mode; in the editor it shows the video thumbnail.",
+        "An embedded video (YouTube or Vimeo). attrs.url is the page URL the user wants embedded (YouTube watch / youtu.be / shorts / live, and vimeo.com/<id> all work — a YouTube `t`/`start` timestamp is carried through; the iframe src is derived from the url, and only recognized providers render, otherwise a placeholder). attrs.allowFullscreen (boolean, default true), attrs.opacity (0..1). Size/position via attrs.frame (give it a 16:9-ish box). Use to drop a video onto a slide. Note: it plays in PRESENT mode and when selected in the editor; otherwise it shows the video thumbnail.",
       editableAttrs: ["frame", "url", "allowFullscreen", "opacity"],
     },
   ],

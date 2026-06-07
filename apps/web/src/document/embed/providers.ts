@@ -36,6 +36,22 @@ function youtubeVideoId(url: string): string | null {
   return null;
 }
 
+/** Start offset in WHOLE SECONDS from a YouTube `t` / `start` param. Accepts a
+ *  plain seconds count (`90`, `90s`) or the `1h2m3s` form. Null when absent. */
+function youtubeStartSeconds(url: string): number | null {
+  const m = url.match(/[?&](?:t|start)=([0-9hms]+)/i);
+  const raw = m?.[1];
+  if (raw === undefined) return null;
+  if (/^\d+s?$/.test(raw)) {
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  const hms = raw.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (hms === null) return null;
+  const total = Number(hms[1] ?? 0) * 3600 + Number(hms[2] ?? 0) * 60 + Number(hms[3] ?? 0);
+  return total > 0 ? total : null;
+}
+
 const YOUTUBE: EmbedProvider = {
   id: "youtube",
   label: "YouTube",
@@ -44,8 +60,12 @@ const YOUTUBE: EmbedProvider = {
   },
   toEmbedUrl(url) {
     const id = youtubeVideoId(url);
-    // Privacy-enhanced embed domain (no cookies until the user plays).
-    return id !== null ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+    if (id === null) return null;
+    const start = youtubeStartSeconds(url);
+    // Privacy-enhanced embed domain (no cookies until the user plays). Carry a
+    // share-link start offset through as `?start=<sec>`.
+    const base = `https://www.youtube-nocookie.com/embed/${id}`;
+    return start !== null ? `${base}?start=${start}` : base;
   },
   toThumbnailUrl(url) {
     const id = youtubeVideoId(url);
@@ -54,8 +74,31 @@ const YOUTUBE: EmbedProvider = {
   },
 };
 
+/** Numeric Vimeo id from `vimeo.com/<id>` or `player.vimeo.com/video/<id>`. */
+function vimeoVideoId(url: string): string | null {
+  const m = url.match(/vimeo\.com\/(?:video\/)?(\d{6,})(?:[?&#/]|$)/);
+  return m?.[1] ?? null;
+}
+
+const VIMEO: EmbedProvider = {
+  id: "vimeo",
+  label: "Vimeo",
+  match(url) {
+    return /vimeo\.com/i.test(url);
+  },
+  toEmbedUrl(url) {
+    const id = vimeoVideoId(url);
+    return id !== null ? `https://player.vimeo.com/video/${id}` : null;
+  },
+  // Vimeo posters require an oEmbed/API call (no predictable URL) → none here;
+  // the renderer shows a placeholder while inert and the iframe when interactive.
+  toThumbnailUrl() {
+    return null;
+  },
+};
+
 /** Provider SSOT — ordered; first `match` wins. Add a provider = one entry. */
-export const EMBED_PROVIDERS: ReadonlyArray<EmbedProvider> = [YOUTUBE];
+export const EMBED_PROVIDERS: ReadonlyArray<EmbedProvider> = [YOUTUBE, VIMEO];
 
 export interface ResolvedEmbed {
   readonly provider: EmbedProvider;

@@ -36,10 +36,17 @@ YouTube 썸네일은 video id에서 **결정적으로 파생**(`img.youtube.com/
 
 효과: (a) 미선택 임베드마다 iframe 안 띄워 **가벼움**, (b) **export/static 캡처 폴백**(iframe은 캡처 안 되지만 `<img>`는 됨), (c) 선택 시에만 iframe 마운트 → 재생. oEmbed **제목** 메타는 여전히 fetch 필요라 후속.
 
+## 갱신 (2026-06-07) — Vimeo provider + YouTube 시작시간 + 썸네일 onError
+
+- **Vimeo provider 추가**(Rule-6 실증, 엔트리 1개): `vimeo.com/<id>` / `player.vimeo.com/video/<id>` → `player.vimeo.com/video/<id>`. 썸네일은 oEmbed 필요라 `toThumbnailUrl`=null(inert 시 placeholder, 선택/프레젠트 시 iframe).
+- **YouTube 시작 시간**: 공유 링크의 `t`/`start`(`90`/`90s`/`1m30s`) → embed `?start=<초>`.
+- **썸네일 onError 폴백**: 포스터 이미지 로드 실패(404/오프라인) 시 placeholder로(`brokenPoster` 상태, URL별 키).
+- 에이전트 capability + 섹션 안내에 Vimeo 반영.
+
 ## 후속
 
-- oEmbed fetch(제목 메타, graceful fallback), Vimeo/Loom 등 provider, 자동재생/타임스탬프 옵션, 썸네일 onError 폴백(깨진 이미지 → placeholder).
+- oEmbed fetch(제목 메타, graceful fallback), Loom 등 추가 provider, 자동재생/뮤트 옵션.
 
 ## 검증
 
-782 단위 테스트(provider 5 + kind 등록 4 + corner-radius embed), typecheck·빌드·Biome 클린. 라이브(iframe 실제 재생/추가 UX)는 샌드박스 네트워크 제약으로 별도 환경.
+786 단위 테스트(provider 9 + kind 등록 4 + corner-radius embed 등), typecheck·빌드·Biome 클린. 라이브(iframe 재생/썸네일/추가 UX)는 샌드박스 네트워크 제약으로 별도 환경.

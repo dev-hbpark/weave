@@ -9,7 +9,8 @@ describe("resolveEmbed (YouTube)", () => {
   it("parses every common YouTube URL form to the nocookie embed", () => {
     const urls = [
       "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      "https://youtube.com/watch?v=dQw4w9WgXcQ&t=42s",
+      // Other query params (playlist, feature) must not break id parsing or add a start.
+      "https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc&feature=share",
       "https://youtu.be/dQw4w9WgXcQ",
       "https://youtu.be/dQw4w9WgXcQ?si=abc",
       "https://www.youtube.com/embed/dQw4w9WgXcQ",
@@ -48,8 +49,38 @@ describe("resolveEmbed (YouTube)", () => {
     expect(resolveEmbed("https://youtu.be/tooShort")).toBeNull();
   });
 
+  it("carries a share-link start time through as ?start=<seconds>", () => {
+    expect(resolveEmbed("https://youtu.be/dQw4w9WgXcQ?t=90")?.embedUrl).toBe(`${EMBED}?start=90`);
+    expect(resolveEmbed("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=90s")?.embedUrl).toBe(
+      `${EMBED}?start=90`,
+    );
+    expect(resolveEmbed("https://youtu.be/dQw4w9WgXcQ?t=1m30s")?.embedUrl).toBe(
+      `${EMBED}?start=90`,
+    );
+    // No start → bare embed (no ?start).
+    expect(resolveEmbed("https://youtu.be/dQw4w9WgXcQ")?.embedUrl).toBe(EMBED);
+  });
+
   it("exposes a non-empty provider registry with unique ids", () => {
     expect(EMBED_PROVIDERS.length).toBeGreaterThan(0);
     expect(new Set(EMBED_PROVIDERS.map((p) => p.id)).size).toBe(EMBED_PROVIDERS.length);
+  });
+});
+
+describe("resolveEmbed (Vimeo — Rule-6 provider extensibility)", () => {
+  it("parses vimeo.com/<id> and player.vimeo.com/video/<id>", () => {
+    for (const url of [
+      "https://vimeo.com/76979871",
+      "https://vimeo.com/76979871?share=copy",
+      "https://player.vimeo.com/video/76979871",
+    ]) {
+      const r = resolveEmbed(url);
+      expect(r?.provider.id, url).toBe("vimeo");
+      expect(r?.embedUrl, url).toBe("https://player.vimeo.com/video/76979871");
+    }
+  });
+
+  it("has no derivable thumbnail (needs oEmbed) → null poster", () => {
+    expect(resolveEmbed("https://vimeo.com/76979871")?.thumbnailUrl).toBeNull();
   });
 });
