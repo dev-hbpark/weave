@@ -2319,6 +2319,24 @@ describe("weave.subtree.add — nested subtree creation (WI-141 / DR-096)", () =
     expect(String(c[2]?.parentId)).toBe(frameId);
   });
 
+  it("applies a node's layout at creation so children are auto-arranged (WI-142)", () => {
+    const res = subtreeCmd().run(makeCtx(), {
+      node: {
+        kind: "frame",
+        frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 },
+        layout: { kind: "auto-flex", direction: "column" } as never,
+        children: [
+          { kind: "text", attrsOverride: { text: "A" } },
+          { kind: "text", attrsOverride: { text: "B" } },
+        ],
+      },
+    });
+    const c = creates(res);
+    const frameAttrs = (c[0] as unknown as { item: { attrs: { layout?: { kind?: string } } } }).item
+      .attrs;
+    expect(frameAttrs.layout?.kind).toBe("auto-flex");
+  });
+
   it("supports deep nesting (frame > frame > text)", () => {
     const res = subtreeCmd().run(makeCtx(), {
       node: {

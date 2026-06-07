@@ -1435,10 +1435,11 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         node: {
           type: "object",
           description:
-            "One item plus its nested children. Same fields as weave.item.add (kind / frame / attrsOverride / units) PLUS `children`. For an AUTO-LAYOUT (flex/grid) parent OMIT each child's frame — the layout positions it; for an ABSOLUTE parent give each child a frame (width>0, height>0).",
+            "One item plus its nested children. Same fields as weave.item.add (kind / frame / attrsOverride / units) PLUS `layout` and `children`. Set `layout` on a FRAME to auto-arrange (flex/grid) its children AT creation — then OMIT each child's frame (the layout sizes & positions it). For an ABSOLUTE frame (no `layout`) give each child a frame (width>0, height>0). ALWAYS set `layout` on a frame whose children should be auto-arranged — otherwise children land at tiny default sizes (small text, misfit shapes).",
           properties: {
             kind: ITEM_KIND,
             frame: FRAME,
+            layout: LAYOUT_SPEC,
             attrsOverride: ATTRS_WITH_TEXT_NOTE,
             units: CREATION_UNITS,
             children: {

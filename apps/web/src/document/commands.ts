@@ -165,6 +165,10 @@ export interface SubtreeNodeSpec {
   readonly frame?: ItemFrame;
   readonly attrsOverride?: Readonly<Record<string, unknown>>;
   readonly units?: AddItemInput["units"];
+  /** WI-142 (DR-097) — auto-layout (flex/grid) for THIS frame, applied AT creation so its
+   *  children are positioned by the layout in the same call (no follow-up frame.setLayout).
+   *  Without it, an auto-layout frame's children land at seed sizes — the v1 regression. */
+  readonly layout?: LayoutSpec;
   /** Child nodes, created INSIDE this node (recursive). */
   readonly children?: ReadonlyArray<SubtreeNodeSpec>;
 }
@@ -2458,11 +2462,19 @@ export function buildWeaveCommands(
             message: `weave.subtree.add: exceeds ${SUBTREE_MAX_NODES} nodes`,
           };
         }
+        // WI-142 (DR-097) — fold this node's `layout` into attrsOverride.layout (normalized)
+        // so the frame is CREATED with its auto-layout; the children added next (working-doc
+        // replay) are then positioned by it via addItem's onChildAdd — fixing the v1 regression
+        // where layout-less frames left children at seed sizes.
+        const mergedAttrs =
+          spec.layout !== undefined
+            ? { ...spec.attrsOverride, layout: normalizeLayoutSpec(spec.layout) }
+            : spec.attrsOverride;
         const addInput: AddItemInput = {
           kind: spec.kind,
           ...(containerId !== undefined ? { containerId } : {}),
           ...(spec.frame !== undefined ? { frame: spec.frame } : {}),
-          ...(spec.attrsOverride !== undefined ? { attrsOverride: spec.attrsOverride } : {}),
+          ...(mergedAttrs !== undefined ? { attrsOverride: mergedAttrs } : {}),
           ...(spec.units !== undefined ? { units: spec.units } : {}),
         };
         // addItem fails fast (throws) on an unknown kind / seed error; convert any throw
