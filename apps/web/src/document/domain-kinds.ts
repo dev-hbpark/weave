@@ -162,7 +162,10 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
       // [data-theme]'s `--font-sans` with no document mutation. Pick a specific
       // catalog font in the toolbar to override. (DR-088)
       fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+      // DR-093 — fontSizeSpec is the single source of truth and is ALWAYS
+      // present; `fontSize` is the synced legacy mirror (never read as source).
       fontSize: 24,
+      fontSizeSpec: { kind: "px", value: 24 },
       fontWeight: "normal",
       fontStyle: "normal",
       // Theme-reactive default (D15): content text reads as the theme's body-ink

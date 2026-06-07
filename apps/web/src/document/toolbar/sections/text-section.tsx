@@ -55,6 +55,7 @@ import {
   type LegacyTextAutoResize,
   layoutChildFromTextAutoResize,
 } from "../../domains/derive-text-auto-resize.js";
+import { displayFontSizePx, fontSizeAttrsForPx } from "../../domains/text-font-size.js";
 import { FONT_GROUPS, FONT_ROLES, fontLabel } from "../../fonts/catalog.js";
 import { FontBrowseDialog } from "../../fonts/FontBrowseDialog.js";
 import { ensureFontByStack } from "../../fonts/font-loader.js";
@@ -128,7 +129,15 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
     items,
     (it) => (it.attrs as unknown as TextAttrs).fontFamily,
   );
-  const fontSize = sharedValue<number>(items, (it) => (it.attrs as unknown as TextAttrs).fontSize);
+  // DR-093 — the DISPLAYED px is RESOLVED from the authoritative fontSizeSpec
+  // (ratio × parentHeight, or px value), NOT the bare legacy `fontSize` mirror —
+  // so the slider number always equals the rendered size, even for a ratio /
+  // agent-created text. Rounded so float epsilon across items doesn't read Mixed.
+  const resolvedSizePx = sharedValue<number>(items, (it) =>
+    Math.round(
+      displayFontSizePx(it.attrs as unknown as TextAttrs, parentHeightPxOf(doc, dims, it.id)),
+    ),
+  );
   // Phase 2 (fontSizeSpec) — px/% unit toggle. Read the DERIVED kind (a string)
   // and the ratio-as-percent (a number) via sharedValue so equality compares
   // primitives, not object refs (Object.is would flag equal specs as Mixed).
@@ -388,23 +397,34 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               ? editFontSize?.mixed
                 ? 24
                 : ((editFontSize?.value as number | undefined) ??
-                  (isMixed(fontSize) ? 24 : fontSize))
-              : isMixed(fontSize)
+                  (isMixed(resolvedSizePx) ? 24 : resolvedSizePx))
+              : isMixed(resolvedSizePx)
                 ? 24
-                : fontSize
+                : resolvedSizePx
           }
           onValueChange={(v) => {
             if (activeStyle !== null) {
               activeStyle.setStyleProp("fontSize", v, { continuous: true }); // per-range px (slider)
               return;
             }
-            updateAll(editor, ids, (prev) => ({
-              attrs: {
-                ...prev.attrs,
-                fontSize: v,
-                fontSizeSpec: { kind: "px", value: v },
-              },
-            }));
+            // DR-093 — preserve the kind so a ratio (agent / responsive) text
+            // stays responsive and a px text stays absolute; the spec is the
+            // source of truth, `fontSize` is the synced mirror.
+            batchPerItem(editor, ids, (id) =>
+              editor.exec("weave.item.update", {
+                itemId: id,
+                patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+                  attrs: {
+                    ...prev.attrs,
+                    ...fontSizeAttrsForPx(
+                      prev.attrs as unknown as TextAttrs,
+                      v,
+                      parentHeightPxOf(doc, dims, id),
+                    ),
+                  },
+                }),
+              }),
+            );
           }}
           min={8}
           max={200}
@@ -572,21 +592,19 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                               itemId: id,
                               patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => {
                                 const a = prev.attrs as unknown as TextAttrs;
+                                // DR-093 — resolve the CURRENT px from the spec
+                                // (source of truth), not the bare fontSize mirror.
+                                const curPx = displayFontSizePx(a, ph);
                                 if (mode === "px") {
-                                  const px =
-                                    a.fontSizeSpec?.kind === "ratio"
-                                      ? a.fontSizeSpec.value * ph
-                                      : (a.fontSize ?? 24);
                                   return {
                                     attrs: {
                                       ...prev.attrs,
-                                      fontSize: px,
-                                      fontSizeSpec: { kind: "px", value: px },
+                                      fontSize: curPx,
+                                      fontSizeSpec: { kind: "px", value: curPx },
                                     },
                                   };
                                 }
                                 // → ratio: current rendered px ÷ parent height.
-                                const curPx = a.fontSize ?? 24;
                                 const value = ph > 0 ? curPx / ph : 0.05;
                                 return {
                                   attrs: {
@@ -612,30 +630,43 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                               ? editFontSize?.mixed
                                 ? 24
                                 : ((editFontSize?.value as number | undefined) ??
-                                  (isMixed(fontSize) ? 24 : fontSize))
-                              : isMixed(fontSize)
+                                  (isMixed(resolvedSizePx) ? 24 : resolvedSizePx))
+                              : isMixed(resolvedSizePx)
                                 ? 24
-                                : fontSize
+                                : resolvedSizePx
                           }
                           onValueChange={(v) => {
                             if (activeStyle !== null) {
                               activeStyle.setStyleProp("fontSize", v, { continuous: true }); // per-range px (slider)
                               return;
                             }
-                            updateAll(editor, ids, (prev) => ({
-                              attrs: {
-                                ...prev.attrs,
-                                fontSize: v,
-                                fontSizeSpec: { kind: "px", value: v },
-                              },
-                            }));
+                            // DR-093 — sizeMode is "px" here, so the spec stays px;
+                            // fontSizeAttrsForPx keeps the mirror synced.
+                            batchPerItem(editor, ids, (id) =>
+                              editor.exec("weave.item.update", {
+                                itemId: id,
+                                patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
+                                  attrs: {
+                                    ...prev.attrs,
+                                    ...fontSizeAttrsForPx(
+                                      prev.attrs as unknown as TextAttrs,
+                                      v,
+                                      parentHeightPxOf(doc, dims, id),
+                                    ),
+                                  },
+                                }),
+                              }),
+                            );
                           }}
                           min={8}
                           // Expand the scale so a resize-produced size beyond the
                           // normal editing ceiling keeps the thumb in sync with
                           // the number (otherwise the thumb pins at max while the
                           // input shows a larger value, and a nudge snaps it back).
-                          max={Math.max(200, Math.ceil(isMixed(fontSize) ? 24 : fontSize))}
+                          max={Math.max(
+                            200,
+                            Math.ceil(isMixed(resolvedSizePx) ? 24 : resolvedSizePx),
+                          )}
                           step={1}
                           format={(v) => `${Math.round(v)}px`}
                           aria-label="Font size"
@@ -677,7 +708,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
               })()}
               <MixedBadge
                 visible={
-                  editing ? !!editFontSize?.mixed : isMixed(fontSize) || isMixed(fontSizeKind)
+                  editing ? !!editFontSize?.mixed : isMixed(resolvedSizePx) || isMixed(fontSizeKind)
                 }
               />
             </Bar.Field>
