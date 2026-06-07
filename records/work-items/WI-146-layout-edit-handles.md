@@ -1,6 +1,6 @@
 # WI-146 — 레이아웃 편집 핸들 (아이템 사이 드래그로 영역 분배 · 그리드 행/열 리사이즈·병합)
 
-Status: **In progress**
+Status: **Done** (코드/단위 검증 완료 · 캔버스 드래그는 실환경 확인 권장)
 Owner: hbpark
 Updated: 2026-06-08
 관련: WI-043(레이아웃 타입 피커 + TrackSizeEditor 입력폼, 핸들 드래그는 명시적 보류),
@@ -45,6 +45,27 @@ DR-design-019(드래그 핸들 out-of-scope "v1.1 manual remove + re-add only"),
 - ⚠️ 실제 캔버스 드래그(핸들 히트테스트/줌≠100%/모션)는 에이전트 무관 브라우저 검증 필요 — 샌드박스 한계,
   실환경 1회 확인 권장.
 
+## Build (실제 구현)
+
+- **순수 코어**(`selection-chrome/layout-handle-geometry.ts`, `layout-spec-edit.ts`):
+  resolveTrackSizes(ratio/fr/auto), boundaryOffsets, trackStartOffset, projectPointer;
+  setFlexGap(클램프), resizeGridTrackBoundary(쌍 보존·fr/auto→ratio), setGridSpan(클램프).
+  단위 테스트 `layout-spec-edit.test.ts` **16/16**.
+- **증분 1+2 핸들**(`selection-chrome/LayoutEditHandles.tsx`): frame kind view-model(코너radius 선례
+  미러). 선택된 flex/grid 프레임에 자식/트랙 사이 드래그 선 포털. flex=gap, grid=열/행 트랙 리사이즈.
+  `HANDLE_INTERACTIONS`에 `layout-line-drag` 등록, 드래그→`weave.frame.setLayout`. 레지스트리 등록
+  (`use-selection-chrome-registry.ts`).
+- **증분 3 병합**(`toolbar/sections/flex-child-section.tsx` GridChildSection): 열/행 병합 Select
+  (columnSpan/rowSpan, clampSpan), `weave.item.setLayoutChild` 경유. 사용 가능 셀 ≤1이면 숨김.
+
+## Verification
+
+- typecheck(@weave/web) green, biome 클린(트리거-deps 등 사유 기재).
+- 단위/통합: selection-chrome + commands + commands-layout-relayout + toolbar = **175 통과**(코어 16 포함),
+  `HANDLE_INTERACTIONS` kinds 가드 갱신.
+- ⚠️ **실환경 권장**: 캔버스 드래그(핸들 히트테스트, 줌≠100% 좌표, gap-follow 매핑 튜닝, setLayout
+  드래그 undo-merge 1스텝 여부)는 에이전트 무관 브라우저에서 1회 확인 필요(샌드박스 캔버스 제약).
+
 ## 진행 로그
 
-- (작성 시점) 레코드 3종 작성. 구현은 증분 1→2→3 순.
+- 레코드 3종 → 순수 코어(테스트) → 증분1+2 핸들 → 증분3 병합. 증분별 커밋.
