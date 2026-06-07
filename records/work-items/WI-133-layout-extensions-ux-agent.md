@@ -37,6 +37,14 @@ WI-132 가 엔진(core+layout)에 CSS 기능을 전부 구현했지만, **속성
 - [x] 툴바 UI e2e `layout-extensions-toolbar.spec.ts` 2 pass (실제 Switch/Select 조작 → spec.wrap/alignContent/dense/autoFlow 저장)
 - [x] 기존 `contextual-toolbar-redesign` e2e 회귀 없음
 - [x] 엔진 유닛 251 + 파리티 13(120/120,224/224,8) 유지
+- [x] **에이전트 서버 전달 확인**: `LAYOUT_SPEC`/`LAYOUT_CHILD_POLICY`(신규 prose)가
+      `WEAVE_COMMAND_SCHEMAS[setLayout/setLayoutChild].inputSchema` 에 참조되고, `use-aku-agent`
+      이 `connectAgocraftAgent({ schemas, capabilities, domain })` 로 전달 → 벤더된 agent-client
+      (`…20260605120000`)가 `applyCommandSchemas`/`describeCommands`(툴 정의) + `capabilities()` +
+      `domain`(init hello)로 서버에 송신. **agent-client 재벤더 불필요**(런타임 인자만 relay).
+      신규 가드 `weave-command-schemas.layout.test.ts` 5 pass — 송신되는 inputSchema+capabilities 가
+      wrap/alignContent/space-evenly/baseline/minmax/columnsRepeat/auto-fill/auto-fit/autoFlow/dense/areas/area
+      를 모두 포함하고, 폐기된 "no wrap/minmax/v1.1" 문구가 없음을 박제.
 
 ## Follow-up (분리)
 - minmax per-track 에디터 (TrackSizeEditor 확장 + DS review)
