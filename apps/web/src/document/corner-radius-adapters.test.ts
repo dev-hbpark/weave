@@ -122,10 +122,11 @@ describe("cornerRadiusAdapter — shape (command-driven)", () => {
 });
 
 describe("cornerRadiusAdapter — kinds without a corner surface", () => {
-  it("returns null for text / line / chart / qr", () => {
+  it("returns null for text / line / chart / qr / embed", () => {
     expect(cornerRadiusAdapter("text")).toBeNull();
     expect(cornerRadiusAdapter("line")).toBeNull();
     expect(cornerRadiusAdapter("chart")).toBeNull();
     expect(cornerRadiusAdapter("qr")).toBeNull();
+    expect(cornerRadiusAdapter("embed")).toBeNull();
   });
 });

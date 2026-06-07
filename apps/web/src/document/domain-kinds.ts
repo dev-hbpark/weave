@@ -16,6 +16,7 @@
 
 import type { ComponentType } from "react";
 import { ChartBlock } from "./domains/ChartBlock.js";
+import { EmbedBlock } from "./domains/EmbedBlock.js";
 import { FrameBlock } from "./domains/FrameBlock.js";
 import { ImageBlock } from "./domains/ImageBlock.js";
 import { LineBlock } from "./domains/LineBlock.js";
@@ -234,6 +235,26 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
       encoding: {},
       showLegend: true,
       showAxis: true,
+      opacity: 1,
+    }),
+  },
+  embed: {
+    kind: "embed",
+    meta: {
+      kind: "embed",
+      label: "임베드",
+      tagline: "YouTube 등 영상 임베드 — URL을 붙여넣으세요",
+      accentVar: "--domain-media-accent",
+    },
+    renderer: EmbedBlock,
+    // WI-139 — an embed is a visual media primitive; participates in z-order.
+    participatesInZorder: true,
+    // Empty `url` → placeholder until the user pastes a recognized URL. The
+    // iframe src is derived per-render via the provider registry (no stored src).
+    defaultAttrs: () => ({
+      frame: FULL_FRAME,
+      url: "",
+      allowFullscreen: true,
       opacity: 1,
     }),
   },

@@ -305,6 +305,20 @@ export function DesignHeader({
             >
               비디오
             </DropdownMenuItem>
+            {/* WI-139 — embed (YouTube): add empty, then paste the URL in the
+                toolbar (no file picker, unlike video). */}
+            <DropdownMenuItem
+              icon={<IconPlay size={16} />}
+              onSelect={() => onAddItem("embed")}
+              data-testid="add-embed"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/x-weave-add-kind", "embed");
+                e.dataTransfer.effectAllowed = "copy";
+              }}
+            >
+              임베드 (YouTube)
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuLabel>텍스트</DropdownMenuLabel>
             <DropdownMenuItem

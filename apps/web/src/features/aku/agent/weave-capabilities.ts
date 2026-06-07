@@ -282,6 +282,14 @@ export const WEAVE_CAPABILITIES = {
         "overrides",
       ],
     },
+    {
+      // WI-139 — oEmbed / iframe embed (YouTube first). Stores attrs.url; the
+      // iframe src is derived per-render via the provider registry.
+      kind: "embed",
+      description:
+        "An embedded video (YouTube). attrs.url is the page URL the user wants embedded (watch / youtu.be / shorts / live forms all work; the iframe src is derived from it — only recognized providers render, otherwise a placeholder). attrs.allowFullscreen (boolean, default true), attrs.opacity (0..1). Size/position via attrs.frame (give it a 16:9-ish box). Use to drop a YouTube video onto a slide. Note: it plays in PRESENT mode; in the editor it shows the video thumbnail.",
+      editableAttrs: ["frame", "url", "allowFullscreen", "opacity"],
+    },
   ],
   unitKinds: [
     // ── DECORATION units (DR-028) — visual styling attached to ANY visual item

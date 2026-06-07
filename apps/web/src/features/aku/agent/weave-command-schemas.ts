@@ -468,7 +468,7 @@ const FRAME: Json = {
 /** The domain item kinds weave can create (`seed.ts`). */
 const ITEM_KIND: Json = {
   type: "string",
-  enum: ["frame", "image", "video", "shape", "line", "text", "qr"],
+  enum: ["frame", "image", "video", "shape", "line", "text", "qr", "embed"],
 };
 
 /** An interaction behavior payload (camera-target / hotspot / …). Open beyond

@@ -44,7 +44,10 @@ export type DomainKind =
   // WI-077 — data-driven chart (weave-local kind; not an agocraft builtin).
   // References a dataset (root-unit data store) by id; the visual is derived
   // from the resolved data at render time. See DR-031 / dataset/dataset-store.
-  | "chart";
+  | "chart"
+  // WI-139 — oEmbed / iframe embed (weave-local kind; YouTube first). Stores the
+  // pasted URL; the iframe src is DERIVED per-render via the provider registry.
+  | "embed";
 
 // ── ItemFrame — universal parent-relative bounding box ──────────────────────
 //
@@ -248,6 +251,25 @@ export interface QrAttrs {
   readonly opacity?: number;
 }
 
+/** WI-139 — oEmbed / iframe embed (weave-local kind; YouTube first). The user
+ *  pastes a `url`; the iframe `src` is DERIVED per-render via the provider
+ *  registry (`document/embed/providers.ts`), so editing the URL re-derives the
+ *  embed and nothing stale is persisted. Unknown to agocraft — survives
+ *  `onUnknown: "preserve"`. */
+export interface EmbedAttrs {
+  readonly frame: ItemFrame;
+  /** The pasted source URL (canonical input). Empty / unrecognized → placeholder. */
+  readonly url: string;
+  /** Cached provider id ("youtube", …) for display; the renderer re-resolves
+   *  from `url` so this is advisory, not authoritative. */
+  readonly provider?: string;
+  /** Optional oEmbed title (follow-up; needs a network fetch). */
+  readonly title?: string;
+  /** Allow the iframe to go fullscreen (default true). */
+  readonly allowFullscreen?: boolean;
+  readonly opacity?: number;
+}
+
 /** WI-077 — data-driven chart. The chart owns NO data of its own: `datasetId`
  *  references a dataset on the document root-unit store (see
  *  `dataset/dataset-store.ts`), and the visual is derived from the resolved
@@ -327,6 +349,7 @@ export type ItemAttrsByKind = {
   text: TextAttrs & WeaveCommonAttrs;
   qr: QrAttrs & WeaveCommonAttrs;
   chart: ChartAttrs & WeaveCommonAttrs;
+  embed: EmbedAttrs & WeaveCommonAttrs;
 };
 
 /** DR-061 — kind-agnostic read of the weave-local `locked` flag. Accepts any
