@@ -157,6 +157,23 @@ export interface AddItemInput {
     readonly attrs?: Readonly<Record<string, unknown>>;
   }>;
 }
+/** WI-141 (DR-096) — one node of a `weave.subtree.add` tree: an item plus its
+ *  nested children. The non-`children` fields mirror `AddItemInput` (each node is
+ *  created via the same `weave.item.add` pipeline). */
+export interface SubtreeNodeSpec {
+  readonly kind: DomainKind;
+  readonly frame?: ItemFrame;
+  readonly attrsOverride?: Readonly<Record<string, unknown>>;
+  readonly units?: AddItemInput["units"];
+  /** Child nodes, created INSIDE this node (recursive). */
+  readonly children?: ReadonlyArray<SubtreeNodeSpec>;
+}
+/** WI-141 — `weave.subtree.add` input: create a whole frame subtree in one call. */
+export interface AddSubtreeInput {
+  /** Container for the ROOT node — defaults to the document root (same as item.add). */
+  readonly containerId?: string;
+  readonly node: SubtreeNodeSpec;
+}
 export interface RemoveItemInput {
   readonly itemId: string;
   /** Where the removed item lives — same default + override rules as add. */
@@ -2409,6 +2426,80 @@ export function buildWeaveCommands(
   // Commands excluded from a batch: weave.batch (no nesting) + weave.doc.reset
   // (a non-patch side effect that would fire even if a later op aborts the batch).
   const BATCH_DISALLOWED = new Set<string>(["weave.batch", "weave.doc.reset"]);
+  // WI-141 (DR-096) — create a whole nested frame subtree in ONE call/transaction.
+  // Reuses the batch working-doc pattern + the `addItem` pipeline: create the parent,
+  // apply its patches to an in-memory working doc, then create each child with the
+  // parent's NOW-KNOWN id (so the layout engine reads the real parent and positions
+  // the child correctly). Collapses N id-dependent `weave.item.add` turns into one —
+  // `weave.batch` cannot, because a batch op can't target an id created earlier in the
+  // same batch; subtree.add sequences parent→child itself. Atomic: any node failing
+  // returns fail with NO patches (nothing applied). Single Cmd+Z.
+  const SUBTREE_MAX_NODES = 500;
+  const addSubtree: Command<AddSubtreeInput, string> = {
+    name: "weave.subtree.add",
+    run: (ctx, input) => {
+      const root = input?.node;
+      if (root === undefined || root === null || typeof root !== "object") {
+        return fail("invalid-input", "weave.subtree.add: provide a `node` spec");
+      }
+      let workingDoc = ctx.document;
+      const patches: Patch[] = [];
+      let count = 0;
+
+      const addNode = (
+        spec: SubtreeNodeSpec,
+        containerId: string | undefined,
+      ): { ok: true; id: string } | { ok: false; code: string; message: string } => {
+        count += 1;
+        if (count > SUBTREE_MAX_NODES) {
+          return {
+            ok: false,
+            code: "subtree-too-large",
+            message: `weave.subtree.add: exceeds ${SUBTREE_MAX_NODES} nodes`,
+          };
+        }
+        const addInput: AddItemInput = {
+          kind: spec.kind,
+          ...(containerId !== undefined ? { containerId } : {}),
+          ...(spec.frame !== undefined ? { frame: spec.frame } : {}),
+          ...(spec.attrsOverride !== undefined ? { attrsOverride: spec.attrsOverride } : {}),
+          ...(spec.units !== undefined ? { units: spec.units } : {}),
+        };
+        // addItem fails fast (throws) on an unknown kind / seed error; convert any throw
+        // OR fail-result into a graceful fail so the whole subtree is atomic (nothing applied).
+        let r: ReturnType<typeof addItem.run>;
+        try {
+          r = addItem.run({ ...ctx, document: workingDoc }, addInput);
+        } catch (e) {
+          return {
+            ok: false,
+            code: "node-failed",
+            message: e instanceof Error ? e.message : String(e),
+          };
+        }
+        if (!r.ok) return { ok: false, code: r.error.code, message: r.error.message };
+        // Evolve the working doc so each child's layout sees the real parent (batch pattern).
+        for (const p of r.patches) {
+          workingDoc = applyChangeToDocument(
+            workingDoc,
+            p as unknown as Parameters<typeof applyChangeToDocument>[1],
+          );
+        }
+        patches.push(...r.patches);
+        const children = Array.isArray(spec.children) ? spec.children : [];
+        for (const child of children) {
+          const cr = addNode(child, r.value);
+          if (!cr.ok) return cr;
+        }
+        return { ok: true, id: r.value };
+      };
+
+      const res = addNode(root, input.containerId);
+      if (!res.ok) return fail(res.code, `weave.subtree.add: ${res.message}`);
+      return ok(res.id, patches);
+    },
+  };
+
   const batch: Command<{ readonly ops?: ReadonlyArray<{ command?: string; input?: unknown }> }> = {
     name: "weave.batch",
     run: (ctx, input) => {
@@ -2460,7 +2551,7 @@ export function buildWeaveCommands(
     },
   };
 
-  return [...base, batch];
+  return [...base, batch, addSubtree];
 }
 
 /** Register the command set on an editor. Returns a single teardown that
