@@ -44,6 +44,7 @@ import type {
   AkuStatus,
 } from "../types.js";
 import { groundAgentFontSize } from "./agent-font-grounding.js";
+import { fixAgentTextBox } from "./agent-text-resize.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
 import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./design-styles.js";
 import { makeRoundGroupingEditor } from "./round-grouping-editor.js";
@@ -364,12 +365,16 @@ export function useAkuAgent(deps: {
   const roundGroup = useMemo(
     () =>
       makeRoundGroupingEditor(editor, {
-        // DR-091 — ground a px font target into a responsive ratio using the live
-        // geometry (agent-only; the toolbar never goes through this proxy).
+        // Agent-only input transforms (the toolbar never goes through this proxy):
+        //  • DR-096 — agent-created text gets a FIXED-size box (free placement only).
+        //  • DR-091 — a px font target is grounded into a responsive ratio using
+        //    the live geometry.
         transformInput: (commandName, input) => {
+          const doc = depsRef.current.getDocument();
+          const sized = fixAgentTextBox(commandName, input, doc);
           const design = depsRef.current.getDesignInfo?.();
-          if (design === undefined) return input;
-          return groundAgentFontSize(commandName, input, depsRef.current.getDocument(), design);
+          if (design === undefined) return sized;
+          return groundAgentFontSize(commandName, sized, doc, design);
         },
       }),
     [editor],

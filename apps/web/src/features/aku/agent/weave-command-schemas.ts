@@ -80,7 +80,12 @@ const TEXT_ATTRS_NOTE =
   "= none) — use it for a heading/number over a busy image or same-tone fill; for ONE word use outlineColor/" +
   "outlineWidth inside that textRuns run. attrs.textOverflow = 'VISIBLE'|'HIDDEN' (clip vs spill). attrs.hyperlink " +
   "= a URL makes the whole text a link (null = none; per-range link → a run; non-text item link → a button-trigger " +
-  "behavior). See the text itemKind capabilities for roles, defaults and full detail.";
+  "behavior). " +
+  // DR-096 — agent text boxes are FIXED-size (no auto-grow).
+  "BOX SIZING: a text box you add is a FIXED-size box (it does NOT auto-grow to fit content), so give frame.width " +
+  "AND frame.height enough room for the text at the chosen fontSize; if it may overflow, set attrs.textOverflow " +
+  "'VISIBLE'. (Applies to free-placed text; text inside a flex/grid frame is sized by the layout.) " +
+  "See the text itemKind capabilities for roles, defaults and full detail.";
 
 // WI-058 — data-driven QR. The code regenerates from `data` on every render.
 const QR_ATTRS_NOTE =
