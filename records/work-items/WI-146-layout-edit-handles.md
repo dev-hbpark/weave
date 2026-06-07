@@ -63,8 +63,9 @@ DR-design-019(드래그 핸들 out-of-scope "v1.1 manual remove + re-add only"),
 - typecheck(@weave/web) green, biome 클린(트리거-deps 등 사유 기재).
 - 단위/통합: selection-chrome + commands + commands-layout-relayout + toolbar = **175 통과**(코어 16 포함),
   `HANDLE_INTERACTIONS` kinds 가드 갱신.
-- ⚠️ **실환경 권장**: 캔버스 드래그(핸들 히트테스트, 줌≠100% 좌표, gap-follow 매핑 튜닝, setLayout
-  드래그 undo-merge 1스텝 여부)는 에이전트 무관 브라우저에서 1회 확인 필요(샌드박스 캔버스 제약).
+- ✅ **실환경 확인(2026-06-08)**: 1차 확인에서 그리드 트랙 선이 커서를 안 따라오는 어긋남 발견 →
+  엔진 `resolveTrackSizes` 위임 + gap/2 오프셋 보정 + flex `(idx+0.5)` 보정 후 **재확인: 핸들이
+  커서를 잘 따라옴**. (잔여: grow 자식 있는 flex의 미세 추종은 근사 — 필요 시 후속 보정.)
 
 ## 진행 로그
 
