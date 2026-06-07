@@ -23,6 +23,7 @@ import { QrBlock } from "./domains/QrBlock.js";
 import { ShapeBlock } from "./domains/ShapeBlock.js";
 import { TextBlock } from "./domains/TextBlock.js";
 import { VideoBlock } from "./domains/VideoBlock.js";
+import { DEFAULT_TEXT_FONT_FAMILY } from "./fonts/catalog.js";
 import {
   type AgoItem,
   type DomainKind,
@@ -156,7 +157,11 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     defaultAttrs: () => ({
       frame: FULL_FRAME,
       text: "텍스트",
-      fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      // WI-136 — theme body-role font. Like the theme-reactive color default
+      // (`var(--text-default)`), a new text box adapts to the active
+      // [data-theme]'s `--font-sans` with no document mutation. Pick a specific
+      // catalog font in the toolbar to override. (DR-088)
+      fontFamily: DEFAULT_TEXT_FONT_FAMILY,
       fontSize: 24,
       fontWeight: "normal",
       fontStyle: "normal",

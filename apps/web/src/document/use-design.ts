@@ -19,6 +19,7 @@ import {
   updateUnitAttrs,
 } from "./agocraft-mirror.js";
 import { fetchDesignCloud } from "./cloud-sync.js";
+import { rehydrateDocumentFonts } from "./fonts/rehydrate.js";
 import { createDefaultItem } from "./seed.js";
 import {
   cacheDesignLocally,
@@ -253,6 +254,10 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
         return;
       }
       setDesign(hydrated);
+      // WI-136 — the cloud copy arrived after mount (LS-miss / present mode), so
+      // the mount-time rehydrate ran against the blank placeholder. Load the
+      // fonts the fetched document actually references.
+      rehydrateDocumentFonts(hydrated.document);
       setIsLoading(false);
     })();
     return () => {
@@ -304,15 +309,18 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
       const hydrated =
         raw === null ? undefined : hydrateSerializedDesign(raw as unknown as SerializedDesignV5);
       const current = designRef.current;
-      setDesign(
+      const next =
         hydrated ??
-          createBlankDesign({
-            id,
-            title: current.title,
-            width: current.width,
-            height: current.height,
-          }),
-      );
+        createBlankDesign({
+          id,
+          title: current.title,
+          width: current.width,
+          height: current.height,
+        });
+      setDesign(next);
+      // WI-136 — discarding the offline copy loads the server version; rehydrate
+      // its fonts (the mount-time pass ran against the offline copy).
+      rehydrateDocumentFonts(next.document);
       setIsLoading(false);
       setLocalConflict(false);
       return { ok: true };
@@ -481,6 +489,9 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
     // doc snapshot pre-dates the cascade. Cheap (no-op when already
     // present) and idempotent across multiple remote applies.
     setDesign((prev) => withDocument(prev, ensureRootStyleProvider(next)));
+    // WI-136 — load any catalog fonts the remote copy references on demand
+    // (the static bulk webfont link is gone). Deduped + idempotent.
+    rehydrateDocumentFonts(next);
   }, []);
 
   // WI-078 / DR-035 — derived-state projection setter. Managed chart category
@@ -543,6 +554,15 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
       ),
     );
     return newId;
+  }, []);
+
+  // WI-136 — on first load, fetch every catalog webfont the opened document
+  // references (the static bulk Google Fonts link is gone). Mount-only:
+  // in-session applies load via the picker; remote replaces rehydrate through
+  // `replaceDocument`. Intentionally runs once for the initially-loaded doc.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only; later docs rehydrate via replaceDocument
+  useEffect(() => {
+    rehydrateDocumentFonts(design.document);
   }, []);
 
   return {

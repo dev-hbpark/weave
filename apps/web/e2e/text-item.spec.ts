@@ -384,8 +384,9 @@ test("font-family picker offers presets and applies the selected stack", async (
   const trigger = page.getByTestId("text-font-family-trigger");
   await expect(trigger).toBeVisible();
   await trigger.click();
-  // Pick "Playfair Display" — a clearly distinct preset.
-  await page.getByTestId("text-font-family-Playfair").click();
+  // Pick "Playfair Display" — a clearly distinct catalog font (WI-136 — the
+  // picker is now catalog-backed; testid is the stable font id).
+  await page.getByTestId("text-font-family-playfair-display").click();
   await page.waitForTimeout(60);
 
   const attrs = await readAttrs(page, id);

@@ -26,6 +26,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   IconAlignBottom,
   IconAlignHorizontalCenter,
@@ -43,7 +45,7 @@ import {
   SegmentedControl,
   Tooltip,
 } from "@weave/design-system";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { TextOnboardingHint } from "../../../launch/TextOnboardingHint.js";
 import { fontSizeTooltipCopy } from "../../../launch/text-v1-copy.js";
 import { EMPTY_READOUT, useActiveTextStyle } from "../../active-text-style.js";
@@ -53,6 +55,9 @@ import {
   type LegacyTextAutoResize,
   layoutChildFromTextAutoResize,
 } from "../../domains/derive-text-auto-resize.js";
+import { FONT_GROUPS, FONT_ROLES, fontLabel } from "../../fonts/catalog.js";
+import { FontBrowseDialog } from "../../fonts/FontBrowseDialog.js";
+import { ensureFontByStack } from "../../fonts/font-loader.js";
 import {
   type DesignDims,
   useDesignDims,
@@ -60,7 +65,6 @@ import {
 } from "../../style/resolver-context.js";
 // weave-extended TextAttrs (adds `textOverflow`) — not the agocraft re-export.
 import type { TextAttrs } from "../../types.js";
-import { FONT_FAMILY_PRESETS, fontFamilyLabel } from "../font-presets.js";
 import {
   batchPerItem,
   isMixed,
@@ -232,6 +236,22 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
   const activeStyle = activeEntry?.applier ?? null;
   const readout = activeEntry?.readout ?? EMPTY_READOUT;
   const editing = activeStyle !== null;
+
+  // WI-136 — "모든 폰트 찾아보기" (Google Fonts browse) dialog open state.
+  const [browseOpen, setBrowseOpen] = useState(false);
+  // Set fontFamily to a theme-role var (`var(--font-*)`) or an explicit catalog
+  // stack, loading the webfont on demand. Shared by the picker dropdown and the
+  // browse dialog. Per-range Lexical style resolves the var/stack identically.
+  const applyFontFamily = (value: string) => {
+    ensureFontByStack(value);
+    if (activeStyle !== null) {
+      activeStyle.setStyleProp("fontFamily", value);
+      return;
+    }
+    updateAll(editor, ids, (prev) => ({
+      attrs: { ...prev.attrs, fontFamily: value },
+    }));
+  };
 
   // Quick toggle helpers. `!isMixed(x) && x === ...` is the toggled state;
   // when mixed, the toggle reads as off and clicking sets the asserted
@@ -468,35 +488,62 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                     {editing
                       ? editFontFamily?.mixed
                         ? "여러 폰트"
-                        : fontFamilyLabel(
+                        : fontLabel(
                             (editFontFamily?.value as string | undefined) ??
                               (isMixed(fontFamily) ? "" : fontFamily),
                           )
                       : isMixed(fontFamily)
                         ? "여러 폰트"
-                        : fontFamilyLabel(fontFamily)}
+                        : fontLabel(fontFamily)}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" sideOffset={6}>
-                  {FONT_FAMILY_PRESETS.map((p) => (
+                <DropdownMenuContent
+                  align="start"
+                  sideOffset={6}
+                  className="max-h-[60vh] overflow-y-auto"
+                >
+                  <DropdownMenuLabel>테마 역할</DropdownMenuLabel>
+                  {FONT_ROLES.map((r) => (
                     <DropdownMenuItem
-                      key={p.value}
-                      onSelect={() => {
-                        if (activeStyle !== null) {
-                          activeStyle.setStyleProp("fontFamily", p.value);
-                          return;
-                        }
-                        updateAll(editor, ids, (prev) => ({
-                          attrs: { ...prev.attrs, fontFamily: p.value },
-                        }));
-                      }}
-                      data-testid={`text-font-family-${p.label.replace(/\s+/g, "-")}`}
+                      key={r.id}
+                      onSelect={() => applyFontFamily(r.value)}
+                      data-testid={`text-font-role-${r.id}`}
                     >
-                      <span style={{ fontFamily: p.value }}>{p.label}</span>
+                      <span style={{ fontFamily: r.value }}>{r.label}</span>
                     </DropdownMenuItem>
                   ))}
+                  {FONT_GROUPS.map((g) => (
+                    <Fragment key={g.category}>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>{g.label}</DropdownMenuLabel>
+                      {g.fonts.map((f) => (
+                        <DropdownMenuItem
+                          key={f.id}
+                          // Hover loads the webfont so the row previews in its
+                          // own face (on-demand — no static bulk load).
+                          onPointerEnter={() => ensureFontByStack(f.stack)}
+                          onSelect={() => applyFontFamily(f.stack)}
+                          data-testid={`text-font-family-${f.id}`}
+                        >
+                          <span style={{ fontFamily: f.stack }}>{f.label}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </Fragment>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => setBrowseOpen(true)}
+                    data-testid="text-font-browse-all"
+                  >
+                    모든 폰트 찾아보기…
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <FontBrowseDialog
+                open={browseOpen}
+                onOpenChange={setBrowseOpen}
+                onPick={(entry) => applyFontFamily(entry.stack)}
+              />
               <MixedBadge visible={editing ? !!editFontFamily?.mixed : isMixed(fontFamily)} />
             </Bar.Field>
             <Bar.Field label="크기">

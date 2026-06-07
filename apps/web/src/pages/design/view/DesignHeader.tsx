@@ -48,6 +48,7 @@ import {
 } from "@weave/design-system";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
+import { TypographyPicker } from "../../../document/fonts/TypographyPicker.js";
 import { gridSnap, useGridSnap } from "../../../document/selection-chrome/grid-snap.js";
 import type { SaveStatus } from "../hooks/use-design-save.js";
 import type { UseItemAdd } from "../hooks/use-item-add.js";
@@ -525,6 +526,9 @@ export function DesignHeader({
           />
         </span>
         <ThemePicker />
+        {/* WI-136 — per-theme typography manager (sits beside the color theme
+            picker so "테마 관리" covers fonts as well as colors). */}
+        <TypographyPicker />
         {/* DR-design-017 — manual cloud save trigger. Forces an immediate
             persist; the glyph flashes for 1.5s as an acknowledgement.
             DR-design-027 — `subtle` circular chip + status-token tint. */}
