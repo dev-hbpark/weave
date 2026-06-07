@@ -203,3 +203,23 @@ test("the AGENT / programmatic path (raw weave.item.reparent) also preserves the
   expect(after!, "raw command now preserves the ratio font").toBeCloseTo(before!, 0);
   expect((await itemInfo(page, ratioText))?.spec).toMatchObject({ kind: "ratio", value: 0.1 });
 });
+
+test("dissolveFrame preserves a lifted ratio-text's font size", async ({ page }) => {
+  // Dissolve lifts F's children into F's parent (the slide). F.height 0.5 ≠
+  // slide → a ratio font would halve without the re-base (WI-135 dissolve wrap).
+  await prepareDesign(page, { flavor: "slide-deck", title: "fontsize-dissolve" });
+  const slide = await rootFrameId(page);
+  const f = await addFrame(page, slide, 0.5);
+  const ratioText = await addText(page, f, "DISSOLVEZZ", { kind: "ratio", value: 0.2 });
+  const before = await renderedFontPx(page, "DISSOLVEZZ");
+
+  await page.evaluate((frameId) => {
+    const w = window as unknown as { __weaveEditor?: { exec: (n: string, i: unknown) => unknown } };
+    w.__weaveEditor!.exec("weave.frame.removeKeepingChildren", { frameId });
+  }, f);
+  await page.waitForTimeout(150);
+
+  // Lifted to the slide; font size preserved (value re-based 0.2 → 0.1).
+  expect((await itemInfo(page, ratioText))?.parent, "lifted to the slide").toBe(slide);
+  expect(await renderedFontPx(page, "DISSOLVEZZ")).toBeCloseTo(before!, 0);
+});

@@ -37,6 +37,19 @@
 - [x] weave typecheck 0, 회귀 없음(기존 reparent e2e + commands.test)
 - [x] WI-133 레이아웃 테스트의 기존 `childConstraints` 타입오류도 함께 수정
 
-## 남은 범위
+## v3 — dissolveFrame 래핑 + 폰트 kind 의미 감사 (operator follow-up)
 
-`dissolveFrame`(프레임 삭제→자식 상승)은 별도 제스처라 래핑 안 함(기존 동작 유지). 필요 시 후속.
+**dissolveFrame 래핑:** `weave.frame.removeKeepingChildren`(프레임 삭제→자식을 부모로 상승)도
+자식의 부모 높이가 바뀌므로 동일 버그. commands.ts 에서 reparent 와 같은 방식으로 래핑 —
+base 패치 + `ratioFontReparentPatches`(자식 entries = 프레임 children → 프레임의 부모). e2e
+"dissolveFrame preserves a lifted ratio-text's font size" 추가 (4/4 pass). frame-dissolve 회귀 없음.
+
+**text-section UX / 리사이즈 의미 감사 (결론: 일관·정상, 추가 수정 불요):**
+- px↔% 단위 토글(`text-section.tsx`): 전환 시 on-screen 크기 보존 (px→% = curPx/부모높이, %→px =
+  ratio×부모높이) + legacy `fontSize` 미러. ✓
+- 코너 리사이즈 글자 스케일(DR-022, `FrameStage` computeResize): `scaleFactor = nh/oldH` 를
+  px·ratio 둘 다에 곱함(ratio 는 부모높이 불변이라 렌더 px 가 scaleFactor 배). ✓ 테스트:
+  `text-item.spec.ts` DR-022 px + ratio 케이스 모두 존재.
+- 부모 프레임 height 리사이즈: ratio 텍스트는 반응형으로 재계산(의도된 동작), px 는 고정. ✓ by-design.
+- reparent/dissolve: 양 kind 모두 보존(WI-135). ✓
+→ 모든 제스처에서 kind 의미가 일관됨. 코너-리사이즈 ratio 도 이미 e2e 커버됨(커버 갭 없음).

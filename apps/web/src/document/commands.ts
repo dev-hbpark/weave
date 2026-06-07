@@ -1929,10 +1929,31 @@ export function buildWeaveCommands(
   // (reverse order) re-adds the empty frame then re-homes the children without
   // duplication. weave injects only the NAME + geometry. Same `invalid-target`
   // / `item-not-found` error codes as the prior inline body.
-  const removeFrameKeepingChildren = createDissolveFrameCommand({
+  const baseRemoveFrameKeepingChildren = createDissolveFrameCommand({
     name: "weave.frame.removeKeepingChildren",
     computeFrameRatio: computeReparentFrameRatio,
   });
+  // WI-135 — dissolve lifts the frame's children into its OWN parent, so a
+  // ratio-font child moving to a different-height parent would rescale (same as
+  // a reparent). Wrap it to re-base each lifted child's ratio fontSize in the
+  // same transaction (no-op when heights match / no ratio text).
+  const removeFrameKeepingChildren: Command<{ frameId: string }, void> = {
+    name: "weave.frame.removeKeepingChildren",
+    run(ctx, input) {
+      const base = baseRemoveFrameKeepingChildren.run(ctx, input as never);
+      if (!base.ok || base.patches.length === 0) return base;
+      const frame = findItemDeep(ctx.document, input.frameId);
+      const parentInfo = findParentAndIndex(ctx.document, input.frameId);
+      const newParentId =
+        parentInfo !== undefined ? String(parentInfo.parent.id) : String(ctx.document.root.id);
+      const entries = (frame?.children ?? []).map((c) => ({
+        itemId: String(c.id),
+        newParentId,
+      }));
+      const fontPatches = ratioFontReparentPatches(ctx.document, entries, base.patches);
+      return fontPatches.length === 0 ? base : ok(base.value, [...base.patches, ...fontPatches]);
+    },
+  };
 
   // WI-030 — Slide preset batch insert.
   //
