@@ -213,23 +213,19 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   //   • edit-exit — the ResizeObserver was muted during editing; and
   //   • a LAYOUT change — the resize MODE or the box WIDTH changed (WI-145: the
   //     observer's initial fit gets grouped into the agent transaction and
-  //     clobbered by setLayout); and
-  //   • a stored HEIGHT change — WI-146 (B): the ResizeObserver only fires on
-  //     CONTENT-size change, NOT on a `frame.height` write. So when a later agent
-  //     op (a `weave.batch` / `items.update` / a re-`setLayout` in the same round)
-  //     re-sets an auto-height text's height back to a large value AFTER auto-fit
-  //     already shrank it, the observer never re-fires and the box stays tall
-  //     until a manual edit. Depending on `a.frame.height` makes any height write
-  //     re-run the fit, so the box re-collapses to content on its own — the agent
-  //     batch now converges to the same result as the sequential path. Safe: the
-  //     fit only commits on real divergence (threshold) and no-ops in Fixed mode,
-  //     so it converges in one cycle (no loop) and never touches a Fixed box.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: autoResizeMode / a.frame.width / a.frame.height are intentional RE-RUN TRIGGERS (re-fit when the layout context or stored height changes), not values read in the body — removing them defeats the fix.
+  //     clobbered by setLayout, and the inner content size doesn't change after,
+  //     so the observer never re-fires).
+  // NOTE: this intentionally does NOT depend on `a.frame.height`. A height-write
+  // trigger (the reverted WI-146 B) re-ran the fit on EVERY height change — which
+  // fired all through a manual frame RESIZE, fighting the gesture. Agent-generated
+  // text instead re-settles via the round-end pulse below (B-2), so we don't need
+  // the height dep and avoid the resize interference.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: autoResizeMode / a.frame.width are intentional RE-RUN TRIGGERS (re-fit when the layout context changes), not values read in the body — removing them defeats the fix.
   useEffect(() => {
     if (isEditing) return;
     const raf = requestAnimationFrame(() => measureCommitRef.current?.());
     return () => cancelAnimationFrame(raf);
-  }, [isEditing, autoResizeMode, a.frame.width, a.frame.height]);
+  }, [isEditing, autoResizeMode, a.frame.width]);
 
   // WI-146 — re-settle on an agent ROUND-END pulse. After a batched generation
   // round the auto-fit can be left un-settled (overlapping / oversized) because

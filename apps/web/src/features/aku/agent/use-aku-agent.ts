@@ -43,7 +43,6 @@ import type {
   AkuMessage,
   AkuStatus,
 } from "../types.js";
-import { groundAgentFontSize } from "./agent-font-grounding.js";
 import { stampMinSizeGuard } from "./agent-min-size-guard.js";
 import { fixAgentTextBox } from "./agent-text-resize.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
@@ -368,16 +367,15 @@ export function useAkuAgent(deps: {
       makeRoundGroupingEditor(editor, {
         // Agent-only input transforms (the toolbar never goes through this proxy):
         //  • DR-098 — agent-created text gets a FIXED-size box (free placement only).
-        //  • DR-091 — a px font target is grounded into a responsive ratio using
-        //    the live geometry.
+        //  • DR-101 — font size is FIXED design-px; NO px→ratio grounding (DR-091
+        //    superseded) so text never rescales when a frame/parent is resized.
+        //  • WI-147 — switch ON the command's min-size reject for agent adds only.
         transformInput: (commandName, input) => {
           const doc = depsRef.current.getDocument();
           const sized = fixAgentTextBox(commandName, input, doc);
           const design = depsRef.current.getDesignInfo?.();
           if (design === undefined) return sized;
-          const grounded = groundAgentFontSize(commandName, sized, doc, design);
-          // WI-147 — switch ON the command's min-size reject for agent adds only.
-          return stampMinSizeGuard(commandName, grounded, design);
+          return stampMinSizeGuard(commandName, sized, design);
         },
       }),
     [editor],

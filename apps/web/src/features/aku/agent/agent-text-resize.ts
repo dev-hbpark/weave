@@ -14,8 +14,8 @@
 // containers are skipped — their text stays auto-height.
 //
 // Pure input transform applied ONLY on the agent's exec path (round-grouping
-// proxy), so the toolbar's explicit resize choice is untouched. Composed with
-// `groundAgentFontSize`. Respects an explicit `layoutChild` the agent already set.
+// proxy), so the toolbar's explicit resize choice is untouched. Composed with the
+// other agent transforms. Respects an explicit `layoutChild` the agent already set.
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import { findItemDeep } from "../../../document/agocraft-mirror.js";

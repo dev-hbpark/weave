@@ -61,12 +61,13 @@ const FRAME_ATTRS_NOTE =
 // resize modes, role-based fontSize guidance) lives in WEAVE_CAPABILITIES'
 // `text` itemKind; this is the one-line reminder the agent sees on the command.
 const TEXT_ATTRS_NOTE =
-  "For text items: size with attrs.fontSizeSpec { kind:'px', value } — give the ABSOLUTE design-px size you " +
-  "want (e.g. 48 for a heading, 18 for body, off the canvas px in the [디자인] line). weave AUTOMATICALLY " +
-  "grounds that px into a responsive ratio against the text's IMMEDIATE parent frame, so you do NOT compute " +
-  "the fraction yourself. (You MAY pass { kind:'ratio', value } directly if you already have the 0..1 " +
-  "fraction of the parent frame height.) NEVER put a fraction in the plain fontSize number (0.07 → sub-pixel " +
-  "text). Other WHOLE-BOX fields: text, fontFamily, fontWeight, fontStyle, color, " +
+  "For text items: size with attrs.fontSizeSpec { kind:'px', value } — the ABSOLUTE design-px size (e.g. 64 for " +
+  "a heading, 32 for body, off the canvas px in the [디자인] line). It is FIXED (DR-101): the text renders at " +
+  "exactly that design-px and does NOT rescale when a frame/parent is resized (only the whole-canvas zoom scales " +
+  "it), so the px means the same everywhere — no per-nesting math. Body/content (findings, bullets, descriptions) " +
+  "must be ≥ ~3% of canvas height (≈32px on 1080); caption sizes are for footnotes only. ({ kind:'ratio', value } " +
+  "still renders (value × parent height) but is NOT recommended — it rescales on resize; prefer px. NEVER put a " +
+  "fraction in the plain fontSize number (0.07 → sub-pixel text).) Other WHOLE-BOX fields: text, fontFamily, fontWeight, fontStyle, color, " +
   "textAlignHorizontal/Vertical, lineHeightSpec, letterSpacing. " +
   "PARTIAL/PER-RANGE styling (부분편집 — color/bold/etc. on PART of the text, e.g. one emphasized word or " +
   "number): set attrs.textRuns = ordered [{ insert:'<segment>', attributes?:{ color?, fontSize?(px), " +

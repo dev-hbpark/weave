@@ -1,8 +1,12 @@
 # DR-091 — 아쿠 에이전트 폰트 사이즈 그라운딩 (px 타깃 → 반응형 ratio)
 
-- 상태: ACCEPTED
+- 상태: SUPERSEDED by [DR-101](DR-101-px-fixed-font.md) (2026-06-08)
 - 날짜: 2026-06-07
 - 관련: WI-136 후속, DR-082(ratio>1 px 재태깅 가드)
+
+> **SUPERSEDED (DR-101)**: px→ratio 그라운딩은 ratio 폰트가 프레임 높이에 결합되어 **수동 리사이즈/
+> 중첩 시 텍스트가 의도치 않게 재배율**되는 반복 사고를 유발했다. DR-101에서 **px 고정** 정책으로 전환하며
+> `groundAgentFontSize`를 제거(폰트는 grounding 없이 리터럴 px 유지). 아래 내용은 이력 보존용.
 - 트리거: "에이전트 디자인 생성에서 fontSize 값은 px에 맞는데 kind가 ratio로 들어가는 경우" 분석 요청
 
 ## 근본 원인 (분석)
