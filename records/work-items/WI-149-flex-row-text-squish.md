@@ -60,6 +60,27 @@ long description bare in a flex ROW → recurred. Findings:
   mitigation; guidance did not prevent this instance, so revisit if recurrence
   persists across builds.
 
+## Follow-up 2 (2026-06-08, true root cause + DR-104)
+
+The agent command log (captured via the `[aku exec ✓]` exec path) + a live doc
+probe DISPROVED the "agent froze a bad basis" theory:
+
+- The agent adds every text with **no `frame`** and never sets a numeric basis —
+  the CSS-natural content-sizing intent.
+- weave's text seed is `FULL_FRAME` (width 1.0). Two full-width texts over-fill a
+  row; agocraft auto-flex shrinks with no min-content floor and `joinPolicy`
+  freezes the shrunk width as `basis` (`grow:0`) → a one-way **ratchet** that
+  strands the later child at a ~1-glyph sliver. The probe showed the frozen
+  `[01 basis 0.829, desc basis 0.011]` end-state (no live shrink).
+
+**Fix (DR-104):** `fixAgentTextBox` now stamps `{grow:1, shrink:1, basis:0}`
+(CSS `flex:1`) on agent text added into an auto-flex ROW. basis:0 → the row
+never over-fills → never shrinks → the ratchet can't start; grow:1 → children
+share evenly. The engine respects a matching-kind policy, so it does not freeze
+the full-width seed. Columns/grids untouched; explicit agent policy wins. This
+supersedes the render guard (DR-103) as the PRIMARY fix — DR-103 remains as a
+legibility floor for already-generated slides.
+
 ## Verify
 
 - `biome check` TextBlock — clean.
