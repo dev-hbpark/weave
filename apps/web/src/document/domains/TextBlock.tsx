@@ -380,7 +380,16 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     lineHeight: lineHeightValue,
     letterSpacing: `${a.letterSpacing}px`,
     whiteSpace: isAutoWidth ? "pre" : "pre-wrap",
-    wordBreak: "break-word",
+    // WI-149 — break at WORD boundaries, not mid-character. `word-break:break-word`
+    // let the text shatter character-by-character; when a flex-ROW shrinks a text
+    // child to a sliver (≈1ch, main-axis = width), that produced a one-glyph-per-
+    // line VERTICAL strip (and a runaway auto-height). `keep-all` keeps Korean
+    // 어절 / words intact (Korean wraps at spaces — its natural break), so a too-
+    // narrow box overflows/clips one line instead of stacking vertically;
+    // `overflow-wrap:break-word` still breaks a genuinely unbreakable long token
+    // (a URL) only when it would otherwise overflow.
+    wordBreak: "keep-all",
+    overflowWrap: "break-word",
     textDecoration: hasRuns ? "none" : decoration,
     textTransform,
     ...(a.textCase === "SMALL_CAPS" ? { fontVariantCaps: "small-caps" } : {}),
