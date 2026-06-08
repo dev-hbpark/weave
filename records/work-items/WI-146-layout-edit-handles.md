@@ -82,6 +82,10 @@ DR-design-019(드래그 핸들 out-of-scope "v1.1 manual remove + re-add only"),
   → **검증 가능한 수정 불가**. 다음 발생 시 삭제 전 콘솔 스니펫으로 `layoutChild`/`fontSizeSpec`/
   `frame.height` 확보 필요. (재현되면 라운드 종료 후 auto-fit 일괄 재보정 또는 grounding 보정으로 수정.)
 - e2e는 **base-case 회귀 가드**로 유지(정상 경로가 깨지지 않도록).
+- **배치 재현 시도(2번째 e2e)**: `editor.beginBatch()/endBatch()`로 에이전트 라운드를 그대로 모사
+  (한 트랜잭션 안에서 frame add → text add ×2 → setLayout)했으나 **여전히 정상 collapse**(통과).
+  → 단순 트랜잭션 그룹핑이 원인이 아님. 실제 버그는 그 슬라이드 특유의 attrs(예: text 자식의 **명시적
+  숫자 `basis`** 또는 특정 구조)로 보이며, **삭제되어 재현/확정 불가**. 다음 발생 시 attrs 확보 필요.
 
 ## 진행 로그
 

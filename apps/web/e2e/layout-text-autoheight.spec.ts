@@ -96,3 +96,71 @@ test("WI-146 — tall text in a flex column auto-fits to content height on load 
   expect(h).toBeGreaterThan(0);
   expect(h, `text frame.height after load+settle = ${h} (created at 0.4)`).toBeLessThan(0.2);
 });
+
+// Reproduce the AGENT round: every exec shares one transaction (beginBatch /
+// endBatch), the same bracketing makeRoundGroupingEditor uses. The auto-height
+// commit during the open batch is reverted by setLayout's child-frame patch, and
+// nothing re-fires after the batch → the box stays tall (the reported bug).
+test("WI-146 — tall flex text auto-fits even when created in ONE agent-style batch", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-146-flex-text-batch" });
+  const ex = (name: string, input: unknown) =>
+    page.evaluate(
+      ({ n, i }) => {
+        const w = window as unknown as {
+          __weaveEditor: { exec: (n: string, i: unknown) => { value?: unknown } };
+        };
+        return String(w.__weaveEditor.exec(n, i).value);
+      },
+      { n: name, i: input },
+    );
+  const batch = (open: boolean) =>
+    page.evaluate((o) => {
+      const w = window as unknown as { __weaveEditor: { beginBatch(): void; endBatch(): void } };
+      if (o) w.__weaveEditor.beginBatch();
+      else w.__weaveEditor.endBatch();
+    }, open);
+  const root = await page.evaluate(() =>
+    String((window as unknown as { __weaveDoc: { root: { id: unknown } } }).__weaveDoc.root.id),
+  );
+
+  await batch(true); // open the round
+  const f = await ex("weave.item.add", {
+    kind: "frame",
+    containerId: root,
+    frame: { x: 0.5, y: 0.1, width: 0.4, height: 0.8, rotation: 0 },
+  });
+  await page.waitForTimeout(60);
+  const t1 = await ex("weave.item.add", {
+    kind: "text",
+    containerId: f,
+    frame: { x: 0, y: 0, width: 1, height: 0.4, rotation: 0 },
+    attrsOverride: { text: "Row one" },
+  });
+  await page.waitForTimeout(60);
+  await ex("weave.item.add", {
+    kind: "text",
+    containerId: f,
+    frame: { x: 0, y: 0.5, width: 1, height: 0.4, rotation: 0 },
+    attrsOverride: { text: "Row two" },
+  });
+  await page.waitForTimeout(60);
+  await ex("weave.frame.setLayout", {
+    itemId: f,
+    layout: {
+      kind: "auto-flex",
+      direction: "column",
+      gap: 0.02,
+      justify: "start",
+      align: "stretch",
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    },
+  });
+  await batch(false); // close the round
+  await page.waitForTimeout(800);
+
+  const h = await docFrameH(page, t1);
+  expect(h).toBeGreaterThan(0);
+  expect(h, `batched text frame.height after round = ${h} (created at 0.4)`).toBeLessThan(0.2);
+});
