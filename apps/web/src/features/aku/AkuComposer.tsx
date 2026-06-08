@@ -21,6 +21,7 @@ import {
 } from "react";
 import type { AkuSettings } from "./agent/aku-settings.js";
 import { STYLE_GROUPS } from "./agent/design-styles.js";
+import { OPERATION_LABELS, type Operation } from "./agent/intent/types.js";
 import { type SlashCommandItem, SlashCommandMenu } from "./SlashCommandMenu.js";
 import type { AkuImage } from "./types.js";
 
@@ -42,18 +43,21 @@ interface SlashCommand extends SlashCommandItem {
   /** Prompt text to load into the composer, OR an action keyword. */
   readonly fill?: string;
   readonly action?: "image";
+  /** Explicit editing intent (WI-148) — tags the next send so the classifier is
+   *  bypassed (target/tone are resolved from selection + the typed text). */
+  readonly intentOp?: Operation;
 }
 
 const SLASH_COMMANDS: ReadonlyArray<SlashCommand> = [
+  // ── Explicit intent (WI-148) — pick the operation, then type the request. ──
+  { id: "i-edit", label: "수정", hint: "선택/지칭 항목만 수정", intentOp: "edit" },
+  { id: "i-add", label: "추가", hint: "새 슬라이드/아이템 추가", intentOp: "add" },
+  { id: "i-replace", label: "교체", hint: "항목을 같은 자리에 다른 것으로", intentOp: "replace" },
+  { id: "i-delete", label: "삭제", hint: "선택/지칭 항목 삭제", intentOp: "delete" },
+  { id: "i-recolor", label: "팔레트", hint: "색상만 변경", intentOp: "recolor" },
+  { id: "i-retone", label: "톤 맞춤", hint: "선택 항목을 덱 톤에 맞춤", intentOp: "retone" },
+  // ── Quick prompt fills ──
   { id: "bg", label: "배경 바꾸기", hint: "캔버스 배경색 변경", fill: "배경을 파란색으로 바꿔줘" },
-  { id: "text", label: "텍스트 추가", hint: "새 텍스트 아이템", fill: "텍스트 아이템을 추가해줘" },
-  { id: "shape", label: "도형 추가", hint: "새 도형 아이템", fill: "도형을 추가해줘" },
-  {
-    id: "slide",
-    label: "슬라이드 추가",
-    hint: "커버 슬라이드 삽입",
-    fill: "커버 슬라이드를 추가해줘",
-  },
   { id: "image", label: "이미지 첨부", hint: "파일에서 이미지 선택", action: "image" },
 ];
 
@@ -112,7 +116,11 @@ export function AkuComposer({
   readonly onSend: (
     text: string,
     images: ReadonlyArray<AkuImage>,
-    opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+    opts?: {
+      styleId?: string | null;
+      styleRefImages?: ReadonlyArray<AkuImage>;
+      intentOp?: Operation;
+    },
   ) => void;
   readonly settings: AkuSettings;
   readonly onStop: () => void;
@@ -127,6 +135,9 @@ export function AkuComposer({
   const [categoryId, setCategoryId] = useState<string | null>(null);
   // Style-reference images (mimic palette/tone) — separate from content images.
   const [styleRefImages, setStyleRefImages] = useState<ReadonlyArray<AkuImage>>([]);
+  // Explicit editing intent picked via a slash command (WI-148) — tags the next
+  // send and bypasses the heuristic classifier. null = auto-classify.
+  const [pendingIntentOp, setPendingIntentOp] = useState<Operation | null>(null);
   const [dragging, setDragging] = useState(false);
   const [slashActive, setSlashActive] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -175,6 +186,11 @@ export function AkuComposer({
     if (cmd.action === "image") {
       setText("");
       fileRef.current?.click();
+    } else if (cmd.intentOp !== undefined) {
+      // Tag the next send with this explicit intent; clear the "/…" so the user
+      // types their request normally. The chip below shows + clears it.
+      setPendingIntentOp(cmd.intentOp);
+      setText("");
     } else if (cmd.fill !== undefined) {
       setText(cmd.fill);
     }
@@ -186,10 +202,12 @@ export function AkuComposer({
     onSend(text, images, {
       styleId: settings.designTone ? categoryId : null,
       ...(settings.styleReference && styleRefImages.length > 0 ? { styleRefImages } : {}),
+      ...(pendingIntentOp !== null ? { intentOp: pendingIntentOp } : {}),
     });
     setText("");
     setImages([]);
     setStyleRefImages([]);
+    setPendingIntentOp(null);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -391,6 +409,22 @@ export function AkuComposer({
               </button>
             </div>
           ))}
+        </div>
+      ) : null}
+
+      {pendingIntentOp !== null ? (
+        <div className="flex items-center gap-1.5" data-testid="aku-pending-intent">
+          <span className="inline-flex items-center gap-1 rounded-full border border-[color:var(--accent)] bg-[color:var(--surface-1)] px-2 py-0.5 text-[11px] text-[color:var(--accent)]">
+            의도: {OPERATION_LABELS[pendingIntentOp]}
+            <button
+              type="button"
+              aria-label="지정한 의도 제거"
+              onClick={() => setPendingIntentOp(null)}
+              className="inline-flex items-center"
+            >
+              <IconClose size={11} />
+            </button>
+          </span>
         </div>
       ) : null}
 

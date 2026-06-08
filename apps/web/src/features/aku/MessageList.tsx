@@ -18,6 +18,13 @@ import {
 } from "@weave/design-system";
 import { lazy, Suspense, useState } from "react";
 import { AkuMascot } from "./AkuMascot.js";
+import { withOperation } from "./agent/intent/classifier.js";
+import {
+  ALL_OPERATIONS,
+  describeIntent,
+  type IntentPlan,
+  OPERATION_LABELS,
+} from "./agent/intent/types.js";
 import type { AkuEditRecord, AkuHistoryController, AkuImage, AkuMessage } from "./types.js";
 
 function formatTime(at: number | undefined): string {
@@ -42,6 +49,79 @@ function EditChip({ edit }: { readonly edit: AkuEditRecord }): JSX.Element {
       )}
       {edit.summary}
     </span>
+  );
+}
+
+/** The routed editing intent (WI-148), shown so the user can confirm or correct a
+ *  misclassification. Editable (a dropdown of operations) only on the latest,
+ *  settled turn — correcting re-runs that turn with the chosen operation. */
+function IntentChip({
+  plan,
+  editable,
+  onCorrect,
+}: {
+  readonly plan: IntentPlan;
+  readonly editable: boolean;
+  readonly onCorrect: (plan: IntentPlan) => void;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative inline-flex mb-1.5">
+      <button
+        type="button"
+        data-testid="aku-intent-chip"
+        data-aku-intent={plan.operation}
+        aria-haspopup={editable ? "listbox" : undefined}
+        aria-expanded={editable ? open : undefined}
+        disabled={!editable}
+        onClick={() => editable && setOpen((o) => !o)}
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] border border-[color:var(--accent)] text-[color:var(--accent)] bg-[color:var(--surface-1)] ${
+          editable ? "hover:bg-[color:var(--surface-2)] cursor-pointer" : "opacity-80"
+        }`}
+        title={editable ? "감지된 의도 — 눌러서 교정" : "감지된 의도"}
+      >
+        <IconSparkle size={11} />
+        {describeIntent(plan)}
+        {editable ? <span aria-hidden="true">▾</span> : null}
+      </button>
+      {editable && open ? (
+        <>
+          <button
+            type="button"
+            aria-label="의도 선택 닫기"
+            className="fixed inset-0 z-[60] cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            role="listbox"
+            aria-label="의도 교정"
+            data-testid="aku-intent-options"
+            className="absolute top-full left-0 mt-1 z-[61] min-w-[140px] rounded-[var(--radius-md)] border border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay)] shadow-[var(--shadow-overlay)] p-1"
+          >
+            {ALL_OPERATIONS.map((op) => (
+              <button
+                key={op}
+                type="button"
+                role="option"
+                aria-selected={op === plan.operation}
+                data-aku-intent-option={op}
+                onClick={() => {
+                  setOpen(false);
+                  if (op !== plan.operation) onCorrect(withOperation(plan, op));
+                }}
+                className={`w-full text-left rounded-[var(--radius-sm)] px-2 py-1 text-[12px] ${
+                  op === plan.operation
+                    ? "bg-[color:var(--surface-2)] text-[color:var(--text-strong)]"
+                    : "text-[color:var(--text-default)] hover:bg-[color:var(--surface-overlay-2)]"
+                }`}
+              >
+                {OPERATION_LABELS[op]}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -102,6 +182,7 @@ function MessageBubble({
   onRegenerate,
   onRetry,
   onEdit,
+  onCorrectIntent,
   undo,
 }: {
   readonly message: AkuMessage;
@@ -112,9 +193,12 @@ function MessageBubble({
   readonly onRegenerate: () => void;
   readonly onRetry: () => void;
   readonly onEdit: (index: number) => void;
+  readonly onCorrectIntent: (plan: IntentPlan) => void;
   readonly undo: AkuHistoryController | undefined;
 }): JSX.Element {
   const isUser = message.role === "user";
+  const intent = message.role === "assistant" ? message.intent : undefined;
+  const errored = message.role === "assistant" ? message.error === true : false;
   const edits = !isUser && message.role === "assistant" ? message.edits : undefined;
   const activity = !isUser && message.role === "assistant" ? message.activity : undefined;
   const canUndoTurn =
@@ -146,6 +230,16 @@ function MessageBubble({
                 : "text-[color:var(--text-default)]"
           }`}
         >
+          {intent !== undefined ? (
+            <div className="block">
+              <IntentChip
+                plan={intent}
+                editable={isLast && !streaming && !errored}
+                onCorrect={onCorrectIntent}
+              />
+            </div>
+          ) : null}
+
           {isUser && message.images !== undefined && message.images.length > 0 ? (
             <ImageThumbs images={message.images} />
           ) : null}
@@ -246,6 +340,7 @@ export function MessageList({
   onRegenerate,
   onRetry,
   onEdit,
+  onCorrectIntent,
   undo,
 }: {
   readonly messages: ReadonlyArray<AkuMessage>;
@@ -253,6 +348,7 @@ export function MessageList({
   readonly onRegenerate: () => void;
   readonly onRetry: () => void;
   readonly onEdit: (index: number) => void;
+  readonly onCorrectIntent: (plan: IntentPlan) => void;
   readonly undo: AkuHistoryController | undefined;
 }): JSX.Element {
   const [, force] = useState(0);
@@ -291,6 +387,7 @@ export function MessageList({
           onRegenerate={onRegenerate}
           onRetry={onRetry}
           onEdit={onEdit}
+          onCorrectIntent={onCorrectIntent}
           undo={undo}
         />
       ))}

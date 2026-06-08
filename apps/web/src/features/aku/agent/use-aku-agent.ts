@@ -47,6 +47,9 @@ import { stampMinSizeGuard } from "./agent-min-size-guard.js";
 import { fixAgentTextBox } from "./agent-text-resize.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
 import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./design-styles.js";
+import { classifyIntent, intentFromOperation } from "./intent/classifier.js";
+import { composeIntentTask } from "./intent/compose-intent-task.js";
+import { ALL_OPERATIONS, type IntentPlan, type Operation } from "./intent/types.js";
 import { makeRoundGroupingEditor } from "./round-grouping-editor.js";
 import {
   WEAVE_CAPABILITIES,
@@ -76,11 +79,20 @@ export interface UseAkuAgent {
   send(
     text: string,
     images?: ReadonlyArray<AkuImage>,
-    opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+    opts?: {
+      styleId?: string | null;
+      styleRefImages?: ReadonlyArray<AkuImage>;
+      /** Full explicit editing intent (chip pick) — bypasses the classifier (WI-148). */
+      intent?: IntentPlan;
+      /** Explicit operation only (slash command) — target/tone resolved internally. */
+      intentOp?: Operation;
+    },
   ): void;
   stop(): void;
   /** Re-run the most recent user turn (drops its response first). */
   regenerate(): void;
+  /** Re-run the most recent user turn with a CORRECTED intent (chip edit, WI-148). */
+  correctIntent(plan: IntentPlan): void;
   /** Roll the transcript back to before the user message at `index` and return
    *  its content so the composer can reload it for editing. */
   editFrom(index: number): AkuDraft | null;
@@ -511,12 +523,44 @@ export function useAkuAgent(deps: {
     async (
       text: string,
       images: ReadonlyArray<AkuImage>,
-      opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+      opts?: {
+        styleId?: string | null;
+        styleRefImages?: ReadonlyArray<AkuImage>;
+        /** Full explicit plan (chip correction). */
+        intent?: IntentPlan;
+        /** Explicit operation only (slash command) — target/tone resolved here. */
+        intentOp?: Operation;
+      },
     ): Promise<void> => {
       const s = depsRef.current.settings ?? DEFAULT_AKU_SETTINGS;
       const styleId = opts?.styleId;
       const styleRefImages =
         s.styleReference && opts?.styleRefImages !== undefined ? opts.styleRefImages : [];
+      // ── Intent routing (WI-148 / DR-102; Phase 2b wire) ───────────────────────
+      // Resolve the editing intent unless routing is off. Explicit plan (chip) or
+      // operation (slash) wins; else classify in-browser. BOTH "client" and "server"
+      // classify locally so the directive + chip are always present. The difference:
+      // in "server" mode we ALSO send the operation over the wire so the small-think
+      // harness tunes the review-pipeline passes per operation (WI-033 — the
+      // server-only lever the client can't reach). "off" → no routing.
+      const hasSelection = depsRef.current.getSelection().length > 0;
+      const explicitPick = opts?.intent !== undefined || opts?.intentOp !== undefined;
+      const intentPlan: IntentPlan | undefined =
+        s.intentSource === "off"
+          ? undefined
+          : (opts?.intent ??
+            (opts?.intentOp !== undefined
+              ? intentFromOperation(opts.intentOp, text, { hasSelection })
+              : classifyIntent(text, { hasSelection })));
+      // Wire intent (server mode only): send the operation so the harness tunes its
+      // review passes (small-think WI-033). Send ONLY an EXPLICIT pick (slash / chip) —
+      // for an auto turn we let the SERVER classify (it may use a more accurate LLM
+      // classifier), then reflect its choice on the chip via the `intent` event below.
+      // The local `intentPlan` still drives the task DIRECTIVE + the initial chip.
+      const wireIntent =
+        s.intentSource === "server" && explicitPick && intentPlan !== undefined
+          ? { operation: intentPlan.operation }
+          : undefined;
       genRef.current += 1;
       const gen = genRef.current;
       const now = Date.now();
@@ -532,6 +576,8 @@ export function useAkuAgent(deps: {
         edits: [],
         at: now,
         activity: "연결 중…",
+        // Surface the routed intent on the turn so the chip can render + be corrected.
+        ...(intentPlan !== undefined && s.showIntentChip ? { intent: intentPlan } : {}),
       };
       commit([...messagesRef.current, userMsg, assistantMsg]);
       setStatus("streaming");
@@ -602,7 +648,13 @@ export function useAkuAgent(deps: {
         styleRefImages.length > 0
           ? `\n\n[스타일 레퍼런스] 첨부된 마지막 ${styleRefImages.length}장은 스타일 참고용입니다 — 색감·톤·타이포·여백·레이아웃의 느낌만 모사하고, 그 이미지의 내용(텍스트/사물)을 그대로 옮기지는 마세요.`
           : "";
-      const task = `${primer}${designLine}${themeLine}${styleLine}${themeAdviceLine}${assetLines}${styleRefLines}${selectionLine}\n\n${text}`;
+      // Intent block (WI-148): operation directive + tone/palette context, routed
+      // from `intentPlan`. Empty for create / off / server-deferred → no-op.
+      const intentBlock =
+        intentPlan !== undefined
+          ? composeIntentTask(intentPlan, depsRef.current.getDocument() as unknown as SigDocument)
+          : "";
+      const task = `${primer}${designLine}${themeLine}${styleLine}${themeAdviceLine}${assetLines}${styleRefLines}${selectionLine}${intentBlock}\n\n${text}`;
       const visionImages = styleRefImages.length > 0 ? [...images, ...styleRefImages] : images;
 
       try {
@@ -623,6 +675,9 @@ export function useAkuAgent(deps: {
           // (DR-077 D3); server clamps 0..1.
           temperature: jitteredTemperature(s.creativity, variationSeed),
           ...(register !== undefined ? { register } : {}),
+          // "server" mode: send the routed operation so the harness tunes its review
+          // passes per intent (small-think WI-033). No-op unless the server enabled it.
+          ...(wireIntent !== undefined ? { intent: wireIntent } : {}),
           // Capture the server-assigned task id so stop() can cancel THIS run.
           onSubmit: (id) => {
             activeTaskIdRef.current = id;
@@ -640,6 +695,22 @@ export function useAkuAgent(deps: {
                 ...prev,
                 text: prev.text === "" ? event.text : `${prev.text}\n\n${event.text}`,
               }));
+            }
+            // The server routed this turn to an edit operation (server mode, WI-033) —
+            // reflect ITS choice on the chip (source of truth for what was applied; it may
+            // have used a more accurate LLM classifier than the local heuristic). Gated on
+            // the chip toggle; an unknown operation string is ignored (forward-compatible).
+            if (event.type === "intent") {
+              const op = event.operation;
+              if (
+                (depsRef.current.settings ?? DEFAULT_AKU_SETTINGS).showIntentChip &&
+                (ALL_OPERATIONS as readonly string[]).includes(op)
+              ) {
+                patchLastAssistant((prev) => ({
+                  ...prev,
+                  intent: intentFromOperation(op as Operation, text, { hasSelection }),
+                }));
+              }
             }
             const activity = activityFor(runState);
             patchLastAssistant((prev) => ({
@@ -740,7 +811,12 @@ export function useAkuAgent(deps: {
     (
       text: string,
       images: ReadonlyArray<AkuImage> = [],
-      opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+      opts?: {
+        styleId?: string | null;
+        styleRefImages?: ReadonlyArray<AkuImage>;
+        intent?: IntentPlan;
+        intentOp?: Operation;
+      },
     ): void => {
       const trimmed = text.trim();
       if (trimmed === "" && images.length === 0) return;
@@ -786,6 +862,22 @@ export function useAkuAgent(deps: {
     }
     rerunLast();
   }, [rerunLast]);
+
+  /** Re-run the most recent user turn with a CORRECTED intent (chip edit, WI-148):
+   *  drop the trailing assistant + that user msg, then resend with an explicit plan. */
+  const correctIntent = useCallback(
+    (plan: IntentPlan): void => {
+      if (status === "streaming") return;
+      const cur = messagesRef.current;
+      let i = cur.length - 1;
+      while (i >= 0 && cur[i]?.role === "assistant") i--;
+      const userMsg = cur[i];
+      if (userMsg === undefined || userMsg.role !== "user") return;
+      commit(cur.slice(0, i));
+      void runTurn(userMsg.text, userMsg.images ?? [], { intent: plan });
+    },
+    [commit, runTurn, status],
+  );
 
   const editFrom = useCallback(
     (index: number): AkuDraft | null => {
@@ -850,8 +942,9 @@ export function useAkuAgent(deps: {
     send,
     stop,
     regenerate: rerunLast,
-    retry,
+    correctIntent,
     editFrom,
+    retry,
     clear,
     history,
     hasToken,

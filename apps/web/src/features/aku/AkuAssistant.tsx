@@ -87,6 +87,7 @@ export function AkuAssistant({
     send,
     stop,
     regenerate,
+    correctIntent,
     editFrom,
     retry,
     clear,
@@ -292,6 +293,7 @@ export function AkuAssistant({
           onRegenerate={regenerate}
           onRetry={retry}
           onEditMessage={onEditMessage}
+          onCorrectIntent={correctIntent}
           onClear={clear}
           undo={history}
           seed={seed}

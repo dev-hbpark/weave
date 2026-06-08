@@ -7,6 +7,7 @@ import { IconButton, IconMore, Switch } from "@weave/design-system";
 import { useId, useState } from "react";
 import {
   AKU_CREATIVITY_OPTIONS,
+  AKU_INTENT_SOURCE_OPTIONS,
   AKU_SETTINGS_SECTIONS,
   type AkuSettings,
   type SetAkuSetting,
@@ -94,6 +95,47 @@ export function AkuSettingsMenu({
                 })}
               </div>
             ))}
+
+            {/* Intent source (WI-148) — where editing intent is classified. A
+                segmented control, not a toggle (server / client / off). */}
+            <div className="mb-1.5">
+              <div className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-[color:var(--text-overlay-soft)]">
+                의도 인식 위치
+              </div>
+              <div className="px-1.5 py-1">
+                {/* biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface */}
+                <div
+                  className="flex gap-1"
+                  role="group"
+                  aria-label="의도 인식 위치"
+                  data-testid="aku-intent-source"
+                >
+                  {AKU_INTENT_SOURCE_OPTIONS.map((opt) => {
+                    const active = settings.intentSource === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => onSetSetting("intentSource", opt.value)}
+                        className={`flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-[11px] border transition-colors ${
+                          active
+                            ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)] border-[color:var(--accent)]"
+                            : "border-[color:var(--surface-overlay-border)] text-[color:var(--text-overlay-soft)] hover:text-[color:var(--text-overlay)]"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-1 text-[10.5px] text-[color:var(--text-overlay-soft)] leading-snug">
+                  의도(추가·수정·교체·팔레트·톤)를 파악해 편집을 라우팅합니다.
+                  클라이언트=브라우저에서 판단(서버 생략) · 서버=에이전트 서버가 판단 · 끔=단일
+                  경로.
+                </div>
+              </div>
+            </div>
 
             {/* Creativity (model temperature) — a segmented control, not a toggle. */}
             <div className="mb-1.5">

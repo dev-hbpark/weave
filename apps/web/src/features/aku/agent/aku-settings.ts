@@ -24,6 +24,16 @@ export interface AkuSettings {
   /** Send the `[현재 테마]` line. Off → the agent ignores the active theme
    *  (frees it to commit to the content's own palette → more variety). */
   readonly sendTheme: boolean;
+  // ── Intent routing (WI-148 / DR-102) ──
+  /** Where the editing INTENT (add/edit/delete/replace/recolor/retone…) is decided:
+   *  - "server": defer to the small-think harness intent step (auto-infer + chip). [Phase 2]
+   *  - "client": classify in-browser (heuristic / explicit pick) and route the task
+   *    locally — bypasses the server harness intent step. Works server-unchanged.
+   *  - "off": no intent routing (the current single-path behavior). */
+  readonly intentSource: AkuIntentSource;
+  /** Show the detected-intent chip on the turn so the user can correct a
+   *  misclassification before/after the run (the "hybrid" correction path). */
+  readonly showIntentChip: boolean;
   // ── Behavior ──
   /** Allow the server's pre-generation "which media types?" question. Off →
    *  proceed immediately (answer "none"). */
@@ -37,6 +47,20 @@ export interface AkuSettings {
    *  agent-server (higher = more varied designs from the same prompt). */
   readonly creativity: AkuCreativity;
 }
+
+/** Where editing intent is classified (WI-148). "client" is the Phase 1 default —
+ *  it routes the task in-browser with no server changes; "server" defers to the
+ *  harness intent step (Phase 2); "off" disables routing (current behavior). */
+export type AkuIntentSource = "server" | "client" | "off";
+
+export const AKU_INTENT_SOURCE_OPTIONS: ReadonlyArray<{
+  readonly value: AkuIntentSource;
+  readonly label: string;
+}> = [
+  { value: "client", label: "클라이언트" },
+  { value: "server", label: "서버" },
+  { value: "off", label: "끔" },
+];
 
 /** Creativity levels → model temperature. "balanced" is a sensible default that
  *  is already meaningfully more varied than the server's deterministic 0. */
@@ -93,6 +117,10 @@ export const DEFAULT_AKU_SETTINGS: AkuSettings = {
   styleReference: false,
   themeAdvice: false,
   sendTheme: true,
+  // Phase 1: client routing is the working path (server harness intent step is
+  // Phase 2). Default to "client" so intent routing works out of the box.
+  intentSource: "client",
+  showIntentChip: true,
   askBeforeGenerate: true,
   autoFitCamera: true,
   persistHistory: true,
@@ -154,6 +182,16 @@ export const AKU_SETTINGS_SECTIONS: ReadonlyArray<AkuSettingSection> = [
         key: "sendTheme",
         label: "현재 테마 전달",
         hint: "끄면 활성 테마를 무시하고 콘텐츠 고유 팔레트로 (다양성 ↑)",
+      },
+    ],
+  },
+  {
+    title: "의도 인식",
+    items: [
+      {
+        key: "showIntentChip",
+        label: "의도 칩 표시",
+        hint: "감지된 편집 의도를 보여주고 바로 교정할 수 있게 (오분류 보정)",
       },
     ],
   },

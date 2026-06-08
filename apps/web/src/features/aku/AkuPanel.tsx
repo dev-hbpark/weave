@@ -14,6 +14,7 @@ import { AkuSettingsMenu } from "./AkuSettingsMenu.js";
 import { AkuThemeSuggestion } from "./AkuThemeSuggestion.js";
 import { AkuTokenSetup } from "./AkuTokenSetup.js";
 import type { AkuSettings, SetAkuSetting } from "./agent/aku-settings.js";
+import type { IntentPlan, Operation } from "./agent/intent/types.js";
 import { ClarifyPicker } from "./ClarifyPicker.js";
 import { MessageList } from "./MessageList.js";
 import type {
@@ -43,6 +44,7 @@ export function AkuPanel({
   onRegenerate,
   onRetry,
   onEditMessage,
+  onCorrectIntent,
   onClear,
   undo,
   seed,
@@ -67,7 +69,12 @@ export function AkuPanel({
   readonly onSend: (
     text: string,
     images: ReadonlyArray<AkuImage>,
-    opts?: { styleId?: string | null; styleRefImages?: ReadonlyArray<AkuImage> },
+    opts?: {
+      styleId?: string | null;
+      styleRefImages?: ReadonlyArray<AkuImage>;
+      intent?: IntentPlan;
+      intentOp?: Operation;
+    },
   ) => void;
   /** Behavior flags (gear menu) + a single-setting setter. */
   readonly settings: AkuSettings;
@@ -77,6 +84,8 @@ export function AkuPanel({
   readonly onRegenerate: () => void;
   readonly onRetry: () => void;
   readonly onEditMessage: (index: number) => void;
+  /** Re-run the latest turn with a corrected editing intent (chip edit, WI-148). */
+  readonly onCorrectIntent: (plan: IntentPlan) => void;
   readonly onClear: () => void;
   readonly undo: AkuHistoryController | undefined;
   readonly seed: AkuComposerSeed | null;
@@ -153,6 +162,7 @@ export function AkuPanel({
               onRegenerate={onRegenerate}
               onRetry={onRetry}
               onEdit={onEditMessage}
+              onCorrectIntent={onCorrectIntent}
               undo={undo}
             />
           ) : (

@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz
+  '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.3.tgz
   '@agocraft/agent-client': file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260605120000.tgz
   '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260607010000.tgz
   '@agocraft/domain-block-doc': file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260602053511.tgz
@@ -1592,9 +1592,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz':
-    resolution: {integrity: sha512-QsWLZbptPknHti9HFjSXpxzdZCCDqNxLdM6JLcTNIv4iejHdYzEvQ+juxPPvdwAPIiSQdOiVSaKyiOpy6e8caQ==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz}
-    version: 0.1.2
+  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.3.tgz':
+    resolution: {integrity: sha512-BUZ/yV/9TR0bABWvYNX45Xl5HCth05HG3a1d6mdAdAYATpGXpfY74Nyf3jQF7ZBO7EBI3UCB+SkmaZBewlSYuA==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.3.tgz}
+    version: 0.1.3
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
@@ -3498,7 +3498,7 @@ snapshots:
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260607010000.tgz(typescript@5.9.3)
       '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)
-      '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz(typescript@5.9.3)(zod@3.25.76)
+      '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.3.tgz(typescript@5.9.3)(zod@3.25.76)
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - react
@@ -4759,7 +4759,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.60.4':
     optional: true
 
-  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.2.tgz(typescript@5.9.3)(zod@3.25.76)':
+  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.3.tgz(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
       valibot: 1.4.0(typescript@5.9.3)

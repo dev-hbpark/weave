@@ -5,6 +5,8 @@
 // to the small-think server, so the only types that survive are the ones the
 // panel UI renders.
 
+import type { IntentPlan } from "./agent/intent/types.js";
+
 /** An image attached to a user turn (data URL — base64 inline). */
 export interface AkuImage {
   readonly dataUrl: string;
@@ -46,6 +48,9 @@ export interface AkuAssistantMessage {
    *  "편집 적용 중: 배경색 변경"). Set from streamed agent events, cleared when
    *  the turn settles. Live-session only — stripped before persistence. */
   readonly activity?: string;
+  /** The editing intent routed for this turn (WI-148). Set when intent routing is
+   *  active (intentSource !== "off"); drives the correctable intent chip. */
+  readonly intent?: IntentPlan;
 }
 
 export type AkuMessage = AkuUserMessage | AkuAssistantMessage;
