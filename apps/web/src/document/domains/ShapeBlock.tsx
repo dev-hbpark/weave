@@ -21,6 +21,7 @@ import {
 import { type SVGAttributes, useEffect, useId, useRef, useState } from "react";
 import { useResolveColor } from "../style/resolver-context.js";
 import type { AgoItem, ShapeAttrs } from "../types.js";
+import { svgStrokeToReactProps } from "./svg-stroke-props.js";
 
 interface ShapeBlockProps {
   readonly item: AgoItem<"shape">;
@@ -215,7 +216,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
     geom.strokeOnly === true || geom.element === "line" || geom.element === "polyline";
   const fillProps: SVGAttributes<SVGElement> = { fill: isStrokeOnly ? "none" : fill.value };
   const strokeProps: SVGAttributes<SVGElement> = strokeAttrs
-    ? (strokeAttrs as unknown as SVGAttributes<SVGElement>)
+    ? svgStrokeToReactProps(strokeAttrs)
     : isStrokeOnly
       ? { stroke: fill.value, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }
       : {};

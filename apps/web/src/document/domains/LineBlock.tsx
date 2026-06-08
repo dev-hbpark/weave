@@ -20,6 +20,7 @@ import { type SVGAttributes, useEffect, useId, useRef, useState } from "react";
 import { useResolveColor } from "../style/resolver-context.js";
 import type { AgoItem, LineAttrs } from "../types.js";
 import { ArrowMarker, renderGeometryElement } from "./ShapeBlock.js";
+import { svgStrokeToReactProps } from "./svg-stroke-props.js";
 
 interface LineBlockProps {
   readonly item: AgoItem<"line">;
@@ -69,7 +70,7 @@ export function LineBlock({ item, onUpdate }: LineBlockProps): JSX.Element {
 
   const fillProps: SVGAttributes<SVGElement> = { fill: "none" };
   const strokeProps: SVGAttributes<SVGElement> = strokeAttrs
-    ? (strokeAttrs as unknown as SVGAttributes<SVGElement>)
+    ? svgStrokeToReactProps(strokeAttrs)
     : {
         stroke: DEFAULT_LINE_STROKE,
         strokeWidth: 2,

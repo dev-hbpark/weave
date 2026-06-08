@@ -41,6 +41,7 @@ import { type JSX, type SVGAttributes, useEffect, useId, useRef, useState } from
 import { type CornerRadii, cornerRadiusPxToFraction, perCornerRectPath } from "../corner-radius.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import type { AgoItem } from "../types.js";
+import { svgStrokeToReactProps } from "./svg-stroke-props.js";
 
 interface FrameBlockProps {
   readonly item: AgoItem<"frame">;
@@ -204,9 +205,7 @@ export function FrameBlock({ item }: FrameBlockProps) {
   const perCornerPathD = screenRadii ? perCornerRectPath(rectW, rectH, screenRadii) : null;
 
   const rectFillProps: SVGAttributes<SVGRectElement> = { fill: fill ? fill.value : "transparent" };
-  const rectStrokeProps: SVGAttributes<SVGRectElement> = strokeAttrs
-    ? (strokeAttrs as unknown as SVGAttributes<SVGRectElement>)
-    : {};
+  const rectStrokeProps: SVGAttributes<SVGRectElement> = svgStrokeToReactProps(strokeAttrs);
 
   /** The rounded frame box — a per-corner `<path>` when `cornerRadii` is set,
    *  else the uniform `<rect rx/ry>`. Same fill/stroke props feed either. */
