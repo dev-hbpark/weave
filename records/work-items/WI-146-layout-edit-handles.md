@@ -101,7 +101,22 @@ ResizeObserver는 *콘텐츠* 크기 변화에만 발화하므로 재발화하�
 - **회귀**: typecheck·biome 클린, 신규 e2e 3/3, `text-item.spec.ts` 통과. (직전 광범위 e2e의 20 실패는
   세션 장시간 후 환경 타임아웃 — Fixed-mode 테스트 포함, 본 변경이 영향 줄 수 없는 경로라 환경 확정.)
 
+## 수정 (B-2, 2026-06-08) — 에이전트 라운드 종료 시 auto-height 일괄 재보정
+
+사용자 확정 단서: 생성 직후 겹쳐 있던 카드를 **수동 편집했다 빠져나오면 레이아웃이 정상화**됨 →
+"편집 시 일어나는 보정을 라운드 종료에 자동으로 한 번 돌리면" 편집 없이 settle.
+
+- **신규** `domains/text-autofit-signal.ts`: 단발 pub/sub(`onTextAutofitRequest`/`requestTextAutofit`).
+- `round-grouping-editor.ts` `close()`: 배치 종료(endBatch) 후 `requestTextAutofit()` 펄스(라운드 밖이라
+  보정 커밋은 별도 히스토리 엔트리).
+- `TextBlock.tsx`: 펄스 구독 → rAF로 `measureCommit`(편집-종료와 동일 로직, NONE/편집중/리플레이 no-op).
+- 효과: 에이전트 생성 후 자동으로 모든 auto-height 텍스트가 콘텐츠에 맞게 재정착 → 편집 불필요.
+- 검증: 트리거(라운드 종료 펄스)는 단위 테스트로 가드(round-grouping 7/7), agent 스위트 75/75,
+  typecheck·biome 클린. 비-에이전트 경로엔 펄스가 안 오므로 무영향(기존 e2e 불변).
+- 한계: layout이 **NONE인 프레임의 절대배치 겹침**(예: CTA/QR 클러스터)은 이 보정으론 안 풀림 — 그 프레임엔
+  setLayout이 필요(에이전트/서버 리뷰가 적용). 실환경 재생성으로 최종 확인 권장.
+
 ## 진행 로그
 
 - 레코드 3종 → 순수 코어(테스트) → 증분1+2 핸들 → 증분3 병합. 증분별 커밋.
-- 후속 조사: base-case 정상 확인(e2e) → 실제 원인(나중 height 쓰기 후 재발화 없음) 확정 → (B) 수정.
+- 후속: base-case 정상(e2e) → 나중 height 쓰기 재발화 없음(B) → 라운드 종료 일괄 재보정(B-2).

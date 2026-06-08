@@ -45,6 +45,7 @@ import {
 } from "../types.js";
 import { deriveTextAutoResize } from "./derive-text-auto-resize.js";
 import { ParentFrameHeightContext } from "./parent-frame-context.js";
+import { onTextAutofitRequest } from "./text-autofit-signal.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -229,6 +230,17 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     const raf = requestAnimationFrame(() => measureCommitRef.current?.());
     return () => cancelAnimationFrame(raf);
   }, [isEditing, autoResizeMode, a.frame.width, a.frame.height]);
+
+  // WI-146 — re-settle on an agent ROUND-END pulse. After a batched generation
+  // round the auto-fit can be left un-settled (overlapping / oversized) because
+  // the observer never re-fires; the round-grouping editor pulses this so every
+  // auto-height text runs the SAME fit a manual edit-exit would — no edit needed.
+  useEffect(() => {
+    return onTextAutofitRequest(() => {
+      if (isEditingRef.current) return;
+      requestAnimationFrame(() => measureCommitRef.current?.());
+    });
+  }, []);
 
   // Phase 1 (WI-029) — Figma-equivalent text attrs:
   //   textAlignVertical → flex justify-content
