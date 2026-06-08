@@ -6,6 +6,19 @@
 
 @import "@weave/design-system/styles.css";
 
+html,
+body {
+  /* Safety net for the trackpad two-finger horizontal swipe. The design
+   * surface relies on a wheel `preventDefault` (FrameStage) to suppress the
+   * browser's back/forward navigation gesture, but that listener only attaches
+   * on free-placement flavors and can be bypassed once macOS Chrome commits to
+   * the swipe (the subsequent wheel events arrive `cancelable: false`). Pinning
+   * horizontal overscroll to `none` blocks the navigation gesture at the
+   * platform layer, in every flavor, regardless of the JS listener. Vertical is
+   * left at `auto` so nothing else changes. */
+  overscroll-behavior-x: none;
+}
+
 html {
   /* Theme-aware root canvas (DR-design-026 — theme expansion).
    * Two-declaration pattern: the literal #050715 (default aurora ink,

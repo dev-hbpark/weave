@@ -1018,9 +1018,15 @@ function DesignPageBody() {
   const rootFlavor = ((docInAgocraft.root.attrs.flavor as DocFlavor | undefined) ??
     "mixed") as DocFlavor;
   const currentFlavor: DocFlavor = rootFlavor;
-  // Mixed flavor activates the Figma-style infinite-canvas surface (pan +
-  // user zoom). Stacked flavors keep the legacy fit-to-viewport layout.
-  const infiniteCanvas = currentFlavor === "mixed";
+  // Free-placement flavors activate the Figma-style infinite-canvas surface
+  // (two-finger pan + user zoom). `canvas-board` shares mixed's free-placement
+  // seed model (see document/seed.ts), so it must pan too — without this the
+  // wheel pan listener never attaches and the trackpad two-finger swipe falls
+  // through to the browser's back/forward navigation gesture. Stacked flavors
+  // (slide-deck / doc-page) keep the legacy fit-to-viewport layout; the
+  // global `overscroll-behavior-x: none` in main.css blocks the back-swipe
+  // there independently of this flag.
+  const infiniteCanvas = currentFlavor === "mixed" || currentFlavor === "canvas-board";
 
   const removeItem = (itemId: string) => editor.exec("weave.item.remove", { itemId, containerId });
   const updateItem: typeof rawUpdateItem = (itemId, patch) =>
