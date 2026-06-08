@@ -380,16 +380,21 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     lineHeight: lineHeightValue,
     letterSpacing: `${a.letterSpacing}px`,
     whiteSpace: isAutoWidth ? "pre" : "pre-wrap",
-    // WI-149 — break at WORD boundaries, not mid-character. `word-break:break-word`
-    // let the text shatter character-by-character; when a flex-ROW shrinks a text
-    // child to a sliver (≈1ch, main-axis = width), that produced a one-glyph-per-
-    // line VERTICAL strip (and a runaway auto-height). `keep-all` keeps Korean
-    // 어절 / words intact (Korean wraps at spaces — its natural break), so a too-
-    // narrow box overflows/clips one line instead of stacking vertically;
-    // `overflow-wrap:break-word` still breaks a genuinely unbreakable long token
-    // (a URL) only when it would otherwise overflow.
+    // WI-149 — break at WORD boundaries, NEVER mid-character. When the flex
+    // engine starves a text row child toward 0 width (auto-flex shrink floors at
+    // 0, not at content min-size — agocraft has no text measurement), the box can
+    // be narrower than a single glyph. `overflow-wrap:break-word` then force-broke
+    // EVERY word at the overflow point → one glyph per line → an illegible
+    // VERTICAL ribbon (+ runaway auto-height). We drop overflow-wrap so words
+    // stay whole: `keep-all` keeps Korean 어절 / CJK runs intact and wrapping
+    // happens only at real break opportunities (spaces). A box too narrow for a
+    // word now overflows that word horizontally on one line (legible) instead of
+    // shattering it vertically. Trade-off: a genuinely unbreakable long token (a
+    // spaceless URL) overflows rather than breaking — rare, and far better than a
+    // glyph ribbon; the durable fix is keeping wrapping text out of starved flex
+    // rows (capabilities + small-think guidance) and the layout shrink floor.
     wordBreak: "keep-all",
-    overflowWrap: "break-word",
+    overflowWrap: "normal",
     textDecoration: hasRuns ? "none" : decoration,
     textTransform,
     ...(a.textCase === "SMALL_CAPS" ? { fontVariantCaps: "small-caps" } : {}),
