@@ -44,6 +44,22 @@ Two compounding factors:
     rendered as a 1–2-char vertical ribbon is ALWAYS a defect — bind wrapping
     text's width to its cell, never leave it bare in a row.
 
+## Follow-up (2026-06-08, recurrence)
+
+A NEW agent-server build (small-think DR-052 guidance already live) STILL placed a
+long description bare in a flex ROW → recurred. Findings:
+
+- First render guard was insufficient: `overflow-wrap: break-word` still
+  force-broke each glyph in a sub-glyph-width box. Replaced with
+  `overflow-wrap: normal` (words stay whole, overflow horizontally) — DR-103.
+- Engine root cause confirmed: `@agocraft/layout` `auto-flex.js` shrink floors at
+  0, not min-content, and can't measure text → starves the row child to ~0.009.
+- **Operator decision (2026-06-08):** rely on render guard + agent/server
+  guidance; DEFER the layout-level durable fix (weave post-layout min-content
+  re-expansion, or `shrink:0` text default). Render guard is the active
+  mitigation; guidance did not prevent this instance, so revisit if recurrence
+  persists across builds.
+
 ## Verify
 
 - `biome check` TextBlock — clean.
