@@ -44,6 +44,7 @@ import type {
   AkuStatus,
 } from "../types.js";
 import { groundAgentFontSize } from "./agent-font-grounding.js";
+import { stampMinSizeGuard } from "./agent-min-size-guard.js";
 import { fixAgentTextBox } from "./agent-text-resize.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
 import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./design-styles.js";
@@ -374,7 +375,9 @@ export function useAkuAgent(deps: {
           const sized = fixAgentTextBox(commandName, input, doc);
           const design = depsRef.current.getDesignInfo?.();
           if (design === undefined) return sized;
-          return groundAgentFontSize(commandName, sized, doc, design);
+          const grounded = groundAgentFontSize(commandName, sized, doc, design);
+          // WI-147 — switch ON the command's min-size reject for agent adds only.
+          return stampMinSizeGuard(commandName, grounded, design);
         },
       }),
     [editor],

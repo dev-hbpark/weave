@@ -71,6 +71,7 @@ import {
 } from "@agocraft/layout";
 import { nn } from "../lib/nn.js";
 import {
+  absoluteFrameBox,
   applyChangeToDocument,
   applyCreationUnits,
   computeReparentFrameRatio,
@@ -156,6 +157,18 @@ export interface AddItemInput {
     readonly kind: string;
     readonly attrs?: Readonly<Record<string, unknown>>;
   }>;
+  /** WI-147 — agent-only min-size guard. When `true`, the add is REJECTED (no
+   *  patches, nothing created) if the item's final rendered px size falls below
+   *  the legibility floor (see `checkAddedItemMinSize`). Set ONLY by the aku
+   *  agent's `transformInput` (manual toolbar adds never pass it), so a person
+   *  deliberately drawing a tiny element is never blocked — only the agent is.
+   *  Requires `designWidth` + `designHeight` to resolve ratios → px. */
+  readonly enforceMinSize?: boolean;
+  /** WI-147 — live design pixel size, used with `enforceMinSize` to convert the
+   *  staged 0..1 ratio frame into an absolute px size. Same source/semantics as
+   *  the `designWidth/Height` on reparent. */
+  readonly designWidth?: number;
+  readonly designHeight?: number;
 }
 export interface RemoveItemInput {
   readonly itemId: string;
@@ -437,6 +450,62 @@ function ensureUsableFrame(kind: string, frame: unknown, seed: ItemFrame): ItemF
     // Text height auto-fits — keep a finite caller value; only fill a missing/NaN one.
     height: autoHeight && fin(f.height) ? f.height : sane(f.height, seed.height),
     rotation: fin(f.rotation) ? f.rotation : seed.rotation,
+  };
+}
+
+// WI-147 — minimum legible size for an AGENT-added item, in absolute design px.
+// The agent occasionally emits a frame ratio so small the item renders as an
+// invisible speck (a sub-10px box, often from dividing by the wrong parent or
+// fat-fingering a ratio). Such an item is unusable: it can't be seen, is nearly
+// unselectable, and silently bloats the deck. We REJECT the add and hand the
+// agent the reason so it re-tries with a real size. The floor is two ANDed
+// thresholds (the user's spec): the LONG side ≥ 10px AND the area ≥ 20px². Using
+// the LONG side (not the short side) keeps a deliberately-thin element legal — a
+// 2px×400px divider passes (long 400, area 800) while a 3px×3px speck is rejected
+// — so BOTH thresholds bite independently (a long-but-hairline 200px×0.05px sliver
+// clears the side rule yet fails the area rule).
+export const MIN_ITEM_SIDE_PX = 10;
+export const MIN_ITEM_AREA_PX2 = 20;
+// Kinds whose box does NOT have a meaningful axis-aligned long-side + area pair at
+// add time, so the box rule would wrongly reject a legitimate one:
+//  • text  — HEIGHT auto-fits its wrapped content (unknown until rendered); only
+//    the WIDTH is bound by the frame, so we check width alone.
+//  • line  — a 1-D primitive defined by points; its bbox is thin by nature, so we
+//    check its LENGTH (the longer extent) alone, skipping the area rule.
+const AUTO_HEIGHT_KINDS: ReadonlySet<string> = new Set(["text"]);
+const ONE_D_KINDS: ReadonlySet<string> = new Set(["line"]);
+
+export interface MinItemSizeVerdict {
+  readonly ok: boolean;
+  /** Human-readable reason (Korean — surfaced to the agent) when `ok` is false. */
+  readonly reason?: string;
+}
+
+/** Pure legibility check for an item about to be added, given its final px size.
+ *  `wPx`/`hPx` are the staged frame resolved to absolute design px. Kind-aware
+ *  (see `AUTO_HEIGHT_KINDS` / `ONE_D_KINDS`). WI-147 — unit-tested. */
+export function checkAddedItemMinSize(kind: string, wPx: number, hPx: number): MinItemSizeVerdict {
+  const r = (n: number): number => Math.round(n * 10) / 10;
+  if (ONE_D_KINDS.has(kind)) {
+    const len = Math.max(wPx, hPx);
+    if (len >= MIN_ITEM_SIDE_PX) return { ok: true };
+    return { ok: false, reason: `선 길이 ${r(len)}px < 최소 ${MIN_ITEM_SIDE_PX}px` };
+  }
+  if (AUTO_HEIGHT_KINDS.has(kind)) {
+    if (wPx >= MIN_ITEM_SIDE_PX) return { ok: true };
+    return {
+      ok: false,
+      reason: `너비 ${r(wPx)}px < 최소 ${MIN_ITEM_SIDE_PX}px (텍스트는 높이가 내용에 맞춰 자동이라 너비만 검사)`,
+    };
+  }
+  const longSide = Math.max(wPx, hPx);
+  const area = wPx * hPx;
+  if (longSide >= MIN_ITEM_SIDE_PX && area >= MIN_ITEM_AREA_PX2) return { ok: true };
+  return {
+    ok: false,
+    reason:
+      `크기 ${r(wPx)}×${r(hPx)}px (긴 변 ${r(longSide)}px, 면적 ${r(area)}px²) — ` +
+      `최소 긴 변 ${MIN_ITEM_SIDE_PX}px AND 면적 ${MIN_ITEM_AREA_PX2}px² 필요`,
   };
 }
 
@@ -746,6 +815,41 @@ export function buildWeaveCommands(
         const result = getLayoutEngine().onChildAdd({ parent: safeParent, newChild: agoItem });
         stagedItem = result.stagedChild as AgocraftItem;
         layoutSiblingPatches = result.siblingPatches;
+      }
+
+      // WI-147 — AGENT-ONLY min-size guard. We compute the STAGED frame (post
+      // layout) in absolute px and reject an item too small to be legible, so
+      // nothing is created and the agent gets the reason. Gated on
+      // `input.enforceMinSize` + design px (only the aku transformInput passes
+      // them) → manual toolbar adds are never affected. Fails OPEN: if the px
+      // can't be resolved (missing ancestor frame), we allow the add.
+      if (
+        input.enforceMinSize === true &&
+        typeof input.designWidth === "number" &&
+        typeof input.designHeight === "number" &&
+        input.designWidth > 0 &&
+        input.designHeight > 0
+      ) {
+        const containerBox = absoluteFrameBox(
+          ctx.document,
+          String(container.id),
+          input.designWidth,
+          input.designHeight,
+        );
+        const stagedFrame = (stagedItem.attrs as { frame?: ItemFrame }).frame;
+        if (containerBox !== null && stagedFrame !== undefined) {
+          const wPx = containerBox.w * stagedFrame.width;
+          const hPx = containerBox.h * stagedFrame.height;
+          const verdict = checkAddedItemMinSize(stagedItem.kind, wPx, hPx);
+          if (!verdict.ok) {
+            return fail(
+              "item-too-small",
+              `weave.item.add 거부: 추가하려는 "${stagedItem.kind}" 아이템의 최종 렌더 크기가 ` +
+                `너무 작습니다 — ${verdict.reason}. 보이지 않을 만큼 작아 생성하지 않았습니다. ` +
+                `frame.width/height(부모 대비 0..1 비율)를 키우거나 더 큰 컨테이너에 배치한 뒤 다시 추가하세요.`,
+            );
+          }
+        }
       }
 
       // WI-024 Phase 2b — emit self-contained `item.create` (carries the full

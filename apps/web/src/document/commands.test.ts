@@ -29,7 +29,13 @@ import {
   computeReparentFrameRatio,
   toAgocraftDocument,
 } from "./agocraft-mirror.js";
-import { buildWeaveCommands, type WeaveCommandTargets } from "./commands.js";
+import {
+  buildWeaveCommands,
+  checkAddedItemMinSize,
+  MIN_ITEM_AREA_PX2,
+  MIN_ITEM_SIDE_PX,
+  type WeaveCommandTargets,
+} from "./commands.js";
 import type { CameraTargetBehavior, Item, Document as WeaveDocument } from "./types.js";
 import { FULL_FRAME } from "./types.js";
 import { registerZOrderAdapters } from "./zorder/register.js";
@@ -2298,4 +2304,93 @@ describe("px ↔ ratio unit-confusion guard (DR-082 / WI-127)", () => {
       }
     ).item.attrs.frame;
   }
+});
+
+// WI-147 — agent-only min-size guard. The predicate is pure; the command rejects
+// an agent-flagged add below the legibility floor and leaves manual adds alone.
+describe("checkAddedItemMinSize (WI-147 predicate)", () => {
+  it("accepts a box clearing both long-side AND area floors", () => {
+    expect(checkAddedItemMinSize("frame", 100, 60).ok).toBe(true);
+    expect(checkAddedItemMinSize("shape", MIN_ITEM_SIDE_PX, MIN_ITEM_SIDE_PX).ok).toBe(true);
+  });
+
+  it("accepts a deliberately-thin divider box (long side carries it)", () => {
+    // 2px×400px: long 400 ≥ 10 AND area 800 ≥ 20 → legal, not a speck.
+    expect(checkAddedItemMinSize("shape", 2, 400).ok).toBe(true);
+  });
+
+  it("rejects a box whose LONG side is below the floor (speck)", () => {
+    const v = checkAddedItemMinSize("frame", 4, 4);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toContain("긴 변");
+  });
+
+  it("the area floor bites independently of the long side", () => {
+    // 200px×0.05px: long 200 ≥ 10 but area 10 < 20 → rejected by the area rule.
+    const v = checkAddedItemMinSize("shape", 200, 0.05);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toContain("면적");
+  });
+
+  it("rejects a tiny speck (both long side and area below floor)", () => {
+    expect(checkAddedItemMinSize("shape", 3, 3).ok).toBe(false);
+  });
+
+  it("text is width-only — height is ignored (auto-fits)", () => {
+    // A wide text with a (meaningless at add time) tiny height still passes.
+    expect(checkAddedItemMinSize("text", 200, 1).ok).toBe(true);
+    // A sub-10px width text is rejected with a text-specific reason.
+    const v = checkAddedItemMinSize("text", 6, 200);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toContain("너비");
+  });
+
+  it("line is length-only — a thin bbox passes when long enough", () => {
+    expect(checkAddedItemMinSize("line", 400, 0.5).ok).toBe(true);
+    const v = checkAddedItemMinSize("line", 4, 0.5);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toContain("선 길이");
+  });
+
+  it("the area floor is the user's spec value", () => {
+    expect(MIN_ITEM_SIDE_PX).toBe(10);
+    expect(MIN_ITEM_AREA_PX2).toBe(20);
+  });
+});
+
+describe("weave.item.add — min-size reject (WI-147)", () => {
+  const addCmd = () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+    if (cmd === undefined) throw new Error("command not found");
+    return cmd;
+  };
+  // 1920×1080 root: a 0.004 ratio → ~7.7×4.3px, well under the 10px floor.
+  const TINY = { x: 0.1, y: 0.1, width: 0.004, height: 0.004, rotation: 0 };
+  const ROOMY = { x: 0.1, y: 0.1, width: 0.5, height: 0.5, rotation: 0 };
+  const guard = { enforceMinSize: true, designWidth: 1920, designHeight: 1080 };
+
+  it("REJECTS an agent-flagged add below the px floor (no patches, has reason)", () => {
+    const result = addCmd().run(makeCtx(), { kind: "frame", frame: TINY, ...guard });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("item-too-small");
+      expect(result.error.message).toContain("거부");
+    }
+  });
+
+  it("ACCEPTS an agent-flagged add that clears the floor", () => {
+    const result = addCmd().run(makeCtx(), { kind: "frame", frame: ROOMY, ...guard });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.patches).toHaveLength(1);
+  });
+
+  it("does NOT guard a manual add (no enforceMinSize) — tiny still succeeds", () => {
+    const result = addCmd().run(makeCtx(), { kind: "frame", frame: TINY });
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails OPEN when design px is missing even with the flag set", () => {
+    const result = addCmd().run(makeCtx(), { kind: "frame", frame: TINY, enforceMinSize: true });
+    expect(result.ok).toBe(true);
+  });
 });
