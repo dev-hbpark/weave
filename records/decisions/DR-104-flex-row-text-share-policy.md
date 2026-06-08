@@ -49,6 +49,24 @@ This sets correct space **at add-time** (not post-render correction). It is the
 companion to the existing free-placement branch (DR-098 Fixed box) — both pick
 the right `layoutChild` from the container's layout kind.
 
+## Amendment (2026-06-09) — generalized to NON-TEXT and BOTH axes
+
+A follow-up break showed the SAME FULL_FRAME ratchet on the other axis: a probe
+of a broken slide found a flex **ROW with 5 `frame` children, each `mainSize 1.0`,
+`lc {grow:0, shrink:1, basis:1}` → 5.16× over-fill** (and column variants blow the
+cards out past the slide vertically). Root cause identical — a non-text item added
+with no `frame` inherits FULL_FRAME (1.0) on the main axis (width in a row, **height
+in a column**) and `joinPolicy` freezes it as `basis:1, grow:0`.
+
+`fixAgentTextBox` (now an all-kinds layout-child fixer) therefore also stamps
+`flex:1` (`grow:1, shrink:1, basis:0`) on a **non-text** item added into an
+auto-flex **row OR column** — but only when the agent set **no explicit main-axis
+size** (a deliberate `qr` width 0.1 etc. is respected). This is the column/non-text
+generalization of the original row/text decision; the mechanism, the engine
+`onChildAdd` "respect matching-kind policy" path, and the trade-offs are the same.
+TEXT in a column is still left alone (auto-height; grow there would inflate its
+height). Grid and free parents are untouched.
+
 ## Scope / non-goals
 
 - **auto-flex COLUMN and auto-grid are left alone.** A column's main axis is

@@ -1,8 +1,10 @@
-// 아쿠 (Aku) — agent text layout-policy fix (give agent-added text the RIGHT
-// `attrs.layoutChild` for the container it lands in).
+// 아쿠 (Aku) — agent layout-child policy fix (give an agent-added item the RIGHT
+// `attrs.layoutChild` for the container it lands in). Despite the export name
+// `fixAgentTextBox` (kept so the use-aku-agent proxy import is untouched), this
+// covers ALL kinds — text and non-text alike.
 //
-// In weave's model a text box's sizing is derived from `attrs.layoutChild` (see
-// `document/domains/derive-text-auto-resize.ts`). When the AGENT adds a text we
+// In weave's model a box's sizing is derived from `attrs.layoutChild` (see
+// `document/domains/derive-text-auto-resize.ts`). When the AGENT adds an item we
 // pick the right policy from the CONTAINER's layout kind:
 //
 //  • FREE placement (root / no layout / absolute-constraints) — DR-098: a Fixed
@@ -21,12 +23,21 @@
 //    policy whose kind matches the parent layout, so it keeps this verbatim
 //    instead of freezing the full-width seed.
 //
-//  • auto-flex COLUMN / auto-grid — left ALONE (return input). A column's main
-//    axis is height (width is the cross axis, bound by align/stretch) and a grid
-//    cell's track bounds the width, so the full-width seed is harmless there and
-//    the layout owns the size (auto-height text). Deliberate asymmetry (narrow
-//    badge + wide body) is the agent's job via a grid track or an explicit
-//    grow/basis — both short-circuit this stamp (an agent-set layoutChild wins).
+//  • TEXT in auto-flex COLUMN / auto-grid — left ALONE. A column's main axis is
+//    height (width is the cross axis, bound by align/stretch) and a grid cell's
+//    track bounds the width, so the full-width seed is harmless and the layout
+//    owns the size (auto-height text — grow on a column-text would inflate its
+//    HEIGHT, which we must not do).
+//
+//  • NON-TEXT (frame / shape / image / qr / line / chart …) in auto-flex ROW or
+//    COLUMN — WI-149 round 3 / DR-104: the SAME FULL_FRAME ratchet, but on the
+//    OTHER axis. A frame added with no `frame` inherits FULL_FRAME on the main
+//    axis (width in a row, HEIGHT in a column); `joinPolicy` freezes that 1.0 as
+//    `basis` with `grow:0`, so N such cards over-fill N× (observed: 5 full-width
+//    card frames in a row, 5.16× over-fill; full-height cards in a column blow
+//    out past the slide). Stamp `flex:1` (basis:0 → never over-fills; grow:1 →
+//    shares evenly) — UNLESS the agent set an explicit main-axis size (e.g. a
+//    `qr` at width 0.1, which we respect). Grid parents are left to their track.
 //
 // Pure input transform applied ONLY on the agent's exec path (round-grouping
 // proxy), so the toolbar's explicit choices are untouched. Respects an explicit
@@ -39,9 +50,11 @@ import { layoutChildFromTextAutoResize } from "../../../document/domains/derive-
 // The canonical Fixed-box policy (left × top anchor → derives to "NONE"/Fixed).
 const FIXED_LAYOUT_CHILD = layoutChildFromTextAutoResize("NONE");
 
-// CSS `flex:1` — share the row's main axis, contribute 0 base size so the row
-// can never over-fill from the full-width seed (→ no shrink → no ratchet).
-const FLEX_ROW_SHARE = { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 } as const;
+// CSS `flex:1` — grow to share the main axis, contribute 0 base size so the
+// container can NEVER over-fill from the full-frame seed (→ no shrink → no
+// freeze ratchet). Used on BOTH axes: a row child shares width, a column child
+// shares height.
+const FLEX_SHARE = { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 } as const;
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
@@ -49,9 +62,9 @@ function isObj(v: unknown): v is Record<string, unknown> {
 
 /** The container's layout kind+direction, as the policy decision needs it.
  *  Root / unknown / no-layout / absolute → "free"; an auto-flex row → "flex-row";
- *  everything else (flex column, grid) → "managed" (leave the text to the
- *  layout). */
-type ContainerLayout = "free" | "flex-row" | "managed";
+ *  an auto-flex column → "flex-col"; an auto-grid → "grid" (the track owns the
+ *  cell, leave it alone). */
+type ContainerLayout = "free" | "flex-row" | "flex-col" | "grid";
 
 function containerLayoutKind(
   doc: AgocraftDocument,
@@ -63,37 +76,71 @@ function containerLayoutKind(
   const layout = (container.attrs as { layout?: { kind?: string; direction?: string } } | undefined)
     ?.layout;
   if (layout === undefined || layout.kind === "absolute-constraints") return "free";
-  if (layout.kind === "auto-flex" && layout.direction === "row") return "flex-row";
-  return "managed";
+  if (layout.kind === "auto-flex") return layout.direction === "row" ? "flex-row" : "flex-col";
+  return "grid";
 }
 
-/** Inject the right `layoutChild` into an agent `weave.item.add` for a text item
- *  based on its container's layout: Fixed box for free placement (DR-098), a
- *  CSS-`flex:1` sharing policy for an auto-flex ROW (DR-104), and no change for a
- *  managed (flex-column / grid) parent. Returns the same reference for non-text /
- *  non-add / already-set / managed cases. Pure; never throws on shape surprises. */
+/** True when the agent gave an explicit, positive MAIN-axis size on the add's
+ *  `frame` (width for a row, height for a column) — a deliberate size we must
+ *  NOT override (e.g. a `qr` added at width 0.1). When absent, the item would
+ *  inherit the FULL_FRAME (1.0) seed on that axis and over-fill the container. */
+function hasExplicitMainSize(input: Record<string, unknown>, container: ContainerLayout): boolean {
+  const fr = isObj(input.frame) ? input.frame : undefined;
+  if (fr === undefined) return false;
+  const dim = container === "flex-row" ? fr.width : fr.height;
+  return typeof dim === "number" && Number.isFinite(dim) && dim > 0;
+}
+
+/** Pick the right `layoutChild` for an agent-added item from its container's
+ *  layout — so the item is sized correctly the moment it's created, never by a
+ *  post-render correction. (Despite the name this now covers ALL kinds; the
+ *  `use-aku-agent` proxy calls it for every add.)
+ *
+ *  TEXT:    free → Fixed box (DR-098); flex ROW → CSS `flex:1` share (DR-104);
+ *           flex COLUMN / grid → leave (auto-height, the layout owns the size).
+ *  NON-TEXT (frame / shape / image / qr / line / chart …): flex ROW or COLUMN
+ *           → CSS `flex:1` share so it can't inherit the FULL_FRAME (1.0) seed on
+ *           the main axis and over-fill (WI-149 round 3 — a row of 5 full-width
+ *           card frames was over-filling 5×). Only when the agent set NO explicit
+ *           main-axis size (a deliberate size like `qr` 0.1 is respected); free /
+ *           grid parents are left to their own placement.
+ *
+ *  Returns the same reference for non-add / already-set / left-alone cases. An
+ *  explicit `layoutChild` from the agent always wins. Pure; never throws. */
 export function fixAgentTextBox(
   commandName: string,
   input: unknown,
   doc: AgocraftDocument,
 ): unknown {
   if (commandName !== "weave.item.add" || !isObj(input)) return input;
-  if (input.kind !== "text") return input;
   const attrs = isObj(input.attrsOverride) ? input.attrsOverride : {};
-  // Respect an explicit layoutChild the agent set (e.g. a deliberate auto-width).
+  // Respect an explicit layoutChild the agent set (e.g. a deliberate auto-width
+  // or grow/basis split).
   if (attrs.layoutChild !== undefined) return input;
   const containerId = typeof input.containerId === "string" ? input.containerId : undefined;
-  let kind: ContainerLayout;
+  let container: ContainerLayout;
   try {
-    kind = containerLayoutKind(doc, containerId);
+    container = containerLayoutKind(doc, containerId);
   } catch {
     return input;
   }
-  if (kind === "free") {
-    return { ...input, attrsOverride: { ...attrs, layoutChild: FIXED_LAYOUT_CHILD } };
+  const withChild = (policy: unknown): Record<string, unknown> => ({
+    ...input,
+    attrsOverride: { ...attrs, layoutChild: policy },
+  });
+
+  if (input.kind === "text") {
+    if (container === "free") return withChild(FIXED_LAYOUT_CHILD);
+    if (container === "flex-row") return withChild({ ...FLEX_SHARE });
+    return input; // flex-col / grid — auto-height text, the layout owns the size
   }
-  if (kind === "flex-row") {
-    return { ...input, attrsOverride: { ...attrs, layoutChild: { ...FLEX_ROW_SHARE } } };
+  // Non-text: share the main axis in any flex parent, but only when the item
+  // would otherwise inherit the full-frame seed on that axis.
+  if (
+    (container === "flex-row" || container === "flex-col") &&
+    !hasExplicitMainSize(input, container)
+  ) {
+    return withChild({ ...FLEX_SHARE });
   }
   return input;
 }

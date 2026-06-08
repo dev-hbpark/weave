@@ -124,6 +124,40 @@ describe("fixAgentTextBox", () => {
     expect(fixAgentTextBox("weave.item.add", input, makeDoc())).toBe(input);
   });
 
+  // WI-149 round 3 — non-text (frame/shape) over-fill on the main axis.
+  it("injects flex:1 share for a FRAME added into a flex ROW with no frame (would inherit full width)", () => {
+    const out = fixAgentTextBox(
+      "weave.item.add",
+      { kind: "frame", containerId: "flexRowFrame" },
+      makeDoc(),
+    );
+    expect(ov(out).layoutChild).toEqual(FLEX_SHARE);
+  });
+
+  it("injects flex:1 share for a FRAME added into a flex COLUMN with no frame (would inherit full height)", () => {
+    const out = fixAgentTextBox(
+      "weave.item.add",
+      { kind: "shape", containerId: "flexFrame" }, // flexFrame is a column
+      makeDoc(),
+    );
+    expect(ov(out).layoutChild).toEqual(FLEX_SHARE);
+  });
+
+  it("respects an explicit main-axis size on a non-text add (e.g. qr width 0.1 in a ROW)", () => {
+    const input = { kind: "qr", containerId: "flexRowFrame", frame: { width: 0.1, height: 0.1 } };
+    expect(fixAgentTextBox("weave.item.add", input, makeDoc())).toBe(input);
+  });
+
+  it("does NOT touch a non-text item added into an auto-grid (the track owns the cell)", () => {
+    const input = { kind: "frame", containerId: "gridFrame" };
+    expect(fixAgentTextBox("weave.item.add", input, makeDoc())).toBe(input);
+  });
+
+  it("does NOT touch a non-text item added into free placement (keeps its own frame)", () => {
+    const input = { kind: "shape", containerId: "plainFrame" };
+    expect(fixAgentTextBox("weave.item.add", input, makeDoc())).toBe(input);
+  });
+
   it("respects an explicit layoutChild the agent set (same reference)", () => {
     const input = {
       kind: "text",
