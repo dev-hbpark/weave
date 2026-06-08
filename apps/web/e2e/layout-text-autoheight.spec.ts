@@ -164,3 +164,35 @@ test("WI-146 — tall flex text auto-fits even when created in ONE agent-style b
   expect(h).toBeGreaterThan(0);
   expect(h, `batched text frame.height after round = ${h} (created at 0.4)`).toBeLessThan(0.2);
 });
+
+// WI-146 (B) — the reported bug's signature: a LATER op re-sets an auto-height
+// text's height back to a large value AFTER auto-fit already shrank it. The
+// ResizeObserver fires only on CONTENT-size change, so without the frame.height
+// reconcile dependency the box would stay tall until a manual edit. With the fix
+// it re-collapses to content on its own.
+test("WI-146 — a later height write on auto-height text re-collapses without an edit", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-146-flex-reclobber" });
+  const { t1 } = await buildFlexColumnWithTallText(page);
+  await page.waitForTimeout(700);
+  const collapsed = await docFrameH(page, t1);
+  expect(collapsed, `should collapse first (got ${collapsed})`).toBeLessThan(0.2);
+
+  // Simulate a later agent op clobbering the height back to a large value.
+  await page.evaluate((id) => {
+    const w = window as unknown as {
+      __weaveEditor: { exec: (n: string, i: unknown) => unknown };
+    };
+    w.__weaveEditor.exec("weave.item.update", {
+      itemId: id,
+      attrs: { frame: { x: 0, y: 0, width: 1, height: 0.4, rotation: 0 } },
+    });
+  }, t1);
+  await page.waitForTimeout(700); // the reconcile effect should re-fit on its own
+
+  const h = await docFrameH(page, t1);
+  expect(h, `re-clobbered text frame.height = ${h} (should re-collapse, no edit)`).toBeLessThan(
+    0.2,
+  );
+});

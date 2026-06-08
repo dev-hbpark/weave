@@ -210,20 +210,25 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // Reconcile the model frame to the rendered content with one deferred auto-fit
   // (the `measureAndCommit` no-ops for Fixed/NONE and while editing). Runs on:
   //   • edit-exit — the ResizeObserver was muted during editing; and
-  //   • a LAYOUT change — the resize MODE or the box WIDTH changed. This is the
-  //     fix for agent "add text → then setLayout" (WI-145): the observer's
-  //     INITIAL auto-fit gets grouped into the agent transaction and clobbered by
-  //     setLayout's child-frame patch, and because the inner content size doesn't
-  //     change afterwards the observer never re-fires — so the box keeps its
-  //     oversized stored height until a manual edit. Re-running the fit when the
-  //     layout context changes corrects the height without needing the user to
-  //     edit. rAF lets the new width/wrapping settle before measuring.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: autoResizeMode and a.frame.width are intentional RE-RUN TRIGGERS (the effect re-fits when the layout context changes), not values read in the body — removing them defeats the fix.
+  //   • a LAYOUT change — the resize MODE or the box WIDTH changed (WI-145: the
+  //     observer's initial fit gets grouped into the agent transaction and
+  //     clobbered by setLayout); and
+  //   • a stored HEIGHT change — WI-146 (B): the ResizeObserver only fires on
+  //     CONTENT-size change, NOT on a `frame.height` write. So when a later agent
+  //     op (a `weave.batch` / `items.update` / a re-`setLayout` in the same round)
+  //     re-sets an auto-height text's height back to a large value AFTER auto-fit
+  //     already shrank it, the observer never re-fires and the box stays tall
+  //     until a manual edit. Depending on `a.frame.height` makes any height write
+  //     re-run the fit, so the box re-collapses to content on its own — the agent
+  //     batch now converges to the same result as the sequential path. Safe: the
+  //     fit only commits on real divergence (threshold) and no-ops in Fixed mode,
+  //     so it converges in one cycle (no loop) and never touches a Fixed box.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: autoResizeMode / a.frame.width / a.frame.height are intentional RE-RUN TRIGGERS (re-fit when the layout context or stored height changes), not values read in the body — removing them defeats the fix.
   useEffect(() => {
     if (isEditing) return;
     const raf = requestAnimationFrame(() => measureCommitRef.current?.());
     return () => cancelAnimationFrame(raf);
-  }, [isEditing, autoResizeMode, a.frame.width]);
+  }, [isEditing, autoResizeMode, a.frame.width, a.frame.height]);
 
   // Phase 1 (WI-029) — Figma-equivalent text attrs:
   //   textAlignVertical → flex justify-content

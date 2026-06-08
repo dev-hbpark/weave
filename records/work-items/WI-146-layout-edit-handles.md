@@ -87,7 +87,21 @@ DR-design-019(드래그 핸들 out-of-scope "v1.1 manual remove + re-add only"),
   → 단순 트랜잭션 그룹핑이 원인이 아님. 실제 버그는 그 슬라이드 특유의 attrs(예: text 자식의 **명시적
   숫자 `basis`** 또는 특정 구조)로 보이며, **삭제되어 재현/확정 불가**. 다음 발생 시 attrs 확보 필요.
 
+## 수정 (B, 2026-06-08) — auto-height 재보정을 frame.height 변경에도 트리거
+
+증상의 정체: auto-height 텍스트가 줄어든 뒤 **나중 작업이 frame.height를 다시 크게 써도**
+ResizeObserver는 *콘텐츠* 크기 변화에만 발화하므로 재발화하지 않아 큰 채로 남고, 편집해야 보정됨.
+
+- **수정**: `TextBlock` 재보정 effect 의존성에 `a.frame.height` 추가 → 높이 쓰기마다 재보정 1회 실행,
+  콘텐츠 높이로 자동 재-collapse. measureAndCommit은 임계값(>=0.0005)으로 **1커밋 내 수렴(루프 없음)**,
+  Fixed(NONE)/편집중/히스토리리플레이에서 no-op이라 안전.
+- **재현+검증(e2e `layout-text-autoheight.spec.ts` 3번째 테스트)**: 줄어든 뒤 height를 0.4로 다시 쓰는
+  시나리오. **수정 없이 → 0.4 유지(버그 재현 ✅)**, **수정 적용 → 자동 재-collapse(통과)**. 의존성 제거 시
+  fail / 추가 시 pass로 테스트가 수정을 실제 가드함을 확인.
+- **회귀**: typecheck·biome 클린, 신규 e2e 3/3, `text-item.spec.ts` 통과. (직전 광범위 e2e의 20 실패는
+  세션 장시간 후 환경 타임아웃 — Fixed-mode 테스트 포함, 본 변경이 영향 줄 수 없는 경로라 환경 확정.)
+
 ## 진행 로그
 
 - 레코드 3종 → 순수 코어(테스트) → 증분1+2 핸들 → 증분3 병합. 증분별 커밋.
-- 후속 조사: base-case 정상 확인(e2e), 에이전트 배치 라운드 특유 버그로 좁힘 — repro 대기.
+- 후속 조사: base-case 정상 확인(e2e) → 실제 원인(나중 height 쓰기 후 재발화 없음) 확정 → (B) 수정.
