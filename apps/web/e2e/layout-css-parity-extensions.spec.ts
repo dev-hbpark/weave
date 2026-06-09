@@ -28,7 +28,11 @@ interface Rect {
 }
 const near = (a: number, b: number) => Math.abs(a - b) <= TOL;
 const matches = (f: ItemFrame | undefined, r: Rect) =>
-  f !== undefined && near(f.x, r.x) && near(f.y, r.y) && near(f.width, r.width) && near(f.height, r.height);
+  f !== undefined &&
+  near(f.x, r.x) &&
+  near(f.y, r.y) &&
+  near(f.width, r.width) &&
+  near(f.height, r.height);
 
 let ready = false;
 test.beforeEach(async ({ page }) => {
@@ -94,7 +98,12 @@ function cssFlex(page: Page, input: FlexInput): Promise<Rect[]> {
     stretch: "stretch",
     baseline: "baseline",
   };
-  const AC: Record<string, string> = { ...A, "space-between": "space-between", "space-around": "space-around", "space-evenly": "space-evenly" };
+  const AC: Record<string, string> = {
+    ...A,
+    "space-between": "space-between",
+    "space-around": "space-around",
+    "space-evenly": "space-evenly",
+  };
   return page.evaluate(
     ({ input, SIZE, J, A, AC }) => {
       const host = document.getElementById("host")!;
@@ -125,7 +134,12 @@ function cssFlex(page: Page, input: FlexInput): Promise<Rect[]> {
       const cb = c.getBoundingClientRect();
       return Array.from(c.children).map((el) => {
         const r = (el as HTMLElement).getBoundingClientRect();
-        return { x: (r.left - cb.left) / SIZE, y: (r.top - cb.top) / SIZE, width: r.width / SIZE, height: r.height / SIZE };
+        return {
+          x: (r.left - cb.left) / SIZE,
+          y: (r.top - cb.top) / SIZE,
+          width: r.width / SIZE,
+          height: r.height / SIZE,
+        };
       });
     },
     { input, SIZE, J, A, AC },
@@ -144,7 +158,11 @@ async function assertFlexParity(page: Page, label: string, input: FlexInput) {
 
 // ── GRID helpers (minmax / repeat / dense / areas) ────────────────────────────
 
-type Track = { kind: "fr"; value: number } | { kind: "ratio"; value: number } | { kind: "auto" } | { kind: "minmax"; min: TBound; max: TBound };
+type Track =
+  | { kind: "fr"; value: number }
+  | { kind: "ratio"; value: number }
+  | { kind: "auto" }
+  | { kind: "minmax"; min: TBound; max: TBound };
 type TBound = { kind: "ratio"; value: number } | { kind: "fr"; value: number } | { kind: "auto" };
 type Repeat = { mode: "auto-fill" | "auto-fit"; track: Track };
 
@@ -239,7 +257,9 @@ function cssGrid(page: Page, input: GridInput): Promise<Rect[]> {
         `row-gap:${(input.rowGap ?? 0) * SIZE}px`,
         `justify-items:${justify}`,
         `align-items:${align}`,
-        input.areas ? `grid-template-areas:${input.areas.map((r: string) => `"${r}"`).join(" ")}` : "",
+        input.areas
+          ? `grid-template-areas:${input.areas.map((r: string) => `"${r}"`).join(" ")}`
+          : "",
       ].join(";");
       for (const ch of input.children) {
         const el = document.createElement("div");
@@ -258,7 +278,12 @@ function cssGrid(page: Page, input: GridInput): Promise<Rect[]> {
       const cb = c.getBoundingClientRect();
       return Array.from(c.children).map((el) => {
         const r = (el as HTMLElement).getBoundingClientRect();
-        return { x: (r.left - cb.left) / SIZE, y: (r.top - cb.top) / SIZE, width: r.width / SIZE, height: r.height / SIZE };
+        return {
+          x: (r.left - cb.left) / SIZE,
+          y: (r.top - cb.top) / SIZE,
+          width: r.width / SIZE,
+          height: r.height / SIZE,
+        };
       });
     },
     { input, cols, rows, SIZE },
@@ -304,7 +329,14 @@ test("FLEX wrap × align-content matches CSS", async ({ page }) => {
     { basis: 0.4, cross: 0.2 },
     { basis: 0.4, cross: 0.2 },
   ];
-  for (const alignContent of ["start", "center", "end", "space-between", "space-around", "space-evenly"] as const) {
+  for (const alignContent of [
+    "start",
+    "center",
+    "end",
+    "space-between",
+    "space-around",
+    "space-evenly",
+  ] as const) {
     await assertFlexParity(page, `wrap/${alignContent}`, { wrap: "wrap", alignContent, children });
   }
   // align-content stretch (children stretch to the grown line height).
@@ -322,15 +354,30 @@ test("GRID minmax tracks match CSS", async ({ page }) => {
     { kind: "minmax", min: { kind: "ratio", value: 0.2 }, max: { kind: "fr", value: 1 } },
     { kind: "fr", value: 1 },
   ];
-  const rows: Track[] = [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }];
+  const rows: Track[] = [
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+  ];
   const children: GridChildIn[] = [];
-  for (let r = 1; r <= 2; r += 1) for (let cc = 1; cc <= 2; cc += 1) children.push({ column: cc, row: r, w: 0.1, h: 0.1 });
-  await assertGridParity(page, "minmax", { columns, rows, justify: "stretch", align: "stretch", children });
+  for (let r = 1; r <= 2; r += 1)
+    for (let cc = 1; cc <= 2; cc += 1) children.push({ column: cc, row: r, w: 0.1, h: 0.1 });
+  await assertGridParity(page, "minmax", {
+    columns,
+    rows,
+    justify: "stretch",
+    align: "stretch",
+    children,
+  });
 });
 
 test("GRID repeat(auto-fill) matches CSS", async ({ page }) => {
   // 0.25 ratio repeat → 4 columns; 1 row. Children in cols 1..4.
-  const children: GridChildIn[] = [1, 2, 3, 4].map((cc) => ({ column: cc, row: 1, w: 0.1, h: 0.1 }));
+  const children: GridChildIn[] = [1, 2, 3, 4].map((cc) => ({
+    column: cc,
+    row: 1,
+    w: 0.1,
+    h: 0.1,
+  }));
   await assertGridParity(page, "auto-fill", {
     columnsRepeat: { mode: "auto-fill", track: { kind: "ratio", value: 0.25 } },
     rows: [{ kind: "fr", value: 1 }],
@@ -341,7 +388,12 @@ test("GRID repeat(auto-fill) matches CSS", async ({ page }) => {
 });
 
 test("GRID repeat(auto-fit) with all cells filled matches CSS", async ({ page }) => {
-  const children: GridChildIn[] = [1, 2, 3, 4].map((cc) => ({ column: cc, row: 1, w: 0.1, h: 0.1 }));
+  const children: GridChildIn[] = [1, 2, 3, 4].map((cc) => ({
+    column: cc,
+    row: 1,
+    w: 0.1,
+    h: 0.1,
+  }));
   await assertGridParity(page, "auto-fit", {
     columnsRepeat: { mode: "auto-fit", track: { kind: "ratio", value: 0.25 } },
     rows: [{ kind: "fr", value: 1 }],
@@ -359,8 +411,14 @@ test("GRID grid-template-areas matches CSS", async ({ page }) => {
     { column: 1, row: 1, w: 0.1, h: 0.1, area: "main" },
   ];
   await assertGridParity(page, "areas", {
-    columns: [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }],
-    rows: [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }],
+    columns: [
+      { kind: "fr", value: 1 },
+      { kind: "fr", value: 1 },
+    ],
+    rows: [
+      { kind: "fr", value: 1 },
+      { kind: "fr", value: 1 },
+    ],
     areas: ["header header", "nav main"],
     justify: "stretch",
     align: "stretch",
@@ -372,8 +430,15 @@ test("GRID dense backfill matches CSS grid-auto-flow: row dense", async ({ page 
   // 3 columns × 2 rows. A wide (span-2) item explicitly on row 2 col 1; three
   // 1×1 auto items. Dense backfills row 1 left-to-right. Compare to CSS where
   // the auto items carry no placement and the wide item uses grid-row/column.
-  const columns: Track[] = [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }, { kind: "fr", value: 1 }];
-  const rows: Track[] = [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }];
+  const columns: Track[] = [
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+  ];
+  const rows: Track[] = [
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+  ];
   const engInput: GridInput = {
     columns,
     rows,
@@ -412,14 +477,20 @@ test("GRID dense backfill matches CSS grid-auto-flow: row dense", async ({ page 
       const cb = c.getBoundingClientRect();
       return Array.from(c.children).map((el) => {
         const r = (el as HTMLElement).getBoundingClientRect();
-        return { x: (r.left - cb.left) / SIZE, y: (r.top - cb.top) / SIZE, width: r.width / SIZE, height: r.height / SIZE };
+        return {
+          x: (r.left - cb.left) / SIZE,
+          y: (r.top - cb.top) / SIZE,
+          width: r.width / SIZE,
+          height: r.height / SIZE,
+        };
       });
     },
     { SIZE },
   );
   // engine order: [wide, a, b, c]; CSS DOM order: [wide, auto0, auto1, auto2].
   const bad: unknown[] = [];
-  for (let i = 0; i < 4; i += 1) if (!matches(eng[i], css[i]!)) bad.push({ i, engine: eng[i], css: css[i] });
+  for (let i = 0; i < 4; i += 1)
+    if (!matches(eng[i], css[i]!)) bad.push({ i, engine: eng[i], css: css[i] });
   if (bad.length) console.log("GRID-EXT dense:", JSON.stringify(bad, null, 2));
   expect(bad).toEqual([]);
 });

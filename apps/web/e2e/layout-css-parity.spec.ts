@@ -311,7 +311,11 @@ function near(a: number, b: number): boolean {
 }
 function frameMatchesRect(f: ItemFrame | undefined, r: Rect): boolean {
   return (
-    f !== undefined && near(f.x, r.x) && near(f.y, r.y) && near(f.width, r.width) && near(f.height, r.height)
+    f !== undefined &&
+    near(f.x, r.x) &&
+    near(f.y, r.y) &&
+    near(f.width, r.width) &&
+    near(f.height, r.height)
   );
 }
 
@@ -357,7 +361,12 @@ test("FLEX — justify × align × direction parity (children fit the line)", as
         for (let i = 0; i < children.length; i += 1) {
           cases += 1;
           if (!frameMatchesRect(eng[i], css[i]!))
-            mismatches.push({ label: `${dir}/${justify}/${align}`, i, engine: eng[i], css: css[i]! });
+            mismatches.push({
+              label: `${dir}/${justify}/${align}`,
+              i,
+              engine: eng[i],
+              css: css[i]!,
+            });
         }
       }
   if (mismatches.length) console.log("FLEX mismatches:", JSON.stringify(mismatches, null, 2));
@@ -376,18 +385,79 @@ test("FLEX — gap + padding + grow/shrink parity", async ({ page }) => {
     pad: number;
     children: FlexChild[];
   }> = [
-    { label: "gap", dir: "row", justify: "start", align: "start", gap: 0.05, pad: 0, children: [
-      { basis: 0.2, cross: 0.3 }, { basis: 0.2, cross: 0.3 }, { basis: 0.2, cross: 0.3 } ] },
-    { label: "padding", dir: "row", justify: "start", align: "start", gap: 0, pad: 0.1, children: [
-      { basis: 0.2, cross: 0.3 }, { basis: 0.2, cross: 0.3 } ] },
-    { label: "gap+padding+col", dir: "column", justify: "center", align: "end", gap: 0.04, pad: 0.08,
-      children: [ { basis: 0.2, cross: 0.3 }, { basis: 0.2, cross: 0.3 } ] },
-    { label: "grow", dir: "row", justify: "start", align: "start", gap: 0, pad: 0, children: [
-      { basis: 0.2, cross: 0.3, grow: 1 }, { basis: 0.2, cross: 0.3, grow: 1 } ] },
-    { label: "grow-weighted", dir: "row", justify: "start", align: "start", gap: 0, pad: 0, children: [
-      { basis: 0.1, cross: 0.3, grow: 1 }, { basis: 0.1, cross: 0.3, grow: 3 } ] },
-    { label: "shrink", dir: "row", justify: "start", align: "start", gap: 0, pad: 0, children: [
-      { basis: 0.7, cross: 0.3, shrink: 1 }, { basis: 0.7, cross: 0.3, shrink: 1 } ] },
+    {
+      label: "gap",
+      dir: "row",
+      justify: "start",
+      align: "start",
+      gap: 0.05,
+      pad: 0,
+      children: [
+        { basis: 0.2, cross: 0.3 },
+        { basis: 0.2, cross: 0.3 },
+        { basis: 0.2, cross: 0.3 },
+      ],
+    },
+    {
+      label: "padding",
+      dir: "row",
+      justify: "start",
+      align: "start",
+      gap: 0,
+      pad: 0.1,
+      children: [
+        { basis: 0.2, cross: 0.3 },
+        { basis: 0.2, cross: 0.3 },
+      ],
+    },
+    {
+      label: "gap+padding+col",
+      dir: "column",
+      justify: "center",
+      align: "end",
+      gap: 0.04,
+      pad: 0.08,
+      children: [
+        { basis: 0.2, cross: 0.3 },
+        { basis: 0.2, cross: 0.3 },
+      ],
+    },
+    {
+      label: "grow",
+      dir: "row",
+      justify: "start",
+      align: "start",
+      gap: 0,
+      pad: 0,
+      children: [
+        { basis: 0.2, cross: 0.3, grow: 1 },
+        { basis: 0.2, cross: 0.3, grow: 1 },
+      ],
+    },
+    {
+      label: "grow-weighted",
+      dir: "row",
+      justify: "start",
+      align: "start",
+      gap: 0,
+      pad: 0,
+      children: [
+        { basis: 0.1, cross: 0.3, grow: 1 },
+        { basis: 0.1, cross: 0.3, grow: 3 },
+      ],
+    },
+    {
+      label: "shrink",
+      dir: "row",
+      justify: "start",
+      align: "start",
+      gap: 0,
+      pad: 0,
+      children: [
+        { basis: 0.7, cross: 0.3, shrink: 1 },
+        { basis: 0.7, cross: 0.3, shrink: 1 },
+      ],
+    },
   ];
   for (const s of scenarios) {
     const eng = engineFlex(s.dir, s.justify, s.align, s.gap, s.pad, s.children);
@@ -396,16 +466,53 @@ test("FLEX — gap + padding + grow/shrink parity", async ({ page }) => {
       if (!frameMatchesRect(eng[i], css[i]!))
         mismatches.push({ label: s.label, i, engine: eng[i], css: css[i]! });
   }
-  if (mismatches.length) console.log("FLEX gap/grow mismatches:", JSON.stringify(mismatches, null, 2));
+  if (mismatches.length)
+    console.log("FLEX gap/grow mismatches:", JSON.stringify(mismatches, null, 2));
   expect(mismatches).toEqual([]);
 });
 
 test("GRID — justify × align parity on fr+ratio tracks (children fit cells)", async ({ page }) => {
   const trackSets: Array<{ label: string; cols: Track[]; rows: Track[] }> = [
-    { label: "3fr×1", cols: [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }, { kind: "fr", value: 1 }], rows: [{ kind: "fr", value: 1 }] },
-    { label: "1×3fr", cols: [{ kind: "fr", value: 1 }], rows: [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }, { kind: "fr", value: 1 }] },
-    { label: "2fr-uneven", cols: [{ kind: "fr", value: 1 }, { kind: "fr", value: 2 }], rows: [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }] },
-    { label: "ratio+fr", cols: [{ kind: "ratio", value: 0.3 }, { kind: "fr", value: 1 }], rows: [{ kind: "ratio", value: 0.25 }, { kind: "fr", value: 1 }] },
+    {
+      label: "3fr×1",
+      cols: [
+        { kind: "fr", value: 1 },
+        { kind: "fr", value: 1 },
+        { kind: "fr", value: 1 },
+      ],
+      rows: [{ kind: "fr", value: 1 }],
+    },
+    {
+      label: "1×3fr",
+      cols: [{ kind: "fr", value: 1 }],
+      rows: [
+        { kind: "fr", value: 1 },
+        { kind: "fr", value: 1 },
+        { kind: "fr", value: 1 },
+      ],
+    },
+    {
+      label: "2fr-uneven",
+      cols: [
+        { kind: "fr", value: 1 },
+        { kind: "fr", value: 2 },
+      ],
+      rows: [
+        { kind: "fr", value: 1 },
+        { kind: "fr", value: 1 },
+      ],
+    },
+    {
+      label: "ratio+fr",
+      cols: [
+        { kind: "ratio", value: 0.3 },
+        { kind: "fr", value: 1 },
+      ],
+      rows: [
+        { kind: "ratio", value: 0.25 },
+        { kind: "fr", value: 1 },
+      ],
+    },
   ];
   const aligns: Align[] = ["start", "center", "end", "stretch"];
   const mismatches: Mismatch[] = [];
@@ -416,7 +523,8 @@ test("GRID — justify × align parity on fr+ratio tracks (children fit cells)",
     // one small child (0.15×0.12) per cell — fits even the smallest track.
     const children: GridChild[] = [];
     for (let r = 1; r <= nRows; r += 1)
-      for (let cc = 1; cc <= nCols; cc += 1) children.push({ column: cc, row: r, w: 0.15, h: 0.12 });
+      for (let cc = 1; cc <= nCols; cc += 1)
+        children.push({ column: cc, row: r, w: 0.15, h: 0.12 });
     for (const justify of aligns)
       for (const align of aligns) {
         const eng = engineGrid(ts.cols, ts.rows, justify, align, 0, 0, 0, children);
@@ -424,7 +532,12 @@ test("GRID — justify × align parity on fr+ratio tracks (children fit cells)",
         for (let i = 0; i < children.length; i += 1) {
           cases += 1;
           if (!frameMatchesRect(eng[i], css[i]!))
-            mismatches.push({ label: `${ts.label}/${justify}/${align}`, i, engine: eng[i], css: css[i]! });
+            mismatches.push({
+              label: `${ts.label}/${justify}/${align}`,
+              i,
+              engine: eng[i],
+              css: css[i]!,
+            });
         }
       }
   }
@@ -434,29 +547,90 @@ test("GRID — justify × align parity on fr+ratio tracks (children fit cells)",
 });
 
 test("GRID — gap + padding + span parity", async ({ page }) => {
-  const cols: Track[] = [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }, { kind: "fr", value: 1 }];
-  const rows: Track[] = [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }];
+  const cols: Track[] = [
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+  ];
+  const rows: Track[] = [
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+  ];
   const mismatches: Mismatch[] = [];
-  const scenarios: Array<{ label: string; cg: number; rg: number; pad: number; children: GridChild[] }> = [
-    { label: "gap", cg: 0.04, rg: 0.06, pad: 0, children: [
-      { column: 1, row: 1, w: 0.15, h: 0.12 }, { column: 2, row: 1, w: 0.15, h: 0.12 }, { column: 3, row: 2, w: 0.15, h: 0.12 } ] },
-    { label: "padding", cg: 0, rg: 0, pad: 0.1, children: [
-      { column: 1, row: 1, w: 0.15, h: 0.12 }, { column: 3, row: 2, w: 0.15, h: 0.12 } ] },
-    { label: "colspan", cg: 0.03, rg: 0.03, pad: 0.05, children: [
-      { column: 1, row: 1, columnSpan: 2, w: 0.15, h: 0.12 }, { column: 3, row: 1, w: 0.15, h: 0.12 } ] },
-    { label: "rowspan", cg: 0.03, rg: 0.03, pad: 0, children: [
-      { column: 1, row: 1, rowSpan: 2, w: 0.15, h: 0.12 }, { column: 2, row: 1, w: 0.15, h: 0.12 } ] },
+  const scenarios: Array<{
+    label: string;
+    cg: number;
+    rg: number;
+    pad: number;
+    children: GridChild[];
+  }> = [
+    {
+      label: "gap",
+      cg: 0.04,
+      rg: 0.06,
+      pad: 0,
+      children: [
+        { column: 1, row: 1, w: 0.15, h: 0.12 },
+        { column: 2, row: 1, w: 0.15, h: 0.12 },
+        { column: 3, row: 2, w: 0.15, h: 0.12 },
+      ],
+    },
+    {
+      label: "padding",
+      cg: 0,
+      rg: 0,
+      pad: 0.1,
+      children: [
+        { column: 1, row: 1, w: 0.15, h: 0.12 },
+        { column: 3, row: 2, w: 0.15, h: 0.12 },
+      ],
+    },
+    {
+      label: "colspan",
+      cg: 0.03,
+      rg: 0.03,
+      pad: 0.05,
+      children: [
+        { column: 1, row: 1, columnSpan: 2, w: 0.15, h: 0.12 },
+        { column: 3, row: 1, w: 0.15, h: 0.12 },
+      ],
+    },
+    {
+      label: "rowspan",
+      cg: 0.03,
+      rg: 0.03,
+      pad: 0,
+      children: [
+        { column: 1, row: 1, rowSpan: 2, w: 0.15, h: 0.12 },
+        { column: 2, row: 1, w: 0.15, h: 0.12 },
+      ],
+    },
   ];
   for (const s of scenarios) {
     // span cells are large → use stretch so engine & CSS both fill the spanned area.
-    const childrenStretch = s.children.map((c) => ({ ...c, justifySelf: "stretch" as Align, alignSelf: "stretch" as Align }));
+    const childrenStretch = s.children.map((c) => ({
+      ...c,
+      justifySelf: "stretch" as Align,
+      alignSelf: "stretch" as Align,
+    }));
     const eng = engineGrid(cols, rows, "stretch", "stretch", s.cg, s.rg, s.pad, childrenStretch);
-    const css = await cssGrid(page, cols, rows, "stretch", "stretch", s.cg, s.rg, s.pad, childrenStretch);
+    const css = await cssGrid(
+      page,
+      cols,
+      rows,
+      "stretch",
+      "stretch",
+      s.cg,
+      s.rg,
+      s.pad,
+      childrenStretch,
+    );
     for (let i = 0; i < s.children.length; i += 1)
       if (!frameMatchesRect(eng[i], css[i]!))
         mismatches.push({ label: s.label, i, engine: eng[i], css: css[i]! });
   }
-  if (mismatches.length) console.log("GRID gap/span mismatches:", JSON.stringify(mismatches, null, 2));
+  if (mismatches.length)
+    console.log("GRID gap/span mismatches:", JSON.stringify(mismatches, null, 2));
   expect(mismatches).toEqual([]);
 });
 
@@ -465,7 +639,11 @@ test("DEVIATION (intentional, DR-046) — oversized non-stretch child: engine cl
 }) => {
   // 1 col × 3 rows, a child intrinsically taller (h=0.9) than its 1/3 cell.
   const cols: Track[] = [{ kind: "fr", value: 1 }];
-  const rows: Track[] = [{ kind: "fr", value: 1 }, { kind: "fr", value: 1 }, { kind: "fr", value: 1 }];
+  const rows: Track[] = [
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+    { kind: "fr", value: 1 },
+  ];
   const cell = 1 / 3;
   for (const align of ["start", "center", "end"] as const) {
     const child: GridChild[] = [{ column: 1, row: 1, w: 0.15, h: 0.9, alignSelf: align }];
@@ -477,5 +655,7 @@ test("DEVIATION (intentional, DR-046) — oversized non-stretch child: engine cl
     // divergence — the engine deliberately does NOT reproduce CSS overflow here.
     expect(css[0]!.height).toBeGreaterThan(cell + 0.2);
   }
-  console.log("DEVIATION confirmed: engine clamps oversized non-stretch to cell; CSS overflows (DR-046).");
+  console.log(
+    "DEVIATION confirmed: engine clamps oversized non-stretch to cell; CSS overflows (DR-046).",
+  );
 });

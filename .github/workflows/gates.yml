@@ -1,0 +1,42 @@
+# Enforce the architecture/boundary gates in CI (the "violations fail CI"
+# rule from the workspace OS). Before this, `pnpm verify` existed but nothing
+# ran it.
+#
+# `gates` job: build-free boundary gates (lint · declarative dispatch (Rule 6)
+# · host-domain purity). Fast, stable, no build needed.
+# `typecheck` job: build then typecheck.
+# (e2e is intentionally NOT gated here — it needs a browser + dev server and is
+# the owner's manual / pre-release gate.)
+name: gates
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gates:
+    name: boundary gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version comes from package.json packageManager
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm gates
+
+  typecheck:
+    name: build + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck

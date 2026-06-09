@@ -104,7 +104,8 @@ export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
         />
         <span className="absolute inset-0 flex items-center justify-center" aria-hidden>
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm">
-            <svg viewBox="0 0 24 24" width={22} height={22} fill="#fff" aria-hidden>
+            <svg viewBox="0 0 24 24" width={22} height={22} fill="#fff" aria-hidden role="img">
+              <title>재생</title>
               <path d="M9 7.5l8 4.5-8 4.5z" />
             </svg>
           </span>

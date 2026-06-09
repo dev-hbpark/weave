@@ -39,7 +39,9 @@ test("stroked frame renders without an 'Invalid DOM property stroke-width' warni
   await page.waitForTimeout(400);
 
   // The frame's stroke must be visible (proves the stroke render path ran)…
-  await expect(page.locator('[data-frame-id] rect[stroke], [data-frame-id] path[stroke]').first()).toBeVisible();
+  await expect(
+    page.locator("[data-frame-id] rect[stroke], [data-frame-id] path[stroke]").first(),
+  ).toBeVisible();
   // …and no kebab-attr warning fired.
   expect(warnings, `unexpected stroke DOM warnings:\n${warnings.join("\n")}`).toEqual([]);
 });
