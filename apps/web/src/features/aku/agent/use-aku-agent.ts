@@ -545,17 +545,17 @@ export function useAkuAgent(deps: {
   // reconnect (WI-034); a live-socket reconnect keeps `status` in memory, but a
   // REFRESH resets it to "idle", leaving dim (AkuInteractionLock) + roaming
   // (useAkuRoam) — both gated solely on status === "streaming" — OFF while the
-  // agent is editing again. `queueStatus.jobs` lists THIS client's own in-flight
-  // jobs (running + queued); a Stop deletes the request from the server's inflight
-  // set so a stopped run never appears here. On a fresh page session (engagedRef
-  // false) an own job is therefore an orphan the user did NOT stop and the server
-  // resumed → ADOPT it (flip to "streaming", lighting dim + roaming via the single
-  // existing gate, with zero changes to those components). RELEASE back to idle
-  // when it leaves the queue. A LOCAL run sets engagedRef, so runTurn owns its
-  // lifecycle and this never adopts/releases it. Decision is the pure decideResume.
+  // agent is editing again. `queueStatus.jobs` is now a GLOBAL list (WI-035 — every
+  // client's jobs), so filter to `j.own` for OUR in-flight count; a Stop deletes the
+  // request from the server's inflight set so a stopped run never appears here. On a
+  // fresh page session (engagedRef false) an own job is therefore an orphan the user
+  // did NOT stop and the server resumed → ADOPT it (flip to "streaming", lighting dim
+  // + roaming via the single existing gate, with zero changes to those components).
+  // RELEASE back to idle when it leaves the queue. A LOCAL run sets engagedRef, so
+  // runTurn owns its lifecycle and this never adopts/releases it. Pure decideResume.
   useEffect(() => {
     const action = decideResume({
-      ownJobCount: queueStatus?.jobs.length ?? 0,
+      ownJobCount: queueStatus?.jobs.filter((j) => j.own).length ?? 0,
       status,
       engaged: engagedRef.current,
       resumed: resumedRef.current,
@@ -921,9 +921,12 @@ export function useAkuAgent(deps: {
     if (id !== null) {
       handleRef.current?.cancel(id);
     } else if (resumedRef.current) {
-      // WI-151 — a server-ADOPTED (resumed) run has no local task id; cancel it by
-      // the server-reported own job ids so Stop halts the resumed run too.
-      for (const job of queueStatusRef.current?.jobs ?? []) handleRef.current?.cancel(job.id);
+      // WI-151 — a server-ADOPTED (resumed) run has no local task id; cancel it by the
+      // server-reported job ids. queueStatus.jobs is GLOBAL (WI-035), so cancel only
+      // OUR own jobs — foreign jobs are anonymized ("other:N") and must never be cancelled.
+      for (const job of queueStatusRef.current?.jobs ?? []) {
+        if (job.own) handleRef.current?.cancel(job.id);
+      }
     }
     activeTaskIdRef.current = null;
     // WI-151 — the user took explicit control: stop owning any adopted run and

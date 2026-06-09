@@ -7,11 +7,11 @@
 // keeps an interrupted run alive for its grace window and re-runs it on reconnect
 // (WI-034). The agent resumes editing the document, yet dim+roaming stay OFF.
 //
-// SIGNAL: the server pushes `queueStatus.jobs` = THIS client's own in-flight jobs
-// (running + queued), keyed by the grace-stable clientId (`weave-client:<designId>`).
-// A user Stop deletes the request from the server's `inflight` set, so a stopped
-// run NEVER appears in `jobs`. Therefore an own job present == "a run is active and
-// the user did NOT stop it" — exactly the requirement.
+// SIGNAL: the server pushes `queueStatus.jobs`. As of WI-035 this is a GLOBAL list
+// (every client's jobs), so the caller passes ownJobCount = jobs.filter(j => j.own)
+// — OUR running+queued jobs, keyed by the grace-stable clientId. A user Stop deletes
+// the request from the server's `inflight` set, so a stopped run NEVER appears. Thus
+// an own job present == "a run is active and the user did NOT stop it" — the requirement.
 //
 // DECISION: on a fresh page session the user has not yet driven the agent
 // (`engaged === false`). If the server reports an own job while we sit idle and
@@ -25,7 +25,8 @@
 export type ResumeAction = "adopt" | "release" | "none";
 
 export interface ResumeDecisionInput {
-  /** `queueStatus.jobs.length` — this client's own running+queued jobs (0 if none/null). */
+  /** Count of THIS client's own running+queued jobs — `queueStatus.jobs.filter(j => j.own).length`
+   *  (jobs is a global list as of WI-035; 0 if none/null). */
   readonly ownJobCount: number;
   /** Current AkuStatus — "idle" | "streaming". */
   readonly status: "idle" | "streaming";
