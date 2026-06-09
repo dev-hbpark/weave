@@ -74,22 +74,31 @@ export function resolveTarget(
   return { target: "none" };
 }
 
-/** 명시 op(슬래시/보정칩)로부터 target/tone을 채워 완전한 plan을 만든다. */
-export function intentFromOperation(
+/** operation별 완전-plan 빌더 — 레코드 기반(switch/if-chain 금지, Rule 6).
+ *  아래 REOPERATE_TARGET과 같은 idiom. 세 동작군:
+ *   - create/add: target 해석 없음(none).
+ *   - recolor: 선택 없으면 덱 전역(deck), referencePhrase 미포함.
+ *   - edit/delete/replace/retone: 선택/참조 기본, referencePhrase 보존, retone은 tone "match". */
+type IntentBuilder = (
   operation: Operation,
   text: string,
   ctx: ClassifyContext,
-  tonePolicy?: TonePolicy,
-): IntentPlan {
-  const tone = tonePolicy ?? detectTonePolicy(text, operation === "add" ? "inherit" : "inherit");
-  if (operation === "create" || operation === "add") {
-    return { operation, target: "none", tonePolicy: tone };
-  }
-  if (operation === "recolor") {
-    const t = resolveTarget(text, ctx);
-    // 팔레트 변경은 선택이 없으면 덱 전역이 기본.
-    return { operation, target: t.target === "none" ? "deck" : t.target, tonePolicy: tone };
-  }
+  tone: TonePolicy,
+) => IntentPlan;
+
+const planNoTarget: IntentBuilder = (operation, _text, _ctx, tone) => ({
+  operation,
+  target: "none",
+  tonePolicy: tone,
+});
+
+const planRecolor: IntentBuilder = (operation, text, ctx, tone) => {
+  const t = resolveTarget(text, ctx);
+  // 팔레트 변경은 선택이 없으면 덱 전역이 기본.
+  return { operation, target: t.target === "none" ? "deck" : t.target, tonePolicy: tone };
+};
+
+const planSelectionTarget: IntentBuilder = (operation, text, ctx, tone) => {
   const t = resolveTarget(text, ctx);
   return {
     operation,
@@ -97,6 +106,27 @@ export function intentFromOperation(
     tonePolicy: operation === "retone" ? "match" : tone,
     ...(t.referencePhrase !== undefined ? { referencePhrase: t.referencePhrase } : {}),
   };
+};
+
+const INTENT_FROM_OPERATION: Readonly<Record<Operation, IntentBuilder>> = {
+  create: planNoTarget,
+  add: planNoTarget,
+  recolor: planRecolor,
+  edit: planSelectionTarget,
+  delete: planSelectionTarget,
+  replace: planSelectionTarget,
+  retone: planSelectionTarget,
+};
+
+/** 명시 op(슬래시/보정칩)로부터 target/tone을 채워 완전한 plan을 만든다. */
+export function intentFromOperation(
+  operation: Operation,
+  text: string,
+  ctx: ClassifyContext,
+  tonePolicy?: TonePolicy,
+): IntentPlan {
+  const tone = tonePolicy ?? detectTonePolicy(text, "inherit");
+  return INTENT_FROM_OPERATION[operation](operation, text, ctx, tone);
 }
 
 /** 보정칩에서 operation만 바꿀 때 target/tone 기본값을 새 operation에 맞춰 보정한다.

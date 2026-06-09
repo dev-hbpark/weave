@@ -169,6 +169,14 @@ export interface AddItemInput {
    *  the `designWidth/Height` on reparent. */
   readonly designWidth?: number;
   readonly designHeight?: number;
+  /** WI-150 — agent-only container-is-frame guard. When `true`, the add is
+   *  REJECTED if `containerId` resolves to a non-frame LEAF (text / shape /
+   *  image / …) — only a `frame` (or the doc root) can hold children. Set ONLY
+   *  by aku's `transformInput` (manual toolbar adds never pass it). Catches the
+   *  agent chaining `containerId` onto the last leaf it created (e.g. dumping
+   *  every calendar date under the "SAT" header text) instead of the region's
+   *  layout frame. Needs no design px, so it is stamped unconditionally. */
+  readonly enforceContainerIsFrame?: boolean;
 }
 export interface RemoveItemInput {
   readonly itemId: string;
@@ -624,6 +632,27 @@ const ATTRS_NORMALIZERS: Partial<Record<DomainKind, AttrsNormalizer>> = {
   text: (after, _before, provided) => normalizeTextAttrs(after, provided),
 };
 
+/** 1-arg per-kind 안전 정규화 — add(weave.item.add) / bulk-update(weave.items.update)
+ *  경로용. 병합 인지형(before/provided)은 위 ATTRS_NORMALIZERS, 이건 그것이 없는 경로의
+ *  최소 안전 패스다. 레지스트리 lookup으로 분기(`kind ===` 비교 금지 — Rule 6):
+ *  shape는 subAttrs 기하 완전성(WI-062), text는 px-오선언 ratio 재태깅(DR-082).
+ *  그 외 kind는 원본 그대로. */
+const RAW_ATTRS_NORMALIZERS: Partial<
+  Record<
+    DomainKind,
+    (attrs: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>>
+  >
+> = {
+  shape: normalizeShapeAttrs,
+  text: sanitizeFontSizeSpec,
+};
+function normalizeAttrsForKind(
+  kind: string,
+  attrs: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  return RAW_ATTRS_NORMALIZERS[kind as DomainKind]?.(attrs) ?? attrs;
+}
+
 // WI-077 — seed dataset for a freshly-added chart (weave.chart.add). First
 // column = category, the rest = value series. Editable afterwards via the
 // dataset panel (Phase 5) / weave.dataset.update.
@@ -756,23 +785,15 @@ export function buildWeaveCommands(
           attrs: { ...weaveItem.attrs, frame: fixed } as typeof weaveItem.attrs,
         };
       }
-      // WI-062 — a shape's attrsOverride may carry a PARTIAL subAttrs that the
-      // shallow merge above let replace the seed's complete one; normalize so the
-      // geometry (e.g. rectangle cornerRadii) is never missing → no render crash.
-      if (weaveItem.kind === "shape") {
+      // WI-062 / DR-082 — per-kind safety pass via RAW_ATTRS_NORMALIZERS (registry
+      // lookup, not a `kind ===` branch — Rule 6): shape keeps subAttrs geometry
+      // complete (no render crash), text re-tags a px font mis-declared as a ratio
+      // (the #1 "text drawn ~1000× too large" agent bug) before serialization.
+      const normalizeAttrs = RAW_ATTRS_NORMALIZERS[weaveItem.kind];
+      if (normalizeAttrs !== undefined) {
         weaveItem = {
           ...weaveItem,
-          attrs: normalizeShapeAttrs(
-            weaveItem.attrs as unknown as Readonly<Record<string, unknown>>,
-          ) as unknown as typeof weaveItem.attrs,
-        };
-      }
-      // DR-082 — re-tag a px font size mis-declared as a ratio (the #1 "text drawn
-      // ~1000× too large" agent bug) before the item is serialized.
-      if (weaveItem.kind === "text") {
-        weaveItem = {
-          ...weaveItem,
-          attrs: sanitizeFontSizeSpec(
+          attrs: normalizeAttrs(
             weaveItem.attrs as unknown as Readonly<Record<string, unknown>>,
           ) as unknown as typeof weaveItem.attrs,
         };
@@ -797,6 +818,31 @@ export function buildWeaveCommands(
         input.containerId === undefined || input.containerId === String(ctx.document.root.id)
           ? ctx.document.root
           : findItemDeep(ctx.document, input.containerId);
+      // WI-150 / DR-105 — AGENT-ONLY container-is-frame guard. Only a `frame`
+      // (or the doc root, kind "weave-doc") can hold children; a text / shape /
+      // image / … leaf cannot. The agent sometimes CHAINS containerId onto the
+      // LAST leaf it created — e.g. after writing the "SAT" calendar header it
+      // kept adding the date texts with containerId = that text, nesting the
+      // whole date column UNDER a leaf that then ballooned to swallow the row.
+      // Reject it with the reason so the agent retargets to the region's layout
+      // FRAME (where each item flows into its own grid cell / flex slot). Gated
+      // on `enforceContainerIsFrame`, stamped ONLY by aku's transformInput →
+      // manual toolbar adds are never blocked. Root excluded by id (not kind).
+      if (
+        input.enforceContainerIsFrame === true &&
+        containerItem !== undefined &&
+        String(containerItem.id) !== String(ctx.document.root.id) &&
+        containerItem.kind !== "frame"
+      ) {
+        return fail(
+          "container-not-frame",
+          `weave.item.add 거부: containerId가 "${containerItem.kind}" 아이템을 가리킵니다 — ` +
+            `오직 frame만 자식을 담을 수 있습니다. 같은 영역의 항목들(달력 날짜·표 셀·리스트 등)은 ` +
+            `모두 그 영역의 layout FRAME을 containerId로 지정해 각자 다음 빈 셀/슬롯으로 흘러가게 하세요. ` +
+            `직전에 만든 leaf(텍스트/도형 등)를 containerId로 이어 붙이지 마세요. 한 셀에 여러 개를 ` +
+            `넣어야 하면 그 셀에 자체 layout을 가진 중첩 frame을 먼저 만든 뒤 그 안에 추가하세요.`,
+        );
+      }
       let stagedItem: AgocraftItem = agoItem;
       let layoutSiblingPatches: ReadonlyArray<Patch> = [];
       if (LAYOUT_FEATURE_ENABLED && containerItem !== undefined) {
@@ -1489,14 +1535,10 @@ export function buildWeaveCommands(
           }
           const prevAttrs = child.attrs as Readonly<Record<string, unknown>>;
           const mergedRaw: Readonly<Record<string, unknown>> = { ...prevAttrs, ...input.attrs };
-          // DR-082 — same per-kind safety as weave.item.update: shape keeps subAttrs
+          // DR-082 — same per-kind safety as weave.item.add: shape keeps subAttrs
           // geometry complete; text re-tags a px font mis-declared as a ratio.
-          const after =
-            child.kind === "shape"
-              ? normalizeShapeAttrs(mergedRaw)
-              : child.kind === "text"
-                ? sanitizeFontSizeSpec(mergedRaw)
-                : mergedRaw;
+          // Registry lookup, not a `kind ===` ternary chain (Rule 6).
+          const after = normalizeAttrsForKind(child.kind, mergedRaw);
           patches.push({ type: "item.attrs", itemId: child.id, before: child.attrs, after });
           const oldFrame = (prevAttrs as { frame?: AgocraftItemFrame }).frame;
           const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
