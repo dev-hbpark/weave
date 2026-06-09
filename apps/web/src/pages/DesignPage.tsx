@@ -2381,6 +2381,10 @@ function DesignPageBody() {
                                   editor={editor}
                                   document={docInAgocraft}
                                   designId={designId}
+                                  // WI-034 4b — gate Aku connect-on-init on the saved design
+                                  // having loaded (load-order: a grace-replayed job edits the
+                                  // real doc, not the blank placeholder shown while isLoading).
+                                  designLoaded={!isLoading}
                                   designInfo={{
                                     width: design.width,
                                     height: design.height,

@@ -4,11 +4,12 @@
 // a bottom-right grabber resizes. Header = 아쿠 title (drag) + 새 대화 + close;
 // Body = transcript; Footer = composer.
 
-import type { ClarifyRequest, ServerInfo } from "@agocraft/agent-client";
+import type { ClarifyRequest, QueueStatus, ServerInfo } from "@agocraft/agent-client";
 import { Banner, IconButton, IconClose, Panel } from "@weave/design-system";
 import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { AkuMascot } from "./AkuMascot.js";
+import { AkuQueueChip } from "./AkuQueueChip.js";
 import { AkuServerInfoChip } from "./AkuServerInfoChip.js";
 import { AkuSettingsMenu } from "./AkuSettingsMenu.js";
 import { AkuThemeSuggestion } from "./AkuThemeSuggestion.js";
@@ -34,6 +35,8 @@ export function AkuPanel({
   status,
   connection,
   serverInfo,
+  queueStatus,
+  onCancelJob,
   pendingClarify,
   onResolveClarify,
   onSend,
@@ -62,6 +65,11 @@ export function AkuPanel({
   /** The agent-server's announced active config (mode + model/speed knobs), or null
    *  until it arrives on connect. Rendered as a header chip with a hover tooltip. */
   readonly serverInfo: ServerInfo | null;
+  /** The agent-server's live job-queue view (WI-034), or null until it arrives. Rendered
+   *  as a header chip (running/queued + this client's position) with a cancel affordance. */
+  readonly queueStatus: QueueStatus | null;
+  /** Cancel a server-side job by task id (the queue chip's cancel button). */
+  readonly onCancelJob: (taskId: string) => void;
   /** A pending pre-generation "which media types?" question, or null. */
   readonly pendingClarify: { readonly req: ClarifyRequest } | null;
   /** Answer the pending clarify question with the selected item-type names. */
@@ -129,6 +137,8 @@ export function AkuPanel({
           {/* Server config chip — outside the drag handle so hover/focus isn't
               captured by the move gesture. Renders nothing until serverInfo arrives. */}
           <AkuServerInfoChip serverInfo={serverInfo} />
+          {/* Live queue position + cancel (WI-034). Renders nothing while idle. */}
+          <AkuQueueChip queueStatus={queueStatus} onCancel={onCancelJob} />
           <AkuSettingsMenu
             settings={settings}
             onSetSetting={onSetSetting}

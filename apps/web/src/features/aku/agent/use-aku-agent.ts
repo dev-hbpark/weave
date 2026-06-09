@@ -19,6 +19,7 @@ import {
   type ConnectionState,
   connectAgocraftAgent,
   INITIAL_AGENT_STATE,
+  type QueueStatus,
   reduceAgentState,
   type ServerInfo,
   type ToolClientHandle,
@@ -67,6 +68,13 @@ export interface UseAkuAgent {
    *  speed knobs it is actually running with), or null until it arrives on connect.
    *  Descriptive only — never carries secrets. Surfaced in the panel header. */
   readonly serverInfo: ServerInfo | null;
+  /** The agent-server's live job-queue view for this client (WI-034): running/queued
+   *  counts across the server + this client's own jobs with positions. null until it
+   *  arrives on connect (and on older servers). Surfaced in the panel header. */
+  readonly queueStatus: QueueStatus | null;
+  /** Cancel a specific server-side job by its task id (queued OR running) — used by the
+   *  queue chip's cancel affordance. No-op for an unknown id. */
+  cancelJob(taskId: string): void;
   /** A pending pre-generation "which media item types?" question from the server,
    *  or null. The panel renders a picker; answering it resolves the agent's run. */
   readonly pendingClarify: { readonly req: ClarifyRequest } | null;
@@ -249,6 +257,11 @@ export function useAkuAgent(deps: {
   readonly settings?: AkuSettings;
   readonly url?: string;
   readonly token?: string;
+  /** True once the SAVED design has finished loading (WI-034 4b). Gates connect-on-init:
+   *  Aku opens the link as soon as this is true (so a refresh reconnects within the server's
+   *  grace window) — but never before the design is loaded, so a grace-replayed job edits the
+   *  real document, not an empty placeholder (load-order). Absent/false → legacy lazy connect. */
+  readonly designLoaded?: boolean;
 }): UseAkuAgent {
   // Render-stable values are destructured from `deps` HERE, once. Everything
   // volatile (the getters + callbacks like onFramesAdded) is read inside the
@@ -257,7 +270,7 @@ export function useAkuAgent(deps: {
   // guard test (use-aku-agent.deps-guard.test.ts) enforces it, so a future dep
   // can never be read straight off the first-render `deps` and go stale
   // (WI-075 / DR-030).
-  const { editor, designId, url: urlProp, token: tokenProp } = deps;
+  const { editor, designId, url: urlProp, token: tokenProp, designLoaded } = deps;
   const url = urlProp ?? envStr("VITE_AKU_AGENT_URL") ?? DEV_URL;
   // Token precedence: injected dep → env → saved-in-browser → none (prompt).
   const [token, setTokenState] = useState<string | null>(
@@ -294,6 +307,8 @@ export function useAkuAgent(deps: {
   const [connection, setConnection] = useState<AkuConnection>(() => toConnection("idle"));
   // Server config announced on connect (mode + perf knobs); null until it arrives.
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
+  // Live job-queue view pushed by the server (WI-034); null until it arrives.
+  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   // Pre-generation media-type question (small-think clarify): when the server asks
   // before creating a design, we surface a picker and resolve once the user answers.
   const [pendingClarify, setPendingClarify] = useState<{
@@ -459,7 +474,13 @@ export function useAkuAgent(deps: {
         // The server announces its active config (mode + model/speed knobs) on connect;
         // surface it in the panel header so the operator sees what's actually running.
         onServerInfo: (info) => setServerInfo(info),
+        // Live queue view (WI-034): running/queued + this client's positions.
+        onQueueStatus: (s) => setQueueStatus(s),
         userId: `weave:${designId === "" ? "default" : designId}`,
+        // Stable client identity for the server's grace window — deterministic from the
+        // design id so a reconnect / refresh of THIS design re-presents the same id and the
+        // server replays its in-flight requests (WI-034 P2). Absent for an unsaved design.
+        ...(designId !== "" ? { clientId: `weave-client:${designId}` } : {}),
         url,
         token,
         connectTimeoutMs: CONNECT_TIMEOUT_MS,
@@ -486,6 +507,20 @@ export function useAkuAgent(deps: {
     }
     return connectingRef.current;
   }, [editor, roundGroup, commands, designId, url, token]);
+
+  // Connect-on-init (WI-034 4b): once the SAVED design has loaded and a token is present, open
+  // the link eagerly (instead of lazily on first submit) so a browser refresh reconnects within
+  // the server's grace window and the server replays this design's in-flight job. Gated on
+  // `designLoaded` for load-order — a replayed job then edits the real document, never an empty
+  // placeholder. `getHandle` is idempotent (returns the existing handle), so this is a no-op once
+  // connected; failures fall back to the lazy path on the next submit.
+  useEffect(() => {
+    if (designLoaded !== true || !hasToken) return;
+    if (handleRef.current !== null || connectingRef.current !== null) return;
+    void getHandle().catch(() => {
+      /* first-connect failure clears the cached attempt; next submit retries (see getHandle) */
+    });
+  }, [designLoaded, hasToken, getHandle]);
 
   /** Replace the trailing assistant message (the in-flight turn's bubble). */
   const patchLastAssistant = useCallback(
@@ -908,6 +943,12 @@ export function useAkuAgent(deps: {
     connectingRef.current = null;
     setConnection(toConnection("idle"));
     setServerInfo(null); // stale once the link is dropped; re-announced on reconnect
+    setQueueStatus(null); // ditto — re-pushed when the next session connects
+  }, []);
+
+  /** Cancel a specific server-side job by task id (queued or running) — WI-034 queue chip. */
+  const cancelJob = useCallback((taskId: string): void => {
+    handleRef.current?.cancel(taskId);
   }, []);
 
   const setToken = useCallback(
@@ -937,6 +978,8 @@ export function useAkuAgent(deps: {
     status,
     connection,
     serverInfo,
+    queueStatus,
+    cancelJob,
     pendingClarify,
     resolveClarify,
     send,

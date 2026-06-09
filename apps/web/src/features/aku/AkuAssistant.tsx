@@ -39,6 +39,7 @@ export function AkuAssistant({
   editor,
   document: agoDocument,
   designId,
+  designLoaded,
   designInfo,
   onFramesAdded,
   onZoomToFrame,
@@ -46,6 +47,9 @@ export function AkuAssistant({
   readonly editor: Editor;
   readonly document: AgocraftDocument;
   readonly designId: string;
+  /** True once the saved design has finished loading (WI-034 4b) — gates Aku's connect-on-init
+   *  so a grace-replayed job edits the real document, not an empty placeholder. */
+  readonly designLoaded: boolean;
   /** Canvas px size + background from the Design view-model — passed to the
    *  agent per task so it can size text against the real canvas. */
   readonly designInfo: { width: number; height: number; background: string };
@@ -82,6 +86,8 @@ export function AkuAssistant({
     status,
     connection,
     serverInfo,
+    queueStatus,
+    cancelJob,
     pendingClarify,
     resolveClarify,
     send,
@@ -101,6 +107,7 @@ export function AkuAssistant({
     getSelection: () => [...selRef.current],
     getDesignInfo: () => designInfoRef.current,
     designId,
+    designLoaded,
     settings,
     ...(onFramesAdded !== undefined ? { onFramesAdded } : {}),
   });
@@ -283,6 +290,8 @@ export function AkuAssistant({
           status={status}
           connection={connection}
           serverInfo={serverInfo}
+          queueStatus={queueStatus}
+          onCancelJob={cancelJob}
           pendingClarify={pendingClarify}
           onResolveClarify={resolveClarify}
           onSend={send}

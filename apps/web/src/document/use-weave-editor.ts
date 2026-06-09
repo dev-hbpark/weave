@@ -77,7 +77,7 @@ export interface UseWeaveEditorDeps {
    *  storage I/O batches across rapid edits. See OS-root Rule 4 + agocraft
    *  `scheduling.debounce`. */
   readonly persist?: () => void;
-  /** Trailing-edge debounce for the persist sink. Default 3000ms. */
+  /** Trailing-edge debounce for the persist sink. Default 500ms. */
   readonly persistDebounceMs?: number;
   /** WI-028 Phase 3 — enable collaborative sync. When set, the hook
    *  wires a SyncEngine + Y.Doc + HttpPollProvider to the editor's
@@ -427,7 +427,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     // SchedulingPolicy (OS Rule 4: producer policy-free, consumer self-
     // scheduled). Render path above stays immediate; persistence batches
     // here so a 60Hz drag produces at most one save per debounce window.
-    const persistDebounceMs = deps.persistDebounceMs ?? 3000;
+    const persistDebounceMs = deps.persistDebounceMs ?? 500;
     const storageSink: ChangeSink = {
       flush() {
         const persist = persistRef.current;
