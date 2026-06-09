@@ -2394,3 +2394,84 @@ describe("weave.item.add — min-size reject (WI-147)", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe("weave.item.add — container-is-frame reject (WI-150 / DR-105)", () => {
+  const addCmd = () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+    if (cmd === undefined) throw new Error("command not found");
+    return cmd;
+  };
+  // Root with a layout FRAME and a TEXT leaf as siblings — the agent's "dump the
+  // calendar dates under the SAT header text" mistake targets the leaf.
+  function ctxWithLeaf(): CommandContext {
+    const textLeaf = {
+      id: "text-leaf-1",
+      kind: "text",
+      attrs: { frame: FULL_FRAME, textRuns: [] },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const frame = {
+      id: "grid-frame-1",
+      kind: "frame",
+      attrs: { frame: FULL_FRAME },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const weave: WeaveDocument = {
+      id: "doc-leaf",
+      title: "Leaf",
+      items: [frame, textLeaf],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    return {
+      document: toAgocraftDocument(weave),
+      resolve: () => null as never,
+      skipRelations: false,
+    };
+  }
+  const BOX = { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 };
+
+  it("REJECTS an agent-flagged add whose containerId is a non-frame leaf", () => {
+    const result = addCmd().run(ctxWithLeaf(), {
+      kind: "text",
+      frame: BOX,
+      containerId: "text-leaf-1",
+      enforceContainerIsFrame: true,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("container-not-frame");
+      expect(result.error.message).toContain("거부");
+    }
+  });
+
+  it("ACCEPTS an agent-flagged add whose containerId is a real frame", () => {
+    const result = addCmd().run(ctxWithLeaf(), {
+      kind: "text",
+      frame: BOX,
+      containerId: "grid-frame-1",
+      enforceContainerIsFrame: true,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("ACCEPTS an agent-flagged add into the root (a container, though kind is not 'frame')", () => {
+    const result = addCmd().run(ctxWithLeaf(), {
+      kind: "frame",
+      frame: BOX,
+      enforceContainerIsFrame: true,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("does NOT guard a manual add (no flag) targeting a leaf container", () => {
+    const result = addCmd().run(ctxWithLeaf(), {
+      kind: "text",
+      frame: BOX,
+      containerId: "text-leaf-1",
+    });
+    expect(result.ok).toBe(true);
+  });
+});

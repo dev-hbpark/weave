@@ -44,7 +44,9 @@ import type {
   AkuMessage,
   AkuStatus,
 } from "../types.js";
+import { stampContainerGuard } from "./agent-container-guard.js";
 import { stampMinSizeGuard } from "./agent-min-size-guard.js";
+import { decideResume } from "./agent-resume.js";
 import { fixAgentTextBox } from "./agent-text-resize.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
 import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./design-styles.js";
@@ -362,6 +364,19 @@ export function useAkuAgent(deps: {
   // Supersession token: stop / clear / a new send invalidate an in-flight submit
   // (the server keeps running unless we also cancel; we ignore its late resolution).
   const genRef = useRef(0);
+  // WI-151 — resume-on-reconnect bookkeeping (see the queueStatus effect below).
+  // `engagedRef`: the user has driven the agent THIS page session (submit / stop /
+  // clear). Until then a server-reported own job is an orphan from a PRIOR session
+  // that the server resumed — adopt it. After engagement the local run lifecycle
+  // owns every job, so adoption is disabled (no false dim at a local run's tail).
+  const engagedRef = useRef(false);
+  // `resumedRef`: we currently hold a server-ADOPTED run (no local task id). Stop
+  // cancels it by the server-reported job id; release flips back to idle when it
+  // leaves the queue.
+  const resumedRef = useRef(false);
+  // Latest queueStatus mirror so stop()/effects read it without re-creating callbacks.
+  const queueStatusRef = useRef<QueueStatus | null>(null);
+  queueStatusRef.current = queueStatus;
 
   // WI-095 (DR-064) — the agent gets the FULL command registry (no hiding). Every
   // weave.* command is advertised as a tool; presets carry a closed presetId enum
@@ -397,12 +412,15 @@ export function useAkuAgent(deps: {
         //  • DR-101 — font size is FIXED design-px; NO px→ratio grounding (DR-091
         //    superseded) so text never rescales when a frame/parent is resized.
         //  • WI-147 — switch ON the command's min-size reject for agent adds only.
+        //  • WI-150 — switch ON the command's container-is-frame reject (needs no
+        //    design px, so it is stamped before the design-undefined early return).
         transformInput: (commandName, input) => {
           const doc = depsRef.current.getDocument();
           const sized = fixAgentTextBox(commandName, input, doc);
+          const guarded = stampContainerGuard(commandName, sized);
           const design = depsRef.current.getDesignInfo?.();
-          if (design === undefined) return sized;
-          return stampMinSizeGuard(commandName, sized, design);
+          if (design === undefined) return guarded;
+          return stampMinSizeGuard(commandName, guarded, design);
         },
       }),
     [editor],
@@ -522,6 +540,35 @@ export function useAkuAgent(deps: {
     });
   }, [designLoaded, hasToken, getHandle]);
 
+  // WI-151 — RESUME the design dim + roaming after a reconnect / browser refresh.
+  // The server keeps a dropped run alive for its grace window and re-runs it on
+  // reconnect (WI-034); a live-socket reconnect keeps `status` in memory, but a
+  // REFRESH resets it to "idle", leaving dim (AkuInteractionLock) + roaming
+  // (useAkuRoam) — both gated solely on status === "streaming" — OFF while the
+  // agent is editing again. `queueStatus.jobs` lists THIS client's own in-flight
+  // jobs (running + queued); a Stop deletes the request from the server's inflight
+  // set so a stopped run never appears here. On a fresh page session (engagedRef
+  // false) an own job is therefore an orphan the user did NOT stop and the server
+  // resumed → ADOPT it (flip to "streaming", lighting dim + roaming via the single
+  // existing gate, with zero changes to those components). RELEASE back to idle
+  // when it leaves the queue. A LOCAL run sets engagedRef, so runTurn owns its
+  // lifecycle and this never adopts/releases it. Decision is the pure decideResume.
+  useEffect(() => {
+    const action = decideResume({
+      ownJobCount: queueStatus?.jobs.length ?? 0,
+      status,
+      engaged: engagedRef.current,
+      resumed: resumedRef.current,
+    });
+    if (action === "adopt") {
+      resumedRef.current = true;
+      setStatus("streaming");
+    } else if (action === "release") {
+      resumedRef.current = false;
+      setStatus("idle");
+    }
+  }, [queueStatus, status]);
+
   /** Replace the trailing assistant message (the in-flight turn's bubble). */
   const patchLastAssistant = useCallback(
     (patch: (prev: AkuAssistantMessage) => AkuAssistantMessage): void => {
@@ -615,6 +662,10 @@ export function useAkuAgent(deps: {
         ...(intentPlan !== undefined && s.showIntentChip ? { intent: intentPlan } : {}),
       };
       commit([...messagesRef.current, userMsg, assistantMsg]);
+      // WI-151 — the user has driven the agent this session; from now on every
+      // server job is owned by this local run lifecycle, so the resume effect
+      // stops adopting (no false dim at a finished local run's tail).
+      engagedRef.current = true;
       setStatus("streaming");
 
       const depthBefore = editor.history.undoSize();
@@ -867,8 +918,19 @@ export function useAkuAgent(deps: {
     // so the agent stops issuing further tool calls. Edits already committed stay
     // (the user undoes them via History); this only halts further ones.
     const id = activeTaskIdRef.current;
-    if (id !== null) handleRef.current?.cancel(id);
+    if (id !== null) {
+      handleRef.current?.cancel(id);
+    } else if (resumedRef.current) {
+      // WI-151 — a server-ADOPTED (resumed) run has no local task id; cancel it by
+      // the server-reported own job ids so Stop halts the resumed run too.
+      for (const job of queueStatusRef.current?.jobs ?? []) handleRef.current?.cancel(job.id);
+    }
     activeTaskIdRef.current = null;
+    // WI-151 — the user took explicit control: stop owning any adopted run and
+    // disable re-adoption (else the effect would re-light dim until the server
+    // clears the just-cancelled job from queueStatus).
+    resumedRef.current = false;
+    engagedRef.current = true;
     // Close any open round group so the aborted run's edits don't keep
     // absorbing later transactions.
     roundGroupRef.current.close();
@@ -928,6 +990,9 @@ export function useAkuAgent(deps: {
 
   const clear = useCallback((): void => {
     genRef.current += 1;
+    // WI-151 — explicit user action: drop any adopted run + disable re-adoption.
+    resumedRef.current = false;
+    engagedRef.current = true;
     clearConversation(designId);
     commit([]);
     setStatus("idle");
