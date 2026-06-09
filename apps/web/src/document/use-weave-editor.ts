@@ -7,6 +7,7 @@ import {
   type Change,
   type ChangeSink,
   ClockToken,
+  changeToPatch,
   createCapabilityRegistry,
   createChangeStream,
   createContainer,
@@ -17,7 +18,6 @@ import {
   defaultClock,
   defaultRandom,
   IdGeneratorToken,
-  type Patch,
   scheduling,
 } from "@agocraft/core";
 import {
@@ -445,52 +445,15 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     // Y.Doc (immediate, not debounced — the provider already batches
     // outbound pushes). Only attached when collaborative sync is on.
     //
-    // agocraft's Change union is patch-shaped (one Change == one Patch
-    // plus envelope metadata) so the conversion is structural — a
-    // single-site invariant (OS Rule 6's permitted exception for
-    // "one site that must know all variants", same shape as
-    // serializer.invertPatch).
+    // Change→Patch uses agocraft's canonical `changeToPatch` (@agocraft/core,
+    // HANDOFF-022). It maps ALL patch-mappable variants behind an exhaustiveness
+    // guard; the hand-rolled subset that used to live here only handled 4 of 14
+    // kinds and silently dropped the rest (item.create / reparent / text /
+    // unit.create / document.attrs / relations.* …), so with sync on, pasted /
+    // reparented / typed changes never reached collaborators.
     const sync = syncBundle;
     let offSyncSink: (() => void) | undefined;
     if (sync !== undefined) {
-      const changeToPatch = (c: Change): Patch | undefined => {
-        switch (c.type) {
-          case "item.attrs":
-            return {
-              type: c.type,
-              itemId: c.itemId,
-              before: c.before,
-              after: c.after,
-            };
-          case "item.children":
-            return {
-              type: c.type,
-              itemId: c.itemId,
-              added: c.added,
-              removed: c.removed,
-              ...(c.reordered !== undefined ? { reordered: c.reordered } : {}),
-            };
-          case "item.units":
-            return {
-              type: c.type,
-              itemId: c.itemId,
-              added: c.added,
-              removed: c.removed,
-            };
-          case "unit.attrs":
-            return {
-              type: c.type,
-              itemId: c.itemId,
-              unitId: c.unitId,
-              unitKind: c.unitKind,
-              path: c.path,
-              before: c.before,
-              after: c.after,
-            };
-          default:
-            return undefined;
-        }
-      };
       offSyncSink = editor.changeStream.subscribe(
         (change) => {
           const patch = changeToPatch(change);
