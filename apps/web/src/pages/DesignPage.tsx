@@ -81,6 +81,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   type DocFlavor,
   type DomainKind,
+  effectivePresentationOrder,
   firstChildOf,
   InteractionModeProvider,
   type ItemFrame,
@@ -193,6 +194,7 @@ import { AkuAssistant } from "../features/aku/AkuAssistant.js";
 import { FigmaSelectionLaunchBanner } from "../launch/FigmaSelectionLaunchBanner.js";
 import { TextV1LaunchBanner } from "../launch/TextV1LaunchBanner.js";
 import { nn } from "../lib/nn.js";
+import { useActivePage } from "./design/hooks/use-active-page.js";
 import { useDesignCommandHost } from "./design/hooks/use-command-host.js";
 import { useDesignPeek } from "./design/hooks/use-design-peek.js";
 import { useDesignSave } from "./design/hooks/use-design-save.js";
@@ -1028,6 +1030,16 @@ function DesignPageBody() {
   // Page-bounded flavors (slide-deck / doc-page) keep the fit-to-viewport layout;
   // main.css's `overscroll-behavior-x: none` blocks the back-swipe there anyway.
   const infiniteCanvas = formatEditorConfig(currentFlavor).canvas === "infinite";
+
+  // WI-153 P2 — page-bounded formats (slide-deck / doc-page) edit ONE page at a time.
+  // `activePageId` scopes the canvas to a single page; the rail switches it. Infinite
+  // canvas → activePageId undefined → all frames render (unchanged).
+  const presentationOrder = useMemo(() => effectivePresentationOrder(design), [design]);
+  const { activePageId, setActivePageId } = useActivePage(presentationOrder, !infiniteCanvas);
+  const visibleFrameIds = useMemo(
+    () => (!infiniteCanvas && activePageId !== undefined ? new Set([activePageId]) : undefined),
+    [infiniteCanvas, activePageId],
+  );
 
   const removeItem = (itemId: string) => editor.exec("weave.item.remove", { itemId, containerId });
   const updateItem: typeof rawUpdateItem = (itemId, patch) =>
@@ -2237,6 +2249,7 @@ function DesignPageBody() {
                                       selectedIds={selectedIds}
                                       dimmedFrameIds={dimmedFrameIds}
                                       isolatedFrameIds={isolatedFrameIds}
+                                      visibleFrameIds={visibleFrameIds}
                                       onSelect={setSelectedFrameId}
                                       onToggleSelect={(id) => toggleFrames([id])}
                                       onMarqueeSelect={onMarqueeSelect}
@@ -2362,7 +2375,14 @@ function DesignPageBody() {
                                         design={design}
                                         setPresentationOrder={setPresentationOrderViaEditor}
                                         selectedId={selectedFrameId}
-                                        onSelect={setSelectedFrameId}
+                                        onSelect={(id) => {
+                                          setSelectedFrameId(id);
+                                          // WI-153 P2 — in page-bounded formats a rail
+                                          // click switches the active page (the canvas
+                                          // shows one page at a time).
+                                          if (!infiniteCanvas && id !== undefined)
+                                            setActivePageId(id);
+                                        }}
                                         focusedId={focusedId}
                                         focusStage={focusStage}
                                         disabledFrameIds={disabledFrameIds}

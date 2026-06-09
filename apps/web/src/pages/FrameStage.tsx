@@ -134,6 +134,12 @@ export interface FrameStageProps {
    *  interactive so the DOM chain that mounts the focused frame keeps
    *  paint + event flow. */
   readonly isolatedFrameIds?: ReadonlySet<string> | undefined;
+  /** WI-153 P2 — when set, only these top-level frames render on the canvas (the
+   *  rest are omitted, not just dimmed). The host populates it with `{ activePageId }`
+   *  for page-bounded formats (one page at a time); undefined = render all frames
+   *  (infinite canvas, unchanged). Thumbnails render each page independently, so a
+   *  hidden page is still visible + selectable in the rail. */
+  readonly visibleFrameIds?: ReadonlySet<string> | undefined;
   readonly onSelect?: ((itemId: string | undefined) => void) | undefined;
   /** Shift/Cmd/Ctrl + click on a frame toggles it in/out of the multi
    *  selection (Figma parity). Fires alongside the existing `onSelect`
@@ -215,7 +221,15 @@ export function FrameStage(props: FrameStageProps) {
     [background],
   );
   const rootId = String(root.id);
-  const frames = root.children.filter(isDomainItem);
+  // WI-153 P2 — page-bounded formats render ONE page at a time: the host passes
+  // `visibleFrameIds = { activePageId }` and the rest are omitted. Undefined → all
+  // top-level frames render (infinite canvas, unchanged).
+  const visibleFrameIds = props.visibleFrameIds;
+  const allTopFrames = root.children.filter(isDomainItem);
+  const frames =
+    visibleFrameIds !== undefined
+      ? allTopFrames.filter((f) => visibleFrameIds.has(String(f.id)))
+      : allTopFrames;
   // WI-033 P2 — `reduceMotion` useMemo removed alongside the drill-in
   // spring animation. The design plane now snaps to base camera
   // synchronously on resize, which already honours the user's
