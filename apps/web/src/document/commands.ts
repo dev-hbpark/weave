@@ -105,6 +105,11 @@ import {
   type AlignOp,
   computeAlignedFrames,
 } from "./multi/align-ops.js";
+import {
+  collectPresentationIds,
+  FRAME_KINDS,
+  reconcilePresentationOrder,
+} from "./presentation-order.js";
 import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { ratioFontReparentPatches } from "./reparent-font.js";
@@ -2399,6 +2404,64 @@ export function buildWeaveCommands(
     maxNodes: MAX_PASTE_NODES,
   });
 
+  // WI-155 — page duplicate (WI-153 P2.3 보류분). Same kit clone, two page-
+  // specific differences vs weave.item.duplicate:
+  //   1. `offset: 0` — the default 0.02 nudge exists so an in-place copy is
+  //      visibly distinct on an infinite canvas; on a page it knocks a
+  //      FULL_FRAME clone out of the page box. A page clone must land exactly
+  //      on the source's frame (the rail/active-page switch IS the affordance).
+  //   2. The SAME transaction also inserts the clone into `presentationOrder`
+  //      right after the source — reconcile's default would append it at the
+  //      END of the rail. Composite via delegate-`run` (the weave.items.
+  //      lifecycle idiom): the kit's new id is in hand before patches are
+  //      sealed, which `weave.batch` cannot do (mid-batch ids unaddressable).
+  // One transaction → one Cmd+Z rolls back clone + order together.
+  const pageDuplicateClone = createDuplicateItemCommand({
+    name: "weave.page.duplicate",
+    maxNodes: MAX_PASTE_NODES,
+    offset: 0,
+  });
+  const pageDuplicate: Command<{ readonly itemId: string }, string> = {
+    name: "weave.page.duplicate",
+    run: (ctx, input) => {
+      // Page semantics guarded by the command, not the caller: only frames
+      // are pages. Non-frame items go through weave.item.duplicate.
+      const source = findItemDeep(ctx.document, input.itemId);
+      if (source === undefined) {
+        return fail("item-not-found", `weave.page.duplicate: no item "${input.itemId}"`);
+      }
+      if (!FRAME_KINDS.has(source.kind)) {
+        return fail(
+          "not-a-page",
+          `weave.page.duplicate: "${input.itemId}" is a ${source.kind}, not a frame`,
+        );
+      }
+      const r = pageDuplicateClone.run(ctx, input);
+      if (!r.ok) return r;
+      // Insert the clone right after the source in the EFFECTIVE order (the
+      // saved array may lag the tree; reconcile against it first). A source
+      // outside the deck (presentable:false group) is absent from the order —
+      // its clone inherits the flag and stays out too, so skip the patch.
+      const before = (ctx.document.attrs ?? {}) as Readonly<Record<string, unknown>>;
+      const saved = Array.isArray(before.presentationOrder)
+        ? (before.presentationOrder as ReadonlyArray<string>)
+        : [];
+      const effective = reconcilePresentationOrder(
+        saved,
+        collectPresentationIds(ctx.document.root),
+      );
+      const at = effective.indexOf(input.itemId);
+      if (at < 0) return r;
+      const order = [...effective.slice(0, at + 1), r.value, ...effective.slice(at + 1)];
+      const orderPatch: Patch = {
+        type: "document.attrs",
+        before,
+        after: { ...before, presentationOrder: order },
+      };
+      return ok(r.value, [...r.patches, orderPatch]);
+    },
+  };
+
   // WI-064 — the ONE multi-selection LIFECYCLE command. Absorbs the former
   // weave.items.remove + weave.items.duplicate behind a single `op`, so the
   // agent's multi surface is exactly two verbs (items.update = edit, this =
@@ -2536,6 +2599,8 @@ export function buildWeaveCommands(
     clipboardPaste as Command,
     duplicateItem as Command,
     duplicateItems as Command,
+    // WI-155 — rail per-page duplicate (offset 0 + order insert-after).
+    pageDuplicate as Command,
     // WI-020 / WI-043
     setFrameLayout as Command,
     setItemLayoutChild as Command,

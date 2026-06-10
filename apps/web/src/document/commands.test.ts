@@ -2475,3 +2475,116 @@ describe("weave.item.add — container-is-frame reject (WI-150 / DR-105)", () =>
     expect(result.ok).toBe(true);
   });
 });
+
+// ─── WI-155 — weave.page.duplicate (rail per-page duplicate) ──────────────
+//
+// Kit duplicate with `offset: 0` (a FULL_FRAME page clone must land exactly
+// on the source's frame — the 0.02 nudge would knock it out of the page box)
+// composed with a same-transaction `document.attrs` patch that inserts the
+// clone into `presentationOrder` right after the source.
+describe("weave.page.duplicate (WI-155)", () => {
+  function makePagesCtx(): CommandContext {
+    const page1 = {
+      id: "page-1",
+      kind: "frame",
+      attrs: { frame: FULL_FRAME, title: "P1" },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const page2 = {
+      id: "page-2",
+      kind: "frame",
+      attrs: { frame: FULL_FRAME, title: "P2" },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    // WI-072 — a frame opted OUT of the deck: not in presentationOrder.
+    const group = {
+      id: "group-1",
+      kind: "frame",
+      attrs: { frame: FULL_FRAME, presentable: false },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const rect = {
+      id: "rect-page-1",
+      kind: "shape",
+      attrs: {
+        frame: FULL_FRAME,
+        shape: "rectangle",
+        subAttrs: { shape: "rectangle" },
+      },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const weave: WeaveDocument = {
+      id: "doc-pages",
+      title: "Pages",
+      items: [page1, page2, group, rect],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    const idGen = createUuidV7Generator(defaultClock, defaultRandom);
+    return {
+      document: toAgocraftDocument(weave),
+      resolve: ((token: Token<unknown>) =>
+        token === IdGeneratorToken ? idGen : null) as CommandContext["resolve"],
+      skipRelations: false,
+    };
+  }
+
+  function cmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.page.duplicate");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+
+  it("clones a page IN PLACE (offset 0 — clone frame identical to source) and inserts it right after the source in presentationOrder, in ONE transaction", () => {
+    const ctx = makePagesCtx();
+    const rootId = String(ctx.document.root.id);
+    const result = cmd().run(ctx, { itemId: "page-1" });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    expect(result.patches).toHaveLength(2);
+    const [create, attrs] = result.patches;
+    if (create === undefined || create.type !== "item.create")
+      throw new Error("expected item.create first");
+    expect(String(create.parentId)).toBe(rootId);
+    // offset 0: the clone's frame is the source's frame, not a 0.02 nudge.
+    expect((create.item.attrs as { frame: unknown }).frame).toEqual(FULL_FRAME);
+    expect(String(create.item.id)).toBe(result.value);
+    // fresh id — never the source's.
+    expect(result.value).not.toBe("page-1");
+    if (attrs === undefined || attrs.type !== "document.attrs")
+      throw new Error("expected document.attrs second");
+    expect((attrs.after as { presentationOrder: unknown }).presentationOrder).toEqual([
+      "page-1",
+      result.value,
+      "page-2",
+    ]);
+  });
+
+  it("refuses a non-frame item (`not-a-page`) — pages are frames", () => {
+    const result = cmd().run(makePagesCtx(), { itemId: "rect-page-1" });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected fail");
+    expect(result.error.code).toBe("not-a-page");
+  });
+
+  it("fails `item-not-found` for an unknown id", () => {
+    const result = cmd().run(makePagesCtx(), { itemId: "nope" });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected fail");
+    expect(result.error.code).toBe("item-not-found");
+  });
+
+  it("skips the order patch when the source is NOT a deck member (presentable:false) — the clone inherits the flag and stays out of the order too", () => {
+    const result = cmd().run(makePagesCtx(), { itemId: "group-1" });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    expect(result.patches).toHaveLength(1);
+    expect(result.patches[0]?.type).toBe("item.create");
+    // the clone carries presentable:false (deep-cloned attrs).
+    const create = result.patches[0];
+    if (create === undefined || create.type !== "item.create") throw new Error("unreachable");
+    expect((create.item.attrs as { presentable?: boolean }).presentable).toBe(false);
+  });
+});

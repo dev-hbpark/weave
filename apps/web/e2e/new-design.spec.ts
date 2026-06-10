@@ -47,6 +47,57 @@ test("landing → wizard → editor → add frames via toolbar", async ({ page }
   await expect(page.locator('[data-testid="frame-block"]')).toHaveCount(1);
 });
 
+// WI-155 — rail per-page duplicate. `weave.page.duplicate` clones the page
+// in place (kit offset 0, no nudge) AND inserts the clone right after the
+// source in presentationOrder, in ONE transaction — so a single keyboard
+// Cmd+Z reverts both (Document mutation rule). Keyboard undo is used, not
+// the toolbar-undo button — that click path is the group-timing-flaky one
+// test.skip'd below; history-hotkeys is the proven pattern.
+test("rail page duplicate clones in place; one Cmd+Z reverts (WI-155)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "slide-deck" });
+
+  // slide-deck seeds one slide; the page-bounded rail shows its tile.
+  await expect(page.getByTestId("thumbnail-0")).toBeVisible();
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(1);
+  const sourceId = await page.getByTestId("thumbnail-0").getAttribute("data-thumbnail-id");
+  expect(sourceId).not.toBeNull();
+
+  // The footer action is hover-revealed (opacity), but always in the DOM —
+  // hover the tile so the click lands on a visible control.
+  await page.getByTestId("thumbnail-0").hover();
+  await page.getByTestId("thumbnail-duplicate-0").click();
+
+  // Clone lands right AFTER the source with a fresh id, and becomes the
+  // active page (mirrors onAddPage).
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
+  const cloneId = await page.getByTestId("thumbnail-1").getAttribute("data-thumbnail-id");
+  expect(cloneId).not.toBeNull();
+  expect(cloneId).not.toBe(sourceId);
+  await expect(page.getByTestId("thumbnail-activate-1")).toHaveAttribute("aria-pressed", "true");
+
+  // ONE keyboard undo removes the clone AND its presentationOrder entry.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(1);
+  expect(await page.getByTestId("thumbnail-0").getAttribute("data-thumbnail-id")).toBe(sourceId);
+
+  // Cmd+Shift+Z re-applies the same transaction — clone returns at index 1.
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
+  expect(await page.getByTestId("thumbnail-1").getAttribute("data-thumbnail-id")).toBe(cloneId);
+});
+
+// WI-155 — the duplicate action is scoped to page-bounded formats (WI-153
+// 결정 6): infinite-canvas formats keep the canvas-side duplicate (0.02
+// nudge) and must render NO rail duplicate button.
+test("mixed (infinite canvas) rail has no page-duplicate action (WI-155)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed" });
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
+  await expect(page.getByTestId("thumbnail-panel")).toBeVisible();
+  await page.getByTestId("thumbnail-0").hover();
+  await expect(page.locator('[data-testid^="thumbnail-duplicate-"]')).toHaveCount(0);
+});
+
 // WI-032 Phase 3c — toolbar-undo 버튼 클릭이 30s timeout (group 실행 시
 // prior spec 의 side-effect 가능성). 단독 PASS. history-hotkeys 가 정상
 // path 검증. group timing 진단 후 unskip.

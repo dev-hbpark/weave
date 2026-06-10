@@ -53,6 +53,7 @@ P1~P5 전부 완료 (P5: 마법사 "Presentation" 카피 + 툴바는 기존 게�
 추가하지 않음 — `defaultContainer`/`canvas`와 항상 일치하는 죽은 설정.
 
 남은 후속 슬라이스:
-- **페이지 복제** (P2.3 보류) — page-scope 전용 subtree-clone 명령 필요(`weave.batch` id 참조 한계).
+- ~~**페이지 복제** (P2.3 보류)~~ — **완료, [WI-155](WI-155-page-duplicate.md)** (kit `offset:0` +
+  컴포지트 명령으로 양 보류 사유 해소 — 전용 subtree-clone 명령 불필요했음).
 - **카메라 fit-to-active-page** (P2.4 보류) — 비-FULL_FRAME 페이지에서만 필요.
 - 멀티셀렉트 그룹 단위 min-overlap, 회전 박스 경계 정합, doc-page 전용 툴바 분리 여부.

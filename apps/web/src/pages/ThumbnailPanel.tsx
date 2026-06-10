@@ -25,7 +25,14 @@
 // desaturate / soften so the panel itself reflects the global lock.
 
 import type { Item as AgocraftItem } from "@agocraft/core";
-import { IconDiamond, IconDocLines, IconFrame, IconPlus, IconSparkle } from "@weave/design-system";
+import {
+  IconCopy,
+  IconDiamond,
+  IconDocLines,
+  IconFrame,
+  IconPlus,
+  IconSparkle,
+} from "@weave/design-system";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -136,6 +143,10 @@ export interface ThumbnailPanelProps {
    *  When provided, a trailing "+" tile renders in the rail. The host adds the frame
    *  + makes it the active page. */
   readonly onAddPage?: (() => void) | undefined;
+  /** WI-155 — duplicate a page in place. When provided, slide tiles render a
+   *  footer copy action. The host execs `weave.page.duplicate` (offset-0 clone
+   *  + presentationOrder insert-after, one undo) and activates the clone. */
+  readonly onDuplicatePage?: ((id: string) => void) | undefined;
 }
 
 /** WI-072 — small "deck membership" glyph (stacked rectangles). Active = the
@@ -246,6 +257,7 @@ export function ThumbnailPanel({
   onZoomToFrame,
   onToggleSlide,
   onAddPage,
+  onDuplicatePage,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
   useParams<{ id: string }>();
@@ -688,6 +700,34 @@ export function ThumbnailPanel({
                 >
                   {entry.title}
                 </span>
+                {/* WI-155 — per-page duplicate. Same footer-action pattern as
+                    the deck toggle below (relative z-10 above the inset-0
+                    activation button; hover-brightened). Disabled tiles omit
+                    it — a gated frame ignores structural edits. */}
+                {onDuplicatePage !== undefined && !isDisabled ? (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDuplicatePage(entry.id);
+                    }}
+                    data-testid={`thumbnail-duplicate-${idx}`}
+                    aria-label="페이지 복제"
+                    data-tip="페이지 복제"
+                    className={
+                      "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
+                      // WI-101 — lift above the absolute inset-0 z-0 activation
+                      // button so the click reaches this action (see deck toggle).
+                      "relative z-10 " +
+                      "text-[color:var(--text-muted)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 " +
+                      "hover:text-[color:var(--accent-strong)] hover:bg-[color:var(--surface-2)] " +
+                      "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
+                    }
+                  >
+                    <IconCopy size={13} />
+                  </button>
+                ) : null}
                 {/* WI-072 — deck-membership toggle. On a slide tile it is
                     ACTIVE; clicking removes the frame from the deck (it drops to
                     the non-slide section). Hover-revealed to keep the footer

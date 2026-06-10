@@ -162,3 +162,27 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
     28→30 갱신(import 추가로 시프트).
   - SVL 3/3: 마법사 타일 "Presentation" 카피, slide-deck present 씬 `data-clip`+`overflow:clip`,
     mixed present 씬 무클립(`overflow:visible`). 유닛 926/926 · gates green.
+- **후속 — 페이지 복제 완료 (P2.3 보류분, WI-155)**:
+  - 보류 사유 2건이 모두 해소됨을 확인 후 진행: ① vendored core `rc.20260609193000`의
+    `createDuplicateItemCommand`가 **`offset?: number`** deps 옵션 노출 — `offset: 0`이면
+    `cloneWithOffset`이 소스 frame을 그대로 유지(FULL_FRAME 클램프 포함). 전용 subtree-clone
+    명령(보류 시 가정) 불필요. ② `weave.batch`의 mid-batch id 참조 한계는 batch가 아닌 **명령 내
+    컴포지션**으로 우회 — kit `run` 위임(기존 `weave.items.lifecycle` 관용구) 후 새 id를 손에 쥔
+    채 패치를 봉인.
+  - **`weave.page.duplicate`** (commands.ts): kit duplicate(`offset:0`) 인스턴스 래핑.
+    frame 가드(`not-a-page`) + 같은 트랜잭션에 `document.attrs` 패치로 presentationOrder
+    **원본 직후** 삽입(reconcile 기본은 끝 append). 원본이 덱 비멤버(presentable:false)면 순서
+    패치 생략(클론도 비멤버). 한 트랜잭션 → **한 Cmd+Z**가 클론+순서 동시 롤백.
+  - UI: ThumbnailPanel 슬라이드 타일 푸터에 `IconCopy` 액션(`thumbnail-duplicate-<idx>`,
+    DeckGlyph 토글과 동일한 z-10 hover-reveal 패턴 — Design System Triage: **reuse**).
+    DesignPage는 **page-bounded에서만** `onDuplicatePage` 전달(WI-153 결정 6 스코프; infinite
+    canvas는 기존 캔버스 duplicate(0.02 넛지)가 적절) — 성공 시 클론 선택+활성 페이지 전환.
+  - 에이전트 표면: coverage 가드(WI-095 "no hidden commands")에 따라 라벨("페이지 복제") +
+    큐레이트 스키마 등록 — 슬라이드 복사 의도는 `weave.item.duplicate`(넛지)가 아닌 이 명령으로
+    유도하는 설명 포함.
+  - 검증: 유닛 4건(in-place 클론+순서 삽입 단일 트랜잭션 / not-a-page / item-not-found /
+    비멤버 순서 생략) — 전체 930/930 · gates green · SVL 10/10(slide-deck 복제→타일 2개·클론이
+    원본 직후·frame 동일·클론 활성, Cmd+Z 1회에 클론+순서 롤백, mixed 레일엔 복제 액션 없음).
+  - e2e (영구, `e2e/new-design.spec.ts` 2건 — Document mutation rule 체크리스트의 "e2e가
+    Cmd+Z/Cmd+Shift+Z를 커버" 항목 충족): 레일 복제→클론 검증→키보드 Cmd+Z 롤백→Cmd+Shift+Z
+    재적용 + mixed 레일 복제 버튼 부재. targeted run 3 passed / 1 skipped(기존 skip).

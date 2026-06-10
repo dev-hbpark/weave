@@ -589,6 +589,7 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.clipboard.paste": "붙여넣기",
   "weave.item.duplicate": "아이템 복제",
   "weave.items.duplicate": "여러 아이템 복제",
+  "weave.page.duplicate": "페이지 복제",
   "weave.frame.setLayout": "레이아웃 설정",
   "weave.item.setLayoutChild": "레이아웃 자식 정책",
   "weave.item.swapGridCells": "그리드 셀 교환",
@@ -1121,6 +1122,17 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       { order: STR_ARR },
       ["order"],
       "Reorder the DECK — `order` is the full list of top-level slide-frame ids in presentation sequence. Use to rearrange which slide comes first/next in Present mode.",
+    ),
+  },
+  // WI-155 — page-scope duplicate. Differs from weave.item.duplicate: the
+  // clone lands EXACTLY on the source frame (no nudge) and the SAME undo step
+  // inserts it right after the source in the presentation order.
+  "weave.page.duplicate": {
+    label: label("weave.page.duplicate"),
+    inputSchema: obj(
+      { itemId: STR },
+      ["itemId"],
+      "Duplicate a PAGE (a slide frame) in place: deep-clones the frame with its content, keeps the exact same position/size (no offset), and slots the copy right after the source in the deck order. Use this — not weave.item.duplicate — when copying a slide/page.",
     ),
   },
   "weave.design.reorderChildren": {

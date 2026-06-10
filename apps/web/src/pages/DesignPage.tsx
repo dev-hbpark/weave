@@ -2481,6 +2481,27 @@ function DesignPageBody() {
                                             if (!infiniteCanvas) setActivePageId(r.value);
                                           }
                                         }}
+                                        // WI-155 — page-bounded formats only (WI-153
+                                        // 결정 6 scope): infinite canvas keeps the
+                                        // canvas-side duplicate (0.02 nudge) instead.
+                                        // The command clones in place (offset 0) AND
+                                        // inserts the clone after the source in
+                                        // presentationOrder — one undo. The clone
+                                        // becomes the active page (mirrors onAddPage).
+                                        onDuplicatePage={
+                                          infiniteCanvas
+                                            ? undefined
+                                            : (id) => {
+                                                const r = editor.exec<unknown, string>(
+                                                  "weave.page.duplicate",
+                                                  { itemId: id },
+                                                );
+                                                if (r.ok) {
+                                                  setSelectedFrameId(r.value);
+                                                  setActivePageId(r.value);
+                                                }
+                                              }
+                                        }
                                       />
                                     </div>,
                                     document.body,
