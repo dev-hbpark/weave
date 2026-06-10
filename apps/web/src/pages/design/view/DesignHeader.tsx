@@ -105,6 +105,10 @@ export interface DesignHeaderProps {
   readonly onHandTool: () => void;
   readonly onTogglePeek: () => void;
   readonly onOpenSlidePicker: () => void;
+  /** WI-162 — flavor's user-facing page-unit noun ("슬라이드" / "페이지").
+   *  Labels the Add menu's page section; view receives the resolved string
+   *  (no registry lookup here). */
+  readonly pageNoun: string;
   readonly onAddMedia: (kind: "image" | "video") => void;
   readonly onAddItem: UseItemAdd["addNewItem"];
   readonly onSetBackground: (color: string) => void;
@@ -129,6 +133,7 @@ export function DesignHeader({
   onHandTool,
   onTogglePeek,
   onOpenSlidePicker,
+  pageNoun,
   onAddMedia,
   onAddItem,
   onSetBackground,
@@ -281,13 +286,13 @@ export function DesignHeader({
             </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" sideOffset={6}>
-            <DropdownMenuLabel>슬라이드</DropdownMenuLabel>
+            <DropdownMenuLabel>{pageNoun}</DropdownMenuLabel>
             <DropdownMenuItem
               icon={<IconFrame size={16} />}
               onSelect={onOpenSlidePicker}
               data-testid="add-slide"
             >
-              슬라이드…
+              {pageNoun}…
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuLabel>미디어</DropdownMenuLabel>

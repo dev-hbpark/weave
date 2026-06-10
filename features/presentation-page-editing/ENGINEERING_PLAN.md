@@ -223,3 +223,17 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
     크롬은 body 포털이라 항상 회수 가능.
   - 검증: 유닛 969/969(`rotatedAabb` 7건 추가) · gates green · SVL 8/8(삭제 — 좌/우 핀
     공식값 정확 일치) · e2e 3건(`page-group-clamp.spec.ts` 회전 케이스 추가) — 상세 WI-160.
+- **후속 — doc-page 전용 툴바 분리 여부 결정 (마지막 잔여 슬라이스, WI-162)**:
+  - 결정: **분리 기각**. 툴바의 flavor 분기는 `infiniteCanvas` 단 하나뿐이고 doc-page는
+    page-bounded 측을 이미 공유 — 기능 분기 0. 분리는 577줄 DesignHeader 복제 또는 문자열
+    하나만 다른 레지스트리 = no-dead-config 위반. ContextualToolbar는 kind-게이트라 무관.
+    (`storage.ts`의 doc-page deprecation 주석은 제거된 legacy DemoDocPage 얘기 — flavor는 활성.)
+  - 유일한 실제 어긋남 = 용어: Add 메뉴 "슬라이드" 섹션/항목 + SlidePresetPicker 헤드라인이
+    doc-page에서도 "슬라이드". 해법: `DocFlavorMeta.pageNoun`(표시 메타데이터 →
+    `FLAVOR_REGISTRY`, FORMAT_EDITOR_CONFIG 아님 — canvas 동작이 아니고 slide-deck/doc-page는
+    canvas 설정 동일이라 파생 불가) — doc-page만 "페이지". 뷰는 prop으로 수신(레지스트리
+    조회 없음).
+  - 검증: e2e `format-page-noun.spec.ts` 2/2(doc-page "페이지…" + 픽커 헤드라인 일치,
+    slide-deck "슬라이드…" 유지) · 유닛 969/969 · gates green — 상세 WI-162.
+  - **WI-153 후속 슬라이스 체인 소진** (155 복제 · 157 카메라 fit · 159 그룹 클램프 ·
+    160 회전 클램프 · 162 툴바 결정).

@@ -63,4 +63,8 @@ P1~P5 전부 완료 (P5: 마법사 "Presentation" 카피 + 툴바는 기존 게�
 - ~~**회전 박스 경계 정합**~~ — **완료, [WI-160](WI-160-rotated-box-page-clamp.md)**
   (회전 AABB(`rotatedAabb`, 부모 종횡비 반영) 기준 델타 클램프 — 단일·그룹 모두; "비회전
   우선" stance 종료. AABB 근사 한계는 WI-160에 문서화).
-- doc-page 전용 툴바 분리 여부.
+- ~~doc-page 전용 툴바 분리 여부~~ — **결정 완료, [WI-162](WI-162-doc-page-toolbar-decision.md)**
+  (분리 기각 — 기능 분기 0, 유일한 어긋남은 용어 → `FLAVOR_REGISTRY.pageNoun` 표시 게이트만
+  추가: doc-page Add 메뉴/프리셋 픽커 "슬라이드"→"페이지").
+
+**후속 슬라이스 체인 소진** — 본 WI의 모든 잔여 항목이 별도 WI로 완료됨 (2026-06-10).

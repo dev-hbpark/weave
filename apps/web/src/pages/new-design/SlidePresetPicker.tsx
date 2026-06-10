@@ -51,6 +51,10 @@ export interface SlidePresetPickerProps {
    *  command-aware — keeps the component testable without a live editor. */
   readonly onPick: (presetId: string) => void;
   readonly locale?: "ko" | "en";
+  /** WI-162 — flavor's page-unit noun for the headline ("슬라이드" /
+   *  "페이지"). The Add-menu item that opens this dialog uses the same noun,
+   *  so the two must agree. */
+  readonly pageNoun?: string;
 }
 
 export function SlidePresetPicker({
@@ -58,6 +62,7 @@ export function SlidePresetPicker({
   onOpenChange,
   onPick,
   locale = "ko",
+  pageNoun = "슬라이드",
 }: SlidePresetPickerProps) {
   const registry = defaultPresetRegistry();
   const categories = useMemo(() => registry.listCategories(), [registry]);
@@ -68,7 +73,7 @@ export function SlidePresetPicker({
     return selectedCategoryId === "" ? [] : registry.listPresetsByCategory(selectedCategoryId);
   }, [registry, selectedCategoryId]);
 
-  const headline = locale === "ko" ? "슬라이드" : "Choose a slide layout";
+  const headline = locale === "ko" ? pageNoun : "Choose a layout";
   const description =
     locale === "ko"
       ? "카테고리를 고르면 추천 시작점이 나타나요. 삽입 후 자유롭게 편집할 수 있습니다."

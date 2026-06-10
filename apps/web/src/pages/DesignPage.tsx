@@ -82,6 +82,7 @@ import {
   type DocFlavor,
   type DomainKind,
   effectivePresentationOrder,
+  FLAVOR_REGISTRY,
   FULL_FRAME,
   firstChildOf,
   InteractionModeProvider,
@@ -1038,6 +1039,10 @@ function DesignPageBody() {
   // Page-bounded flavors (slide-deck / doc-page) keep the fit-to-viewport layout;
   // main.css's `overscroll-behavior-x: none` blocks the back-swipe there anyway.
   const infiniteCanvas = formatEditorConfig(currentFlavor).canvas === "infinite";
+  // WI-162 — flavor's page-unit noun ("슬라이드" / doc-page: "페이지") for the
+  // Add menu section + SlidePresetPicker headline. Display metadata, so it
+  // comes from FLAVOR_REGISTRY, not FORMAT_EDITOR_CONFIG.
+  const pageNoun = FLAVOR_REGISTRY[currentFlavor].pageNoun;
 
   // WI-153 P2 — page-bounded formats (slide-deck / doc-page) edit ONE page at a time.
   // `activePageId` scopes the canvas to a single page; the rail switches it. Infinite
@@ -2187,6 +2192,7 @@ function DesignPageBody() {
                                   }}
                                   onTogglePeek={peek.toggle}
                                   onOpenSlidePicker={() => setSlidePickerOpen(true)}
+                                  pageNoun={pageNoun}
                                   onAddMedia={(kind) => setPendingMedia({ action: "add", kind })}
                                   onAddItem={addNewItem}
                                   onSetBackground={setDesignBackgroundViaEditor}
@@ -2600,6 +2606,7 @@ function DesignPageBody() {
                                   slidePickerOpen={slidePickerOpen}
                                   onSlidePickerOpenChange={setSlidePickerOpen}
                                   onPickPreset={handlePickPreset}
+                                  pageNoun={pageNoun}
                                   paletteOpen={paletteOpen}
                                   onPaletteOpenChange={setPaletteOpen}
                                 />

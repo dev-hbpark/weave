@@ -392,6 +392,11 @@ export interface DocFlavorMeta {
   readonly accentVar: string;
   /** Default child kinds the toolbar's "Add" menu surfaces first. */
   readonly suggestedKinds: ReadonlyArray<DomainKind>;
+  /** WI-162 — user-facing noun for a top-level page unit ("슬라이드" vs
+   *  "페이지"). Display metadata, so it lives here next to label/tagline —
+   *  NOT in FORMAT_EDITOR_CONFIG (it is not canvas behavior, and slide-deck
+   *  vs doc-page share identical canvas config, so it cannot be derived). */
+  readonly pageNoun: string;
 }
 
 // WI-032 Phase 3 — flavor metadata still drives the wizard's marketing
@@ -408,6 +413,7 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     tagline: "Frames + primitives in one place",
     accentVar: "--accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
+    pageNoun: "슬라이드",
   },
   "slide-deck": {
     flavor: "slide-deck",
@@ -417,6 +423,7 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     tagline: "Slides, edited one page at a time",
     accentVar: "--domain-slide-accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
+    pageNoun: "슬라이드",
   },
   "canvas-board": {
     flavor: "canvas-board",
@@ -424,6 +431,7 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     tagline: "Free-form spatial canvas",
     accentVar: "--domain-canvas-accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
+    pageNoun: "슬라이드",
   },
   "doc-page": {
     flavor: "doc-page",
@@ -431,6 +439,7 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     tagline: "Text-first frames",
     accentVar: "--domain-block-accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
+    pageNoun: "페이지",
   },
 };
 

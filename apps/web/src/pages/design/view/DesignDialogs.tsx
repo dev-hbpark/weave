@@ -33,6 +33,8 @@ export interface DesignDialogsProps {
   readonly slidePickerOpen: boolean;
   readonly onSlidePickerOpenChange: (open: boolean) => void;
   readonly onPickPreset: (presetId: string) => void;
+  /** WI-162 — flavor's page-unit noun for the picker headline. */
+  readonly pageNoun: string;
   // CommandPalette (WI-026)
   readonly paletteOpen: boolean;
   readonly onPaletteOpenChange: (open: boolean) => void;
@@ -57,6 +59,7 @@ export function DesignDialogs({
   slidePickerOpen,
   onSlidePickerOpenChange,
   onPickPreset,
+  pageNoun,
   paletteOpen,
   onPaletteOpenChange,
 }: DesignDialogsProps): React.ReactNode {
@@ -93,6 +96,7 @@ export function DesignDialogs({
         open={slidePickerOpen}
         onOpenChange={onSlidePickerOpenChange}
         onPick={onPickPreset}
+        pageNoun={pageNoun}
       />
       <CommandPalette open={paletteOpen} onOpenChange={onPaletteOpenChange} />
     </>
