@@ -252,3 +252,9 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
   - 검증: SVL 5/5(삭제) · 유닛 977/977(+8 contextRootId) · e2e 4건
     `page-artboard.spec.ts`(클릭 해제/드래그 불변/아이템 선택/escape hatch+핸들 0+Backspace
     생존/mixed 회귀) · gates green — 상세 WI-163.
+  - **후속 수정(사용자 보고 "드래그 선택 시 곡률 핸들")**: ① 마키 `getFrames`가 최상위만
+    hit-test → page-bounded에선 밴드가 항상 페이지를 선택(페이지 안 아이템 마키 선택 자체가
+    불가능했음) → **활성 페이지 직계 자식**을 페이지 박스로 합성해 후보로 전환(infinite 분기
+    불변) ② 아트보드 크롬이 잠금 필터를 재사용해 비변형(곡률 custom) spec이 잔존 → 아트보드는
+    spec 전면 `[]`(캔버스 핸들 0). e2e 5/5(신규 마키 테스트 + 핸들 총 0 단언) — 상세 WI-163
+    후속 절.

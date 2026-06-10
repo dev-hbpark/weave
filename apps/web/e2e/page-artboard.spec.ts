@@ -148,14 +148,13 @@ test("Cmd-click selects the page (fill escape hatch) without transform handles; 
   await page.keyboard.up("ControlOrMeta");
   await expect.poll(async () => (await selectionState(page)).itemId).toBe(pageId);
 
-  // Selected, but the artboard exposes NO resize / rotate handles. Wait for
-  // the selection chrome to actually mount (non-transform specs — e.g. the
-  // corner-radius "custom" handle — survive the filter, same as DR-061 lock)
-  // so an empty read can't be a not-yet-rendered false pass.
-  await expect
-    .poll(() => page.evaluate(() => document.querySelectorAll("[data-handle-kind]").length))
-    .toBeGreaterThan(0);
-  expect(await transformHandles(page)).toEqual([]);
+  // Selected, but the artboard exposes NO canvas handles at all — transform
+  // AND kind handles (the corner-radius "custom" handle included). The
+  // contextual toolbar (the escape hatch's purpose: page-fill editing)
+  // anchors the chrome-mounted wait so an empty read can't be a
+  // not-yet-rendered false pass.
+  await expect(page.getByTestId("contextual-toolbar")).toBeVisible();
+  expect(await page.evaluate(() => document.querySelectorAll("[data-handle-kind]").length)).toBe(0);
 
   // Backspace on the deep-selected page → the page survives.
   await page.keyboard.press("Backspace");
@@ -167,6 +166,30 @@ test("Cmd-click selects the page (fill escape hatch) without transform handles; 
     return w.__weaveDoc?.root.children.length ?? 0;
   });
   expect(count).toBeGreaterThanOrEqual(1);
+});
+
+test("marquee drag selects items INSIDE the page, never the page", async ({ page }) => {
+  await prepareDesign(page, { flavor: "slide-deck" });
+  const { id: pageId } = await pageInfo(page);
+  const shapeId = await seedShapeInPage(page, pageId);
+
+  // Band fully containing the shape (page-relative 0.1..0.3 × 0.4..0.6),
+  // started on the empty page body below the launch banner. Before the
+  // WI-163 follow-up the marquee hit-tested top-level frames only — the band
+  // always intersected the page and selected IT (corner-radius handle shown).
+  const box = await page
+    .locator(`[data-frame-id="${pageId}"]:not([data-thumbnail-id])`)
+    .boundingBox();
+  if (box === null) throw new Error("no page box");
+  const px = (rx: number) => box.x + box.width * rx;
+  const py = (ry: number) => box.y + box.height * ry;
+  await page.mouse.move(px(0.05), py(0.33));
+  await page.mouse.down();
+  await page.mouse.move(px(0.45), py(0.75), { steps: 10 });
+  await page.mouse.up();
+
+  // The in-page item gets selected — not the page.
+  await expect.poll(async () => (await selectionState(page)).itemId).toBe(shapeId);
 });
 
 test("mixed (infinite canvas) regression — a top-level frame stays fully manipulable", async ({

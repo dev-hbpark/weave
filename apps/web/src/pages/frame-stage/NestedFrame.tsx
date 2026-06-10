@@ -763,14 +763,20 @@ export function NestedFrame({
                 ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
                 : undefined;
             const locked = isItemLocked(item);
-            // WI-163 — the artboard (deep-click escape hatch selection) reuses
-            // the DR-061 filter: no transform handles. Unlike locked, no badge
-            // below — the page is an artboard, not a locked object.
+            // WI-163 — the artboard (deep-click escape hatch selection) exposes
+            // NO canvas handles at all — transform AND kind handles (corner
+            // radius etc.): the page is editing chrome, not an object. Fill
+            // editing rides the contextual toolbar, which is not a handle spec.
+            // Unlike locked, no badge below — an artboard is not a locked item.
             const isArtboard = itemId === artboardId;
-            const handles = applyLayoutConstraintFilter(
-              selectionChromeRef.current?.resolve(info) ?? [],
-              constraints,
-              locked || isArtboard, // DR-061 — locked → no transform handles
+            const handles = (
+              isArtboard
+                ? []
+                : applyLayoutConstraintFilter(
+                    selectionChromeRef.current?.resolve(info) ?? [],
+                    constraints,
+                    locked, // DR-061 — locked → no transform handles
+                  )
             ).map((spec) => {
               const pos = resolveAnchor(spec.anchor, bounds);
               return {

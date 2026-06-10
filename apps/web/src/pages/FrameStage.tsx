@@ -1862,57 +1862,96 @@ export function FrameStage(props: FrameStageProps) {
               <MarqueeSelectionLayer
                 containerSize={{ width: designWidth, height: designHeight }}
                 clientToLocal={clientToDesignLocal}
-                getFrames={() =>
+                getFrames={() => {
                   // WI-153 P4 — `frames` (not raw root.children): page-bounded
                   // stacks hidden FULL_FRAME pages at the same coords; a marquee
                   // hit-testing the raw doc would scoop invisible pages into the
                   // selection. Infinite canvas → frames === all top frames.
-                  frames
-                    // WI-039 — focus-gate parity with single-click. A dimmed
-                    // (stage 1) or isolated (stage 2) frame carries
-                    // pointer-events:none, so a click never lands on it; the
-                    // marquee hit-tests document geometry directly and would
-                    // otherwise still scoop it into a drag selection. Exclude
-                    // the same id sets the per-frame hit gate consults so both
-                    // selection paths agree on what is interactive.
-                    .filter((c) => {
-                      const id = String(c.id);
-                      return (
-                        !(props.dimmedFrameIds?.has(id) ?? false) &&
-                        !(props.isolatedFrameIds?.has(id) ?? false)
-                      );
-                    })
-                    .map((c) => {
-                      const f = (c.attrs as { frame?: ItemFrame }).frame ?? {
-                        x: 0,
-                        y: 0,
-                        width: 1,
-                        height: 1,
-                        rotation: 0,
-                      };
-                      // Hit-test against the item's axis-aligned OUTER bounds so
-                      // a rotated frame is marquee-selected by its visible
-                      // extent, not its unrotated slot. rotation 0 → the raw box.
-                      // (Top-level children live in the unrotated root space, so
-                      // the box maps straight to design px.)
-                      const wpx = f.width * designWidth;
-                      const hpx = f.height * designHeight;
-                      const cx = (f.x + f.width / 2) * designWidth;
-                      const cy = (f.y + f.height / 2) * designHeight;
-                      const rot = f.rotation ?? 0;
-                      const co = Math.abs(Math.cos(rot));
-                      const si = Math.abs(Math.sin(rot));
-                      const bw = wpx * co + hpx * si;
-                      const bh = wpx * si + hpx * co;
-                      return {
-                        id: String(c.id),
-                        x: cx - bw / 2,
-                        y: cy - bh / 2,
-                        width: bw,
-                        height: bh,
-                      };
-                    })
-                }
+                  // WI-163 — page-bounded: the page itself is an ARTBOARD and is
+                  // never marquee-selectable. The marquee hit-tests the active
+                  // page's DIRECT children instead, composed through the page
+                  // box into design space (page rotation is always 0 — the
+                  // artboard transform gates guarantee it).
+                  const pageF =
+                    activePage === undefined
+                      ? undefined
+                      : ((activePage.attrs as { frame?: ItemFrame }).frame ?? {
+                          x: 0,
+                          y: 0,
+                          width: 1,
+                          height: 1,
+                          rotation: 0,
+                        });
+                  const candidates =
+                    activePage !== undefined && pageF !== undefined
+                      ? activePage.children.filter(isDomainItem).map((c) => {
+                          const f = (c.attrs as { frame?: ItemFrame }).frame ?? {
+                            x: 0,
+                            y: 0,
+                            width: 1,
+                            height: 1,
+                            rotation: 0,
+                          };
+                          return {
+                            id: String(c.id),
+                            frame: {
+                              x: pageF.x + f.x * pageF.width,
+                              y: pageF.y + f.y * pageF.height,
+                              width: f.width * pageF.width,
+                              height: f.height * pageF.height,
+                              rotation: f.rotation ?? 0,
+                            },
+                          };
+                        })
+                      : frames.map((c) => ({
+                          id: String(c.id),
+                          frame: (c.attrs as { frame?: ItemFrame }).frame ?? {
+                            x: 0,
+                            y: 0,
+                            width: 1,
+                            height: 1,
+                            rotation: 0,
+                          },
+                        }));
+                  return (
+                    candidates
+                      // WI-039 — focus-gate parity with single-click. A dimmed
+                      // (stage 1) or isolated (stage 2) frame carries
+                      // pointer-events:none, so a click never lands on it; the
+                      // marquee hit-tests document geometry directly and would
+                      // otherwise still scoop it into a drag selection. Exclude
+                      // the same id sets the per-frame hit gate consults so both
+                      // selection paths agree on what is interactive.
+                      .filter(
+                        ({ id }) =>
+                          !(props.dimmedFrameIds?.has(id) ?? false) &&
+                          !(props.isolatedFrameIds?.has(id) ?? false),
+                      )
+                      .map(({ id, frame: f }) => {
+                        // Hit-test against the item's axis-aligned OUTER bounds so
+                        // a rotated frame is marquee-selected by its visible
+                        // extent, not its unrotated slot. rotation 0 → the raw box.
+                        // (Top-level children live in the unrotated root space, so
+                        // the box maps straight to design px.)
+                        const wpx = f.width * designWidth;
+                        const hpx = f.height * designHeight;
+                        const cx = (f.x + f.width / 2) * designWidth;
+                        const cy = (f.y + f.height / 2) * designHeight;
+                        const rot = f.rotation ?? 0;
+                        const co = Math.abs(Math.cos(rot));
+                        const si = Math.abs(Math.sin(rot));
+                        const bw = wpx * co + hpx * si;
+                        const bh = wpx * si + hpx * co;
+                        return {
+                          id,
+                          x: cx - bw / 2,
+                          y: cy - bh / 2,
+                          width: bw,
+                          height: bh,
+                        };
+                      })
+                  );
+                }}
                 acceptTarget={emptyRegionAccept}
                 onSelectIntent={(intent, ids) => {
                   onMarqueeSelect?.(intent, ids);

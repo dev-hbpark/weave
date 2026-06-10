@@ -88,3 +88,38 @@ escape hatch 회수 가능.)
   y=0.4), mixed는 스타터 콘텐츠 시드(`children.at(-1)` 사용).
 - **게이트**: tsc / biome / tokencheck / declarativecheck / puritycheck /
   inheritancecheck 모두 green.
+
+## 후속 수정 (2026-06-10) — 마키 선택 페이지 누수 + 곡률 핸들 잔존
+
+사용자 보고:
+
+> 드레그로 선택되면 페이지에 곡률 핸들이 보여
+
+원인 2개 (본체 슬라이스의 누락):
+
+1. **마키가 페이지를 선택** — `FrameStage`의 MarqueeSelectionLayer `getFrames`가
+   **최상위 프레임만** hit-test 후보로 반환. page-bounded에선 최상위 = 페이지뿐이라
+   밴드가 항상 페이지와 교차 → 페이지가 선택됨 (마키로 페이지 *안* 아이템을 선택할
+   방법 자체가 없었음 — 캔바 모델 위반 + 마키 무용지물).
+2. **곡률(custom) 핸들 잔존** — #3 핸들 억제가 DR-061 잠금 필터
+   (`applyLayoutConstraintFilter(..., locked ‖ isArtboard)`)를 재사용했는데, 잠금
+   필터는 **비변형 spec(곡률 "custom" 핸들)을 의도적으로 유지**한다. 잠금 아이템엔
+   맞는 의미지만 아트보드엔 누수.
+
+수정:
+
+1. `FrameStage` marquee `getFrames`: `activePage !== undefined`(page-bounded)면
+   후보 = **활성 페이지의 직계 자식**(도메인 아이템), 프레임은 페이지 박스로 합성
+   (`pageF.x + f.x * pageF.width`, ...). 페이지 회전은 아트보드 게이트가 0을 보장.
+   infinite canvas 분기(`frames.map`)는 불변 — 기존 WI-039 dim/isolation 필터와
+   회전-AABB px 매핑은 양 분기 공통 적용.
+2. `NestedFrame` 크롬: 아트보드는 잠금 필터 경유 대신 **spec 전면 `[]`** — 변형
+   핸들뿐 아니라 kind 핸들(곡률)까지 캔버스 핸들 0. 잠금 배지는 `locked`만 (불변).
+
+검증: e2e `page-artboard.spec.ts` 5/5 — 신규 ④ "마키 드래그는 페이지 안 아이템을
+선택, 페이지는 절대 아님" + ③ 강화(컨텍스트 툴바 가시화 앵커 후
+`[data-handle-kind]` **총 0개** 단언 — 이전 앵커였던 "핸들>0 폴링"은 전면 억제로
+무효). page-group-clamp 3/3 · multi-marquee-flow · rotation-hover-marquee-align
+통과(마키 회귀 없음 — infinite 분기 no-op 확인), `marquee-select.spec.ts` 단독
+실행 실패는 기록된 standalone networkidle 플레이크(멀티 스위트 통과). 유닛
+977/977 · tsc · biome · 4 구조 게이트 green.
