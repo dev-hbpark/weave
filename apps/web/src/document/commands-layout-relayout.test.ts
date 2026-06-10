@@ -48,10 +48,6 @@ function createdFrame(patches: ReadonlyArray<Patch>): Record<string, number> | u
 
 function spyTargets(): WeaveCommandTargets {
   return {
-    addItem: vi.fn(),
-    removeItem: vi.fn(),
-    updateItem: vi.fn(),
-    updateBehavior: vi.fn(),
     reset: vi.fn(),
   };
 }

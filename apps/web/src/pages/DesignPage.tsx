@@ -547,9 +547,8 @@ function DesignPageBody() {
   const {
     design,
     docInAgocraft,
-    addItem: rawAddItem,
-    removeItem: rawRemoveItem,
-    updateBehavior: rawUpdateBehavior,
+    // WI-156 / DR-112 — `rawUpdateItem` is kept only for its `typeof` below; all
+    // UI mutations route through `editor.exec`, never these direct setters.
     updateItem: rawUpdateItem,
     reset: rawReset,
     applyChange,
@@ -563,11 +562,9 @@ function DesignPageBody() {
   } = useDesign(designId);
   const { editor, vm, router, selectionChrome, sync } = useWeaveEditor({
     docInAgocraft,
+    // WI-156 / DR-112 — `reset` is the only host hook commands may reach (the
+    // sole snapshot boundary); every other mutation is patch-borne via exec.
     commandTargets: {
-      addItem: rawAddItem,
-      removeItem: rawRemoveItem,
-      updateItem: rawUpdateItem,
-      updateBehavior: rawUpdateBehavior,
       reset: rawReset,
     },
     applyChange,
@@ -1480,8 +1477,8 @@ function DesignPageBody() {
       if (it !== undefined && isItemLocked(it)) return;
       removeItem(frameId);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- removeItem
-    // closes over `rawRemoveItem` from useDesign which is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- removeItem is the
+    // stable editor.exec("weave.item.remove") wrapper defined above.
   }, []);
   // DR-061 — lock/unlock toggle slot. Operates on the WHOLE current selection
   // (single OR multi): lock ALL if any is unlocked, else unlock all. Batched so
@@ -1922,13 +1919,16 @@ function DesignPageBody() {
     return setFrameDuplicator((frameId) => {
       // Stub: drop a fresh item of the same kind next to the hovered
       // one. Real copy-of-attrs duplication is a follow-up.
+      // WI-156 / DR-112 — route through the command/patch path (was a direct
+      // `rawAddItem` setter call that bypassed history + sync — the last live
+      // patch-stream bypass).
       const kind = hoverContext.hoveredKind;
       if (kind === "none" || kind === "handle" || kind === "hotspot" || kind === "background")
         return;
       void frameId;
-      rawAddItem(kind as DomainKind);
+      editor.exec("weave.item.add", { kind: kind as DomainKind });
     });
-  }, [rawAddItem, hoverContext.hoveredKind]);
+  }, [editor, hoverContext.hoveredKind]);
   // WI-035 P2 — QuickActionBar "+" button on hovered frame. Inserts a
   // default-sized child frame directly without a sub-menu (single-
   // click affordance; tool hotkeys + drag-to-add tile cover other kinds).

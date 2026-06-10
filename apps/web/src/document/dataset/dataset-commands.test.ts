@@ -16,10 +16,6 @@ const META_DATE = "2026-06-02T00:00:00Z";
 
 function targets(): WeaveCommandTargets {
   return {
-    addItem: vi.fn(),
-    removeItem: vi.fn(),
-    updateItem: vi.fn(),
-    updateBehavior: vi.fn(),
     reset: vi.fn(),
   };
 }

@@ -11,10 +11,6 @@ import { defaultPresetRegistry } from "../../../document/presets/default-registr
 import { WEAVE_COMMAND_SCHEMAS } from "./weave-command-schemas.js";
 
 const noopTargets: WeaveCommandTargets = {
-  addItem: () => {},
-  removeItem: () => {},
-  updateItem: () => {},
-  updateBehavior: () => {},
   reset: () => {},
 };
 

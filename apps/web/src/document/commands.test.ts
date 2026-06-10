@@ -34,6 +34,7 @@ import {
   checkAddedItemMinSize,
   MIN_ITEM_AREA_PX2,
   MIN_ITEM_SIDE_PX,
+  SNAPSHOT_BOUNDARY_COMMANDS,
   type WeaveCommandTargets,
 } from "./commands.js";
 import type { CameraTargetBehavior, Item, Document as WeaveDocument } from "./types.js";
@@ -44,10 +45,6 @@ function spyTargets() {
   // WI-032 Phase 3b — `updateShape` / `removeShape` removed alongside the
   // legacy `canvas-design` kind.
   const targets: WeaveCommandTargets = {
-    addItem: vi.fn(),
-    removeItem: vi.fn(),
-    updateItem: vi.fn(),
-    updateBehavior: vi.fn(),
     reset: vi.fn(),
   };
   return targets;
@@ -241,6 +238,81 @@ describe("buildWeaveCommands — direct (Phase 2)", () => {
   });
 });
 
+// WI-156 / DR-112 — delta-persistence completeness gate.
+//
+// The barrier-A invariant for delta save: every document mutation is captured by
+// the patch stream, so `snapshot + replay(patches)` is a lossless substitute for
+// a full re-serialize. This gate locks the two facts that make that true:
+//   (1) a command can reach host state outside the patch stream ONLY via the
+//       `reset` target — `WeaveCommandTargets` exposes nothing else — and the
+//       commands that DO mutate emit real patches without touching that hook;
+//   (2) `reset` is the one declared snapshot boundary (emits no patch by design).
+// If a future command introduces a new bypass (a new host hook, or a mutating
+// command that emits `[]`), one of these assertions fails — by design.
+describe("delta-persistence completeness gate (WI-156)", () => {
+  it("SNAPSHOT_BOUNDARY_COMMANDS is exactly {weave.doc.reset}", () => {
+    // The single source the future delta sink reads to decide "drop the log,
+    // take a fresh snapshot". Adding a new patch-less mutating command is a
+    // conscious act that must update this set (and this assertion).
+    expect([...SNAPSHOT_BOUNDARY_COMMANDS].sort()).toEqual(["weave.doc.reset"]);
+  });
+
+  it("WeaveCommandTargets exposes only `reset` — the sole non-patch host hook", () => {
+    // Structural lock: the proxy/host can only satisfy `{ reset }`. Any new
+    // bypass requires widening the interface (a deliberate, reviewable change).
+    const targets = spyTargets();
+    expect(Object.keys(targets)).toEqual(["reset"]);
+  });
+
+  it("mutating commands emit real patches and never touch the host `reset` hook", () => {
+    // A representative spread across the patch variants: create / remove /
+    // attrs / document.attrs / unit.create. Each must (a) return ≥1 patch and
+    // (b) leave `targets.reset` untouched — i.e. the mutation lives entirely in
+    // the patch stream, replayable without a side-channel.
+    const exercises: ReadonlyArray<{ name: string; input: unknown }> = [
+      { name: "weave.item.add", input: { kind: "frame" } },
+      { name: "weave.item.remove", input: { itemId: "slide-1" } },
+      {
+        name: "weave.item.update",
+        input: {
+          itemId: "slide-1",
+          patch: (it: Item) => ({ ...it, attrs: { ...it.attrs, title: "X" } as never }),
+        },
+      },
+      { name: "weave.design.setBackground", input: { color: "#123456" } },
+      { name: "weave.design.setPresentationOrder", input: { order: ["slide-1"] } },
+    ];
+    for (const ex of exercises) {
+      const targets = spyTargets();
+      const cmd = buildWeaveCommands(targets).find((c) => c.name === ex.name);
+      if (cmd === undefined) throw new Error(`command not found: ${ex.name}`);
+      const result = cmd.run(makeCtx(), ex.input as never);
+      if (!result.ok) throw new Error(`${ex.name} failed: ${result.error?.code ?? "?"}`);
+      // Mutating commands are NOT snapshot boundaries → they must carry a patch.
+      expect(
+        result.patches.length,
+        `${ex.name} emitted no patch — a patch-stream loss`,
+      ).toBeGreaterThan(0);
+      // …and they must not reach the one non-patch host hook.
+      expect(targets.reset, `${ex.name} touched targets.reset`).not.toHaveBeenCalled();
+    }
+  });
+
+  it("the only command that emits no patch (reset) is a declared boundary", () => {
+    // Inverse guard: scan the boundary set's sole member and confirm it really
+    // is patch-less + host-hook-driven (so the set isn't lying), and that the
+    // exercised mutating commands above are NOT in the set.
+    const targets = spyTargets();
+    const reset = buildWeaveCommands(targets).find((c) => c.name === "weave.doc.reset");
+    if (reset === undefined) throw new Error("reset not found");
+    const result = reset.run(makeCtx(), undefined);
+    if (!result.ok) throw new Error("reset failed");
+    expect(result.patches).toEqual([]);
+    expect(SNAPSHOT_BOUNDARY_COMMANDS.has("weave.doc.reset")).toBe(true);
+    expect(SNAPSHOT_BOUNDARY_COMMANDS.has("weave.item.add")).toBe(false);
+  });
+});
+
 describe("buildWeaveCommands — patch-emitting (Phase 4b)", () => {
   it("weave.item.update returns an item.attrs Patch with before/after — no targets call", () => {
     const targets = spyTargets();
@@ -250,7 +322,9 @@ describe("buildWeaveCommands — patch-emitting (Phase 4b)", () => {
       itemId: "slide-1",
       patch: (it: Item) => ({ ...it, attrs: { ...it.attrs, title: "Updated" } as never }),
     });
-    expect(targets.updateItem).not.toHaveBeenCalled();
+    // WI-156 — the only host hook is `reset`; a patch-emitting command must
+    // never touch it (the mutation lives entirely in the patch stream).
+    expect(targets.reset).not.toHaveBeenCalled();
     if (!result.ok) throw new Error("unexpected fail");
     expect(result.patches).toHaveLength(1);
     const patch = result.patches[0];
@@ -272,7 +346,7 @@ describe("buildWeaveCommands — patch-emitting (Phase 4b)", () => {
       behaviorId: "cam-1",
       patch: (b: CameraTargetBehavior) => ({ ...b, label: "Renamed" }),
     });
-    expect(targets.updateBehavior).not.toHaveBeenCalled();
+    expect(targets.reset).not.toHaveBeenCalled();
     if (!result.ok) throw new Error("unexpected fail");
     const patch = result.patches[0];
     if (patch === undefined || patch.type !== "unit.attrs") throw new Error("expected unit.attrs");

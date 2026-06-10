@@ -29,10 +29,6 @@ import { listDatasets, resolveDataset } from "./dataset-store.js";
 
 function targets(): WeaveCommandTargets {
   return {
-    addItem: vi.fn(),
-    removeItem: vi.fn(),
-    updateItem: vi.fn(),
-    updateBehavior: vi.fn(),
     reset: vi.fn(),
   };
 }

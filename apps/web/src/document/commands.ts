@@ -1,23 +1,24 @@
-// WI-013 Phase 2 / 4b — weave doc mutations as `@agocraft/editor` Commands.
+// WI-013 / WI-024 / WI-156 — weave doc mutations as `@agocraft/editor` Commands.
 //
-// Two flavors of command, by what produces the state change:
+// **Every command is patch-emitting and lossless.** A command reads the current
+// doc via `ctx.document` and returns real, self-contained `Patch[]` describing
+// the change. The TransactionRunner emits Changes; `useDocument`'s ChangeStream
+// subscriber applies them via `applyChangeToDocument`; History sees real patches.
+// Adds/removes carry the FULL subtree in the patch (WI-024 / DR-026):
+//   • `weave.item.add`     → `item.create { parentId, position, item: SerializedItem }`
+//   • `weave.item.remove`  → `item.remove { parentId, position, item: SerializedItem }`
+//   • behavior add/remove  → `unit.create` / `unit.remove` (full Unit body)
+// so undo/redo and remote sync need no `PendingCreations` side-channel. (The old
+// "Direct, no item.create patch type" model this header used to describe was
+// retired by WI-024 — agocraft core has carried `item.create`/`item.remove`
+// since v9 / WI-018. See DR-112.)
 //
-//   1. **Patch-emitting (Phase 4b)** — `weave.item.update`, `weave.shape.update`,
-//      `weave.shape.remove`, `weave.behavior.update`. These read the current
-//      doc via `ctx.document`, compute real `Patch[]` describing the change,
-//      and **do not** touch the host setter directly. The TransactionRunner
-//      emits Changes, and `useDocument`'s ChangeStream subscriber applies
-//      them to state via `applyChangeToDocument`. History sees real patches.
-//
-//   2. **Direct (Phase 2 + 4)** — `weave.item.add`, `weave.item.remove`,
-//      `weave.doc.reset`. These call the host setter directly because the
-//      Patch model can't carry a brand-new Item (no `item.create` patch
-//      type). They still emit a summary `item.children` Patch for
-//      observability — History.undo() of an add can't restore the original
-//      Item until a side-channel ships the full Item with the Patch (Phase 5).
-//
-// Callbacks signature (`WeaveCommandTargets`) stays the same so the host
-// (`useWeaveEditor`) can register both flavors uniformly.
+// **The single exception is `weave.doc.reset`** — it mutates host state via
+// `targets.reset()` and emits NO patch. It is therefore a declared *snapshot
+// boundary* (`SNAPSHOT_BOUNDARY_COMMANDS` below), not a loss: the future delta
+// sink treats it as "drop the patch log, start a fresh snapshot". This is the
+// ONLY way a command reaches host state outside the patch stream — enforced by
+// `WeaveCommandTargets` exposing only `{ reset }` (WI-156 / DR-112 A3).
 
 import type {
   Item as AgocraftItem,
@@ -125,17 +126,27 @@ import type { DomainKind, InteractionBehavior, ItemFrame, Item as WeaveItem } fr
  *  WI-032 Phase 3b — `updateShape` / `removeShape` were removed alongside
  *  the legacy `canvas-design.attrs.shapes[]` data shape. Shape primitives
  *  are now first-class Items; their attrs flow through `updateItem`. */
+// WI-156 / DR-112 A3 — the ONLY host-state hook a command may reach outside the
+// patch stream. Every other mutation flows through `ctx.document` → `Patch[]`, so
+// the patch stream is a complete substitute for the full snapshot. `reset` stays
+// here because it clears the doc wholesale (a snapshot boundary, not a patch).
+// The pre-WI-024 members (addItem/removeItem/updateItem/updateBehavior) were
+// vestigial — no command called them once add/remove became `item.create`/
+// `item.remove` patches — so they are removed. Widening this interface again is
+// the deliberate act required to introduce a new bypass; the type guards it.
 export interface WeaveCommandTargets {
-  readonly addItem: (kind: DomainKind) => void;
-  readonly removeItem: (itemId: string) => void;
-  readonly updateItem: (itemId: string, patch: (it: WeaveItem) => WeaveItem) => void;
-  readonly updateBehavior: (
-    itemId: string,
-    behaviorId: string,
-    patch: (b: InteractionBehavior) => InteractionBehavior,
-  ) => void;
   readonly reset: () => void;
 }
+
+/**
+ * WI-156 / DR-112 — commands that mutate document state OUTSIDE the patch stream
+ * and must therefore be treated as snapshot boundaries by any delta-persistence
+ * sink ("drop the patch log, take a fresh snapshot"). Single source of truth —
+ * the completeness gate (commands.test.ts) asserts this set stays exact, and the
+ * future delta sink reads it instead of hard-coding the name. Today `reset` is
+ * the only such command (it emits `[]` and calls `targets.reset()`).
+ */
+export const SNAPSHOT_BOUNDARY_COMMANDS: ReadonlySet<string> = new Set(["weave.doc.reset"]);
 
 export interface AddItemInput {
   readonly kind: DomainKind;
@@ -929,6 +940,10 @@ export function buildWeaveCommands(
   // them all; each removal patch targets the item's OWN parent (resolved from
   // the pre-mutation doc) so items across different parents delete correctly.
   const removeItems = createRemoveItemsCommand("weave.items.remove");
+  // WI-156 / DR-112 — the sole snapshot-boundary command (see
+  // SNAPSHOT_BOUNDARY_COMMANDS). It clears the whole doc via the one allowed
+  // host hook and emits NO patch by design; a delta sink reads it as "drop the
+  // log, start a fresh snapshot" rather than as a lost mutation.
   const reset: Command<void, void> = {
     name: "weave.doc.reset",
     run: () => {
@@ -1825,10 +1840,14 @@ export function buildWeaveCommands(
   // so Cmd+Z works on design-level mutations. The host's `applyChange`
   // reducer applies the patch to `design.document.attrs` and child-order.
   //
-  // Migration note: the legacy wrapper-level fields (`design.background`,
-  // `design.presentationOrder`) are scheduled to be folded into
-  // `document.attrs` in a follow-up PR; until then `use-design.ts` also
-  // mirrors these mutations to the wrapper for backward-compat readers.
+  // WI-156 / DR-112 — the session-mutable design-level fields (`background`,
+  // `presentationOrder`) ALREADY flow as `document.attrs` patches here, and
+  // `use-design.ts`'s applyChange mirror reflects them onto the wrapper for
+  // legacy readers. The remaining envelope fields (`title`, `width`, `height`)
+  // have no in-session mutation surface (no rename / canvas-resize UI), so they
+  // ride the initial snapshot and need no patch — the earlier "fold into
+  // document.attrs in a follow-up PR" note is moot. A future rename/resize
+  // feature must add its own `document.attrs`-emitting command at that time.
 
   const setBackground: Command<{ readonly color: string | null }, void> = {
     name: "weave.design.setBackground",

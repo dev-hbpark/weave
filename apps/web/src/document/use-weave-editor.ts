@@ -385,17 +385,11 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     // Indirect via ref so re-registers aren't needed when callbacks change.
     // Phase 4b+ — patch-emitting mutations (updateItem / updateBehavior)
     // route through `editor.exec` so any plugin caller goes through
-    // ChangeStream → History. Direct setters (add/remove/reset) stay on the
-    // targetsRef path; addItem is event-sourced via the pending side-channel.
+    // WI-156 / DR-112 — `reset` is the only host hook a command may reach (the
+    // sole snapshot boundary); every other mutation is patch-borne via
+    // ctx.document. The pre-WI-024 add/remove/update/updateBehavior proxy
+    // entries were vestigial (no command called them) and are removed.
     const proxy: WeaveCommandTargets = {
-      addItem: (kind) => targetsRef.current?.addItem(kind),
-      removeItem: (id) => targetsRef.current?.removeItem(id),
-      updateItem: (id, patch) => {
-        editor.exec("weave.item.update", { itemId: id, patch });
-      },
-      updateBehavior: (id, bid, patch) => {
-        editor.exec("weave.behavior.update", { itemId: id, behaviorId: bid, patch });
-      },
       reset: () => targetsRef.current?.reset(),
     };
     const offCommands = registerWeaveCommands(editor, proxy);
