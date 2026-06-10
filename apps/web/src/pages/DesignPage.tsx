@@ -1066,6 +1066,16 @@ function DesignPageBody() {
     if (doc === undefined) return false;
     return doc.root.children.some((c) => String(c.id) === id);
   }, []);
+  // WI-164 — same predicate as a render-time set, for memoized consumers that
+  // take data instead of a callback (hover-affordance projector). Empty on
+  // infinite canvas → the projector behaves exactly as before.
+  const artboardIds: ReadonlySet<string> = useMemo(
+    () =>
+      infiniteCanvas
+        ? new Set<string>()
+        : new Set(docInAgocraft.root.children.map((c) => String(c.id))),
+    [infiniteCanvas, docInAgocraft.root.children],
+  );
   // WI-153 P3 (DR-111 D5) — default add container. Page-bounded formats route
   // selection-less adds into the ACTIVE PAGE instead of the design root (root is
   // page chrome there, not an editing surface). Policy from the format registry;
@@ -2336,6 +2346,7 @@ function DesignPageBody() {
                                           designWidth={design.width}
                                           designHeight={design.height}
                                           selectedIds={selectedIds}
+                                          artboardIds={artboardIds}
                                         />
                                       )}
                                       background={design.background}
@@ -2662,7 +2673,16 @@ function DesignPageBody() {
                                   }}
                                 />
                                 <QuickActionBarAnchored
-                                  selectedFrameId={selectedFrameId ?? undefined}
+                                  // WI-164 — no quick actions on a page
+                                  // (artboard): the escape-hatch selection
+                                  // keeps ONLY the contextual toolbar
+                                  // (page-fill editing); insert/lock/delete
+                                  // are item actions a page never takes.
+                                  selectedFrameId={
+                                    selectedFrameId != null && !isArtboardId(selectedFrameId)
+                                      ? selectedFrameId
+                                      : undefined
+                                  }
                                   selectedIds={selectedIds}
                                   onInsertInFrame={(containerId, kind, options) => {
                                     // WI-036 follow-up / WI-044 — hover-open
@@ -3018,6 +3038,9 @@ interface HoverAffordanceMountProps {
   readonly designWidth: number;
   readonly designHeight: number;
   readonly selectedIds: ReadonlySet<string>;
+  /** WI-164 — page-bounded artboard ids (empty on infinite canvas). The
+   *  projector paints NO affordance for them — see projector docs. */
+  readonly artboardIds: ReadonlySet<string>;
 }
 
 /** WI-040 Phase 3 — design-plane resident hover overlay. Lives inside
@@ -3032,6 +3055,7 @@ function HoverAffordanceMount({
   designWidth,
   designHeight,
   selectedIds,
+  artboardIds,
 }: HoverAffordanceMountProps): ReactNodeAlias {
   const allowed = useEditAffordancesAllowed();
   const projection = useMemo(
@@ -3043,8 +3067,9 @@ function HoverAffordanceMount({
         designWidth,
         designHeight,
         selectedIds,
+        artboardIds,
       }),
-    [doc, hoveredKind, hoveredId, designWidth, designHeight, selectedIds],
+    [doc, hoveredKind, hoveredId, designWidth, designHeight, selectedIds, artboardIds],
   );
   if (!allowed) return null;
   return (

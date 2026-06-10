@@ -258,3 +258,17 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
     불변) ② 아트보드 크롬이 잠금 필터를 재사용해 비변형(곡률 custom) spec이 잔존 → 아트보드는
     spec 전면 `[]`(캔버스 핸들 0). e2e 5/5(신규 마키 테스트 + 핸들 총 0 단언) — 상세 WI-163
     후속 절.
+- **후속 — 아트보드 잔여 어포던스 제거 (사용자 보고 2건, WI-164)**:
+  - ① 레일 썸네일이 `data-frame-id`를 공유해 썸네일 호버가 캔버스 페이지 본체에
+    `HoverAffordanceLayer`를 칠함 ② 페이지 escape-hatch 선택 시 QuickActionBar
+    (insert/lock/delete — 아이템 전용)가 contextual toolbar와 함께 마운트.
+  - 해법: 프로젝터에 `artboardIds?: ReadonlySet<string>` 입력 추가 — 아트보드 호버
+    = EMPTY, parent 티어는 root처럼 스킵(빈 셋이면 수학적 no-op → mixed 불변).
+    DesignPage가 memoized `artboardIds` 셋 전달 + `QuickActionBarAnchored`의
+    `selectedFrameId`를 `!isArtboardId` 게이트로 undefined 처리.
+  - 검증: 유닛 981/981(+4 프로젝터) · e2e `page-artboard.spec.ts` 7/7(+2: 썸네일
+    호버 → 레이어 0 + in-page sanity, 페이지 선택 → quick-actions 0 + contextual
+    toolbar 유지) · gates green. 회귀 3건(hover-affordance :58/:87,
+    mode-gate-hardening :110)은 **기존 결함**으로 입증 — `clearAllDesigns`가 배너
+    dismissal 키까지 지워 런치 배너가 spec 프레임 위치를 덮음(dismissal 키 사전
+    세팅 시 동일 본문 PASS). 배너 치유는 별도 슬라이스 — 상세 WI-164.

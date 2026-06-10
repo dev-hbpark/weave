@@ -192,6 +192,63 @@ test("marquee drag selects items INSIDE the page, never the page", async ({ page
   await expect.poll(async () => (await selectionState(page)).itemId).toBe(shapeId);
 });
 
+test("rail thumbnail hover paints NO hover affordance on the page (WI-164)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "slide-deck" });
+  const { id: pageId } = await pageInfo(page);
+
+  // Hover the rail thumbnail — `useHoverContext` treats the tile like a
+  // canvas hover (data-frame-kind), which used to paint the page rect in
+  // the edit area through HoverAffordanceLayer.
+  const tile = page.locator(`[data-thumbnail-id="${pageId}"]`).first();
+  await tile.hover();
+  await page.waitForTimeout(300); // hover store + RAF settle
+  const tiers = await page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll('[data-testid="hover-affordance-layer"] [data-hover-tier]'),
+    )
+      .filter((el) => (el as HTMLElement).getBoundingClientRect().width > 0)
+      .map((el) => el.getAttribute("data-hover-tier")),
+  );
+  expect(tiers).toEqual([]);
+
+  // Sanity: hovering an in-page ITEM still paints (the gate is artboard-
+  // only, not a blanket page-bounded hover kill).
+  const shapeId = await seedShapeInPage(page, pageId);
+  const c = await centerOf(page, shapeId);
+  await page.mouse.move(c.x, c.y);
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll('[data-testid="hover-affordance-layer"] [data-hover-tier]'),
+        ).map((el) => el.getAttribute("data-hover-tier")),
+      ),
+    )
+    .toContain("hovered");
+});
+
+test("page selection (escape hatch) shows NO QuickActionBar (WI-164)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "slide-deck" });
+  const { id: pageId } = await pageInfo(page);
+  const shapeId = await seedShapeInPage(page, pageId);
+
+  // Baseline: a normal item selection DOES mount the bar.
+  const c = await centerOf(page, shapeId);
+  await page.mouse.click(c.x, c.y);
+  await expect.poll(async () => (await selectionState(page)).itemId).toBe(shapeId);
+  await expect(page.getByTestId("hover-quick-actions")).toBeVisible();
+
+  // Escape-hatch page selection: contextual toolbar stays (page-fill
+  // editing — the hatch's purpose), QuickActionBar must NOT mount.
+  const pc = await centerOf(page, pageId);
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.click(pc.x, pc.y);
+  await page.keyboard.up("ControlOrMeta");
+  await expect.poll(async () => (await selectionState(page)).itemId).toBe(pageId);
+  await expect(page.getByTestId("contextual-toolbar")).toBeVisible();
+  await expect(page.getByTestId("hover-quick-actions")).toHaveCount(0);
+});
+
 test("mixed (infinite canvas) regression — a top-level frame stays fully manipulable", async ({
   page,
 }) => {

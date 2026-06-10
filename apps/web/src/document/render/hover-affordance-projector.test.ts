@@ -329,3 +329,72 @@ describe("projectHoverAffordance — shape-kind DOMAIN item path", () => {
     expect(out).toEqual({ hovered: null, descendants: [], parent: null });
   });
 });
+
+// WI-164 — artboard exclusion (WI-163 pages). An artboard is an editing
+// context, not an object: hovering it (rail thumbnail or canvas page body)
+// projects nothing, and the parent tier skips it like the design root.
+describe("projectHoverAffordance — artboard exclusion (WI-164)", () => {
+  const pageTree = () =>
+    makeDoc([
+      makeItem("page", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 } }, [
+        makeItem("child", { frame: { x: 0.1, y: 0.1, width: 0.4, height: 0.4, rotation: 0 } }, [
+          makeItem("grandchild", { frame: { x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0 } }),
+        ]),
+      ]),
+    ]);
+
+  it("hovering an artboard projects EMPTY (no hovered / descendants / parent)", () => {
+    const out = projectHoverAffordance({
+      doc: pageTree(),
+      hoveredKind: "frame",
+      hoveredId: "page",
+      designWidth: DESIGN_W,
+      designHeight: DESIGN_H,
+      selectedIds: new Set(),
+      artboardIds: new Set(["page"]),
+    });
+    expect(out).toEqual({ hovered: null, descendants: [], parent: null });
+  });
+
+  it("hovering an item directly inside the page skips the page in the parent tier", () => {
+    const out = projectHoverAffordance({
+      doc: pageTree(),
+      hoveredKind: "frame",
+      hoveredId: "child",
+      designWidth: DESIGN_W,
+      designHeight: DESIGN_H,
+      selectedIds: new Set(),
+      artboardIds: new Set(["page"]),
+    });
+    expect(out.hovered?.id).toBe("child");
+    expect(out.descendants.map((d) => d.id)).toEqual(["grandchild"]);
+    expect(out.parent).toBeNull(); // page parent skipped like the root
+  });
+
+  it("deeper items keep their (non-artboard) direct parent tier", () => {
+    const out = projectHoverAffordance({
+      doc: pageTree(),
+      hoveredKind: "frame",
+      hoveredId: "grandchild",
+      designWidth: DESIGN_W,
+      designHeight: DESIGN_H,
+      selectedIds: new Set(),
+      artboardIds: new Set(["page"]),
+    });
+    expect(out.hovered?.id).toBe("grandchild");
+    expect(out.parent?.id).toBe("child");
+  });
+
+  it("omitting artboardIds keeps the WI-040 model unchanged (infinite canvas)", () => {
+    const out = projectHoverAffordance({
+      doc: pageTree(),
+      hoveredKind: "frame",
+      hoveredId: "page",
+      designWidth: DESIGN_W,
+      designHeight: DESIGN_H,
+      selectedIds: new Set(),
+    });
+    expect(out.hovered?.id).toBe("page");
+    expect(out.descendants.map((d) => d.id).sort()).toEqual(["child", "grandchild"]);
+  });
+});
