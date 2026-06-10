@@ -36,9 +36,14 @@ For UI work, **Design System Triage** is a Build (step 6) sub-step that runs bef
 
 Feature-level work should be possible mostly from `features/<feature>/`.
 
-## Code design conventions (precedence vs OS-root Rule 2)
+## Code design discipline (strong SOLID/GRASP + extension-first)
 
-weave is a host app, not a tree-shakeable library, and it consumes agocraft via vendored `@agocraft/*` packages. weave follows **OS-root `CODE_STRUCTURE_DESIGN_RULES.md` Rule 2 as written** — classes are fine for stateful runtime objects; weave does **not** adopt agocraft's stricter factory-only strengthening (agocraft DR-013). This is stated explicitly because weave sits next to agocraft, which strengthened the rule, so the difference is a recorded decision, not an inconsistency. All other rules apply unchanged: Rule 6 (no `switch`/`if-chain` on a closed-list discriminant — **including `operation`/`status`-style ones the lint gate misses**), Rule 2 named-export shape, Rule 4 / the single command-sourced mutation path above, and Rule 5 round-trip integrity for anything persisted to KV.
+weave is a host app consuming agocraft via vendored `@agocraft/*`. The OS-root spine (root `CLAUDE.md` § Core Engineering Principles + `CODE_STRUCTURE_DESIGN_RULES.md`) applies in full and is **strongly enforced**, not advisory:
+
+- **Extend by composition + registration, never inheritance.** New per-kind/-operation behavior is a registered adapter against a stable interface (Rule 3 / Rule 6), one adapter per file — `DOMAIN_RENDERERS`, `toolbarSectionRegistry`, `SelectionChromeRegistry`, `ATTRS_NORMALIZERS`, `INTENT_FROM_OPERATION`. Never a `switch (kind)` or a subtype-per-kind class tree. `extends` only `Error` / a forced React/framework base, ≤ 1 level.
+- **A design pattern is applied only when it serves a named SOLID/GRASP principle AND opens an extension point** — run `solid-grasp-review` before any non-trivial surface; a pattern without a principle is rejected.
+- **Class vs function = the consumption boundary, not preference.** weave is an app, so internal/app code **may use classes for stateful runtime objects** (stores, controllers, state machines) — weave does NOT adopt agocraft's factory-only DR-013. The two invariants hold regardless of that choice: **composition over inheritance** and **no decorator / `reflect-metadata` DI**. Any package weave *publishes* (e.g. `@weave/design-system`) exports free functions / factories at its public surface (tree-shaking).
+- Rule 6 also covers `operation`/`status`/`role`-style discriminants the lint gate misses; Rule 4 = the single command-sourced mutation path (below, § "Document mutation rule"); Rule 5 round-trip for anything persisted to KV.
 
 ## Document mutation rule — every change goes through History
 
