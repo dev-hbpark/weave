@@ -19,8 +19,9 @@
 //
 // The toolbar/drop paths never go through this proxy; their retarget lives in
 // the host (use-item-add / DesignPage onDropAdd) with the same policy source
-// (FORMAT_EDITOR_CONFIG.defaultContainer — there is deliberately NO separate
-// `agentRootAdd` registry field; it would always mirror `defaultContainer`).
+// (the editor mode's InsertionPolicy.containerFor, WI-166 — there is
+// deliberately NO separate `agentRootAdd` policy field; it would always
+// mirror the insertion policy).
 
 /** Retarget an agent `weave.item.add` aimed at the doc ROOT into the host's
  *  default add container (the active page on page-bounded formats).

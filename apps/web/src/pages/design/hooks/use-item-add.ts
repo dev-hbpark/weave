@@ -44,9 +44,10 @@ export interface UseItemAddParams {
   readonly addGeometryRef: React.MutableRefObject<AddGeometryFn>;
   /** WI-153 P3 (DR-111 D5) — fallback container when nothing (or a non-frame)
    *  is selected. Page-bounded formats mirror the ACTIVE PAGE id here so adds
-   *  land in the page, not the design root; infinite canvas mirrors undefined
-   *  (→ root, unchanged). Policy comes from FORMAT_EDITOR_CONFIG.defaultContainer
-   *  — resolved by the orchestrator, never by a flavor compare here (Rule 6). */
+   *  land in the page, not the design root; free placement mirrors undefined
+   *  (→ root, unchanged). Policy comes from the editor mode's InsertionPolicy
+   *  (WI-166) — resolved by the orchestrator, never by a flavor compare here
+   *  (Rule 6). */
   readonly defaultAddContainerIdRef: React.MutableRefObject<string | undefined>;
   readonly designWidth: number;
   readonly designHeight: number;

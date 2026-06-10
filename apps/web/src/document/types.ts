@@ -394,8 +394,9 @@ export interface DocFlavorMeta {
   readonly suggestedKinds: ReadonlyArray<DomainKind>;
   /** WI-162 — user-facing noun for a top-level page unit ("슬라이드" vs
    *  "페이지"). Display metadata, so it lives here next to label/tagline —
-   *  NOT in FORMAT_EDITOR_CONFIG (it is not canvas behavior, and slide-deck
-   *  vs doc-page share identical canvas config, so it cannot be derived). */
+   *  NOT in the editor-mode registry (it is not canvas behavior, and
+   *  slide-deck vs doc-page share identical canvas policies, so it cannot
+   *  be derived). */
   readonly pageNoun: string;
   /** WI-165 — product readiness of the flavor. "coming-soon" flavors render
    *  as disabled tiles in the new-design wizard (the engine may already

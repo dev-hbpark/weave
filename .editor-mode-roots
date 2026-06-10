@@ -3,3 +3,4 @@
 # Everything else imports editor-mode/types only and receives policies by
 # injection. Checked by tools/check_editor_mode_boundary.sh.
 apps/web/src/pages/DesignPage.tsx
+apps/web/src/pages/PresentPage.tsx

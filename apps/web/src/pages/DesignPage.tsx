@@ -123,7 +123,6 @@ import { EditorModeProvider } from "../document/editor-mode/EditorModeProvider.j
 import { editorModeFor } from "../document/editor-mode/registry.js";
 import { capabilityOf, type ItemCapabilities } from "../document/editor-mode/types.js";
 import { useExportImport } from "../document/export-import/use-export-import.js";
-import { formatEditorConfig } from "../document/format-editor-config.js";
 import {
   croppingState,
   isCroppingNow,
@@ -651,7 +650,7 @@ function DesignPageBody() {
 
   // Bounding rect ref for the canvas host — used to translate clientX/Y to
   // design-space coords. The math assumes the design plane is fit-scaled
-  // (uniform scale, letterboxed) inside `main`. infiniteCanvas zoom is not
+  // (uniform scale, letterboxed) inside `main`. User camera zoom is not
   // accounted for — peek's hit-test will be slightly off when zoomed in/out.
   // Acceptable v1; refine via FrameStage transform exposure in a follow-up.
   //
@@ -1036,29 +1035,11 @@ function DesignPageBody() {
   const rootFlavor = ((docInAgocraft.root.attrs.flavor as DocFlavor | undefined) ??
     "mixed") as DocFlavor;
   const currentFlavor: DocFlavor = rootFlavor;
-  // WI-153 / DR-111 — per-format editor behavior comes from FORMAT_EDITOR_CONFIG
-  // (Rule 6: one config per format, not an inline `flavor === ...` chain). The
-  // infinite-canvas surface (Figma-style two-finger pan + user zoom) is the
-  // `canvas: "infinite"` policy — mixed + canvas-board (free-placement seed model,
-  // see document/seed.ts); without it the wheel-pan listener never attaches and a
-  // trackpad two-finger swipe falls through to the browser's back/forward gesture.
-  // Page-bounded flavors (slide-deck / doc-page) keep the fit-to-viewport layout;
-  // main.css's `overscroll-behavior-x: none` blocks the back-swipe there anyway.
-  const infiniteCanvas = formatEditorConfig(currentFlavor).canvas === "infinite";
   // WI-162 — flavor's page-unit noun ("슬라이드" / doc-page: "페이지") for the
   // Add menu section + SlidePresetPicker headline. Display metadata, so it
-  // comes from FLAVOR_REGISTRY, not FORMAT_EDITOR_CONFIG.
+  // comes from FLAVOR_REGISTRY, not the editor-mode registry.
   const pageNoun = FLAVOR_REGISTRY[currentFlavor].pageNoun;
 
-  // WI-153 P2 — page-bounded formats (slide-deck / doc-page) edit ONE page at a time.
-  // `activePageId` scopes the canvas to a single page; the rail switches it. Infinite
-  // canvas → activePageId undefined → all frames render (unchanged).
-  const presentationOrder = useMemo(() => effectivePresentationOrder(design), [design]);
-  const { activePageId, setActivePageId } = useActivePage(presentationOrder, !infiniteCanvas);
-  const visibleFrameIds = useMemo(
-    () => (!infiniteCanvas && activePageId !== undefined ? new Set([activePageId]) : undefined),
-    [infiniteCanvas, activePageId],
-  );
   // WI-166 / DR-114 — the composed editor-mode context for this flavor.
   // RolePolicy is the truth source for the WI-163 page(artboard) rules:
   // a stage (root-direct item on page-bounded flavors) is a fixed editing
@@ -1068,6 +1049,19 @@ function DesignPageBody() {
   const editorMode = editorModeFor(currentFlavor);
   const editorModeRef = useRef(editorMode);
   editorModeRef.current = editorMode;
+  // WI-153 P2 — page-chrome flavors (slide-deck / doc-page) edit ONE page at
+  // a time. `activePageId` scopes the canvas to a single page; the rail
+  // switches it. Free placement → activePageId undefined → all frames render
+  // (unchanged). Both come from the injected ViewPolicy now.
+  const presentationOrder = useMemo(() => effectivePresentationOrder(design), [design]);
+  const { activePageId, setActivePageId } = useActivePage(
+    presentationOrder,
+    editorMode.view.pageChrome,
+  );
+  const visibleFrameIds = useMemo(
+    () => editorMode.view.visibleFrames(docInAgocraft, activePageId),
+    [editorMode, docInAgocraft, activePageId],
+  );
   const itemCapability = useCallback((id: string): ItemCapabilities => {
     const { roles } = editorModeRef.current;
     const doc = docInAgocraftRef.current;
@@ -1092,10 +1086,10 @@ function DesignPageBody() {
   }, [editorMode, docInAgocraft]);
   // WI-153 P3 (DR-111 D5) — default add container. Page-bounded formats route
   // selection-less adds into the ACTIVE PAGE instead of the design root (root is
-  // page chrome there, not an editing surface). Policy from the format registry;
-  // ref-mirrored so useItemAdd's stable closures read the live value.
-  const defaultAddContainerId =
-    formatEditorConfig(currentFlavor).defaultContainer === "active-page" ? activePageId : undefined;
+  // page chrome there, not an editing surface). Policy from the injected
+  // InsertionPolicy; ref-mirrored so useItemAdd's stable closures read the
+  // live value.
+  const defaultAddContainerId = editorMode.insertion.containerFor(docInAgocraft, activePageId);
   const defaultAddContainerIdRef = useRef(defaultAddContainerId);
   defaultAddContainerIdRef.current = defaultAddContainerId;
   // WI-153 P2.5 — measure the thumbnail rail (variable height) so the page-bounded
@@ -1114,11 +1108,11 @@ function DesignPageBody() {
     measure();
     return () => ro.disconnect();
   }, [railEl]);
-  // Inset the base fit only for page-bounded formats (infinite keeps its full-plane
-  // fit + free pan). 48 = DesignHeader h-12.
+  // Inset the base fit only for page-chrome flavors (free placement keeps its
+  // full-plane fit + free pan). 48 = DesignHeader h-12.
   const fitInset = useMemo(
-    () => (!infiniteCanvas ? { top: 48, bottom: railHeight } : undefined),
-    [infiniteCanvas, railHeight],
+    () => (editorMode.view.pageChrome ? { top: 48, bottom: railHeight } : undefined),
+    [editorMode, railHeight],
   );
   // WI-153 P4 — latest-value mirror so the hover bridge (deps: [hoverContext]) can
   // gate on the active page without re-subscribing.
@@ -1218,17 +1212,19 @@ function DesignPageBody() {
     designHeight: design.height,
   });
 
-  // WI-153 P4 — agent working-camera on page-bounded formats must also SWITCH the
+  // WI-153 P4 — agent working-camera on page-chrome flavors must also SWITCH the
   // active page: only the active page renders, so fitting the camera to a hidden
   // slide would show nothing. Membership-guarded against the page order —
   // `setActivePageId` falls back to the FIRST page for unknown ids
   // (resolveActivePage), so passing a non-page id would wrongly jump the view.
   const handleAgentZoomToFrame = useCallback(
     (frameId: string) => {
-      if (!infiniteCanvas && presentationOrder.includes(frameId)) setActivePageId(frameId);
+      if (editorMode.view.pageChrome && presentationOrder.includes(frameId)) {
+        setActivePageId(frameId);
+      }
       handleZoomToFrame(frameId);
     },
-    [infiniteCanvas, presentationOrder, setActivePageId, handleZoomToFrame],
+    [editorMode, presentationOrder, setActivePageId, handleZoomToFrame],
   );
 
   // WI-033 P2 dead-code cleanup — `enteredFrameStack` consumer +
@@ -1240,8 +1236,9 @@ function DesignPageBody() {
   // in the same WI-033 P2 step.
 
   // DR-027 / WI-071 Phase 1 — V/H hand-tool toggle (vm.handTool single source +
-  // V/H hotkeys) extracted to a view-model hook.
-  const { handMode, setHandMode } = useHandTool({ vm, infiniteCanvas });
+  // V/H hotkeys) extracted to a view-model hook. Bound only when the
+  // CameraPolicy grants the drag-pan gesture.
+  const { handMode, setHandMode } = useHandTool({ vm, enabled: editorMode.camera.dragPan });
 
   // WI-039 — Reparent drag controller (Cmd/Ctrl + Shift + drag).
   // Reads the current document + selection on each gesture frame via
@@ -2233,7 +2230,7 @@ function DesignPageBody() {
                                     designTitle={design.title}
                                     designId={designId}
                                     designBackground={design.background}
-                                    infiniteCanvas={infiniteCanvas}
+                                    panTools={editorMode.camera.dragPan}
                                     handMode={handMode}
                                     peekActive={peek.isActive}
                                     onSelectTool={() => {
@@ -2375,14 +2372,11 @@ function DesignPageBody() {
                                         document={docInAgocraft}
                                         editor={editor}
                                         editing={true}
-                                        // WI-166 / DR-114 — injected RolePolicy
-                                        // (FrameStage knows the interface only).
+                                        // WI-166 / DR-114 — injected policies
+                                        // (FrameStage knows the interfaces only).
                                         roles={editorMode.roles}
-                                        infiniteCanvas={infiniteCanvas}
-                                        // WI-153 P2.5 — the editor always allows zoom
-                                        // (decoupled from the placement model), and
-                                        // page-bounded fits inside the header + rail.
-                                        cameraEnabled={true}
+                                        view={editorMode.view}
+                                        camera={editorMode.camera}
                                         fitInset={fitInset}
                                         handMode={handMode}
                                         // WI-033 P2 — enteredId / onEnter (drill-in mode,
@@ -2523,7 +2517,15 @@ function DesignPageBody() {
                           (SelectionLayer 40 / MarqueeSelection 42 / RubberBand
                           45). Hoisted to body so z-[46] competes with them
                           directly. */}
-                                  {typeof document !== "undefined" &&
+                                  {/* WI-166 / DR-114 §4 — the call site reads RailPolicy
+                          and fills/empties the panel's declarative slots
+                          ("no prop → no render"); the panel never sees the
+                          policy. P2 behavior changes land here: mixed loses
+                          the "+" add-page tile (addPage false); slide-deck /
+                          doc-page lose the non-slide section, the deck
+                          toggle and the focus eye. */}
+                                  {editorMode.rail.visible &&
+                                    typeof document !== "undefined" &&
                                     createPortal(
                                       <div
                                         ref={setRailEl}
@@ -2535,45 +2537,71 @@ function DesignPageBody() {
                                           selectedId={selectedFrameId}
                                           onSelect={(id) => {
                                             setSelectedFrameId(id);
-                                            // WI-153 P2 — in page-bounded formats a rail
-                                            // click switches the active page (the canvas
-                                            // shows one page at a time).
-                                            if (!infiniteCanvas && id !== undefined)
+                                            // WI-153 P2 — RailPolicy.clickActivatesPage:
+                                            // a rail click switches the active page (the
+                                            // canvas shows one page at a time).
+                                            if (
+                                              editorMode.rail.clickActivatesPage &&
+                                              id !== undefined
+                                            ) {
                                               setActivePageId(id);
+                                            }
                                           }}
                                           focusedId={focusedId}
                                           focusStage={focusStage}
                                           disabledFrameIds={disabledFrameIds}
-                                          onCycleFocus={handleCycleFocus}
-                                          onClearFocus={handleClearFocus}
+                                          // WI-039 focus eye — free placement only (a
+                                          // single rendered page has nothing to dim).
+                                          onCycleFocus={
+                                            editorMode.rail.focusCycle
+                                              ? handleCycleFocus
+                                              : undefined
+                                          }
+                                          onClearFocus={
+                                            editorMode.rail.focusCycle
+                                              ? handleClearFocus
+                                              : undefined
+                                          }
                                           onZoomToFrame={handleZoomToFrame}
-                                          onToggleSlide={toggleFrameSlide}
-                                          onAddPage={() => {
-                                            // WI-153 P2 — add a blank page (top-level
-                                            // frame) and make it the active page.
-                                            const r = editor.exec<unknown, string>(
-                                              "weave.item.add",
-                                              {
-                                                kind: "frame",
-                                                frame: FULL_FRAME,
-                                              },
-                                            );
-                                            if (r.ok) {
-                                              setSelectedFrameId(r.value);
-                                              if (!infiniteCanvas) setActivePageId(r.value);
-                                            }
-                                          }}
+                                          // WI-072 deck toggle + non-slide section — same
+                                          // free-placement-only policy pair.
+                                          onToggleSlide={
+                                            editorMode.rail.slideToggle
+                                              ? toggleFrameSlide
+                                              : undefined
+                                          }
+                                          showNonSlideSection={editorMode.rail.nonSlideSection}
+                                          onAddPage={
+                                            editorMode.rail.addPage
+                                              ? () => {
+                                                  // WI-153 P2 — add a blank page (top-level
+                                                  // frame) and make it the active page.
+                                                  const r = editor.exec<unknown, string>(
+                                                    "weave.item.add",
+                                                    {
+                                                      kind: "frame",
+                                                      frame: FULL_FRAME,
+                                                    },
+                                                  );
+                                                  if (r.ok) {
+                                                    setSelectedFrameId(r.value);
+                                                    if (editorMode.rail.clickActivatesPage) {
+                                                      setActivePageId(r.value);
+                                                    }
+                                                  }
+                                                }
+                                              : undefined
+                                          }
                                           // WI-155 — page-bounded formats only (WI-153
-                                          // 결정 6 scope): infinite canvas keeps the
+                                          // 결정 6 scope): free placement keeps the
                                           // canvas-side duplicate (0.02 nudge) instead.
                                           // The command clones in place (offset 0) AND
                                           // inserts the clone after the source in
                                           // presentationOrder — one undo. The clone
                                           // becomes the active page (mirrors onAddPage).
                                           onDuplicatePage={
-                                            infiniteCanvas
-                                              ? undefined
-                                              : (id) => {
+                                            editorMode.rail.duplicatePage
+                                              ? (id) => {
                                                   const r = editor.exec<unknown, string>(
                                                     "weave.page.duplicate",
                                                     { itemId: id },
@@ -2583,6 +2611,7 @@ function DesignPageBody() {
                                                     setActivePageId(r.value);
                                                   }
                                                 }
+                                              : undefined
                                           }
                                         />
                                       </div>,

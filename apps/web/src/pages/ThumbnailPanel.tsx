@@ -147,6 +147,12 @@ export interface ThumbnailPanelProps {
    *  footer copy action. The host execs `weave.page.duplicate` (offset-0 clone
    *  + presentationOrder insert-after, one undo) and activates the clone. */
   readonly onDuplicatePage?: ((id: string) => void) | undefined;
+  /** WI-166 / DR-114 §4 — render the non-slide (deck-excluded frames)
+   *  section. The host fills this from RailPolicy.nonSlideSection; the panel
+   *  itself stays policy-free (same "declarative slot" idea as the optional
+   *  callbacks above, but the section has no callback to elide). Default
+   *  true (free-placement behavior). */
+  readonly showNonSlideSection?: boolean | undefined;
 }
 
 /** WI-072 — small "deck membership" glyph (stacked rectangles). Active = the
@@ -258,6 +264,7 @@ export function ThumbnailPanel({
   onToggleSlide,
   onAddPage,
   onDuplicatePage,
+  showNonSlideSection = true,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
   useParams<{ id: string }>();
@@ -266,10 +273,14 @@ export function ThumbnailPanel({
   const entries = order
     .map((id) => findEntry(design.document.root, id, design.title))
     .filter((e): e is Entry => e !== undefined);
-  // WI-072 — frames the user opted OUT of the deck, shown in a separate section.
-  const nonSlideEntries = collectNonSlideFrameIds(design.document.root)
-    .map((id) => findEntry(design.document.root, id, design.title))
-    .filter((e): e is Entry => e !== undefined);
+  // WI-072 — frames the user opted OUT of the deck, shown in a separate
+  // section. WI-166: elided entirely when the rail policy says page-bounded
+  // (one page renders at a time — "excluded from the deck" has no meaning).
+  const nonSlideEntries = showNonSlideSection
+    ? collectNonSlideFrameIds(design.document.root)
+        .map((id) => findEntry(design.document.root, id, design.title))
+        .filter((e): e is Entry => e !== undefined)
+    : [];
 
   // Render nothing only when there are neither slides nor opted-out frames.
   if (entries.length === 0 && nonSlideEntries.length === 0) return null;

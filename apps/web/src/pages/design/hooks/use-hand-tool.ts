@@ -5,15 +5,16 @@ import { useCallback, useEffect } from "react";
 // DR-027 / WI-071 Phase 1 — extracted from DesignPageBody (hand/select tool
 // toggle). Behavior-preserving: the V/H tool mode lives on vm.handTool (single
 // source the FrameStage pan binding consults), and the V/H hotkeys bind only
-// when the infinite-canvas flavor is active. Other hotkey registrations
-// (selection navigator, item adder, Cmd+S bridge, editor hotkeys) stay in the
+// when the editor mode's CameraPolicy grants the drag-pan gesture (WI-166 —
+// the host passes `camera.dragPan`). Other hotkey registrations (selection
+// navigator, item adder, Cmd+S bridge, editor hotkeys) stay in the
 // orchestrator until their owning clusters are extracted — they interleave
 // with not-yet-moved state.
 
 export interface UseHandToolParams {
   readonly vm: EditorViewModel;
-  /** Mixed / infinite-canvas flavor — V/H hotkeys only bind when true. */
-  readonly infiniteCanvas: boolean;
+  /** CameraPolicy.dragPan — V/H hotkeys only bind when true. */
+  readonly enabled: boolean;
 }
 
 export interface UseHandTool {
@@ -22,7 +23,7 @@ export interface UseHandTool {
   readonly setHandMode: (next: boolean) => void;
 }
 
-export function useHandTool({ vm, infiniteCanvas }: UseHandToolParams): UseHandTool {
+export function useHandTool({ vm, enabled }: UseHandToolParams): UseHandTool {
   // V / H tool toggle (Figma parity). Stored on vm.handTool so the FrameStage
   // pan binding consults a single flag.
   const handMode = useEditorVM(vm, (v) => v.handTool.get());
@@ -35,7 +36,7 @@ export function useHandTool({ vm, infiniteCanvas }: UseHandToolParams): UseHandT
 
   // V / H hotkeys for select / hand modes (Figma parity).
   useEffect(() => {
-    if (!infiniteCanvas) return undefined;
+    if (!enabled) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target;
@@ -47,7 +48,7 @@ export function useHandTool({ vm, infiniteCanvas }: UseHandToolParams): UseHandT
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [infiniteCanvas, setHandMode]);
+  }, [enabled, setHandMode]);
 
   return { handMode, setHandMode };
 }

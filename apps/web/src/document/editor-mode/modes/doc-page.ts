@@ -5,10 +5,18 @@
 // DR-114 §7 — e.g. vertical page stack, "flow-block" role), never a
 // consumer.
 
+import { ACTIVE_PAGE_CAMERA } from "../pieces/camera.js";
+import { ACTIVE_PAGE_INSERTION } from "../pieces/insertion.js";
 import { ROOT_STAGE_ROLES } from "../pieces/item-roles.js";
+import { PAGE_LIFECYCLE_RAIL } from "../pieces/rail.js";
+import { ACTIVE_PAGE_VIEW } from "../pieces/view-frames.js";
 import type { EditorModeContext } from "../types.js";
 
 export const DOC_PAGE_MODE: EditorModeContext = {
   mode: "page-bounded",
   roles: ROOT_STAGE_ROLES,
+  view: ACTIVE_PAGE_VIEW,
+  camera: ACTIVE_PAGE_CAMERA,
+  insertion: ACTIVE_PAGE_INSERTION,
+  rail: PAGE_LIFECYCLE_RAIL,
 };

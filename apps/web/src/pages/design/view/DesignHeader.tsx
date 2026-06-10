@@ -95,8 +95,8 @@ export interface DesignHeaderProps {
   readonly designTitle: string;
   readonly designId: string;
   readonly designBackground: string | undefined;
-  /** Mixed/infinite-canvas flavor — gates the Select/Hand/Peek tool group. */
-  readonly infiniteCanvas: boolean;
+  /** CameraPolicy.dragPan (WI-166) — gates the Select/Hand/Peek tool group. */
+  readonly panTools: boolean;
   readonly handMode: boolean;
   readonly peekActive: boolean;
   /** Select tool: clears hand mode + sticky peek. */
@@ -126,7 +126,7 @@ export function DesignHeader({
   designTitle,
   designId,
   designBackground,
-  infiniteCanvas,
+  panTools,
   handMode,
   peekActive,
   onSelectTool,
@@ -194,7 +194,7 @@ export function DesignHeader({
 
       {/* biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface */}
       <div className="flex items-center gap-0.5" role="group" aria-label="Edit tools">
-        {infiniteCanvas ? (
+        {panTools ? (
           <>
             {/* Select / Hand / Peek — mutually-exclusive toggle group. Peek's
                 hold-mode (L key) remains orthogonal. */}

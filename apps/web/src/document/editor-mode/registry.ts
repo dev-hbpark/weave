@@ -28,7 +28,7 @@ export const EDITOR_MODES: Readonly<Record<DocFlavor, EditorModeContext>> = {
 
 /** Resolve the editor-mode context for a (possibly undefined / legacy)
  *  flavor; defaults to `mixed` so an unknown flavor never breaks the
- *  editor (inherited from formatEditorConfig's fallback). */
+ *  editor (long-standing fallback, predates this registry). */
 export function editorModeFor(flavor: DocFlavor | undefined): EditorModeContext {
   return (flavor !== undefined && EDITOR_MODES[flavor]) || EDITOR_MODES.mixed;
 }

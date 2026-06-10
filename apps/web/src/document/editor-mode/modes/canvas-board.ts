@@ -4,10 +4,18 @@
 // edits THIS file only (expected divergence sketched in DR-114 §7 — e.g.
 // rail-less board), never a consumer.
 
+import { FREE_CAMERA } from "../pieces/camera.js";
+import { ROOT_INSERTION } from "../pieces/insertion.js";
 import { ALL_ELEMENTS_ROLES } from "../pieces/item-roles.js";
+import { OVERVIEW_RAIL } from "../pieces/rail.js";
+import { ALL_FRAMES_VIEW } from "../pieces/view-frames.js";
 import type { EditorModeContext } from "../types.js";
 
 export const CANVAS_BOARD_MODE: EditorModeContext = {
   mode: "infinite",
   roles: ALL_ELEMENTS_ROLES,
+  view: ALL_FRAMES_VIEW,
+  camera: FREE_CAMERA,
+  insertion: ROOT_INSERTION,
+  rail: OVERVIEW_RAIL,
 };

@@ -16,11 +16,11 @@
 //
 // Growth contract (DR-114 §6): the context grows one policy interface per
 // concern, added as a REQUIRED key in the SAME change that migrates its
-// consumers (G1/G2). P1 ships `mode` + `roles`; ENGINEERING_PLAN P2 adds
-// view / camera / insertion / rail, P3 hit, P4 input. A policy stub without
-// consumers would be a second truth source next to the live branch it is
-// meant to absorb — exactly the dead-config drift §6-G5 forbids, so keys
-// land with their consumers, never ahead of them.
+// consumers (G1/G2). P1 shipped `mode` + `roles`; P2 added view / camera /
+// insertion / rail (dissolving FORMAT_EDITOR_CONFIG); P3 adds hit, P4 input.
+// A policy stub without consumers would be a second truth source next to the
+// live branch it is meant to absorb — exactly the dead-config drift §6-G5
+// forbids, so keys land with their consumers, never ahead of them.
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
 
@@ -93,10 +93,124 @@ export function capabilityOf(
   return roles.capabilities[roles.roleOf(doc, id)];
 }
 
+/** WI-153 P2 / DR-114 — what renders on the canvas and how the page reads
+ *  as chrome. Absorbs the `visibleFrameIds` memo, the matte/clip keying and
+ *  the active-page inference that used to hang off `infiniteCanvas`. */
+export interface ViewPolicy {
+  /** Which top-level frames render on the canvas. `undefined` = all of them
+   *  (free placement). Page-bounded flavors return `{ activePageId }` — one
+   *  page at a time. A future doc-page page-STACK is a new piece returning
+   *  every page id (DR-114 §7) — consumers are unchanged because this is a
+   *  function, not a flag. */
+  visibleFrames(
+    doc: AgocraftDocument,
+    activePageId: string | undefined,
+  ): ReadonlySet<string> | undefined;
+  /** The page is the editing CONTEXT chrome: paint the matte + page-edge
+   *  clip around the visible page, track an active page (rail click /
+   *  agent zoom switch it), and base-fit INSIDE the header/rail chrome.
+   *  False = free-placement plane (no page concept on the canvas). */
+  readonly pageChrome: boolean;
+  /** Arm the IntersectionObserver viewport culling (WI-058) — worth it when
+   *  frames can live far off-screen. Kept separate from `pageChrome`: a
+   *  doc-page page-stack would want chrome AND culling (DR-114 §7), so this
+   *  is not derivable (§6-G5 check passed). */
+  readonly viewportCulling: boolean;
+}
+
+/** Camera pan offset + zoom scale, in screen px / unitless scale — the same
+ *  triple `vm.camera` carries. */
+export interface CameraPan {
+  readonly tx: number;
+  readonly ty: number;
+  readonly scale: number;
+}
+
+/** Design-plane pixel box (the `DesignBox` shape FrameStage's camera fit
+ *  consumes). */
+export interface CameraFitBox {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** WI-153 P2.5 / WI-157 / DR-114 — what the camera is allowed to do.
+ *  Absorbs `cameraEnabled`, `panActive`'s mode gate, `paddingFactor` and the
+ *  WI-157 page-fit. */
+export interface CameraPolicy {
+  /** The design-px box the camera should auto-fit when the active page
+   *  changes, or `undefined` for "no camera move" (free placement always;
+   *  page-bounded when the page IS the design plane — FULL_FRAME). */
+  fitBox(
+    doc: AgocraftDocument,
+    activePageId: string | undefined,
+    designWidth: number,
+    designHeight: number,
+  ): CameraFitBox | undefined;
+  /** Constrain a proposed user pan/zoom. Identity = free pan. A function,
+   *  not an enum (DR-114 §6-G3): the expected doc-page "vertical pan only"
+   *  is a new piece, with zero consumer edits. Applied to USER camera
+   *  writes (wheel pan/zoom, zoom hotkeys) — programmatic fits (fitBox /
+   *  zoom-to-frame) are policy output already and bypass it. */
+  clampPan(current: CameraPan, proposed: CameraPan): CameraPan;
+  /** Base-fit breathing room (1 = fill the available box). */
+  readonly paddingFactor: number;
+  /** User-driven zoom/pan channel (ctrl/⌘+wheel zoom, ⌘± hotkeys, wheel
+   *  pan). Also what keeps the trackpad back-swipe suppressed — the
+   *  non-passive wheel listener only attaches when true. */
+  readonly userZoom: boolean;
+  /** Drag-to-pan gestures (Space-hold / hand tool, incl. the V/H hotkeys
+   *  and the header tool group). Distinct from `userZoom` (page-bounded
+   *  keeps wheel zoom but has no hand tool) and not derivable from
+   *  `clampPan` (a vertical-pan doc-page would drag-pan with a clamping
+   *  piece). P4's InputPolicy.bindings reads this for gesture mounts. */
+  readonly dragPan: boolean;
+}
+
+/** WI-153 P3 (DR-111 D5) / DR-114 — where a selection-less add lands.
+ *  Absorbs FORMAT_EDITOR_CONFIG.defaultContainer for use-item-add AND
+ *  agent-page-target (both receive the RESOLVED id — they stay policy-free). */
+export interface InsertionPolicy {
+  /** Container for an add when nothing (or a non-frame) is selected.
+   *  `undefined` = design root. Page-bounded flavors return the active
+   *  page (root is page chrome there, not an editing surface). */
+  containerFor(doc: AgocraftDocument, activePageId: string | undefined): string | undefined;
+}
+
+/** DR-114 §4 — how the bottom rail is composed. The ThumbnailPanel does NOT
+ *  know this policy: the DesignPage call site reads it and fills/empties the
+ *  panel's existing optional props (the "no prop → no render" slots are
+ *  already declarative). Booleans here are pass-through gates, not consumer
+ *  branches (§6-G3 allowed form). */
+export interface RailPolicy {
+  /** Render the rail at all. (Expected: a productized canvas-board has no
+   *  page concept → false candidate, DR-114 §7.) */
+  readonly visible: boolean;
+  /** Render the non-slide (deck-excluded frames) section. */
+  readonly nonSlideSection: boolean;
+  /** WI-072 deck-membership toggle (DeckGlyph). Meaningless without the
+   *  non-slide section. */
+  readonly slideToggle: boolean;
+  /** WI-039 eye focus-cycle (dim / isolate). Meaningless when only one page
+   *  renders at a time. */
+  readonly focusCycle: boolean;
+  /** WI-153 P2 trailing "+" new-page tile. */
+  readonly addPage: boolean;
+  /** WI-155 per-page duplicate footer action. */
+  readonly duplicatePage: boolean;
+  /** Rail tile click switches the active page (WI-153 P2). */
+  readonly clickActivatesPage: boolean;
+}
+
 /** The composed per-flavor editor context. One composition file per flavor
  *  under `modes/`, resolved through the EDITOR_MODES registry — a new
  *  flavor is one composition file + one registry row (DR-114 §6-G6). */
 export interface EditorModeContext {
   readonly mode: CanvasMode;
   readonly roles: RolePolicy;
+  readonly view: ViewPolicy;
+  readonly camera: CameraPolicy;
+  readonly insertion: InsertionPolicy;
+  readonly rail: RailPolicy;
 }

@@ -32,7 +32,7 @@ describe("EDITOR_MODES registry (DR-114)", () => {
     for (const f of FLAVORS) expect(EDITOR_MODES[f]).toBeDefined();
   });
 
-  it("declares the same canvas mode FORMAT_EDITOR_CONFIG did", () => {
+  it("declares the per-flavor canvas mode (mixed/canvas-board infinite, slide-deck/doc-page page-bounded)", () => {
     expect(editorModeFor("mixed").mode).toBe("infinite");
     expect(editorModeFor("canvas-board").mode).toBe("infinite");
     expect(editorModeFor("slide-deck").mode).toBe("page-bounded");
@@ -97,5 +97,114 @@ describe("RolePolicy (WI-163 absorbed predicate)", () => {
     };
     expect(capabilityOf(everythingIsStage, doc, "child-1").movable).toBe(false);
     expect(capabilityOf(everythingIsStage, doc, "child-1").selectable).toBe("deep-only");
+  });
+});
+
+// ─── P2 policies (WI-166 P2 / DR-114 §3-§4) ────────────────────────────────
+// View / Camera / Insertion / Rail rows must reproduce the prior scattered
+// `infiniteCanvas` / FORMAT_EDITOR_CONFIG behavior exactly, except the two
+// approved rail changes (mixed loses "+", page-bounded rail loses the
+// non-slide section / slide toggle / focus eye — DR-114 §4).
+
+describe("ViewPolicy (P2-a)", () => {
+  const doc = makeDoc([makeItem("page-1", "frame"), makeItem("page-2", "frame")]);
+
+  it("infinite flavors: all frames visible (undefined), no page chrome, culling on", () => {
+    for (const f of ["mixed", "canvas-board"] as const) {
+      const { view } = editorModeFor(f);
+      expect(view.visibleFrames(doc, "page-1")).toBeUndefined();
+      expect(view.pageChrome).toBe(false);
+      expect(view.viewportCulling).toBe(true);
+    }
+  });
+
+  it("page-bounded flavors: only the active page renders, page chrome on, culling off", () => {
+    for (const f of ["slide-deck", "doc-page"] as const) {
+      const { view } = editorModeFor(f);
+      expect(view.visibleFrames(doc, "page-1")).toEqual(new Set(["page-1"]));
+      expect(view.pageChrome).toBe(true);
+      expect(view.viewportCulling).toBe(false);
+    }
+  });
+
+  it("page-bounded with no active page renders nothing-filtered (undefined — the empty-deck matte edge)", () => {
+    expect(editorModeFor("slide-deck").view.visibleFrames(doc, undefined)).toBeUndefined();
+  });
+});
+
+describe("CameraPolicy (P2-a)", () => {
+  it("infinite flavors: free pan/zoom/drag, 0.9 fit padding, no page fit", () => {
+    const doc = makeDoc([makeItem("page-1", "frame")]);
+    for (const f of ["mixed", "canvas-board"] as const) {
+      const { camera } = editorModeFor(f);
+      expect(camera.userZoom).toBe(true);
+      expect(camera.dragPan).toBe(true);
+      expect(camera.paddingFactor).toBe(0.9);
+      expect(camera.fitBox(doc, "page-1", 1280, 720)).toBeUndefined();
+    }
+  });
+
+  it("page-bounded flavors: wheel zoom stays, hand/Space drag does not, 0.95 fit padding", () => {
+    for (const f of ["slide-deck", "doc-page"] as const) {
+      const { camera } = editorModeFor(f);
+      expect(camera.userZoom).toBe(true);
+      expect(camera.dragPan).toBe(false);
+      expect(camera.paddingFactor).toBe(0.95);
+    }
+  });
+
+  it("clampPan is identity on every flavor today (free pan — clamping is a future row)", () => {
+    const proposed = { tx: -9999, ty: 12345, scale: 0.07 };
+    for (const f of FLAVORS) {
+      const { camera } = editorModeFor(f);
+      expect(camera.clampPan({ tx: 0, ty: 0, scale: 1 }, proposed)).toEqual(proposed);
+    }
+  });
+});
+
+describe("InsertionPolicy (P2-c)", () => {
+  const doc = makeDoc([makeItem("page-1", "frame")]);
+
+  it("infinite flavors insert at the root (undefined container)", () => {
+    for (const f of ["mixed", "canvas-board"] as const) {
+      expect(editorModeFor(f).insertion.containerFor(doc, "page-1")).toBeUndefined();
+    }
+  });
+
+  it("page-bounded flavors insert into the active page", () => {
+    for (const f of ["slide-deck", "doc-page"] as const) {
+      expect(editorModeFor(f).insertion.containerFor(doc, "page-1")).toBe("page-1");
+      expect(editorModeFor(f).insertion.containerFor(doc, undefined)).toBeUndefined();
+    }
+  });
+});
+
+describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior changes)", () => {
+  it("infinite flavors: overview rail — sections/toggle/focus, NO page lifecycle (change ①: mixed loses '+')", () => {
+    for (const f of ["mixed", "canvas-board"] as const) {
+      expect(editorModeFor(f).rail).toEqual({
+        visible: true,
+        nonSlideSection: true,
+        slideToggle: true,
+        focusCycle: true,
+        addPage: false,
+        duplicatePage: false,
+        clickActivatesPage: false,
+      });
+    }
+  });
+
+  it("page-bounded flavors: lifecycle rail — add/duplicate/activate, NO overview affordances (change ②)", () => {
+    for (const f of ["slide-deck", "doc-page"] as const) {
+      expect(editorModeFor(f).rail).toEqual({
+        visible: true,
+        nonSlideSection: false,
+        slideToggle: false,
+        focusCycle: false,
+        addPage: true,
+        duplicatePage: true,
+        clickActivatesPage: true,
+      });
+    }
   });
 });

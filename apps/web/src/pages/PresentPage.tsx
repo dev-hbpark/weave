@@ -20,7 +20,7 @@ import {
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { DatasetProvider } from "../document/dataset/dataset-context.js";
 import { ParentFrameHeightContext } from "../document/domains/parent-frame-context.js";
-import { formatEditorConfig } from "../document/format-editor-config.js";
+import { editorModeFor } from "../document/editor-mode/registry.js";
 import { PresentRuntimeProvider } from "../document/interactions/present-runtime-context.js";
 import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
@@ -176,12 +176,14 @@ export function PresentPage() {
   // Presentation is read-only and server-first: always show the cloud copy,
   // falling back to a local offline copy only when the cloud is unreachable.
   const { design, docInAgocraft, isLoading } = useDesign(id ?? "", { preferCloud: true });
-  // WI-153 P5 (DR-111 D9) — page-bounded formats (slide-deck / doc-page) clip
+  // WI-153 P5 (DR-111 D9) — page-chrome flavors (slide-deck / doc-page) clip
   // each scene's content at the frame box so present matches the editor's
   // page-box clip (WYSIWYG). Same policy seam as the editor (Rule 6 — read
-  // from FORMAT_EDITOR_CONFIG, no inline flavor compares).
+  // from the editor-mode ViewPolicy, no inline flavor compares). PresentPage
+  // is a declared composition root (.editor-mode-roots): it resolves the
+  // flavor itself because no editor Provider exists on this route.
   const presentFlavor = (docInAgocraft.root.attrs.flavor as DocFlavor | undefined) ?? "mixed";
-  const clipScenes = formatEditorConfig(presentFlavor).canvas === "page-bounded";
+  const clipScenes = editorModeFor(presentFlavor).view.pageChrome;
   const [step, setStep] = useState(0);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
   // Phase 13d-4 — which scene's hover-effect is currently active. dim-others

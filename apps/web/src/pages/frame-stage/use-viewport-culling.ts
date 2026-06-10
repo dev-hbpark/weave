@@ -8,11 +8,11 @@ import {
 // extracted from FrameStage. One IntersectionObserver rooted at the
 // viewport-clipping element; frames register their wrapper via the returned
 // registry and the observer flips their `visibility` by ref-mutation (no
-// re-render). Only armed for the infinite canvas — stacked / fit flavors fit
-// the viewport so nothing is ever off-screen to cull.
+// re-render). Armed per the editor mode's ViewPolicy.viewportCulling (WI-166)
+// — page-chrome flavors fit the viewport so nothing is ever off-screen to cull.
 
 export function useViewportCulling(
-  infiniteCanvas: boolean,
+  enabled: boolean,
   outerRef: React.RefObject<HTMLElement | null>,
 ): ViewportCullRegistry | null {
   const cullCallbacks = useRef(new Map<Element, (visible: boolean) => void>());
@@ -21,7 +21,7 @@ export function useViewportCulling(
   // turns culling off for a baseline at identical geometry; DEV-gated per the
   // `window.__weave*` dev-globals rule (apps/web/CLAUDE.md).
   const cullEnabled =
-    infiniteCanvas &&
+    enabled &&
     !(
       import.meta.env.DEV &&
       (globalThis as { __weaveDisableCull?: boolean }).__weaveDisableCull === true
