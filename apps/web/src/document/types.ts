@@ -411,8 +411,10 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
   },
   "slide-deck": {
     flavor: "slide-deck",
-    label: "Slide deck",
-    tagline: "Sequential frames for presenting",
+    // WI-153 P5 — surfaced as "Presentation": page-bounded editing (one
+    // slide at a time) is the headline, not the underlying frame model.
+    label: "Presentation",
+    tagline: "Slides, edited one page at a time",
     accentVar: "--domain-slide-accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
   },

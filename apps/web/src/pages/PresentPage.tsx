@@ -8,6 +8,7 @@ import {
   type AgoItem,
   type CameraTargetBehavior,
   collectNonSlideFrameIds,
+  type DocFlavor,
   type EntranceAnimationBehavior,
   effectivePresentationOrder,
   FRAME_KINDS,
@@ -19,6 +20,7 @@ import {
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { DatasetProvider } from "../document/dataset/dataset-context.js";
 import { ParentFrameHeightContext } from "../document/domains/parent-frame-context.js";
+import { formatEditorConfig } from "../document/format-editor-config.js";
 import { PresentRuntimeProvider } from "../document/interactions/present-runtime-context.js";
 import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
@@ -57,6 +59,10 @@ interface PresentSceneProps {
   /** Phase 13d-4 — cross-scene visibility effects. */
   readonly isDimmed: boolean;
   readonly isRevealedByHover: boolean;
+  /** WI-153 P5 (DR-111 D9) — page-bounded formats clip scene content at the
+   *  frame box, mirroring the editor's page-box `overflow: clip` so edit =
+   *  present (WYSIWYG). Infinite-canvas formats keep the existing bleed. */
+  readonly clipContent: boolean;
   readonly onHoverChange: (
     next: { entryId: string; effect: HoverEffectBehavior } | undefined,
   ) => void;
@@ -71,6 +77,7 @@ function PresentScene({
   ariaCurrent,
   isDimmed,
   isRevealedByHover,
+  clipContent,
   onHoverChange,
   children,
 }: PresentSceneProps) {
@@ -118,10 +125,14 @@ function PresentScene({
         opacity: isDimmed ? 0.3 : 1,
         transform: isHighlight ? "scale(1.04)" : undefined,
         boxShadow: isHighlight ? "var(--shadow-glow)" : undefined,
+        // WI-153 P5 — clip children at the frame box (page-bounded WYSIWYG).
+        // Self transform / box-shadow are unaffected by own overflow.
+        overflow: clipContent ? "clip" : undefined,
         ...(revealedVisibility ?? {}),
       }}
       aria-current={ariaCurrent}
       data-testid="present-scene"
+      data-clip={clipContent ? "true" : undefined}
       data-entry-id={entryId}
       data-entrance-mode={entranceBehavior?.mode}
       data-hover-effect={hoverBehavior?.effect}
@@ -165,6 +176,12 @@ export function PresentPage() {
   // Presentation is read-only and server-first: always show the cloud copy,
   // falling back to a local offline copy only when the cloud is unreachable.
   const { design, docInAgocraft, isLoading } = useDesign(id ?? "", { preferCloud: true });
+  // WI-153 P5 (DR-111 D9) — page-bounded formats (slide-deck / doc-page) clip
+  // each scene's content at the frame box so present matches the editor's
+  // page-box clip (WYSIWYG). Same policy seam as the editor (Rule 6 — read
+  // from FORMAT_EDITOR_CONFIG, no inline flavor compares).
+  const presentFlavor = (docInAgocraft.root.attrs.flavor as DocFlavor | undefined) ?? "mixed";
+  const clipScenes = formatEditorConfig(presentFlavor).canvas === "page-bounded";
   const [step, setStep] = useState(0);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
   // Phase 13d-4 — which scene's hover-effect is currently active. dim-others
@@ -584,6 +601,7 @@ export function PresentPage() {
               }
               isDimmed={isDimmed}
               isRevealedByHover={isRevealedByHover}
+              clipContent={clipScenes}
               onHoverChange={setHoveredEntry}
             >
               {sceneBody}
@@ -591,7 +609,7 @@ export function PresentPage() {
           ),
         };
       }),
-    [cameraTargets, safeStep, design.width, design.height, hoveredEntry],
+    [cameraTargets, safeStep, design.width, design.height, hoveredEntry, clipScenes],
   );
 
   // Combined scenes — root primitives + camera-target frames, sorted by

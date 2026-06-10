@@ -143,3 +143,22 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
   - SVL 9/9: 매트 드롭→활성 페이지(루트 자식 불변), 2페이지 스택에서 러버밴드 커밋→활성 page2(p1
     불변), 매트 alt-drag 무반응(팝오버/새 프레임 0), 마퀴가 숨은 page1 미선택, mixed 매트 드롭은
     여전히 root(회귀 0). 유닛 926/926(신규 agent-page-target 8 + page-scope 4) · gates green.
+- **P5 완료 — 생성/크롬 + 발표 클립 정합 (D9)**:
+  - ① 마법사 카피: `FLAVOR_REGISTRY["slide-deck"]` label "Slide deck"→**"Presentation"**, tagline
+    "Slides, edited one page at a time" — 페이지 단위 편집이 헤드라인(카피는 레지스트리 단일 소스,
+    마법사 코드 무변경).
+  - ② 툴바 슬림화: **추가 작업 없음** — Select/Hand/Peek/그리드 스냅은 이미 `infiniteCanvas` 게이트
+    뒤(P2), page-bounded 헤더는 추가/실행취소/파일/배경/테마/저장/Present만 노출(전부 슬라이드 저작
+    적합). 기록으로 충족 처리.
+  - ③ 발표 클립 정합: PresentPage가 `formatEditorConfig(flavor).canvas === "page-bounded"`일 때
+    각 camera-target 씬(`PresentScene`)에 `overflow: clip` + `data-clip` — 편집기의 페이지 박스
+    클립과 동일한 정책 시임(Rule 6, 인라인 flavor 비교 없음). 활성 페이지가 어느 깊이든 "그
+    프레임이 활성일 때 박스에서 클립"이 편집과 1:1. 자기 transform(hover scale)/box-shadow는 자기
+    overflow에 안 잘림. 루트 프리미티브/non-slide 씬은 무클립 유지(편집에선 아예 비표시 — 별개
+    표면). **Export(PNG/PDF/인쇄) 경로는 현재 미존재** — 시각 출력 표면은 Present뿐이라 클립
+    정합은 Present로 완결; export 기능이 생기면 같은 시임을 읽을 것.
+  - 부수: 다른 세션 커밋(71e6d7a)이 깨뜨린 `reparent-font.test.ts` non-null assertion 린트 2건을
+    biome safe-fix(`!`→`?.`)로 복구, `.declarative-allow`의 PresentPage entranceKeyframes 라인 핀
+    28→30 갱신(import 추가로 시프트).
+  - SVL 3/3: 마법사 타일 "Presentation" 카피, slide-deck present 씬 `data-clip`+`overflow:clip`,
+    mixed present 씬 무클립(`overflow:visible`). 유닛 926/926 · gates green.

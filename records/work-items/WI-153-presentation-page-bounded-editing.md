@@ -1,6 +1,6 @@
 # WI-153 — 타입별 편집화면 + 프레젠테이션/문서 page-bounded(캔바식) 편집
 
-Status: **In Progress** (P1·P2.1·P2.2·P2.5·P3·P4 완료 · 다음: P5 생성/크롬 + 발표·출력 클립 정합)
+Status: **Done — P1~P5 전 단계 완료** (후속 슬라이스: 아래 "다음 액션")
 Owner: hbpark
 Updated: 2026-06-10
 
@@ -45,10 +45,14 @@ Updated: 2026-06-10
 - **P4** 추가/에이전트 흐름(활성 페이지 타깃, 프레젠테이션 에이전트 root 배치 금지).
 - **P5** 생성/크롬 + 발표·출력 클립 정합.
 
-## 다음 액션
+## 다음 액션 (후속 슬라이스 — 본 WI 범위 밖, 별도 WI로)
 
-P5 생성/크롬 + 발표·출력 클립 정합 — 마법사 "프레젠테이션" 부각, 툴바 슬림화, Present/Export
-클립을 편집과 일치(WYSIWYG). 진행 로그는 엔지니어링 플랜 참조 (P4까지 완료: 드롭/에이전트
-retarget + 러버밴드·마퀴 페이지 스코프 + 매트 시작 차단 + 에이전트 줌 페이지 전환.
-설계 노트: `agentRootAdd` 레지스트리 필드는 추가하지 않음 — `defaultContainer`와 항상 일치하는
-죽은 설정이라 순수 변환 `retargetAgentRootAdd`가 `defaultContainer` 정책을 직접 따름).
+P1~P5 전부 완료 (P5: 마법사 "Presentation" 카피 + 툴바는 기존 게이트로 충족 + Present 씬
+페이지 클립 `formatEditorConfig` 시임. Export(PNG/PDF) 경로는 현재 미존재 — 생기면 같은 시임).
+진행 로그는 엔지니어링 플랜 참조. 설계 노트: `agentRootAdd`/`clipAtPage` 류 레지스트리 필드는
+추가하지 않음 — `defaultContainer`/`canvas`와 항상 일치하는 죽은 설정.
+
+남은 후속 슬라이스:
+- **페이지 복제** (P2.3 보류) — page-scope 전용 subtree-clone 명령 필요(`weave.batch` id 참조 한계).
+- **카메라 fit-to-active-page** (P2.4 보류) — 비-FULL_FRAME 페이지에서만 필요.
+- 멀티셀렉트 그룹 단위 min-overlap, 회전 박스 경계 정합, doc-page 전용 툴바 분리 여부.

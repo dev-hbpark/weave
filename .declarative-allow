@@ -37,4 +37,4 @@
 # entranceKeyframes — maps the closed `EntranceAnimationBehavior["mode"]`
 # (fade / slide-up / slide-down / zoom-in) to Web-Animations keyframes. Pure
 # render transform over a single behavior's own intrinsic animation vocabulary.
-^apps/web/src/pages/PresentPage\.tsx:28$
+^apps/web/src/pages/PresentPage\.tsx:30$

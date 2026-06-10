@@ -45,9 +45,9 @@ describe("computeRatioFontReparentUpdates", () => {
       { itemId: "t-ratio", newParentId: "B" },
     ]);
     expect(out).toHaveLength(1);
-    expect(out[0]!.itemId).toBe("t-ratio");
+    expect(out[0]?.itemId).toBe("t-ratio");
     // 0.2 × (0.25 / 0.5) = 0.1 → 0.1 × B.height preserves the original px.
-    expect(out[0]!.value).toBeCloseTo(0.1, 10);
+    expect(out[0]?.value).toBeCloseTo(0.1, 10);
   });
 
   it("ignores px-kind fonts (already absolute)", () => {
