@@ -41,6 +41,11 @@ export function RadioTile({ className, icon, title, tagline, ...rest }: RadioTil
         "focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none",
         "data-[state=checked]:border-[color:var(--accent)] data-[state=checked]:bg-[color:var(--accent-soft)]",
         "cursor-pointer",
+        // Disabled state (Radix sets `data-disabled` + the `disabled` attr):
+        // muted, no hover lift, not-allowed cursor. Pointer events stay on so
+        // the cursor communicates the state.
+        "data-[disabled]:opacity-45 data-[disabled]:cursor-not-allowed",
+        "data-[disabled]:hover:translate-y-0 data-[disabled]:hover:border-[color:var(--surface-2-border)]",
         className,
       )}
     >

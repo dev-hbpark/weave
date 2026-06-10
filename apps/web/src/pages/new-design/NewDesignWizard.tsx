@@ -46,6 +46,21 @@ const FLAVOR_ICONS: Readonly<Record<DocFlavor, ReactNode>> = {
 
 const CUSTOM_PRESET_ID = "custom";
 
+// WI-165 — "coming-soon" flavors (FLAVOR_REGISTRY.availability) render as
+// disabled tiles: the engine largely supports them, but the product surface
+// is not ready to offer them. e2e still needs to CREATE those flavors to
+// exercise the engine, so a DEV-only localStorage key unlocks the tiles —
+// production bundles never read it (same gating rule as `window.__weave*`).
+const DEV_UNLOCK_FLAVORS_KEY = "weave.dev.unlock-flavors";
+
+function allFlavorsUnlocked(): boolean {
+  return (
+    import.meta.env.DEV &&
+    typeof window !== "undefined" &&
+    window.localStorage.getItem(DEV_UNLOCK_FLAVORS_KEY) === "1"
+  );
+}
+
 /** Default first child kind per flavor. `mixed` is intentionally empty — that
  *  flavor's Figma-style canvas opens blank for the user to drop anything.
  *
@@ -157,13 +172,16 @@ export function NewDesignWizard({ open, onOpenChange }: NewDesignWizardProps) {
             >
               {DOC_FLAVORS.map((f) => {
                 const meta = FLAVOR_REGISTRY[f];
+                // WI-165 — coming-soon flavors are visible but not creatable.
+                const comingSoon = meta.availability === "coming-soon" && !allFlavorsUnlocked();
                 return (
                   <RadioTile
                     key={f}
                     value={f}
                     icon={FLAVOR_ICONS[f]}
                     title={meta.label}
-                    tagline={meta.tagline}
+                    tagline={comingSoon ? "Coming soon" : meta.tagline}
+                    disabled={comingSoon}
                     data-testid={`new-design-flavor-${f}`}
                   />
                 );

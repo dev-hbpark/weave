@@ -6,7 +6,12 @@
 // the URL).
 
 import type { Page } from "@playwright/test";
-import type { DocFlavor, DomainKind, ItemFrame } from "../src/document/types.js";
+import {
+  type DocFlavor,
+  type DomainKind,
+  FLAVOR_REGISTRY,
+  type ItemFrame,
+} from "../src/document/types.js";
 
 export async function clearAllDesigns(page: Page) {
   // WI-032 Phase 3c — reset the cursor before navigating so hover state from
@@ -70,6 +75,15 @@ export async function prepareDesign(
     });
   }
   await page.goto("/");
+  // WI-165 — coming-soon flavors render as DISABLED wizard tiles for users,
+  // but specs still create them to exercise the engine. The DEV-only unlock
+  // key re-enables the tiles (production never reads it). Set BEFORE the
+  // wizard opens — the tile reads the key at render.
+  if (FLAVOR_REGISTRY[flavor].availability === "coming-soon") {
+    await page.evaluate(() => {
+      window.localStorage.setItem("weave.dev.unlock-flavors", "1");
+    });
+  }
   await page.getByTestId("landing-new-design").click();
 
   const titleInput = page.getByTestId("new-design-title");

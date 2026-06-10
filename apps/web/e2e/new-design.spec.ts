@@ -47,6 +47,32 @@ test("landing → wizard → editor → add frames via toolbar", async ({ page }
   await expect(page.locator('[data-testid="frame-block"]')).toHaveCount(1);
 });
 
+// WI-165 — only mixed + slide-deck are product-ready; canvas-board and
+// doc-page tiles render disabled ("Coming soon") until their surfaces ship.
+// Driven by FLAVOR_REGISTRY.availability, not a hardcoded list. The DEV
+// unlock key (`weave.dev.unlock-flavors`, set by prepareDesign for specs
+// that exercise those engines) re-enables them — this test does NOT set it,
+// so it sees what a real user sees.
+test("wizard disables coming-soon flavors (WI-165)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("landing-new-design").click();
+  await expect(page.getByRole("heading", { name: /Start a new design/i })).toBeVisible();
+
+  await expect(page.getByTestId("new-design-flavor-mixed")).toBeEnabled();
+  await expect(page.getByTestId("new-design-flavor-slide-deck")).toBeEnabled();
+  await expect(page.getByTestId("new-design-flavor-canvas-board")).toBeDisabled();
+  await expect(page.getByTestId("new-design-flavor-doc-page")).toBeDisabled();
+  await expect(page.getByTestId("new-design-flavor-canvas-board")).toContainText("Coming soon");
+  await expect(page.getByTestId("new-design-flavor-doc-page")).toContainText("Coming soon");
+
+  // The enabled pair still selects normally.
+  await page.getByTestId("new-design-flavor-slide-deck").click();
+  await expect(page.getByTestId("new-design-flavor-slide-deck")).toHaveAttribute(
+    "data-state",
+    "checked",
+  );
+});
+
 // WI-155 — rail per-page duplicate. `weave.page.duplicate` clones the page
 // in place (kit offset 0, no nudge) AND inserts the clone right after the
 // source in presentationOrder, in ONE transaction — so a single keyboard

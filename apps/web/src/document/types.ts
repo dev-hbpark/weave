@@ -397,6 +397,12 @@ export interface DocFlavorMeta {
    *  NOT in FORMAT_EDITOR_CONFIG (it is not canvas behavior, and slide-deck
    *  vs doc-page share identical canvas config, so it cannot be derived). */
   readonly pageNoun: string;
+  /** WI-165 — product readiness of the flavor. "coming-soon" flavors render
+   *  as disabled tiles in the new-design wizard (the engine may already
+   *  support them — e2e exercises them via the DEV unlock key — but the
+   *  product surface is not ready to offer them). Single source of truth:
+   *  consumers gate on this field, never on a hardcoded flavor list. */
+  readonly availability: "available" | "coming-soon";
 }
 
 // WI-032 Phase 3 — flavor metadata still drives the wizard's marketing
@@ -414,6 +420,7 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     accentVar: "--accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
     pageNoun: "슬라이드",
+    availability: "available",
   },
   "slide-deck": {
     flavor: "slide-deck",
@@ -424,6 +431,7 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     accentVar: "--domain-slide-accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
     pageNoun: "슬라이드",
+    availability: "available",
   },
   "canvas-board": {
     flavor: "canvas-board",
@@ -432,6 +440,7 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     accentVar: "--domain-canvas-accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
     pageNoun: "슬라이드",
+    availability: "coming-soon",
   },
   "doc-page": {
     flavor: "doc-page",
@@ -440,6 +449,7 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     accentVar: "--domain-block-accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
     pageNoun: "페이지",
+    availability: "coming-soon",
   },
 };
 
