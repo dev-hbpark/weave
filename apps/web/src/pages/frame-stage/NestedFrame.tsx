@@ -29,6 +29,7 @@ import {
 import { isDomainItem } from "../../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
 import { ParentFrameHeightContext } from "../../document/domains/parent-frame-context.js";
+import { capabilityOf, type RolePolicy } from "../../document/editor-mode/types.js";
 import { useCroppingItemId, useIsCropping } from "../../document/interactions/cropping-state.js";
 import { useIsFrameHovered } from "../../document/interactions/frame-hover-store.js";
 import { useSelectionChromeOrNull } from "../../document/interactions/selection-chrome-context.js";
@@ -125,13 +126,17 @@ interface NestedFrameProps {
   readonly onContextMenuRequest?:
     | ((itemId: string, clientX: number, clientY: number) => void)
     | undefined;
-  /** WI-163 — the active page's id on page-bounded formats. That frame is
-   *  an ARTBOARD: a plain click on it clears the selection instead of
-   *  selecting it, parent-first walks one level INSIDE it, Shift-toggle
-   *  skips it, and its selection chrome (deep-click escape hatch) carries
-   *  no transform handles. Undefined on infinite canvas — top-level
-   *  frames stay ordinary objects. */
+  /** WI-163 — the active page's id on page-bounded formats: a plain click
+   *  on it clears the selection instead of selecting it, and parent-first
+   *  walks one level INSIDE it (selectFromHit's contextRootId — HitPolicy
+   *  absorbs this in WI-166 P3). Undefined on infinite canvas. */
   readonly artboardId?: string | undefined;
+  /** WI-166 / DR-114 — injected RolePolicy (interface only — the policy is
+   *  composed at the composition root). Decides per-item capabilities:
+   *  Shift-toggle skips items that are not "normal"-selectable, and
+   *  selection chrome drops ALL canvas handles for `canvasHandles: false`
+   *  items (a stage/page is editing chrome, not an object — WI-163). */
+  readonly roles: RolePolicy;
 }
 
 export function NestedFrame({
@@ -158,6 +163,7 @@ export function NestedFrame({
   doc,
   onContextMenuRequest,
   artboardId,
+  roles,
 }: NestedFrameProps) {
   const itemId = String(item.id);
   // WI-033 — vm reference for synchronous selection read inside onClick.
@@ -478,6 +484,7 @@ export function NestedFrame({
       onSelectHotspot={onSelectHotspot}
       onCommitHotspotRegion={onCommitHotspotRegion}
       artboardId={artboardId}
+      roles={roles}
     />
   ));
 
@@ -641,8 +648,10 @@ export function NestedFrame({
             ? "deep"
             : "plain";
         if (intent === "toggle" && onToggleSelect !== undefined) {
-          // WI-163 — the artboard never joins a multi-selection.
-          if (itemId !== artboardId) onToggleSelect(itemId);
+          // WI-163 — a stage (page/artboard) never joins a multi-selection:
+          // only "normal"-selectable items toggle in (RolePolicy).
+          if (doc === undefined || capabilityOf(roles, doc, itemId).selectable === "normal")
+            onToggleSelect(itemId);
           return;
         }
         if (selectedIds !== undefined && selectedIds.size > 1 && selectedIds.has(itemId)) {
@@ -763,14 +772,16 @@ export function NestedFrame({
                 ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
                 : undefined;
             const locked = isItemLocked(item);
-            // WI-163 — the artboard (deep-click escape hatch selection) exposes
-            // NO canvas handles at all — transform AND kind handles (corner
-            // radius etc.): the page is editing chrome, not an object. Fill
-            // editing rides the contextual toolbar, which is not a handle spec.
-            // Unlike locked, no badge below — an artboard is not a locked item.
-            const isArtboard = itemId === artboardId;
+            // WI-163 — a stage (page/artboard, deep-click escape hatch
+            // selection) exposes NO canvas handles at all — transform AND
+            // kind handles (corner radius etc.): the page is editing chrome,
+            // not an object. Fill editing rides the contextual toolbar, which
+            // is not a handle spec. Unlike locked, no badge below — a stage
+            // is not a locked item. Capability from the injected RolePolicy.
+            const noCanvasHandles =
+              doc !== undefined && !capabilityOf(roles, doc, itemId).canvasHandles;
             const handles = (
-              isArtboard
+              noCanvasHandles
                 ? []
                 : applyLayoutConstraintFilter(
                     selectionChromeRef.current?.resolve(info) ?? [],

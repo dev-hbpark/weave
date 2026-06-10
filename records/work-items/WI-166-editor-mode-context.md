@@ -1,6 +1,6 @@
 # WI-166 — EditorModeContext: 모드별 정책 합성 아키텍처 (설계)
 
-- **Status**: DESIGN APPROVED PENDING — 설계 산출물 완료, 구현 P1-P5 미착수
+- **Status**: IN PROGRESS — P1 완료 (2026-06-10), P2-P5 대기
 - **Date**: 2026-06-10
 - **Decision Record**: DR-114
 - **Engineering Plan**: features/editor-mode-context/ENGINEERING_PLAN.md
@@ -48,11 +48,54 @@
   FrameStage 4+카메라/패딩/팬/컬링, NestedFrame 2, hover projector 7,
   selection-context 6, 레일 prop 삼항.
 
+## P1 구현 (2026-06-10)
+
+- 골격: `apps/web/src/document/editor-mode/` — `types.ts`(소비처 유일
+  import 표면: CanvasMode/ItemRole/ItemCapabilities 9필드/RolePolicy/
+  `capabilityOf`/EditorModeContext), `pieces/item-roles.ts`(everyItemIsElement
+  / rootDirectIsStage + ELEMENT/STAGE capabilities), `modes/{mixed,slide-deck,
+  canvas-board,doc-page}.ts`(합성만), `registry.ts`(EDITOR_MODES +
+  `editorModeFor`, mixed 폴백), `EditorModeProvider.tsx`(유일 React 파일).
+- `EditorModeContext`는 P1에서 `mode`+`roles` 키만 — 나머지 정책 키는
+  소비처와 **같은 변경**에서 REQUIRED로 추가(P2 view/camera/insertion/rail,
+  P3 hit, P4 input). 소비처 없는 스텁은 G5가 금지하는 이중 진실 원천.
+- 경계 게이트: `tools/check_editor_mode_boundary.sh`(+`.editor-mode-roots`
+  allowlist) — 소비처는 types.ts만 / registry·Provider는 합성 루트만 /
+  editor-mode 내부 React 금지. `pnpm modeboundarycheck`로 gates/verify에 편입.
+  음성 테스트(위반 프로브 2건 검출) 후 clean.
+- 술어 흡수 + 디커미션: DesignPage `isArtboardId` 콜백+`artboardIds` memo →
+  `itemCapability()`+`hoverSuppressedIds`(roleOf 스캔), FrameStage 로컬
+  isArtboardId → `roles` prop + `itemCapability()`(movable/rotatable/resizable
+  게이트), NestedFrame isArtboard → `capabilityOf`(selectable/canvasHandles),
+  hover projector `artboardIds` 입력 → `hoverSuppressedIds` 리네임(프로젝터는
+  정책이 아닌 데이터를 받는 순수 함수 유지). 코드에서 isArtboardId/artboardIds
+  잔존 0 (grep 확인).
+- **에지 통일(문서화)**: 구 FrameStage isArtboardId는
+  `visibleFrameIdsRef.current !== undefined` 키잉, 구 DesignPage는 flavor
+  키잉 — 빈 presentationOrder slide-deck 에지에서 이미 서로 불일치했다.
+  통일된 RolePolicy는 DR-114 승인 설계(page-bounded면 root-직계=stage,
+  무조건)를 따른다. 해당 에지에서 구 FrameStage 동작과 다를 수 있으나
+  이는 두 진실 원천의 모순 해소이며 승인된 설계 쪽으로 수렴.
+
 ## Verification
+
+- P1 게이트 전수 green (2026-06-10): tsc --noEmit / vitest 989 pass
+  (RolePolicy 단위 8 tests — 레지스트리 전수성, FORMAT_EDITOR_CONFIG mode
+  패리티, 폴백, roleOf per flavor, STAGE caps=WI-163/164 게이트, fake-policy
+  주입 DI 증명 포함) / tokencheck·declarativecheck·puritycheck·
+  inheritancecheck·**modeboundarycheck(신규)** / biome clean.
+- e2e (apps/web cwd): page-artboard·mode-gate-hardening·frame-handles·
+  hover-affordance·peek-mode → 20 passed, 4 failed = 기지 pre-existing red
+  4건과 정확히 일치(frame-handles:32, hover-affordance:58/:87,
+  mode-gate-hardening:110 — 배너 오버랩). 악화 없음 → P1 합격 기준
+  "행동 변화 0" 충족.
+
+## Verification (설계 단계)
 
 - 설계 단계 — 코드 변경 없음. 게이트·e2e 계획은 ENGINEERING_PLAN 각 phase에
   명시(무회귀 phase는 기존 e2e green이 증명, 행동 변경 3건은 신규 e2e 고정).
 
 ## Next
 
-사용자 승인 시 P1(RolePolicy)부터 착수.
+P2 — ViewPolicy/CameraPolicy/RailPolicy/InsertionPolicy 도입 +
+FORMAT_EDITOR_CONFIG 해소(파일 삭제) + 레일 행동 변경 2건(신규 e2e 고정).

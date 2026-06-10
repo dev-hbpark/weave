@@ -48,6 +48,11 @@ import {
 } from "../document";
 import { findItemDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { resizeCropWindow, setStraighten } from "../document/crop-geometry.js";
+import {
+  capabilityOf,
+  type ItemCapabilities,
+  type RolePolicy,
+} from "../document/editor-mode/types.js";
 import { defaultInsertableRegistry } from "../document/insertable/default-registry.js";
 import { croppingState } from "../document/interactions/cropping-state.js";
 import { EditorVMContext } from "../document/interactions/editor-vm-context.js";
@@ -171,6 +176,12 @@ export interface FrameStageProps {
    *  (infinite canvas, unchanged). Thumbnails render each page independently, so a
    *  hidden page is still visible + selectable in the rail. */
   readonly visibleFrameIds?: ReadonlySet<string> | undefined;
+  /** WI-166 / DR-114 — injected RolePolicy (interface only; composed at the
+   *  composition root). The single truth source for "may this item move /
+   *  resize / rotate via canvas gestures": stage items (pages on
+   *  page-bounded formats — WI-163) decline all three. Replaces the local
+   *  `isArtboardId` predicate. Lock (DR-061) stays orthogonal. */
+  readonly roles: RolePolicy;
   readonly onSelect?: ((itemId: string | undefined) => void) | undefined;
   /** Shift/Cmd/Ctrl + click on a frame toggles it in/out of the multi
    *  selection (Figma parity). Fires alongside the existing `onSelect`
@@ -735,16 +746,18 @@ export function FrameStage(props: FrameStageProps) {
     const it = findItemDeep(d, id);
     return it !== undefined && isItemLocked(it);
   };
-  // WI-163 — is `id` a PAGE (artboard) in a page-bounded format? Pages are
-  // fixed editing contexts, not objects: no move / resize / rotate via canvas
-  // gestures (Canva model). Mode-derived (page-scoped render active && the
-  // item is a root-direct frame) — NOT a persisted attr, so mixed /
-  // canvas-board top-level frames stay ordinary objects.
-  const isArtboardId = (id: string): boolean => {
-    if (visibleFrameIdsRef.current === undefined) return false;
+  // WI-163 / WI-166 — role capability of item `id`, from the injected
+  // RolePolicy (stage items — pages on page-bounded formats — decline
+  // move / resize / rotate: fixed editing contexts, not objects, Canva
+  // model). Ref-mirrored so the stable (deps-`[]`) gesture closures read
+  // the live policy + doc. No doc → element (everything allowed), same as
+  // the absorbed `isArtboardId` returning false.
+  const rolesRef = useRef(props.roles);
+  rolesRef.current = props.roles;
+  const itemCapability = (id: string): ItemCapabilities => {
     const d = docRef.current;
-    if (d === undefined) return false;
-    return d.root.children.some((c) => String(c.id) === id);
+    if (d === undefined) return rolesRef.current.capabilities.element;
+    return capabilityOf(rolesRef.current, d, id);
   };
   // Selection-follows-move: the FrameMoveBinding runs with
   // `disableSelectionSet: true` so plain clicks keep selectFromHit's
@@ -828,12 +841,13 @@ export function FrameStage(props: FrameStageProps) {
       return cur;
     }
     /** DR-061 — the movable target for `id`, or null when that target is LOCKED
-     *  (decline the move gesture). WI-163 — also null when the target is a
-     *  page (artboard): pages don't move; the declined drag falls through to
-     *  the P4 rubber band (acceptWithinPage already admits in-page starts). */
+     *  (decline the move gesture). WI-163 — also null when the target's role
+     *  declines moving (a stage/page): pages don't move; the declined drag
+     *  falls through to the P4 rubber band (acceptWithinPage already admits
+     *  in-page starts). */
     function movableTargetOrNull(id: ItemId): ItemId | null {
       const moved = climbToMovable(id);
-      if (isArtboardId(String(moved))) return null;
+      if (!itemCapability(String(moved)).movable) return null;
       const it = findItem(moved);
       return it !== undefined && isItemLocked(it) ? null : moved;
     }
@@ -1398,8 +1412,8 @@ export function FrameStage(props: FrameStageProps) {
       if (rot !== null) {
         const itemId = handleItemId(rot);
         if (itemId === null) return;
-        // DR-061 locked / WI-163 artboard: no rotate
-        if (isLockedItemId(String(itemId)) || isArtboardId(String(itemId))) return;
+        // DR-061 locked / WI-163 stage (page) role: no rotate
+        if (isLockedItemId(String(itemId)) || !itemCapability(String(itemId)).rotatable) return;
         const center = centerOf(itemId);
         const origin = toHandlePointer(e);
         const startVec = { x: origin.clientX - center.x, y: origin.clientY - center.y };
@@ -1486,8 +1500,8 @@ export function FrameStage(props: FrameStageProps) {
       const dir = dirAttr as ResizeDir;
       const itemId = handleItemId(rsz);
       if (itemId === null) return;
-      // DR-061 locked / WI-163 artboard: no resize
-      if (isLockedItemId(String(itemId)) || isArtboardId(String(itemId))) return;
+      // DR-061 locked / WI-163 stage (page) role: no resize
+      if (isLockedItemId(String(itemId)) || !itemCapability(String(itemId)).resizable) return;
       e.preventDefault();
       e.stopPropagation();
       const origin = toHandlePointer(e);
@@ -1723,6 +1737,7 @@ export function FrameStage(props: FrameStageProps) {
                 {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
                 onSelect={onSelect}
                 artboardId={activePageId}
+                roles={props.roles}
                 doc={props.document}
                 onContextMenuRequest={handleFrameContextMenu}
                 onUpdateItem={props.onUpdateItem}

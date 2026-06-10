@@ -76,25 +76,27 @@ export interface ProjectHoverAffordanceInput {
    *  projection so the SelectionLayer chrome owns their visual.
    *  Pass an empty set when no selection is active. */
   readonly selectedIds: ReadonlySet<string>;
-  /** WI-164 — page-bounded artboards (WI-163). An artboard is an editing
-   *  CONTEXT, not a manipulable object, so it never receives a hover
-   *  affordance: hovering one (canvas page body OR a rail thumbnail —
+  /** WI-164 / WI-166 — ids whose hover affordance is suppressed. Computed
+   *  by the host from RolePolicy (stage items — pages/artboards on
+   *  page-bounded formats — are editing CONTEXTS, not manipulable objects,
+   *  WI-163): hovering one (canvas page body OR a rail thumbnail —
    *  `useHoverContext` treats both identically) projects nothing, and the
    *  parent tier skips it the same way it skips the design root (tinting
    *  the whole page is the same noise as tinting the whole canvas).
-   *  Omit / pass an empty set on infinite-canvas formats. */
-  readonly artboardIds?: ReadonlySet<string> | undefined;
+   *  Omit / pass an empty set when nothing is suppressed (infinite-canvas
+   *  formats). The projector stays pure — it takes data, not a policy. */
+  readonly hoverSuppressedIds?: ReadonlySet<string> | undefined;
 }
 
-const NO_ARTBOARDS: ReadonlySet<string> = new Set();
+const NO_SUPPRESSED: ReadonlySet<string> = new Set();
 
 export function projectHoverAffordance(
   input: ProjectHoverAffordanceInput,
 ): HoverAffordanceProjection {
   const { doc, hoveredKind, hoveredId, designWidth, designHeight, selectedIds } = input;
-  const artboardIds = input.artboardIds ?? NO_ARTBOARDS;
+  const hoverSuppressedIds = input.hoverSuppressedIds ?? NO_SUPPRESSED;
   if (hoveredId === undefined) return EMPTY;
-  if (artboardIds.has(hoveredId)) return EMPTY;
+  if (hoverSuppressedIds.has(hoveredId)) return EMPTY;
   if (!isProjectableKind(hoveredKind)) return EMPTY;
   if (hoveredKind === "shape") {
     // "shape" is reported for BOTH a shape-kind DOMAIN item (frame-boxed,
@@ -105,11 +107,18 @@ export function projectHoverAffordance(
     // `attrs.shapes` lookup from silently returning EMPTY for shape items —
     // which is why hovering a plain shape produced no affordance at all.
     if (findItemDeep(doc, hoveredId) !== undefined) {
-      return projectFrame(doc, hoveredId, designWidth, designHeight, selectedIds, artboardIds);
+      return projectFrame(
+        doc,
+        hoveredId,
+        designWidth,
+        designHeight,
+        selectedIds,
+        hoverSuppressedIds,
+      );
     }
     return projectShape(doc, hoveredId, designWidth, designHeight, selectedIds);
   }
-  return projectFrame(doc, hoveredId, designWidth, designHeight, selectedIds, artboardIds);
+  return projectFrame(doc, hoveredId, designWidth, designHeight, selectedIds, hoverSuppressedIds);
 }
 
 function isProjectableKind(kind: string): kind is ProjectableHoverKind {
@@ -130,7 +139,7 @@ function projectFrame(
   designWidth: number,
   designHeight: number,
   selectedIds: ReadonlySet<string>,
-  artboardIds: ReadonlySet<string>,
+  hoverSuppressedIds: ReadonlySet<string>,
 ): HoverAffordanceProjection {
   const item = findItemDeep(doc, hoveredId);
   if (item === undefined) return EMPTY;
@@ -148,9 +157,10 @@ function projectFrame(
   if (parentInfo !== undefined) {
     const { parent: parentItem } = parentInfo;
     const parentId = String(parentItem.id);
-    // WI-164 — an artboard parent is skipped for the same reason the root
-    // is: hovering an item directly inside a page must not tint the page.
-    const isRoot = parentId === String(doc.root.id) || artboardIds.has(parentId);
+    // WI-164 — a hover-suppressed parent (a page/artboard) is skipped for
+    // the same reason the root is: hovering an item directly inside a page
+    // must not tint the page.
+    const isRoot = parentId === String(doc.root.id) || hoverSuppressedIds.has(parentId);
     if (!isRoot) {
       const parentBox = absoluteFrameBox(doc, parentId, designWidth, designHeight);
       if (parentBox !== null && !selectedIds.has(parentId)) {

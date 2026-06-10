@@ -116,6 +116,12 @@ import {
   designToHostPx,
   type RatioFrame,
 } from "../document/coordinate-projection.js";
+import { EditorModeProvider } from "../document/editor-mode/EditorModeProvider.js";
+// WI-166 / DR-114 §2b — DesignPage is a declared COMPOSITION ROOT
+// (.editor-mode-roots): the registry import is allowed here and only here;
+// every consumer below receives policies by injection (props / arguments).
+import { editorModeFor } from "../document/editor-mode/registry.js";
+import { capabilityOf, type ItemCapabilities } from "../document/editor-mode/types.js";
 import { useExportImport } from "../document/export-import/use-export-import.js";
 import { formatEditorConfig } from "../document/format-editor-config.js";
 import {
@@ -1053,29 +1059,37 @@ function DesignPageBody() {
     () => (!infiniteCanvas && activePageId !== undefined ? new Set([activePageId]) : undefined),
     [infiniteCanvas, activePageId],
   );
-  // WI-163 — page(artboard) predicate: page-bounded mode && root-direct item
-  // = a PAGE. Pages are fixed editing contexts (Canva model): no delete via
-  // canvas gestures, no keyboard-nav onto them, no arrow nudge. Mode-derived
-  // — never a persisted attr. Ref-based so the deps-[] effects below
+  // WI-166 / DR-114 — the composed editor-mode context for this flavor.
+  // RolePolicy is the truth source for the WI-163 page(artboard) rules:
+  // a stage (root-direct item on page-bounded flavors) is a fixed editing
+  // context (Canva model) — no delete via canvas gestures, no keyboard-nav
+  // onto it, no arrow nudge. Ref-mirrored so the deps-[] effects below
   // (deleters / navigator / keyboard) read the live flavor + doc.
-  const infiniteCanvasRef = useRef(infiniteCanvas);
-  infiniteCanvasRef.current = infiniteCanvas;
-  const isArtboardId = useCallback((id: string): boolean => {
-    if (infiniteCanvasRef.current) return false;
+  const editorMode = editorModeFor(currentFlavor);
+  const editorModeRef = useRef(editorMode);
+  editorModeRef.current = editorMode;
+  const itemCapability = useCallback((id: string): ItemCapabilities => {
+    const { roles } = editorModeRef.current;
     const doc = docInAgocraftRef.current;
-    if (doc === undefined) return false;
-    return doc.root.children.some((c) => String(c.id) === id);
+    // No doc yet → element (everything allowed), same as the absorbed
+    // isArtboardId predicate returning false.
+    if (doc === undefined) return roles.capabilities.element;
+    return capabilityOf(roles, doc, id);
   }, []);
-  // WI-164 — same predicate as a render-time set, for memoized consumers that
-  // take data instead of a callback (hover-affordance projector). Empty on
-  // infinite canvas → the projector behaves exactly as before.
-  const artboardIds: ReadonlySet<string> = useMemo(
-    () =>
-      infiniteCanvas
-        ? new Set<string>()
-        : new Set(docInAgocraft.root.children.map((c) => String(c.id))),
-    [infiniteCanvas, docInAgocraft.root.children],
-  );
+  // WI-164 — hover-suppressed ids as a render-time set, for memoized
+  // consumers that take data instead of a policy (hover-affordance
+  // projector stays pure). Root-direct items are the only stage candidates
+  // (RolePolicy contract — pieces/item-roles), so scanning root.children
+  // covers every suppressible id. Empty on infinite canvas → the projector
+  // behaves exactly as before.
+  const hoverSuppressedIds: ReadonlySet<string> = useMemo(() => {
+    const { roles } = editorMode;
+    return new Set(
+      docInAgocraft.root.children
+        .map((c) => String(c.id))
+        .filter((id) => !roles.capabilities[roles.roleOf(docInAgocraft, id)].hoverable),
+    );
+  }, [editorMode, docInAgocraft]);
   // WI-153 P3 (DR-111 D5) — default add container. Page-bounded formats route
   // selection-less adds into the ACTIVE PAGE instead of the design root (root is
   // page chrome there, not an editing surface). Policy from the format registry;
@@ -1487,10 +1501,10 @@ function DesignPageBody() {
       // a top-level item would select it, and sibling-cycling FROM the page
       // (escape-hatch deep selection) would walk the HIDDEN pages. drillDown
       // (page → first child) returns a non-page id, so it stays allowed.
-      if (isArtboardId(nextId)) return;
+      if (!itemCapability(nextId).navigable) return;
       selectFrame(nextId);
     });
-  }, [selectFrame, isArtboardId]);
+  }, [selectFrame, itemCapability]);
 
   // DR-027 / WI-071 Phase 2 — WI-020 item-add cluster ("+" add menu + R/T/L/F
   // tool-hotkey adder + slide-preset dialog state) extracted to a cooperating
@@ -1517,7 +1531,7 @@ function DesignPageBody() {
   useEffect(() => {
     return setFrameDeleter((frameId) => {
       // WI-163 — pages are not deletable via canvas gestures (rail's job).
-      if (isArtboardId(frameId)) return;
+      if (!itemCapability(frameId).deletable) return;
       // DR-061 — a locked item is protected from deletion.
       const it = findItemDeep(docInAgocraftRef.current, frameId);
       if (it !== undefined && isItemLocked(it)) return;
@@ -1622,7 +1636,7 @@ function DesignPageBody() {
       const all = Array.from(selectedIdsRef.current);
       // DR-061 — never delete locked items; WI-163 — never delete pages.
       const ids = all.filter((id) => {
-        if (isArtboardId(id)) return false;
+        if (!itemCapability(id).deletable) return false;
         const it = findItemDeep(docInAgocraftRef.current, id);
         return !(it !== undefined && isItemLocked(it));
       });
@@ -1770,7 +1784,7 @@ function DesignPageBody() {
         // DR-061 — locked items are protected from deletion; WI-163 — pages
         // (artboards) too. Always preventDefault so Backspace never navigates.
         const ids = all.filter((id) => {
-          if (isArtboardId(id)) return false;
+          if (!itemCapability(id).deletable) return false;
           const it = findItemDeep(docInAgocraftRef.current, id);
           return !(it !== undefined && isItemLocked(it));
         });
@@ -1814,7 +1828,7 @@ function DesignPageBody() {
       ) {
         // WI-163 — pages (artboards) never move; the escape-hatch deep
         // selection (page fill editing) must not arrow-nudge the page.
-        const ids = Array.from(selectedIdsRef.current).filter((id) => !isArtboardId(id));
+        const ids = Array.from(selectedIdsRef.current).filter((id) => itemCapability(id).movable);
         if (ids.length === 0) return;
         const doc = docInAgocraftRef.current;
         if (doc === undefined) return;
@@ -1851,7 +1865,7 @@ function DesignPageBody() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editor, selectFrames, selectFrame, dissolveFrame, applyCrop, isArtboardId]);
+  }, [editor, selectFrames, selectFrame, dissolveFrame, applyCrop, itemCapability]);
   // Multi-selection align / distribute — single slot dispatched by the
   // 8 `multi.align-*` / `multi.distribute-*` commands. Steps:
   //   1. Read the live selected ids + doc through refs (selection /
@@ -2181,25 +2195,30 @@ function DesignPageBody() {
   };
 
   return (
-    <EditorVMProvider vm={vm}>
-      <RouterProvider router={router}>
-        <SelectionChromeProvider registry={selectionChrome}>
-          <SelectionProvider vm={vm}>
-            <InteractionModeProvider vm={vm}>
-              <PeekActiveProvider active={peek.isActive}>
-                <CommandHostProvider
-                  registry={editorCommandMetadata}
-                  context={commandContext}
-                  locale="ko"
-                  dispatch={dispatchCommand}
-                >
-                  <ModeAwareTooltipSurface>
-                    <EditorProvider editor={editor}>
-                      <DocumentForResolutionProvider document={docInAgocraft}>
-                        <DatasetProvider doc={docInAgocraft} editor={editor}>
-                          <ChartElementSelectionProvider>
-                            <DesignDimsProvider width={design.width} height={design.height}>
-                              {/* WI-039 — z-stack layout. The design surface (`<main>`)
+    // WI-166 / DR-114 §2b — editor-mode composition root: resolves the
+    // flavor to its composed policy context once; React consumers read
+    // `useEditorMode()` / `useEditorModeRef()` instead of receiving a
+    // flavor and branching.
+    <EditorModeProvider flavor={currentFlavor}>
+      <EditorVMProvider vm={vm}>
+        <RouterProvider router={router}>
+          <SelectionChromeProvider registry={selectionChrome}>
+            <SelectionProvider vm={vm}>
+              <InteractionModeProvider vm={vm}>
+                <PeekActiveProvider active={peek.isActive}>
+                  <CommandHostProvider
+                    registry={editorCommandMetadata}
+                    context={commandContext}
+                    locale="ko"
+                    dispatch={dispatchCommand}
+                  >
+                    <ModeAwareTooltipSurface>
+                      <EditorProvider editor={editor}>
+                        <DocumentForResolutionProvider document={docInAgocraft}>
+                          <DatasetProvider doc={docInAgocraft} editor={editor}>
+                            <ChartElementSelectionProvider>
+                              <DesignDimsProvider width={design.width} height={design.height}>
+                                {/* WI-039 — z-stack layout. The design surface (`<main>`)
                         fills the entire viewport so the canvas reaches every
                         edge with no chrome gap. Header, launch banners and
                         ThumbnailPanel are absolutely positioned overlays
@@ -2209,77 +2228,77 @@ function DesignPageBody() {
                         gap above the bottom panel because the panel's new
                         bg (intentionally shorter than the tile) exposed the
                         parent's `--bg-page` color through the flex gap. */}
-                              <div className="fixed inset-0 bg-[color:var(--bg-page)]">
-                                <DesignHeader
-                                  designTitle={design.title}
-                                  designId={designId}
-                                  designBackground={design.background}
-                                  infiniteCanvas={infiniteCanvas}
-                                  handMode={handMode}
-                                  peekActive={peek.isActive}
-                                  onSelectTool={() => {
-                                    setHandMode(false);
-                                    peek.deactivateSticky();
-                                  }}
-                                  onHandTool={() => {
-                                    setHandMode(true);
-                                    peek.deactivateSticky();
-                                  }}
-                                  onTogglePeek={peek.toggle}
-                                  onOpenSlidePicker={() => setSlidePickerOpen(true)}
-                                  pageNoun={pageNoun}
-                                  onAddMedia={(kind) => setPendingMedia({ action: "add", kind })}
-                                  onAddItem={addNewItem}
-                                  onSetBackground={setDesignBackgroundViaEditor}
-                                  onSave={() => void handleManualSave()}
-                                  saveStatus={saveStatus}
-                                  canExportSelection={selectedIds.size > 0}
-                                  onExportSelection={exportImport.exportSelection}
-                                  onImport={() => importInputRef.current?.click()}
-                                />
-                                {/* WI-089 — hidden importer. The File menu's
+                                <div className="fixed inset-0 bg-[color:var(--bg-page)]">
+                                  <DesignHeader
+                                    designTitle={design.title}
+                                    designId={designId}
+                                    designBackground={design.background}
+                                    infiniteCanvas={infiniteCanvas}
+                                    handMode={handMode}
+                                    peekActive={peek.isActive}
+                                    onSelectTool={() => {
+                                      setHandMode(false);
+                                      peek.deactivateSticky();
+                                    }}
+                                    onHandTool={() => {
+                                      setHandMode(true);
+                                      peek.deactivateSticky();
+                                    }}
+                                    onTogglePeek={peek.toggle}
+                                    onOpenSlidePicker={() => setSlidePickerOpen(true)}
+                                    pageNoun={pageNoun}
+                                    onAddMedia={(kind) => setPendingMedia({ action: "add", kind })}
+                                    onAddItem={addNewItem}
+                                    onSetBackground={setDesignBackgroundViaEditor}
+                                    onSave={() => void handleManualSave()}
+                                    saveStatus={saveStatus}
+                                    canExportSelection={selectedIds.size > 0}
+                                    onExportSelection={exportImport.exportSelection}
+                                    onImport={() => importInputRef.current?.click()}
+                                  />
+                                  {/* WI-089 — hidden importer. The File menu's
                             "가져오기" item triggers this; the change handler
                             reads + pastes the file then resets `value` so the
                             same file can be re-imported. */}
-                                <input
-                                  ref={importInputRef}
-                                  type="file"
-                                  accept="application/json,.json"
-                                  className="hidden"
-                                  data-testid="import-file-input"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file !== undefined) void exportImport.importFile(file);
-                                    e.target.value = "";
-                                  }}
-                                />
+                                  <input
+                                    ref={importInputRef}
+                                    type="file"
+                                    accept="application/json,.json"
+                                    className="hidden"
+                                    data-testid="import-file-input"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file !== undefined) void exportImport.importFile(file);
+                                      e.target.value = "";
+                                    }}
+                                  />
 
-                                {/* WI-029 R5 + WI-033 P3 — text item v1 +
+                                  {/* WI-029 R5 + WI-033 P3 — text item v1 +
                           Figma frame selection launch announcements
                           (LG-001 / RISK-001 #6 + RISK-005 #5). Both
                           auto-show during the launch week and fall
                           silent on dismiss / outside the window. */}
-                                {/* Launch banners — float just below the header.
+                                  {/* Launch banners — float just below the header.
                           `pointer-events-none` on the wrapper lets clicks
                           pass through the empty space to main; each banner
                           re-enables `pointer-events-auto` on its own card
                           so its dismiss control stays clickable. */}
-                                <div className="absolute inset-x-0 top-12 z-30 px-4 pt-2 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
-                                  <TextV1LaunchBanner />
-                                  <FigmaSelectionLaunchBanner />
-                                  <MigrationResultBanner status={migrationStatus} />
-                                  {exportImportInfo !== null && (
-                                    <Banner
-                                      tone="info"
-                                      headline={exportImportInfo}
-                                      onDismiss={() => setExportImportInfo(null)}
-                                      dismissLabel="닫기"
-                                      data-testid="export-import-info"
-                                    />
-                                  )}
-                                </div>
+                                  <div className="absolute inset-x-0 top-12 z-30 px-4 pt-2 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
+                                    <TextV1LaunchBanner />
+                                    <FigmaSelectionLaunchBanner />
+                                    <MigrationResultBanner status={migrationStatus} />
+                                    {exportImportInfo !== null && (
+                                      <Banner
+                                        tone="info"
+                                        headline={exportImportInfo}
+                                        onDismiss={() => setExportImportInfo(null)}
+                                        dismissLabel="닫기"
+                                        data-testid="export-import-info"
+                                      />
+                                    )}
+                                  </div>
 
-                                {/* LS-miss cloud-fetch spinner. Covers the
+                                  {/* LS-miss cloud-fetch spinner. Covers the
                               canvas area (top-12 to skip the header
                               chrome) while `useDesign` is awaiting the
                               server snapshot for an id that wasn't
@@ -2289,202 +2308,210 @@ function DesignPageBody() {
                               below the header (z-30), so the user can
                               still see "weave / title" and bail back
                               via the home link. */}
-                                {isLoading && (
-                                  <div
-                                    className="absolute inset-x-0 bottom-0 top-12 z-20 flex items-center justify-center bg-[color:var(--bg-page)]/85 backdrop-blur-sm"
-                                    data-testid="design-loading"
-                                    role="status"
-                                    aria-live="polite"
-                                  >
-                                    <div className="flex flex-col items-center gap-3">
-                                      <Spinner
-                                        size={28}
-                                        className="text-[color:var(--text-strong)]"
-                                      />
-                                      <span className="text-[13px] text-[color:var(--text-soft)]">
-                                        디자인을 불러오는 중…
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <main
-                                  className="absolute inset-0 overflow-hidden"
-                                  data-testid="design-canvas-host"
-                                  ref={canvasHostCallbackRef}
-                                  style={
-                                    peek.isActive
-                                      ? { perspective: "1800px", perspectiveOrigin: "50% 35%" }
-                                      : undefined
-                                  }
-                                >
-                                  <div
-                                    data-peek-tilt-target
-                                    style={{
-                                      position: "absolute",
-                                      inset: 0,
-                                      transformStyle: "preserve-3d",
-                                      transform: peek.isActive ? "rotateX(12deg)" : "rotateX(0deg)",
-                                      transformOrigin: "50% 50%",
-                                    }}
-                                  >
-                                    <FrameStage
-                                      designWidth={design.width}
-                                      designHeight={design.height}
-                                      // WI-040 Phase 3 — host-supplied hover
-                                      // overlay. Lives inside FrameStage's
-                                      // design-plane so its rects share the
-                                      // camera transform. The Mount component
-                                      // uses the gate hook + projector;
-                                      // visibility filters + selection
-                                      // exclusion happen there.
-                                      renderHoverOverlay={() => (
-                                        <HoverAffordanceMount
-                                          doc={docInAgocraft}
-                                          hoveredKind={hoverContext.hoveredKind}
-                                          hoveredId={hoverContext.hoveredId}
-                                          designWidth={design.width}
-                                          designHeight={design.height}
-                                          selectedIds={selectedIds}
-                                          artboardIds={artboardIds}
+                                  {isLoading && (
+                                    <div
+                                      className="absolute inset-x-0 bottom-0 top-12 z-20 flex items-center justify-center bg-[color:var(--bg-page)]/85 backdrop-blur-sm"
+                                      data-testid="design-loading"
+                                      role="status"
+                                      aria-live="polite"
+                                    >
+                                      <div className="flex flex-col items-center gap-3">
+                                        <Spinner
+                                          size={28}
+                                          className="text-[color:var(--text-strong)]"
                                         />
-                                      )}
-                                      background={design.background}
-                                      root={docInAgocraft.root}
-                                      document={docInAgocraft}
-                                      editor={editor}
-                                      editing={true}
-                                      infiniteCanvas={infiniteCanvas}
-                                      // WI-153 P2.5 — the editor always allows zoom
-                                      // (decoupled from the placement model), and
-                                      // page-bounded fits inside the header + rail.
-                                      cameraEnabled={true}
-                                      fitInset={fitInset}
-                                      handMode={handMode}
-                                      // WI-033 P2 — enteredId / onEnter (drill-in mode,
-                                      // Phase 12) removed. onFitAll restored: empty-canvas
-                                      // double-click fits the camera to all items.
-                                      selectedId={selectedFrameId ?? undefined}
-                                      selectedIds={selectedIds}
-                                      dimmedFrameIds={dimmedFrameIds}
-                                      isolatedFrameIds={isolatedFrameIds}
-                                      visibleFrameIds={visibleFrameIds}
-                                      onSelect={setSelectedFrameId}
-                                      onToggleSelect={(id) => toggleFrames([id])}
-                                      onMarqueeSelect={onMarqueeSelect}
-                                      onFitAll={handleFitAll}
-                                      // WI-035 P3 — Toolbar drag-to-add. The
-                                      // DropdownMenu add-items set the mime
-                                      // `application/x-weave-add-kind` on
-                                      // dragstart; FrameStage routes the drop's
-                                      // `containerId` (root or hovered frame).
-                                      // This handler dispatches the same
-                                      // `weave.item.add` SSOT.
-                                      onDragOver={(e) => {
-                                        if (
-                                          e.dataTransfer.types.includes(
-                                            "application/x-weave-add-kind",
-                                          )
-                                        ) {
-                                          e.preventDefault();
-                                        }
-                                      }}
-                                      onDropAdd={(e, containerId) => {
-                                        const kindRaw = e.dataTransfer.getData(
-                                          "application/x-weave-add-kind",
-                                        );
-                                        if (kindRaw === "") return;
-                                        e.preventDefault();
-                                        const kind = kindRaw as DomainKind;
-                                        // WI-153 P4 (DR-111 D5) — page-bounded: an
-                                        // empty-canvas drop arrives with the ROOT
-                                        // containerId; retarget it to the active page
-                                        // (root is page chrome there, not an editing
-                                        // surface). Hovered-frame drops pass through.
-                                        const target =
-                                          containerId === String(docInAgocraft.root.id)
-                                            ? (defaultAddContainerIdRef.current ?? containerId)
-                                            : containerId;
-                                        const result = editor.exec<unknown, string>(
-                                          "weave.item.add",
-                                          {
-                                            kind,
-                                            containerId: target,
-                                            frame: {
-                                              x: 0.3,
-                                              y: 0.3,
-                                              width: 0.4,
-                                              height: 0.4,
-                                              rotation: 0,
-                                            },
-                                          },
-                                        );
-                                        if (result.ok) setSelectedFrameId(result.value);
-                                      }}
-                                      onUpdateItem={handleUpdateItem}
-                                      // WI-032 Phase 3b — onUpdateShape / onRemoveShape
-                                      // edited `canvas-design.attrs.shapes[]`; with that
-                                      // kind removed, shape primitives flow through
-                                      // `onUpdateItem` instead.
-                                      onCommitFrame={(itemId, nextFrame: ItemFrame) =>
-                                        updateItem(itemId, (prev) => ({
-                                          ...prev,
-                                          attrs: {
-                                            ...prev.attrs,
-                                            frame: nextFrame,
-                                          } as typeof prev.attrs,
-                                        }))
-                                      }
-                                      renderFrameMenu={renderFrameMenu}
-                                    />
-                                  </div>
+                                        <span className="text-[13px] text-[color:var(--text-soft)]">
+                                          디자인을 불러오는 중…
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
 
-                                  {/* DR-027 / WI-071 — peek interaction surface (capture + overlay + inspector). */}
-                                  <PeekCaptureLayer
-                                    peek={peek}
-                                    screenToDesign={screenToDesign}
-                                    hitTestLifted={hitTestLifted}
-                                    canvasHostRef={canvasHostRef}
-                                    canvasHostEl={canvasHostEl}
-                                    hostRect={hostRect}
-                                    peekDragRef={peekDragRef}
-                                    peekCursor={peekCursor}
-                                    setPeekCursor={setPeekCursor}
-                                    peekDraggingId={peekDraggingId}
-                                    setPeekDraggingId={setPeekDraggingId}
-                                    colorFor={swatchFor}
-                                    labelFor={labelFor}
-                                  />
-
-                                  <SelectionToolbarOverlay
-                                    editor={editor}
-                                    document={docInAgocraft}
-                                    selectedIds={selectedIds}
-                                    onEditMediaSrc={(mediaKind) =>
-                                      setPendingMedia({ action: "edit", kind: mediaKind })
+                                  <main
+                                    className="absolute inset-0 overflow-hidden"
+                                    data-testid="design-canvas-host"
+                                    ref={canvasHostCallbackRef}
+                                    style={
+                                      peek.isActive
+                                        ? { perspective: "1800px", perspectiveOrigin: "50% 35%" }
+                                        : undefined
                                     }
-                                    onEditShapeFill={(mediaKind, current) => {
-                                      if (!selectedFrameId) return;
-                                      setPendingMedia({
-                                        action: "fill",
-                                        kind: mediaKind,
-                                        itemId: selectedFrameId,
-                                        initialSrc: current,
-                                      });
-                                    }}
-                                  />
+                                  >
+                                    <div
+                                      data-peek-tilt-target
+                                      style={{
+                                        position: "absolute",
+                                        inset: 0,
+                                        transformStyle: "preserve-3d",
+                                        transform: peek.isActive
+                                          ? "rotateX(12deg)"
+                                          : "rotateX(0deg)",
+                                        transformOrigin: "50% 50%",
+                                      }}
+                                    >
+                                      <FrameStage
+                                        designWidth={design.width}
+                                        designHeight={design.height}
+                                        // WI-040 Phase 3 — host-supplied hover
+                                        // overlay. Lives inside FrameStage's
+                                        // design-plane so its rects share the
+                                        // camera transform. The Mount component
+                                        // uses the gate hook + projector;
+                                        // visibility filters + selection
+                                        // exclusion happen there.
+                                        renderHoverOverlay={() => (
+                                          <HoverAffordanceMount
+                                            doc={docInAgocraft}
+                                            hoveredKind={hoverContext.hoveredKind}
+                                            hoveredId={hoverContext.hoveredId}
+                                            designWidth={design.width}
+                                            designHeight={design.height}
+                                            selectedIds={selectedIds}
+                                            hoverSuppressedIds={hoverSuppressedIds}
+                                          />
+                                        )}
+                                        background={design.background}
+                                        root={docInAgocraft.root}
+                                        document={docInAgocraft}
+                                        editor={editor}
+                                        editing={true}
+                                        // WI-166 / DR-114 — injected RolePolicy
+                                        // (FrameStage knows the interface only).
+                                        roles={editorMode.roles}
+                                        infiniteCanvas={infiniteCanvas}
+                                        // WI-153 P2.5 — the editor always allows zoom
+                                        // (decoupled from the placement model), and
+                                        // page-bounded fits inside the header + rail.
+                                        cameraEnabled={true}
+                                        fitInset={fitInset}
+                                        handMode={handMode}
+                                        // WI-033 P2 — enteredId / onEnter (drill-in mode,
+                                        // Phase 12) removed. onFitAll restored: empty-canvas
+                                        // double-click fits the camera to all items.
+                                        selectedId={selectedFrameId ?? undefined}
+                                        selectedIds={selectedIds}
+                                        dimmedFrameIds={dimmedFrameIds}
+                                        isolatedFrameIds={isolatedFrameIds}
+                                        visibleFrameIds={visibleFrameIds}
+                                        onSelect={setSelectedFrameId}
+                                        onToggleSelect={(id) => toggleFrames([id])}
+                                        onMarqueeSelect={onMarqueeSelect}
+                                        onFitAll={handleFitAll}
+                                        // WI-035 P3 — Toolbar drag-to-add. The
+                                        // DropdownMenu add-items set the mime
+                                        // `application/x-weave-add-kind` on
+                                        // dragstart; FrameStage routes the drop's
+                                        // `containerId` (root or hovered frame).
+                                        // This handler dispatches the same
+                                        // `weave.item.add` SSOT.
+                                        onDragOver={(e) => {
+                                          if (
+                                            e.dataTransfer.types.includes(
+                                              "application/x-weave-add-kind",
+                                            )
+                                          ) {
+                                            e.preventDefault();
+                                          }
+                                        }}
+                                        onDropAdd={(e, containerId) => {
+                                          const kindRaw = e.dataTransfer.getData(
+                                            "application/x-weave-add-kind",
+                                          );
+                                          if (kindRaw === "") return;
+                                          e.preventDefault();
+                                          const kind = kindRaw as DomainKind;
+                                          // WI-153 P4 (DR-111 D5) — page-bounded: an
+                                          // empty-canvas drop arrives with the ROOT
+                                          // containerId; retarget it to the active page
+                                          // (root is page chrome there, not an editing
+                                          // surface). Hovered-frame drops pass through.
+                                          const target =
+                                            containerId === String(docInAgocraft.root.id)
+                                              ? (defaultAddContainerIdRef.current ?? containerId)
+                                              : containerId;
+                                          const result = editor.exec<unknown, string>(
+                                            "weave.item.add",
+                                            {
+                                              kind,
+                                              containerId: target,
+                                              frame: {
+                                                x: 0.3,
+                                                y: 0.3,
+                                                width: 0.4,
+                                                height: 0.4,
+                                                rotation: 0,
+                                              },
+                                            },
+                                          );
+                                          if (result.ok) setSelectedFrameId(result.value);
+                                        }}
+                                        onUpdateItem={handleUpdateItem}
+                                        // WI-032 Phase 3b — onUpdateShape / onRemoveShape
+                                        // edited `canvas-design.attrs.shapes[]`; with that
+                                        // kind removed, shape primitives flow through
+                                        // `onUpdateItem` instead.
+                                        onCommitFrame={(itemId, nextFrame: ItemFrame) =>
+                                          updateItem(itemId, (prev) => ({
+                                            ...prev,
+                                            attrs: {
+                                              ...prev.attrs,
+                                              frame: nextFrame,
+                                            } as typeof prev.attrs,
+                                          }))
+                                        }
+                                        renderFrameMenu={renderFrameMenu}
+                                      />
+                                    </div>
 
-                                  {/* WI-028 Phase 4 — remote cursors overlay. `project` maps the
+                                    {/* DR-027 / WI-071 — peek interaction surface (capture + overlay + inspector). */}
+                                    <PeekCaptureLayer
+                                      peek={peek}
+                                      screenToDesign={screenToDesign}
+                                      hitTestLifted={hitTestLifted}
+                                      canvasHostRef={canvasHostRef}
+                                      canvasHostEl={canvasHostEl}
+                                      hostRect={hostRect}
+                                      peekDragRef={peekDragRef}
+                                      peekCursor={peekCursor}
+                                      setPeekCursor={setPeekCursor}
+                                      peekDraggingId={peekDraggingId}
+                                      setPeekDraggingId={setPeekDraggingId}
+                                      colorFor={swatchFor}
+                                      labelFor={labelFor}
+                                    />
+
+                                    <SelectionToolbarOverlay
+                                      editor={editor}
+                                      document={docInAgocraft}
+                                      selectedIds={selectedIds}
+                                      onEditMediaSrc={(mediaKind) =>
+                                        setPendingMedia({ action: "edit", kind: mediaKind })
+                                      }
+                                      onEditShapeFill={(mediaKind, current) => {
+                                        if (!selectedFrameId) return;
+                                        setPendingMedia({
+                                          action: "fill",
+                                          kind: mediaKind,
+                                          itemId: selectedFrameId,
+                                          initialSrc: current,
+                                        });
+                                      }}
+                                    />
+
+                                    {/* WI-028 Phase 4 — remote cursors overlay. `project` maps the
                   presence-broadcast design-space coords to host-relative
                   pixels so the SVG renders aligned to the local user's
                   viewport. The SVG itself is pointer-events:none — it
                   never intercepts the design surface gestures. */}
-                                  {sync !== undefined ? (
-                                    <PresenceCursors engine={sync.engine} project={designToHost} />
-                                  ) : null}
-                                </main>
+                                    {sync !== undefined ? (
+                                      <PresenceCursors
+                                        engine={sync.engine}
+                                        project={designToHost}
+                                      />
+                                    ) : null}
+                                  </main>
 
-                                {/* ThumbnailPanel floats at the bottom of the viewport
+                                  {/* ThumbnailPanel floats at the bottom of the viewport
                           on top of the design canvas (z-stack). The panel's
                           own section uses `position: relative` to host its
                           shorter bg band; the wrapper here owns the
@@ -2496,157 +2523,160 @@ function DesignPageBody() {
                           (SelectionLayer 40 / MarqueeSelection 42 / RubberBand
                           45). Hoisted to body so z-[46] competes with them
                           directly. */}
-                                {typeof document !== "undefined" &&
-                                  createPortal(
-                                    <div
-                                      ref={setRailEl}
-                                      className="fixed inset-x-0 bottom-0 z-[46]"
-                                    >
-                                      <ThumbnailPanel
-                                        design={design}
-                                        setPresentationOrder={setPresentationOrderViaEditor}
-                                        selectedId={selectedFrameId}
-                                        onSelect={(id) => {
-                                          setSelectedFrameId(id);
-                                          // WI-153 P2 — in page-bounded formats a rail
-                                          // click switches the active page (the canvas
-                                          // shows one page at a time).
-                                          if (!infiniteCanvas && id !== undefined)
-                                            setActivePageId(id);
-                                        }}
-                                        focusedId={focusedId}
-                                        focusStage={focusStage}
-                                        disabledFrameIds={disabledFrameIds}
-                                        onCycleFocus={handleCycleFocus}
-                                        onClearFocus={handleClearFocus}
-                                        onZoomToFrame={handleZoomToFrame}
-                                        onToggleSlide={toggleFrameSlide}
-                                        onAddPage={() => {
-                                          // WI-153 P2 — add a blank page (top-level
-                                          // frame) and make it the active page.
-                                          const r = editor.exec<unknown, string>("weave.item.add", {
-                                            kind: "frame",
-                                            frame: FULL_FRAME,
-                                          });
-                                          if (r.ok) {
-                                            setSelectedFrameId(r.value);
-                                            if (!infiniteCanvas) setActivePageId(r.value);
-                                          }
-                                        }}
-                                        // WI-155 — page-bounded formats only (WI-153
-                                        // 결정 6 scope): infinite canvas keeps the
-                                        // canvas-side duplicate (0.02 nudge) instead.
-                                        // The command clones in place (offset 0) AND
-                                        // inserts the clone after the source in
-                                        // presentationOrder — one undo. The clone
-                                        // becomes the active page (mirrors onAddPage).
-                                        onDuplicatePage={
-                                          infiniteCanvas
-                                            ? undefined
-                                            : (id) => {
-                                                const r = editor.exec<unknown, string>(
-                                                  "weave.page.duplicate",
-                                                  { itemId: id },
-                                                );
-                                                if (r.ok) {
-                                                  setSelectedFrameId(r.value);
-                                                  setActivePageId(r.value);
+                                  {typeof document !== "undefined" &&
+                                    createPortal(
+                                      <div
+                                        ref={setRailEl}
+                                        className="fixed inset-x-0 bottom-0 z-[46]"
+                                      >
+                                        <ThumbnailPanel
+                                          design={design}
+                                          setPresentationOrder={setPresentationOrderViaEditor}
+                                          selectedId={selectedFrameId}
+                                          onSelect={(id) => {
+                                            setSelectedFrameId(id);
+                                            // WI-153 P2 — in page-bounded formats a rail
+                                            // click switches the active page (the canvas
+                                            // shows one page at a time).
+                                            if (!infiniteCanvas && id !== undefined)
+                                              setActivePageId(id);
+                                          }}
+                                          focusedId={focusedId}
+                                          focusStage={focusStage}
+                                          disabledFrameIds={disabledFrameIds}
+                                          onCycleFocus={handleCycleFocus}
+                                          onClearFocus={handleClearFocus}
+                                          onZoomToFrame={handleZoomToFrame}
+                                          onToggleSlide={toggleFrameSlide}
+                                          onAddPage={() => {
+                                            // WI-153 P2 — add a blank page (top-level
+                                            // frame) and make it the active page.
+                                            const r = editor.exec<unknown, string>(
+                                              "weave.item.add",
+                                              {
+                                                kind: "frame",
+                                                frame: FULL_FRAME,
+                                              },
+                                            );
+                                            if (r.ok) {
+                                              setSelectedFrameId(r.value);
+                                              if (!infiniteCanvas) setActivePageId(r.value);
+                                            }
+                                          }}
+                                          // WI-155 — page-bounded formats only (WI-153
+                                          // 결정 6 scope): infinite canvas keeps the
+                                          // canvas-side duplicate (0.02 nudge) instead.
+                                          // The command clones in place (offset 0) AND
+                                          // inserts the clone after the source in
+                                          // presentationOrder — one undo. The clone
+                                          // becomes the active page (mirrors onAddPage).
+                                          onDuplicatePage={
+                                            infiniteCanvas
+                                              ? undefined
+                                              : (id) => {
+                                                  const r = editor.exec<unknown, string>(
+                                                    "weave.page.duplicate",
+                                                    { itemId: id },
+                                                  );
+                                                  if (r.ok) {
+                                                    setSelectedFrameId(r.value);
+                                                    setActivePageId(r.value);
+                                                  }
                                                 }
-                                              }
-                                        }
-                                      />
-                                    </div>,
-                                    document.body,
-                                  )}
-                                {/* WI-052 — 아쿠 (Aku) assistant: floating launcher →
+                                          }
+                                        />
+                                      </div>,
+                                      document.body,
+                                    )}
+                                  {/* WI-052 — 아쿠 (Aku) assistant: floating launcher →
                           expandable chat panel. Mounted inside the providers so
                           its design-aware tools read live selection + edit via
                           editor.exec; self-portals to <body>. */}
-                                <AkuAssistant
-                                  editor={editor}
-                                  document={docInAgocraft}
-                                  designId={designId}
-                                  // WI-034 4b — gate Aku connect-on-init on the saved design
-                                  // having loaded (load-order: a grace-replayed job edits the
-                                  // real doc, not the blank placeholder shown while isLoading).
-                                  designLoaded={!isLoading}
-                                  designInfo={{
-                                    width: design.width,
-                                    height: design.height,
-                                    background: design.background,
-                                  }}
-                                  // WI-153 P4 — page-bounded: agent non-frame root-adds
-                                  // are retargeted onto the active page (same policy
-                                  // source as toolbar/drop adds).
-                                  defaultAddContainerId={defaultAddContainerId}
-                                  // WI-065 — after the agent adds slide(s), fit the deck
-                                  // at the shared 70% (agent edits skip the UI add-fit).
-                                  onFramesAdded={handleFitAll}
-                                  // WI-125 — fit the camera to each NEW slide the agent
-                                  // creates, at its creation moment. WI-153 P4 — the
-                                  // agent wrapper also switches the active page on
-                                  // page-bounded formats (hidden slides don't render).
-                                  onZoomToFrame={handleAgentZoomToFrame}
-                                />
-                                <CursorTooltipBridge
-                                  hover={hoverContext}
-                                  selectedIds={selectedIds}
-                                  canUndo={canUndo}
-                                  canRedo={canRedo}
-                                  doc={docInAgocraft}
-                                  hotkeyTable={editorHotkeyTable}
-                                />
-                                <EditAffordanceGate>
-                                  <ReparentGhostOverlay state={reparentDragState} />
-                                </EditAffordanceGate>
-                                {/* WI-070 — snap guide overlay (self-portals to body,
+                                  <AkuAssistant
+                                    editor={editor}
+                                    document={docInAgocraft}
+                                    designId={designId}
+                                    // WI-034 4b — gate Aku connect-on-init on the saved design
+                                    // having loaded (load-order: a grace-replayed job edits the
+                                    // real doc, not the blank placeholder shown while isLoading).
+                                    designLoaded={!isLoading}
+                                    designInfo={{
+                                      width: design.width,
+                                      height: design.height,
+                                      background: design.background,
+                                    }}
+                                    // WI-153 P4 — page-bounded: agent non-frame root-adds
+                                    // are retargeted onto the active page (same policy
+                                    // source as toolbar/drop adds).
+                                    defaultAddContainerId={defaultAddContainerId}
+                                    // WI-065 — after the agent adds slide(s), fit the deck
+                                    // at the shared 70% (agent edits skip the UI add-fit).
+                                    onFramesAdded={handleFitAll}
+                                    // WI-125 — fit the camera to each NEW slide the agent
+                                    // creates, at its creation moment. WI-153 P4 — the
+                                    // agent wrapper also switches the active page on
+                                    // page-bounded formats (hidden slides don't render).
+                                    onZoomToFrame={handleAgentZoomToFrame}
+                                  />
+                                  <CursorTooltipBridge
+                                    hover={hoverContext}
+                                    selectedIds={selectedIds}
+                                    canUndo={canUndo}
+                                    canRedo={canRedo}
+                                    doc={docInAgocraft}
+                                    hotkeyTable={editorHotkeyTable}
+                                  />
+                                  <EditAffordanceGate>
+                                    <ReparentGhostOverlay state={reparentDragState} />
+                                  </EditAffordanceGate>
+                                  {/* WI-070 — snap guide overlay (self-portals to body,
                           pointer-events:none). Renders the active snap's guides:
                           Phase 1 the endpoint-close radial marker; Phase 2 the
                           alignment / spacing / grid guide lines. */}
-                                <SnapFeedbackLayer />
-                                {/* WI-074 — rotation snap guide (0/90/180/270 crosshair
+                                  <SnapFeedbackLayer />
+                                  {/* WI-074 — rotation snap guide (0/90/180/270 crosshair
                           + degree badge) for both frame rotate and crop straighten. */}
-                                <RotationSnapLayer />
-                                {typeof document !== "undefined" &&
-                                  layoutChildDrag.dropPreview !== null &&
-                                  createPortal(
-                                    <div
-                                      className="layout-drop-cell-preview"
-                                      style={{
-                                        left: layoutChildDrag.dropPreview.left,
-                                        top: layoutChildDrag.dropPreview.top,
-                                        width: layoutChildDrag.dropPreview.width,
-                                        height: layoutChildDrag.dropPreview.height,
-                                      }}
-                                    />,
-                                    document.body,
-                                  )}
-                                <DesignDialogs
-                                  mediaOpen={pendingMedia !== null}
-                                  mediaKind={pendingMedia?.kind ?? "image"}
-                                  mediaInitialSrc={mediaInitialSrc}
-                                  mediaInitialAlt={mediaInitialAlt}
-                                  onMediaConfirm={handleMediaConfirm}
-                                  onMediaCancel={() => setPendingMedia(null)}
-                                  pasteSpecialOpen={clipboardCommands.pasteSpecialOpen}
-                                  onPasteSpecialOpenChange={clipboardCommands.setPasteSpecialOpen}
-                                  onPasteSpecialConfirm={
-                                    clipboardCommands.handlePasteSpecialConfirm
-                                  }
-                                  clipboardHasItems={clipboardCommands.hasItems}
-                                  hasSelection={selectedIds.size > 0}
-                                  conflictOpen={localConflict}
-                                  conflictBusy={conflictBusy}
-                                  onConflictSave={() => void handleConflictSave()}
-                                  onConflictDiscard={() => void handleConflictDiscard()}
-                                  slidePickerOpen={slidePickerOpen}
-                                  onSlidePickerOpenChange={setSlidePickerOpen}
-                                  onPickPreset={handlePickPreset}
-                                  pageNoun={pageNoun}
-                                  paletteOpen={paletteOpen}
-                                  onPaletteOpenChange={setPaletteOpen}
-                                />
-                                {/* WI-036 — QuickActionBar anchored to the hovered
+                                  <RotationSnapLayer />
+                                  {typeof document !== "undefined" &&
+                                    layoutChildDrag.dropPreview !== null &&
+                                    createPortal(
+                                      <div
+                                        className="layout-drop-cell-preview"
+                                        style={{
+                                          left: layoutChildDrag.dropPreview.left,
+                                          top: layoutChildDrag.dropPreview.top,
+                                          width: layoutChildDrag.dropPreview.width,
+                                          height: layoutChildDrag.dropPreview.height,
+                                        }}
+                                      />,
+                                      document.body,
+                                    )}
+                                  <DesignDialogs
+                                    mediaOpen={pendingMedia !== null}
+                                    mediaKind={pendingMedia?.kind ?? "image"}
+                                    mediaInitialSrc={mediaInitialSrc}
+                                    mediaInitialAlt={mediaInitialAlt}
+                                    onMediaConfirm={handleMediaConfirm}
+                                    onMediaCancel={() => setPendingMedia(null)}
+                                    pasteSpecialOpen={clipboardCommands.pasteSpecialOpen}
+                                    onPasteSpecialOpenChange={clipboardCommands.setPasteSpecialOpen}
+                                    onPasteSpecialConfirm={
+                                      clipboardCommands.handlePasteSpecialConfirm
+                                    }
+                                    clipboardHasItems={clipboardCommands.hasItems}
+                                    hasSelection={selectedIds.size > 0}
+                                    conflictOpen={localConflict}
+                                    conflictBusy={conflictBusy}
+                                    onConflictSave={() => void handleConflictSave()}
+                                    onConflictDiscard={() => void handleConflictDiscard()}
+                                    slidePickerOpen={slidePickerOpen}
+                                    onSlidePickerOpenChange={setSlidePickerOpen}
+                                    onPickPreset={handlePickPreset}
+                                    pageNoun={pageNoun}
+                                    paletteOpen={paletteOpen}
+                                    onPaletteOpenChange={setPaletteOpen}
+                                  />
+                                  {/* WI-036 — QuickActionBar anchored to the hovered
                           frame's viewport top-left (8px gap above the
                           frame edge). The bar carries
                           `data-quick-actions-frame-id` so
@@ -2654,141 +2684,143 @@ function DesignPageBody() {
                           continuation of the underlying frame's hover
                           (hover target union). Position follows the
                           frame via RAF while hover is active. */}
-                                <MultiSelectionOverlay
-                                  selectedIds={selectedIds}
-                                  onResize={(updates) => {
-                                    // WI-036 follow-up — multi-selection resize.
-                                    // Dispatch a SINGLE `weave.items.resizeMulti`
-                                    // command that emits N patches in one Change,
-                                    // so the editor's history records the entire
-                                    // drag as ONE undoable step (per-frame
-                                    // updates would be N separate entries).
-                                    if (updates.length === 0) return;
-                                    editor.exec("weave.items.resizeMulti", {
-                                      updates: updates.map((u) => ({
-                                        itemId: u.id,
-                                        frame: u.frame,
-                                      })),
-                                    });
-                                  }}
-                                />
-                                <QuickActionBarAnchored
-                                  // WI-164 — no quick actions on a page
-                                  // (artboard): the escape-hatch selection
-                                  // keeps ONLY the contextual toolbar
-                                  // (page-fill editing); insert/lock/delete
-                                  // are item actions a page never takes.
-                                  selectedFrameId={
-                                    selectedFrameId != null && !isArtboardId(selectedFrameId)
-                                      ? selectedFrameId
-                                      : undefined
-                                  }
-                                  selectedIds={selectedIds}
-                                  onInsertInFrame={(containerId, kind, options) => {
-                                    // WI-036 follow-up / WI-044 — hover-open
-                                    // two-level submenu of the `+` button. Shares
-                                    // the same `weave.item.add` SSOT as the hotkey
-                                    // / Alt+drag / DropdownMenu add paths.
-                                    //
-                                    // The bar is selection-driven: after the
-                                    // submenu inserts a child we deliberately
-                                    // KEEP the parent selected (don't follow
-                                    // the new item) so the bar stays anchored
-                                    // to the same frame and the user can add
-                                    // multiple children in a row.
+                                  <MultiSelectionOverlay
+                                    selectedIds={selectedIds}
+                                    onResize={(updates) => {
+                                      // WI-036 follow-up — multi-selection resize.
+                                      // Dispatch a SINGLE `weave.items.resizeMulti`
+                                      // command that emits N patches in one Change,
+                                      // so the editor's history records the entire
+                                      // drag as ONE undoable step (per-frame
+                                      // updates would be N separate entries).
+                                      if (updates.length === 0) return;
+                                      editor.exec("weave.items.resizeMulti", {
+                                        updates: updates.map((u) => ({
+                                          itemId: u.id,
+                                          frame: u.frame,
+                                        })),
+                                      });
+                                    }}
+                                  />
+                                  <QuickActionBarAnchored
+                                    // WI-164 — no quick actions on a page
+                                    // (artboard): the escape-hatch selection
+                                    // keeps ONLY the contextual toolbar
+                                    // (page-fill editing); insert/lock/delete
+                                    // are item actions a page never takes.
+                                    selectedFrameId={
+                                      selectedFrameId != null &&
+                                      itemCapability(selectedFrameId).quickActions
+                                        ? selectedFrameId
+                                        : undefined
+                                    }
+                                    selectedIds={selectedIds}
+                                    onInsertInFrame={(containerId, kind, options) => {
+                                      // WI-036 follow-up / WI-044 — hover-open
+                                      // two-level submenu of the `+` button. Shares
+                                      // the same `weave.item.add` SSOT as the hotkey
+                                      // / Alt+drag / DropdownMenu add paths.
+                                      //
+                                      // The bar is selection-driven: after the
+                                      // submenu inserts a child we deliberately
+                                      // KEEP the parent selected (don't follow
+                                      // the new item) so the bar stays anchored
+                                      // to the same frame and the user can add
+                                      // multiple children in a row.
 
-                                    // Image / video have no inline type variant —
-                                    // they open the media picker (same dialog the
-                                    // top toolbar uses). The picker's confirm path
-                                    // adds into the selected frame, which is this
-                                    // anchored bar's target.
-                                    if (kind === "image" || kind === "video") {
-                                      setPendingMedia({ action: "add", kind });
-                                      return;
-                                    }
-                                    const attrsOverride: Record<string, unknown> = {};
-                                    const sub = options?.shapeSubKind;
-                                    if (kind === "shape" && sub && sub !== "rectangle") {
-                                      attrsOverride.shape = sub;
-                                      attrsOverride.subAttrs =
-                                        options?.subAttrs ?? defaultShapeSubAttrs(sub);
-                                    }
-                                    if (kind === "line" && options?.lineAttrs) {
-                                      attrsOverride.points = options.lineAttrs.points;
-                                      if (options.lineAttrs.smooth !== undefined) {
-                                        attrsOverride.smooth = options.lineAttrs.smooth;
+                                      // Image / video have no inline type variant —
+                                      // they open the media picker (same dialog the
+                                      // top toolbar uses). The picker's confirm path
+                                      // adds into the selected frame, which is this
+                                      // anchored bar's target.
+                                      if (kind === "image" || kind === "video") {
+                                        setPendingMedia({ action: "add", kind });
+                                        return;
                                       }
-                                      attrsOverride.heads = { start: "none", end: "none" };
-                                    }
-                                    // WI-044 — frame layout paradigm. "absolute" is
-                                    // the default (no spec); flex/grid attach the spec
-                                    // at creation time via attrsOverride. A follow-up
-                                    // `weave.frame.setLayout` would race the
-                                    // PendingCreations staging pipeline (the new item
-                                    // isn't in ctx.document until the next tick, so
-                                    // findChild would miss it) — and a brand-new frame
-                                    // has no children to re-place, so setting the raw
-                                    // attrs.layout is sufficient; the onChildAdd hook
-                                    // handles placement once children arrive.
-                                    const layout = options?.frameLayout;
-                                    if (
-                                      kind === "frame" &&
-                                      layout !== undefined &&
-                                      layout !== "absolute"
-                                    ) {
-                                      const spec: LayoutSpec =
-                                        layout === "auto-flex"
-                                          ? createAutoFlexSpec()
-                                          : createAutoGridSpec({
-                                              columns: [trackFr(1)],
-                                              rows: [trackFr(1)],
-                                            });
-                                      attrsOverride.layout = spec;
-                                    }
-                                    editor.exec<unknown, string>("weave.item.add", {
-                                      kind,
-                                      containerId,
-                                      frame: {
-                                        x: 0.3,
-                                        y: 0.3,
-                                        width: 0.4,
-                                        height: 0.4,
-                                        rotation: 0,
-                                      },
-                                      ...(Object.keys(attrsOverride).length > 0
-                                        ? { attrsOverride }
-                                        : {}),
-                                    });
-                                  }}
-                                  onArrangeHover={setArrangePreview}
-                                  isLocked={(id) => {
-                                    const it = findItemDeep(docInAgocraft, id);
-                                    return it !== undefined && isItemLocked(it);
-                                  }}
-                                />
-                                {/* WI-048 — ghost preview of the Flex / Grid
+                                      const attrsOverride: Record<string, unknown> = {};
+                                      const sub = options?.shapeSubKind;
+                                      if (kind === "shape" && sub && sub !== "rectangle") {
+                                        attrsOverride.shape = sub;
+                                        attrsOverride.subAttrs =
+                                          options?.subAttrs ?? defaultShapeSubAttrs(sub);
+                                      }
+                                      if (kind === "line" && options?.lineAttrs) {
+                                        attrsOverride.points = options.lineAttrs.points;
+                                        if (options.lineAttrs.smooth !== undefined) {
+                                          attrsOverride.smooth = options.lineAttrs.smooth;
+                                        }
+                                        attrsOverride.heads = { start: "none", end: "none" };
+                                      }
+                                      // WI-044 — frame layout paradigm. "absolute" is
+                                      // the default (no spec); flex/grid attach the spec
+                                      // at creation time via attrsOverride. A follow-up
+                                      // `weave.frame.setLayout` would race the
+                                      // PendingCreations staging pipeline (the new item
+                                      // isn't in ctx.document until the next tick, so
+                                      // findChild would miss it) — and a brand-new frame
+                                      // has no children to re-place, so setting the raw
+                                      // attrs.layout is sufficient; the onChildAdd hook
+                                      // handles placement once children arrive.
+                                      const layout = options?.frameLayout;
+                                      if (
+                                        kind === "frame" &&
+                                        layout !== undefined &&
+                                        layout !== "absolute"
+                                      ) {
+                                        const spec: LayoutSpec =
+                                          layout === "auto-flex"
+                                            ? createAutoFlexSpec()
+                                            : createAutoGridSpec({
+                                                columns: [trackFr(1)],
+                                                rows: [trackFr(1)],
+                                              });
+                                        attrsOverride.layout = spec;
+                                      }
+                                      editor.exec<unknown, string>("weave.item.add", {
+                                        kind,
+                                        containerId,
+                                        frame: {
+                                          x: 0.3,
+                                          y: 0.3,
+                                          width: 0.4,
+                                          height: 0.4,
+                                          rotation: 0,
+                                        },
+                                        ...(Object.keys(attrsOverride).length > 0
+                                          ? { attrsOverride }
+                                          : {}),
+                                      });
+                                    }}
+                                    onArrangeHover={setArrangePreview}
+                                    isLocked={(id) => {
+                                      const it = findItemDeep(docInAgocraft, id);
+                                      return it !== undefined && isItemLocked(it);
+                                    }}
+                                  />
+                                  {/* WI-048 — ghost preview of the Flex / Grid
                               arrangement while the bar button is hovered. */}
-                                <ArrangePreviewOverlay
-                                  layout={arrangePreview}
-                                  selectedIds={selectedIds}
-                                  doc={docInAgocraft}
-                                  designWidth={design.width}
-                                  designHeight={design.height}
-                                />
-                              </div>
-                            </DesignDimsProvider>
-                          </ChartElementSelectionProvider>
-                        </DatasetProvider>
-                      </DocumentForResolutionProvider>
-                    </EditorProvider>
-                  </ModeAwareTooltipSurface>
-                </CommandHostProvider>
-              </PeekActiveProvider>
-            </InteractionModeProvider>
-          </SelectionProvider>
-        </SelectionChromeProvider>
-      </RouterProvider>
-    </EditorVMProvider>
+                                  <ArrangePreviewOverlay
+                                    layout={arrangePreview}
+                                    selectedIds={selectedIds}
+                                    doc={docInAgocraft}
+                                    designWidth={design.width}
+                                    designHeight={design.height}
+                                  />
+                                </div>
+                              </DesignDimsProvider>
+                            </ChartElementSelectionProvider>
+                          </DatasetProvider>
+                        </DocumentForResolutionProvider>
+                      </EditorProvider>
+                    </ModeAwareTooltipSurface>
+                  </CommandHostProvider>
+                </PeekActiveProvider>
+              </InteractionModeProvider>
+            </SelectionProvider>
+          </SelectionChromeProvider>
+        </RouterProvider>
+      </EditorVMProvider>
+    </EditorModeProvider>
   );
 }
 
@@ -3038,9 +3070,10 @@ interface HoverAffordanceMountProps {
   readonly designWidth: number;
   readonly designHeight: number;
   readonly selectedIds: ReadonlySet<string>;
-  /** WI-164 — page-bounded artboard ids (empty on infinite canvas). The
-   *  projector paints NO affordance for them — see projector docs. */
-  readonly artboardIds: ReadonlySet<string>;
+  /** WI-164 / WI-166 — hover-suppressed ids, computed from RolePolicy at the
+   *  composition root (stage items; empty on infinite canvas). The projector
+   *  paints NO affordance for them — see projector docs. */
+  readonly hoverSuppressedIds: ReadonlySet<string>;
 }
 
 /** WI-040 Phase 3 — design-plane resident hover overlay. Lives inside
@@ -3055,7 +3088,7 @@ function HoverAffordanceMount({
   designWidth,
   designHeight,
   selectedIds,
-  artboardIds,
+  hoverSuppressedIds,
 }: HoverAffordanceMountProps): ReactNodeAlias {
   const allowed = useEditAffordancesAllowed();
   const projection = useMemo(
@@ -3067,9 +3100,9 @@ function HoverAffordanceMount({
         designWidth,
         designHeight,
         selectedIds,
-        artboardIds,
+        hoverSuppressedIds,
       }),
-    [doc, hoveredKind, hoveredId, designWidth, designHeight, selectedIds, artboardIds],
+    [doc, hoveredKind, hoveredId, designWidth, designHeight, selectedIds, hoverSuppressedIds],
   );
   if (!allowed) return null;
   return (

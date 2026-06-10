@@ -1,0 +1,5 @@
+# WI-166 / DR-114 §2b — declared composition roots: the ONLY files allowed
+# to import editor-mode/registry or editor-mode/EditorModeProvider.
+# Everything else imports editor-mode/types only and receives policies by
+# injection. Checked by tools/check_editor_mode_boundary.sh.
+apps/web/src/pages/DesignPage.tsx

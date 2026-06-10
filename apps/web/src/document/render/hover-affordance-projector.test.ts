@@ -351,7 +351,7 @@ describe("projectHoverAffordance — artboard exclusion (WI-164)", () => {
       designWidth: DESIGN_W,
       designHeight: DESIGN_H,
       selectedIds: new Set(),
-      artboardIds: new Set(["page"]),
+      hoverSuppressedIds: new Set(["page"]),
     });
     expect(out).toEqual({ hovered: null, descendants: [], parent: null });
   });
@@ -364,7 +364,7 @@ describe("projectHoverAffordance — artboard exclusion (WI-164)", () => {
       designWidth: DESIGN_W,
       designHeight: DESIGN_H,
       selectedIds: new Set(),
-      artboardIds: new Set(["page"]),
+      hoverSuppressedIds: new Set(["page"]),
     });
     expect(out.hovered?.id).toBe("child");
     expect(out.descendants.map((d) => d.id)).toEqual(["grandchild"]);
@@ -379,13 +379,13 @@ describe("projectHoverAffordance — artboard exclusion (WI-164)", () => {
       designWidth: DESIGN_W,
       designHeight: DESIGN_H,
       selectedIds: new Set(),
-      artboardIds: new Set(["page"]),
+      hoverSuppressedIds: new Set(["page"]),
     });
     expect(out.hovered?.id).toBe("grandchild");
     expect(out.parent?.id).toBe("child");
   });
 
-  it("omitting artboardIds keeps the WI-040 model unchanged (infinite canvas)", () => {
+  it("omitting hoverSuppressedIds keeps the WI-040 model unchanged (infinite canvas)", () => {
     const out = projectHoverAffordance({
       doc: pageTree(),
       hoveredKind: "frame",
