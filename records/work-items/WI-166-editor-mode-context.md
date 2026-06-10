@@ -4,7 +4,7 @@
 - **Date**: 2026-06-10
 - **Decision Record**: DR-114
 - **Engineering Plan**: features/editor-mode-context/ENGINEERING_PLAN.md
-- **Origin**: 사용자 요청 3건 —
+- **Origin**: 사용자 요청 6건 —
   1. 프레젠테이션 모드에서 페이지 내부 아이템은 원제스처 선택+이동(첫 번째
      자식처럼). 단, 모드별 분기 누적이 아니라 **모드별 컨텍스트 합성 +
      다형성 조각**으로.
@@ -12,12 +12,21 @@
      컨텍스트 구성에 따라 세팅.
   3. **하단 패널도 선언적으로** — 믹스드는 새 페이지 추가 불필요,
      프레젠테이션은 페이지 외 프레임·슬라이드 토글·눈동자 불필요.
+  4. **성장 전제** — 지금 규칙은 일부일 뿐, 속성이 계속 늘어나며
+     disabled(coming-soon) 모드들의 예상 모습까지 감안한 구조.
+  5. **의존성 주입** — 모드별 구현체를 조립해 주입, 내부 구현은
+     인터페이스만으로.
 
 ## Scope
 
 - `EditorModeContext` = view / camera / input / hit / roles / insertion /
-  rail 7개 정책의 합성체. `EDITOR_MODES` 레지스트리(모드당 합성 파일 1개)가
-  유일한 모드 진실 원천 — 상세는 DR-114.
+  rail 7개 정책(열린 집합)의 합성체. `EDITOR_MODES` 레지스트리
+  (**DocFlavor당** 합성 파일 1개, 순수 정적 record — refs 없음)가 유일한
+  모드 진실 원천. 소비처는 `types.ts` 인터페이스만 import(빌드-그래프
+  게이트), 주입은 컴포지션 루트(Provider/`editorModeFor`)에서 수동으로 —
+  상세는 DR-114 v2 (§2b 주입 모델, §6 성장 규칙 G1-G6, §7 disabled flavor
+  예상 모습 스트레스 테스트).
+- FORMAT_EDITOR_CONFIG는 레지스트리로 완전 해소(P2에서 파일 삭제).
 - 행동 변경 3건 포함: (P2) mixed 레일 addPage 제거 + page-bounded 레일
   non-slide/토글/눈동자 제거, (P3) page-bounded 원제스처 선택+이동.
   P1·P4는 행동 동일 리팩토링.
