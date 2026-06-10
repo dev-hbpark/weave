@@ -32,4 +32,12 @@ describe("FORMAT_EDITOR_CONFIG (WI-153 / DR-111)", () => {
     const flavors: DocFlavor[] = ["mixed", "slide-deck", "canvas-board", "doc-page"];
     for (const f of flavors) expect(FORMAT_EDITOR_CONFIG[f]).toBeDefined();
   });
+
+  it("P3 — page-bounded formats default adds into the active page; infinite into root", () => {
+    expect(formatEditorConfig("slide-deck").defaultContainer).toBe("active-page");
+    expect(formatEditorConfig("doc-page").defaultContainer).toBe("active-page");
+    expect(formatEditorConfig("mixed").defaultContainer).toBe("root");
+    expect(formatEditorConfig("canvas-board").defaultContainer).toBe("root");
+    expect(formatEditorConfig(undefined).defaultContainer).toBe("root");
+  });
 });

@@ -42,6 +42,12 @@ export interface UseItemAddParams {
   readonly setSelectedFrameIdRef: React.MutableRefObject<((id: string | null) => void) | null>;
   /** Geometry computer mirror (orchestrator-owned). */
   readonly addGeometryRef: React.MutableRefObject<AddGeometryFn>;
+  /** WI-153 P3 (DR-111 D5) — fallback container when nothing (or a non-frame)
+   *  is selected. Page-bounded formats mirror the ACTIVE PAGE id here so adds
+   *  land in the page, not the design root; infinite canvas mirrors undefined
+   *  (→ root, unchanged). Policy comes from FORMAT_EDITOR_CONFIG.defaultContainer
+   *  — resolved by the orchestrator, never by a flavor compare here (Rule 6). */
+  readonly defaultAddContainerIdRef: React.MutableRefObject<string | undefined>;
   readonly designWidth: number;
   readonly designHeight: number;
 }
@@ -71,6 +77,7 @@ export function useItemAdd({
   selectedFrameIdRef,
   setSelectedFrameIdRef,
   addGeometryRef,
+  defaultAddContainerIdRef,
   designWidth,
   designHeight,
 }: UseItemAddParams): UseItemAdd {
@@ -122,13 +129,15 @@ export function useItemAdd({
         attrsOverride.alt = altOverride.trim();
       }
       // Container rule: add INTO the selected item only when it is a frame.
-      // A selected non-frame item routes the add to the design root. Nothing
-      // selected → root.
+      // A selected non-frame item routes the add to the format's default
+      // container — root on infinite canvas; the ACTIVE PAGE on page-bounded
+      // formats (WI-153 P3, DR-111 D5). Nothing selected → same default.
       const rootId = String(document.root.id);
       const sel = selectedFrameIdRef.current;
       const selItem = sel !== undefined ? findItemDeep(document, sel) : undefined;
       const selIsFrame = selItem?.kind === "frame";
-      const containerId = selIsFrame && sel !== undefined ? sel : rootId;
+      const containerId =
+        selIsFrame && sel !== undefined ? sel : (defaultAddContainerIdRef.current ?? rootId);
       // Geometry: root → viewport-centred; frame → frame-centred.
       const geo = addGeometryRef.current(containerId, kind === "text");
       if (geo !== null) {
@@ -186,6 +195,7 @@ export function useItemAdd({
       selectedFrameIdRef,
       setSelectedFrameIdRef,
       addGeometryRef,
+      defaultAddContainerIdRef,
     ],
   );
 
@@ -221,7 +231,9 @@ export function useItemAdd({
       const sel = selectedFrameIdRef.current;
       const selItem = sel !== undefined ? findItemDeep(doc, sel) : undefined;
       const selIsFrame = selItem?.kind === "frame";
-      const containerId = selIsFrame && sel !== undefined ? sel : rootId;
+      // WI-153 P3 — same default-container rule as addNewItem above.
+      const containerId =
+        selIsFrame && sel !== undefined ? sel : (defaultAddContainerIdRef.current ?? rootId);
       let frame = spec.frame;
       const attrsOverride: Record<string, unknown> = {};
       const geo = addGeometryRef.current(containerId, spec.kind === "text");
@@ -260,6 +272,7 @@ export function useItemAdd({
     selectedFrameIdRef,
     setSelectedFrameIdRef,
     addGeometryRef,
+    defaultAddContainerIdRef,
   ]);
 
   // WI-030 — Slide preset picker open state. The Add menu's "슬라이드" item opens

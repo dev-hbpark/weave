@@ -1,6 +1,6 @@
 # WI-153 — 타입별 편집화면 + 프레젠테이션/문서 page-bounded(캔바식) 편집
 
-Status: **In Progress** (P1·P2.1·P2.2·P2.5 완료 + P3 매트/P4 hover 억제 선행 · 다음: P3 소속+클램프)
+Status: **In Progress** (P1·P2.1·P2.2·P2.5·P3 완료 + P4 hover 억제 선행 · 다음: P4 추가/에이전트 흐름)
 Owner: hbpark
 Updated: 2026-06-10
 
@@ -47,4 +47,6 @@ Updated: 2026-06-10
 
 ## 다음 액션
 
-P1 착수(포맷 레지스트리). 동작 변화 없는 안전한 첫 발 → SVL/타입체크 green 확인 후 P2.
+P4 추가/에이전트 흐름 — 드래그-드롭(onDropAdd)·러버밴드·Aku 추가가 활성 페이지 타깃,
+`config.agentRootAdd === false`로 에이전트 root 배치 금지(WI-150 가드 결합). 진행 로그는
+엔지니어링 플랜 참조 (P3까지 완료: 한 페이지 캔버스 + 매트 + 클립 + 소속 + 소프트 클램프).

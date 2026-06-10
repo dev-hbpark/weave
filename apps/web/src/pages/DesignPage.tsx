@@ -1041,6 +1041,14 @@ function DesignPageBody() {
     () => (!infiniteCanvas && activePageId !== undefined ? new Set([activePageId]) : undefined),
     [infiniteCanvas, activePageId],
   );
+  // WI-153 P3 (DR-111 D5) — default add container. Page-bounded formats route
+  // selection-less adds into the ACTIVE PAGE instead of the design root (root is
+  // page chrome there, not an editing surface). Policy from the format registry;
+  // ref-mirrored so useItemAdd's stable closures read the live value.
+  const defaultAddContainerId =
+    formatEditorConfig(currentFlavor).defaultContainer === "active-page" ? activePageId : undefined;
+  const defaultAddContainerIdRef = useRef(defaultAddContainerId);
+  defaultAddContainerIdRef.current = defaultAddContainerId;
   // WI-153 P2.5 — measure the thumbnail rail (variable height) so the page-bounded
   // fit sits ABOVE it and BELOW the fixed 48px header (h-12), not hidden under the
   // chrome. Callback ref → re-measures when the rail mounts/unmounts or resizes.
@@ -1442,6 +1450,7 @@ function DesignPageBody() {
     selectedFrameIdRef,
     setSelectedFrameIdRef,
     addGeometryRef,
+    defaultAddContainerIdRef,
     designWidth: design.width,
     designHeight: design.height,
   });

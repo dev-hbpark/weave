@@ -60,6 +60,7 @@ import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index
 // handles) + move gate. No layout branching lives here.
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../document/layout/registry.js";
 import { MarqueeSelectionLayer } from "../document/marquee/MarqueeSelectionLayer.js";
+import { clampFrameToPage, type PageClampSpec } from "../document/page-clamp.js";
 import { snapRotation } from "../document/rotation-snap.js";
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
 import { RubberBandLayer } from "../document/rubber-band/RubberBandLayer.js";
@@ -87,6 +88,11 @@ export interface FrameMenuContext {
   readonly layers: ReadonlyArray<LayerHit>;
   readonly onPickLayer: (id: string) => void;
 }
+
+/** WI-153 P3 (DR-111 D6) — minimum on-page overlap for the soft clamp, in
+ *  DESIGN px (≈ a grabbable handle's worth). Converted to a parent ratio at
+ *  drag time via the live plane scale so the felt size is zoom-independent. */
+const PAGE_MIN_OVERLAP_DESIGN_PX = 48;
 
 export interface FrameStageProps {
   readonly designWidth: number;
@@ -247,6 +253,11 @@ export function FrameStage(props: FrameStageProps) {
     visibleFrameIds !== undefined
       ? allTopFrames.filter((f) => visibleFrameIds.has(String(f.id)))
       : allTopFrames;
+  // WI-153 P3 — latest-value mirror for the frame-access closure (useMemo([])):
+  // the soft page clamp (`parentRectOf` → `computeMove`) needs to know whether
+  // we are page-scoped and which page is active without rebuilding the access.
+  const visibleFrameIdsRef = useRef(visibleFrameIds);
+  visibleFrameIdsRef.current = visibleFrameIds;
   // WI-033 P2 — `reduceMotion` useMemo removed alongside the drill-in
   // spring animation. The design plane now snaps to base camera
   // synchronously on resize, which already honours the user's
@@ -892,10 +903,25 @@ export function FrameStage(props: FrameStageProps) {
         const o = orig as unknown as ItemFrame;
         const w = parent.width > 0 ? parent.width : 1;
         const h = parent.height > 0 ? parent.height : 1;
+        let nx = o.x + dx / w;
+        let ny = o.y + dy / h;
+        // WI-153 P3 (DR-111 D6) — soft min-overlap clamp. `parentRectOf` rides
+        // a `__pageClamp` spec through the opaque parent rect when the moved
+        // item is a direct child of the active page (page-bounded formats
+        // only). Bleed stays allowed; at least the spec's min overlap must
+        // remain on-page so an item can never be dragged fully off and lost.
+        // Rotated boxes are skipped (DR-111 "비회전 우선"); snap runs BEFORE
+        // computeMove in the move binding, so the clamp has the last word.
+        const clampSpec = (parent as { __pageClamp?: PageClampSpec }).__pageClamp;
+        if (clampSpec !== undefined && (o.rotation ?? 0) === 0) {
+          const c = clampFrameToPage({ x: nx, y: ny, width: o.width, height: o.height }, clampSpec);
+          nx = c.x;
+          ny = c.y;
+        }
         return {
           ...o,
-          x: o.x + dx / w,
-          y: o.y + dy / h,
+          x: nx,
+          y: ny,
         } as unknown as FrameGeom;
       },
       computeResize(orig, dir: ResizeDir, dx, dy, parent) {
@@ -989,6 +1015,30 @@ export function FrameStage(props: FrameStageProps) {
         const parent = el?.parentElement;
         if (parent === null || parent === undefined) return { width: 1, height: 1 };
         const r = parent.getBoundingClientRect();
+        // WI-153 P3 (DR-111 D6) — page-bounded soft-clamp context. When the
+        // item's nearest frame ancestor IS the active page, smuggle the
+        // min-overlap spec through the opaque parent rect (the same dunder
+        // idiom readFrame uses for __origFontSize) so computeMove can clamp
+        // without new plumbing. The ~PAGE_MIN_OVERLAP_DESIGN_PX design px are
+        // converted to a parent ratio via the live plane scale, so the felt
+        // minimum is zoom-independent.
+        const pages = visibleFrameIdsRef.current;
+        if (pages !== undefined && r.width > 0 && r.height > 0) {
+          const pageId = parent.closest("[data-frame-id]")?.getAttribute("data-frame-id");
+          if (pageId !== null && pageId !== undefined && pages.has(pageId)) {
+            const plane = designPlaneRef.current?.getBoundingClientRect();
+            const scale = plane !== undefined && plane.width > 0 ? plane.width / designWidth : 1;
+            const minScreen = PAGE_MIN_OVERLAP_DESIGN_PX * scale;
+            return {
+              width: r.width,
+              height: r.height,
+              __pageClamp: {
+                minX: minScreen / r.width,
+                minY: minScreen / r.height,
+              } satisfies PageClampSpec,
+            } as { width: number; height: number };
+          }
+        }
         return { width: r.width, height: r.height };
       },
     };
@@ -1542,9 +1592,21 @@ export function FrameStage(props: FrameStageProps) {
                     // (this design-plane box) as a non-editable gray region. A single
                     // huge box-shadow halo tracks the plane's pan/zoom transform and is
                     // paint-only (does not capture pointer events). Infinite canvas is
-                    // unaffected (no visibleFrameIds → no matte).
+                    // unaffected (no visibleFrameIds → no matte / no clip).
+                    //
+                    // `overflow: clip` is the page-edge CLIP (DR-111 D5): bleed is
+                    // allowed in the doc (items may extend past the page box; the soft
+                    // clamp keeps part of them on-page) but the off-page part is cut at
+                    // the edge, WYSIWYG with present/export. The plane box == the page
+                    // box for the FULL_FRAME pages page-bounded formats use (P2.4 note).
+                    // The element's OWN box-shadow (the matte) is not affected by its
+                    // own overflow, and selection chrome portals to document.body, so
+                    // neither is clipped.
                     ...(props.visibleFrameIds !== undefined
-                      ? { boxShadow: "0 0 0 100000px var(--canvas-matte, #6f737b)" }
+                      ? {
+                          boxShadow: "0 0 0 100000px var(--canvas-matte, #6f737b)",
+                          overflow: "clip" as const,
+                        }
                       : {}),
                     // WI-037 / DR-018 — only hint will-change while a
                     // zoom/pan gesture is active. See the comment on

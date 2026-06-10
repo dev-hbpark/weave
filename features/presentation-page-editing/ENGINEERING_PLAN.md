@@ -98,7 +98,24 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
   fit(크롬 아래 숨던 문제 해소). SVL: fit top=65.7(≥48)·레일 위, ⌘= 1196→1435px·⌘0 복원, mixed 불변.
 - **P3 선행 — 페이지 매트**: design plane에 `box-shadow` 100000px 헤일로로 페이지 밖을 회색 매트
   처리(paint-only, 포인터 불간섭, pan/zoom 추적). `visibleFrameIds` 있을 때만 → 무한 캔버스 무영향.
-  나머지 P3(소속 강제 + 소프트 클램프)는 미착수.
+- **P3 완료 — 소속 + 클립 + 소프트 클램프 (D5/D6)**:
+  - ① 기본 추가 컨테이너: `FORMAT_EDITOR_CONFIG`에 `defaultContainer: "root" | "active-page"` 신설.
+    DesignPage가 정책을 해석해 `defaultAddContainerIdRef`(활성 페이지 id 미러)를 `useItemAdd`에 주입 —
+    두 컨테이너 결정 블록 모두 `selIsFrame ? sel : (default ?? root)`. useItemAdd에 flavor 비교 없음(Rule 6).
+  - ② 가장자리 클립: design plane(=FULL_FRAME 페이지 박스)에 `overflow: clip` — 매트와 동일하게
+    `visibleFrameIds !== undefined` 키. 자기 box-shadow(매트)는 자기 overflow에 안 잘리고, 셀렉션
+    크롬은 body 포털이라 안전. **설계 노트**: 플랜 스케치의 `clampToPage`/`clipAtPage` 필드는 추가하지
+    않음 — page-scoped 렌더링의 귀결이라 `canvas: "page-bounded"`와 항상 일치해야 하는 죽은 설정이 됨.
+  - ③ 소프트 클램프: 순수 수학을 `src/document/page-clamp.ts`(`clampAxis`/`clampFrameToPage`, 유닛 7건)로
+    분리. `parentRectOf`가 "이동 아이템의 최근접 프레임 조상 = 활성 페이지"일 때 `__pageClamp`
+    (min-overlap 비율, 48 design px를 라이브 plane scale로 환산 → 줌 불변)를 던더 관용구로 부모 rect에
+    실어 보내고, `computeMove`가 회전 0일 때만 적용. vendored 바인딩에서 snap이 delta를 먼저 보정한 뒤
+    computeMove가 실행되므로 클램프가 최종 결정권. 리사이즈/회전 경로 불변.
+  - SVL 8/8: R 추가가 활성 페이지로(parent=page), plane overflow=clip(mixed는 미클립), 좌/우 오프페이지
+    드래그가 경계값(0.9750 / -0.3750)에 정확히 핀, mixed 드래그는 x>1로 탈출(무클램프). 스크린샷으로
+    가장자리 클립 + 핸들 비클립 확인. 유닛 914/914 · lint · 타입체크 green.
+  - 잔여(P4로): 드래그-드롭 onDropAdd / 러버밴드 / 에이전트 추가 경로의 활성 페이지 타깃, 멀티셀렉트
+    그룹 단위 min-overlap(현재는 페이지 직계 자식별 개별 클램프).
 - **P4 선행 — phantom hover 억제**: 레일이 모든 페이지에 `data-frame-kind`를 게시 → 비활성 페이지 hover가
   `frameHoverStore`로 투영되던 것을 `visibleFrameIds` 기반 차단. SVL(스토어 직접 관찰): 비활성 레일
   hover=null, 활성 레일/캔버스 hover=정상.
