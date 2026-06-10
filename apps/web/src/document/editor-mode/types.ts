@@ -18,7 +18,8 @@
 // concern, added as a REQUIRED key in the SAME change that migrates its
 // consumers (G1/G2). P1 shipped `mode` + `roles`; P2 added view / camera /
 // insertion / rail (dissolving FORMAT_EDITOR_CONFIG); P3 added hit
-// (one-gesture select+move on page-bounded flavors); P4 adds input.
+// (one-gesture select+move on page-bounded flavors); P4 added input
+// (the FSM gate tables out of interaction-mode.tsx).
 // A policy stub without consumers would be a second truth source next to the
 // live branch it is meant to absorb — exactly the dead-config drift §6-G5
 // forbids, so keys land with their consumers, never ahead of them.
@@ -165,7 +166,9 @@ export interface CameraPolicy {
    *  and the header tool group). Distinct from `userZoom` (page-bounded
    *  keeps wheel zoom but has no hand tool) and not derivable from
    *  `clampPan` (a vertical-pan doc-page would drag-pan with a clamping
-   *  piece). P4's InputPolicy.bindings reads this for gesture mounts. */
+   *  piece). The single truth for pan-family gesture MOUNTS too — the
+   *  DesignPage hand-tool hook arms off this directly; P4 deliberately
+   *  did NOT mirror it into InputPolicy (§6-G5, see InputPolicy doc). */
   readonly dragPan: boolean;
 }
 
@@ -260,6 +263,65 @@ export interface HitPolicy {
   moveTarget(hitId: string, doc: AgocraftDocument, ctx: HitMoveContext): string | null;
 }
 
+/** The canvas interaction FSM's mode vocabulary (single token machine in
+ *  `interactions/interaction-mode.tsx` over the vm's `mode` Signal). Lives
+ *  here because it is the InputPolicy's gate vocabulary — the same way
+ *  ClickIntent lives here for HitPolicy; the interactions layer re-exports
+ *  it for its legacy call sites. Closed union: a mode is an FSM state with
+ *  claim/release semantics, not a per-flavor concept — flavors vary which
+ *  gates ADMIT a mode (InputPolicy), never the machine itself. */
+export type InteractionMode =
+  | "idle"
+  | "hand"
+  | "panning"
+  | "rubber-band"
+  | "frame-manipulating"
+  | "context-menu"
+  | "text-editing";
+
+/** WI-166 P4 — the named pointer-affordance gates the FSM exposes. One key
+ *  per `useXAllowed()` hook in interaction-mode.tsx; the hook is the single
+ *  consumer of its row (callers keep calling the hook — DR-114 §2b manual
+ *  injection ends at the hook layer, not at every call site). */
+export type InteractionGateKey =
+  /** Cursor tooltip surfaces (useTooltipsAllowed). */
+  | "tooltips"
+  /** Click-to-pick / marquee / multi-select toggle (useFrameSelectionAllowed). */
+  | "frameSelection"
+  /** Hover outline, parent/sibling highlight, quick-action surfacing
+   *  (useEditAffordancesAllowed — ∩ peek-off, the peek axis stays in the
+   *  hook: it is a weave product surface, not a flavor policy). */
+  | "editAffordances"
+  /** Resize/rotate handles + outline (useSelectionChromeVisible — ∩ peek-off). */
+  | "selectionChrome"
+  /** Frame-body / handle gesture binding REGISTRATION (useFrameDragBindingsAllowed
+   *  — ∩ peek-off). NOTE the set is an allow-list where the old hook was a
+   *  block-list (`mode !== hand/panning/context-menu`): with the closed
+   *  InteractionMode union the two are equivalent, but a NEW mode now
+   *  defaults to "bindings stand down" — when adding a mode the FSM
+   *  enters *via these bindings' own claims* (like rubber-band /
+   *  frame-manipulating / text-editing), it MUST be added to this set or
+   *  the in-flight gesture's closure is orphaned mid-drag. */
+  | "frameDragBindings";
+
+/** WI-166 P4 / DR-114 — which FSM modes admit each pointer affordance.
+ *  Absorbs the hardcoded mode lists that lived inside the
+ *  interaction-mode.tsx gate hooks. **The FSM stays a single machine** —
+ *  transition logic and claim-token bookkeeping are flavor-independent;
+ *  the policy only decides the admissible set per gate.
+ *
+ *  The plan's `bindings` half (per-flavor gesture-layer MOUNTS) was folded
+ *  during P4 instead of landing as a key (§6-G5): the pan-family mount
+ *  already rides `CameraPolicy.dragPan` (P2 — duplicating it here would be
+ *  a second truth source), and the rubber-band / marquee layers are
+ *  mounted on every flavor with their flavor-awareness in START
+ *  acceptance (ViewPolicy-scoped page bounds + the `frameSelection` gate).
+ *  A flavor that must NOT MOUNT a layer is the moment a `bindings` key
+ *  lands — with that consumer, in the same change (G1). */
+export interface InputPolicy {
+  readonly gates: Readonly<Record<InteractionGateKey, ReadonlySet<InteractionMode>>>;
+}
+
 /** The composed per-flavor editor context. One composition file per flavor
  *  under `modes/`, resolved through the EDITOR_MODES registry — a new
  *  flavor is one composition file + one registry row (DR-114 §6-G6). */
@@ -271,4 +333,5 @@ export interface EditorModeContext {
   readonly insertion: InsertionPolicy;
   readonly rail: RailPolicy;
   readonly hit: HitPolicy;
+  readonly input: InputPolicy;
 }

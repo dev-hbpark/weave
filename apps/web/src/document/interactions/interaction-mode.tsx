@@ -33,15 +33,12 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { InputPolicy, InteractionGateKey, InteractionMode } from "../editor-mode/types.js";
 
-export type InteractionMode =
-  | "idle"
-  | "hand"
-  | "panning"
-  | "rubber-band"
-  | "frame-manipulating"
-  | "context-menu"
-  | "text-editing";
+// WI-166 P4 — the mode union moved to editor-mode/types.ts (it is the
+// InputPolicy's gate vocabulary, the way ClickIntent is HitPolicy's).
+// Re-exported so the legacy call sites keep compiling unchanged.
+export type { InteractionMode } from "../editor-mode/types.js";
 
 /** WI-040 — Peek ("Layers") inspector active state. Tracked as a
  *  separate axis from `InteractionMode` because the vendor's
@@ -80,14 +77,30 @@ const tokensByMode = new Map<InteractionMode, ClaimToken>();
 
 const InteractionVmContext = createContext<EditorViewModel | undefined>(undefined);
 
+/** WI-166 P4 — the injected InputPolicy (DR-114 §2b manual injection: the
+ *  composition root passes `editorMode.input` as a REQUIRED provider prop;
+ *  the gate hooks below are the policy's only readers). `undefined` =
+ *  rendered without the provider — there the vm is absent too, so the FSM
+ *  is pinned to `idle`, where every gate has always been open. */
+const InputPolicyContext = createContext<InputPolicy | undefined>(undefined);
+
 export function InteractionModeProvider({
   children,
   vm,
+  input,
 }: {
   readonly children: ReactNode;
   readonly vm?: EditorViewModel | undefined;
+  /** Per-flavor gate tables (EditorModeContext.input) — required so the
+   *  gates can never silently fall back to a second hardcoded truth
+   *  (DR-114 §6-G5). */
+  readonly input: InputPolicy;
 }) {
-  return <InteractionVmContext.Provider value={vm}>{children}</InteractionVmContext.Provider>;
+  return (
+    <InteractionVmContext.Provider value={vm}>
+      <InputPolicyContext.Provider value={input}>{children}</InputPolicyContext.Provider>
+    </InteractionVmContext.Provider>
+  );
 }
 
 export function useInteractionMode(): InteractionModeContextValue {
@@ -160,24 +173,29 @@ export function useInteractionMode(): InteractionModeContextValue {
   );
 }
 
+/** WI-166 P4 — shared lookup behind every gate hook: the admissible-set
+ *  decision lives in the injected InputPolicy (per-flavor table), the FSM
+ *  stays a single machine. Without a provider the vm is absent and the
+ *  mode is pinned `idle` — every gate is open there, matching the pre-P4
+ *  hardcoded hooks. */
+function useInteractionGate(key: InteractionGateKey): boolean {
+  const { mode } = useInteractionMode();
+  const input = useContext(InputPolicyContext);
+  if (input === undefined) return true;
+  return input.gates[key].has(mode);
+}
+
 export function useTooltipsAllowed(): boolean {
-  const { mode } = useInteractionMode();
-  return mode === "idle" || mode === "hand";
+  return useInteractionGate("tooltips");
 }
 
-export function useRubberBandAllowed(): boolean {
-  const { mode } = useInteractionMode();
-  return mode === "idle";
-}
-
-/** Frame selection (click-to-pick, marquee, multi-select toggle) is
- *  permitted only in the idle mode. Hand/panning own pointer events
+/** Frame selection (click-to-pick, marquee, multi-select toggle) —
+ *  admitted only in idle today: hand/panning own pointer events
  *  exclusively while active; rubber-band / frame-manipulating /
  *  text-editing / context-menu each carry their own selection
  *  semantics and would conflict with a plain click-to-select. */
 export function useFrameSelectionAllowed(): boolean {
-  const { mode } = useInteractionMode();
-  return mode === "idle";
+  return useInteractionGate("frameSelection");
 }
 
 /** WI-040 — affordance-eligibility gate. A canvas affordance (hover
@@ -193,9 +211,8 @@ export function useFrameSelectionAllowed(): boolean {
  *  diverging later (e.g., affordances during a hovered context-menu
  *  preview) won't ripple through selection logic. */
 export function useEditAffordancesAllowed(): boolean {
-  const { mode } = useInteractionMode();
   const peekActive = usePeekActive();
-  return mode === "idle" && !peekActive;
+  return useInteractionGate("editAffordances") && !peekActive;
 }
 
 /** WI-040 — selection chrome (resize / rotate handles, outline) visible
@@ -211,22 +228,15 @@ export function useEditAffordancesAllowed(): boolean {
  *  exclusively or open a popover that competes with selection chrome
  *  for attention. */
 export function useSelectionChromeVisible(): boolean {
-  const { mode } = useInteractionMode();
   const peekActive = usePeekActive();
-  if (peekActive) return false;
-  return mode === "idle" || mode === "frame-manipulating" || mode === "text-editing";
+  return useInteractionGate("selectionChrome") && !peekActive;
 }
 
 /** WI-040 — frame-body / handle gesture bindings (move, resize, rotate)
  *  may be *registered* only when the mode is NOT one that owns the
- *  canvas exclusively. The gate is a block-list, not an allow-list,
- *  for safety: several active-gesture modes (`frame-manipulating`,
- *  `rubber-band`, `text-editing`) are themselves entered *by* a claim
- *  these bindings made — unregistering during the binding's own
- *  in-flight gesture would orphan its closure and silently drop the
- *  remaining pointermove / pointerup.
+ *  canvas exclusively.
  *
- *  Blocked states:
+ *  Excluded states (everything else is in the policy's admit set):
  *    • mode `hand` / `panning` — user explicitly armed the pan tool
  *    • mode `context-menu`     — LayerPicker or a frame's context menu
  *      open; competing gestures must stand down so dismissal flows
@@ -235,14 +245,17 @@ export function useSelectionChromeVisible(): boolean {
  *      canvas (sticky button or hold-L). Frame drag must not compete
  *      with the layer-stack drag-to-reorder.
  *
- *  Text-editing stays allowed so a click on another frame's resize
- *  handle still starts the resize gesture; focus loss handles the
- *  text-edit exit independently. */
+ *  Several active-gesture modes (`frame-manipulating`, `rubber-band`,
+ *  `text-editing`) are entered *by* a claim these bindings made —
+ *  unregistering during the binding's own in-flight gesture would orphan
+ *  its closure and silently drop the remaining pointermove / pointerup,
+ *  so those modes MUST stay in the gate's admit set (see the
+ *  `frameDragBindings` caveat on InteractionGateKey). Text-editing also
+ *  keeps a click on another frame's resize handle starting the resize
+ *  gesture; focus loss handles the text-edit exit independently. */
 export function useFrameDragBindingsAllowed(): boolean {
-  const { mode } = useInteractionMode();
   const peekActive = usePeekActive();
-  if (peekActive) return false;
-  return mode !== "hand" && mode !== "panning" && mode !== "context-menu";
+  return useInteractionGate("frameDragBindings") && !peekActive;
 }
 
 function useStableNoOpVm(): EditorViewModel {

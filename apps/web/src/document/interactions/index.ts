@@ -16,7 +16,6 @@ export {
   useFrameSelectionAllowed,
   useInteractionMode,
   usePeekActive,
-  useRubberBandAllowed,
   useSelectionChromeVisible,
   useTooltipsAllowed,
 } from "./interaction-mode.js";

@@ -1,6 +1,6 @@
 # WI-166 — EditorModeContext: 모드별 정책 합성 아키텍처 (설계)
 
-- **Status**: IN PROGRESS — P1·P2·P3 완료 (2026-06-10), P4-P5 대기
+- **Status**: IN PROGRESS — P1·P2·P3·P4 완료 (2026-06-10), P5 대기
 - **Date**: 2026-06-10
 - **Decision Record**: DR-114
 - **Engineering Plan**: features/editor-mode-context/ENGINEERING_PLAN.md
@@ -216,6 +216,50 @@
     mode 충돌(중첩 frame이 타일로도 노출) — `[data-testid="block-frame"]`
     스코핑으로 수리, 5 passed.
 
+## P4 구현 (2026-06-10)
+
+- **InputPolicy 추가** (필수 키, G1/G5 — 소비처와 같은 변경):
+  `gates: Record<InteractionGateKey, ReadonlySet<InteractionMode>>` —
+  interaction-mode.tsx 게이트 훅 5종(tooltips / frameSelection /
+  editAffordances / selectionChrome / frameDragBindings)의 하드코딩 모드
+  리스트를 정책 테이블 조회로 치환. **FSM은 단일 기계 유지** — 전이 로직·
+  토큰 부기 불변, 도달 가능 집합만 정책이 결정.
+- `InteractionMode` 유니온을 editor-mode/types.ts로 이동(InputPolicy의
+  게이트 어휘 — ClickIntent가 HitPolicy 어휘로 거기 사는 것과 동형).
+  interaction-mode.tsx가 type 재export → 기존 call site 무변경.
+- `pieces/input.ts` STANDARD_INPUT 1조각을 4 flavor 공유(오늘 게이트는
+  flavor 무변동; page-bounded는 hand/panning에 도달 자체를 못 함 —
+  camera.dragPan=false). frameDragBindings는 구 블록리스트의 allow-set
+  전사 — 자기-claim 모드(rubber-band/frame-manipulating/text-editing)가
+  admit set에 남아야 하는 closure-orphan 주의를 types.ts에 명문화.
+- 주입: InteractionModeProvider에 **required** `input` prop(DesignPage
+  컴포지션 루트가 `editorMode.input` 전달) — 옵션이면 하드코딩 폴백이
+  제2 진실이 됨(G5). 무프로바이더 렌더는 vm도 부재라 mode가 idle 고정 →
+  모든 게이트 open 반환(레거시 동일; "idle은 모든 게이트 통과" 불변식을
+  레지스트리 테스트로 고정).
+- **계획의 `bindings` 절반은 접음(G5 판정)**: pan 계열 마운트는 P2에서
+  이미 `CameraPolicy.dragPan` 단일 진실로 착지(useHandTool enabled) —
+  InputPolicy로 미러링하면 진실 2개. rubber-band/marquee 레이어는 전
+  flavor 마운트이고 flavor 인지는 START 수용(emptyRegionAccept =
+  frameSelection 게이트 + ViewPolicy 페이지 경계)에 이미 있음. 레이어를
+  "마운트하지 않는" flavor가 생기는 순간이 bindings 키가 소비처와 함께
+  착지하는 시점(types.ts InputPolicy doc + dragPan doc 정정에 기록).
+- 디커미션 스윕: `useRubberBandAllowed` 삭제(소비처 0 — rubber-band 시작
+  게이트는 emptyRegionAccept의 frameSelection 경유가 실 진실) + index 2곳
+  재export 제거.
+
+## Verification (P4)
+
+- 게이트 전수 green (2026-06-10): tsc --noEmit / vitest **1015 pass (99
+  files)** (+6: InputPolicy 레지스트리 합성 3 + 가짜정책 주입 훅 테스트 3
+  — interaction-mode.test.tsx 신설, createRoot+act 패턴) /
+  tokencheck·declarativecheck·puritycheck·inheritancecheck·
+  modeboundarycheck / biome 0 errors(38 기존 warnings).
+- e2e 무회귀 판정 (비교가능 서브셋 13파일, P3과 동일 기준): **40 passed,
+  3 failed** = 전부 기지 pre-existing red(frame-handles:32 /
+  mode-gate-hardening:110 / thumbnail-panel:216 env flake) — P3 기준선과
+  동일, P4 회귀 0.
+
 ## Verification (설계 단계)
 
 - 설계 단계 — 코드 변경 없음. 게이트·e2e 계획은 ENGINEERING_PLAN 각 phase에
@@ -223,5 +267,5 @@
 
 ## Next
 
-P4 — InputPolicy(FSM 게이트 구성 주입), P5 — 최종 스윕(grep 0, G4
-`ctx.mode ===` declarativecheck 패턴 검토, PROJECT_MAP 갱신).
+P5 — 최종 스윕(grep 0, G4 `ctx.mode ===` declarativecheck 패턴 검토,
+PROJECT_MAP 갱신, WI DONE).

@@ -25,7 +25,6 @@ export {
   useFrameSelectionAllowed,
   useInteractionMode,
   usePeekActive,
-  useRubberBandAllowed,
   useSelection,
   useSelectionChromeVisible,
   useTooltipsAllowed,

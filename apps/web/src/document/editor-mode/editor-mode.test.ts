@@ -244,3 +244,45 @@ describe("HitPolicy (P3 — registry-level composition; resolution details in pi
     expect(hit.moveTarget("grand-1", hitDoc, moveCtx)).toBe(selected);
   });
 });
+
+describe("InputPolicy (P4 — FSM gate tables; hook-side injection in interactions/interaction-mode.test.tsx)", () => {
+  // P4 acceptance = zero behavior change: every flavor's tables must be a
+  // 1:1 transcription of the pre-P4 hardcoded hook bodies.
+  it("every flavor composes the standard gate tables (no flavor variance today)", () => {
+    for (const f of FLAVORS) {
+      const { gates } = editorModeFor(f).input;
+      expect(gates.tooltips).toEqual(new Set(["idle", "hand"]));
+      expect(gates.frameSelection).toEqual(new Set(["idle"]));
+      expect(gates.editAffordances).toEqual(new Set(["idle"]));
+      expect(gates.selectionChrome).toEqual(
+        new Set(["idle", "frame-manipulating", "text-editing"]),
+      );
+      expect(gates.frameDragBindings).toEqual(
+        new Set(["idle", "rubber-band", "frame-manipulating", "text-editing"]),
+      );
+    }
+  });
+
+  it("frameDragBindings keeps the self-claimed gesture modes admitted (closure-orphan guard)", () => {
+    // These modes are entered BY the drag bindings' own FSM claims —
+    // dropping any of them from the admit set would unregister the binding
+    // mid-gesture and orphan its in-flight pointermove/pointerup closure.
+    for (const f of FLAVORS) {
+      const set = editorModeFor(f).input.gates.frameDragBindings;
+      for (const m of ["rubber-band", "frame-manipulating", "text-editing"] as const) {
+        expect(set.has(m)).toBe(true);
+      }
+    }
+  });
+
+  it("idle is admitted by every gate on every flavor (the no-provider fallback's invariant)", () => {
+    // interaction-mode.tsx returns `true` for all gates when rendered
+    // without a provider, on the grounds that the mode is pinned `idle`
+    // there. That shortcut is only sound while idle passes every gate.
+    for (const f of FLAVORS) {
+      for (const set of Object.values(editorModeFor(f).input.gates)) {
+        expect(set.has("idle")).toBe(true);
+      }
+    }
+  });
+});

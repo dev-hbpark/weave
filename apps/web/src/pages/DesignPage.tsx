@@ -2201,7 +2201,10 @@ function DesignPageBody() {
         <RouterProvider router={router}>
           <SelectionChromeProvider registry={selectionChrome}>
             <SelectionProvider vm={vm}>
-              <InteractionModeProvider vm={vm}>
+              {/* WI-166 P4 — the FSM gate tables are per-flavor policy now;
+                  the provider requires them so the hooks can never fall back
+                  to a second hardcoded truth (DR-114 §6-G5). */}
+              <InteractionModeProvider vm={vm} input={editorMode.input}>
                 <PeekActiveProvider active={peek.isActive}>
                   <CommandHostProvider
                     registry={editorCommandMetadata}
