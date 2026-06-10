@@ -87,8 +87,28 @@ done < <(
     "$MODULE" 2>/dev/null || true
 )
 
+# Rule 4 — G4 (DR-114 §6, added in WI-166 P5): consumers never branch on
+# the declarative CanvasMode tag. A `ctx.mode === "infinite" /
+# "page-bounded"` comparison in a consumer is a mode branch that should be
+# promoted to a policy field instead. The two literals are unique to
+# CanvasMode, so a plain grep outside the module is precise. The module
+# itself (pieces/modes compose the tag) and tests are exempt.
+while IFS= read -r line; do
+  file="${line%%:*}"
+  case "$file" in
+    "$MODULE"/* | *.test.ts | *.test.tsx) continue ;;
+  esac
+  echo "  G4: CanvasMode comparison outside editor-mode/ (promote the branch to a policy field) — $line"
+  violations=$((violations + 1))
+done < <(
+  grep -rEn '\.mode[[:space:]]*[!=]==?[[:space:]]*"(infinite|page-bounded)"' \
+    --include='*.ts' --include='*.tsx' \
+    --exclude-dir='node_modules' --exclude-dir='dist' \
+    apps packages 2>/dev/null || true
+)
+
 if [ "$violations" -gt 0 ]; then
   echo "FAIL: $violations editor-mode boundary violation(s) (DR-114 §2b)."
   exit 1
 fi
-echo "OK: editor-mode boundary clean (consumers import types only; policies pure)."
+echo "OK: editor-mode boundary clean (consumers import types only; policies pure; no G4 mode compares)."

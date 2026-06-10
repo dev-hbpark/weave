@@ -1,8 +1,8 @@
 # editor-mode-context — 새 세션 킥오프 가이드 (WI-166)
 
 이 폴더만 읽고 구현을 시작할 수 있도록 만든 self-contained 컨텍스트.
-설계는 **승인 완료**, 구현은 **P1·P2·P3·P4 완료**(2026-06-10), P5(최종
-스윕)만 남았다.
+**WI-166은 P1-P5 전체 완료(DONE, 2026-06-10)** — 이 문서는 이제 아키텍처
+참조 + flavor 제품화 시 출발점으로 남는다.
 진행 상황의 진실 원천은 `records/work-items/WI-166-editor-mode-context.md`.
 
 ## 읽기 순서
@@ -102,8 +102,9 @@ rail)는 인터페이스, 소비처는 `types.ts`만 import(빌드-그래프 게
 - e2e에서 coming-soon flavor(canvas-board/doc-page) 생성은 `prepareDesign`이
   DEV unlock 키(`weave.dev.unlock-flavors`)를 자동 세팅(WI-165).
 
-## 시작 지점
+## 시작 지점 (제품화 후속 작업 시)
 
-`ENGINEERING_PLAN.md`의 **P1**: `src/document/editor-mode/` 골격(types/
-registry/modes×4/Provider) + import-경계 게이트 + RolePolicy로 isArtboardId
-산재 술어 27곳 흡수·디커미션. 행동 변화 0이 P1 합격 기준.
+P1-P5는 전부 착지했다. coming-soon flavor(canvas-board/doc-page)를
+제품화할 때는 `modes/<flavor>.ts` 합성 파일 + 필요한 새 조각만 추가한다
+(DR-114 §7 — 소비처는 무변경). 게이트는 `pnpm modeboundarycheck`가
+import 경계 + 정책 순수성 + G4(`ctx.mode ===` 소비처 비교 금지)를 강제.

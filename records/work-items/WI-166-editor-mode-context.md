@@ -1,6 +1,6 @@
 # WI-166 — EditorModeContext: 모드별 정책 합성 아키텍처 (설계)
 
-- **Status**: IN PROGRESS — P1·P2·P3·P4 완료 (2026-06-10), P5 대기
+- **Status**: DONE — P1-P5 전체 완료 (2026-06-10)
 - **Date**: 2026-06-10
 - **Decision Record**: DR-114
 - **Engineering Plan**: features/editor-mode-context/ENGINEERING_PLAN.md
@@ -260,6 +260,21 @@
   mode-gate-hardening:110 / thumbnail-panel:216 env flake) — P3 기준선과
   동일, P4 회귀 0.
 
+## P5 스윕 (2026-06-10)
+
+- 흡수 완료 검증: `grep -rn "infiniteCanvas\|isArtboardId\|artboardIds\|
+  formatEditorConfig\|FORMAT_EDITOR_CONFIG"` → **라이브 코드 0** (잔존
+  히트는 전부 흡수 이력을 서술하는 주석/테스트 설명문).
+- 소비처의 `pieces/`·`registry` import 0 — modeboundarycheck green.
+- **G4 게이트 추가**: `tools/check_editor_mode_boundary.sh`에 Rule 4 —
+  소비처의 `ctx.mode === "infinite"|"page-bounded"` 비교를 빌드-그래프
+  위반으로 승격(CanvasMode 리터럴 2종은 유일해서 grep 정밀; 모듈 자신·
+  테스트 면제). 위반 형태 2종 매치 + 유사문(`"infinite-scroll"`) 비매치
+  self-test 통과. declarativecheck가 아닌 경계 게이트에 넣은 이유: G4는
+  DR-114 고유 계약이고 이 스크립트가 그 계약의 단일 거처.
+- PROJECT_MAP 검토 — 제네릭 네비게이션 스켈레톤(피처별 색인 없음)이라
+  갱신 불요. 디커미션(useRubberBandAllowed 등)은 P4에서 같은 변경으로 완료.
+
 ## Verification (설계 단계)
 
 - 설계 단계 — 코드 변경 없음. 게이트·e2e 계획은 ENGINEERING_PLAN 각 phase에
@@ -267,5 +282,5 @@
 
 ## Next
 
-P5 — 최종 스윕(grep 0, G4 `ctx.mode ===` declarativecheck 패턴 검토,
-PROJECT_MAP 갱신, WI DONE).
+없음 — WI-166 완결. 후속은 flavor 제품화 시 해당 modes/ 합성 파일 +
+필요 조각 추가(DR-114 §7)로 진행.
