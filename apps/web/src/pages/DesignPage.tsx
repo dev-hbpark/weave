@@ -2377,6 +2377,7 @@ function DesignPageBody() {
                                         roles={editorMode.roles}
                                         view={editorMode.view}
                                         camera={editorMode.camera}
+                                        hit={editorMode.hit}
                                         fitInset={fitInset}
                                         handMode={handMode}
                                         // WI-033 P2 — enteredId / onEnter (drill-in mode,

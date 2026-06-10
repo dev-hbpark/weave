@@ -83,7 +83,7 @@ test("right-click on a nested frame shows the 'Select layer' section deepest-fir
   // the right-click pointer event chain AND the contextmenu event
   // (mouse.click() variant in headless Chromium does not always).
   await page
-    .locator(`[data-frame-id="${childId}"]`)
+    .locator(`[data-testid="block-frame"][data-frame-id="${childId}"]`)
     .click({ button: "right", position: { x: 4, y: 4 } });
   // Check the ContextMenu itself opened first — if the Delete row isn't
   // visible, the contextmenu event didn't reach our handler at all.
@@ -119,7 +119,7 @@ test("clicking a layer row moves the selection to that frame", async ({ page }) 
   // the right-click pointer event chain AND the contextmenu event
   // (mouse.click() variant in headless Chromium does not always).
   await page
-    .locator(`[data-frame-id="${childId}"]`)
+    .locator(`[data-testid="block-frame"][data-frame-id="${childId}"]`)
     .click({ button: "right", position: { x: 4, y: 4 } });
   // Pick the deepest layer row (the child) explicitly.
   await page.getByTestId(`layer-pick-${childId}`).click();

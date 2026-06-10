@@ -208,3 +208,39 @@ describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior 
     }
   });
 });
+
+describe("HitPolicy (P3 — registry-level composition; resolution details in pieces/hit-resolution.test.ts)", () => {
+  // root → page-1 → child-1 (page-direct) → grand-1 (deep)
+  const hitDoc = makeDoc([
+    makeItem("page-1", "frame", [makeItem("child-1", "frame", [makeItem("grand-1", "frame")])]),
+  ]);
+  const moveCtx = {
+    currentId: undefined,
+    activePageId: "page-1",
+    climbToMovable: (id: string) => id,
+    admit: () => true,
+  };
+
+  it("infinite flavors: drag on an unselected deep child moves THAT child (무회귀)", () => {
+    for (const f of ["mixed", "canvas-board"] as const) {
+      expect(editorModeFor(f).hit.moveTarget("grand-1", hitDoc, moveCtx)).toBe("grand-1");
+    }
+  });
+
+  it("page-bounded flavors: drag on an unselected deep child moves its PAGE-DIRECT ancestor (행동 변경 ③)", () => {
+    for (const f of ["slide-deck", "doc-page"] as const) {
+      expect(editorModeFor(f).hit.moveTarget("grand-1", hitDoc, moveCtx)).toBe("child-1");
+    }
+  });
+
+  it("select and move resolve identically on page-bounded flavors (select = move = parent-first)", () => {
+    const hit = editorModeFor("slide-deck").hit;
+    const selected = hit.selectTarget("grand-1", hitDoc, {
+      intent: "plain",
+      currentId: undefined,
+      activePageId: "page-1",
+    });
+    expect(selected).toBe("child-1");
+    expect(hit.moveTarget("grand-1", hitDoc, moveCtx)).toBe(selected);
+  });
+});

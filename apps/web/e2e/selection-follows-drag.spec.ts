@@ -14,7 +14,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
-  await clearAllDesigns(page);
+  await clearAllDesigns(page); // also pre-dismisses the launch banners
 });
 
 async function selectedIds(page: Page): Promise<string[]> {
@@ -51,8 +51,12 @@ async function frameCenter(page: Page, id: string): Promise<{ cx: number; cy: nu
 }
 
 test("dragging an unselected frame switches the selection to it", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Sel-Follows-Drag" });
+  // AFTER prepareDesign — emulateMedia before the wizard walk keeps the
+  // design page's networkidle from ever settling in the e2e sandbox
+  // (bisected in WI-166 P3; see editor-mode-hit.spec.ts). Reduced motion
+  // only matters during the drag below.
+  await page.emulateMedia({ reducedMotion: "reduce" });
 
   // Two slides side-by-side near the top of the design.
   await addFrame(page, "slide", {
@@ -91,8 +95,8 @@ test("dragging an unselected frame switches the selection to it", async ({ page 
 });
 
 test("dragging a frame that is part of a multi-selection preserves the set", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await prepareDesign(page, { flavor: "mixed", title: "Sel-Follows-Drag-Multi" });
+  await page.emulateMedia({ reducedMotion: "reduce" }); // after prepareDesign — see above
 
   await addFrame(page, "slide", {
     frame: { x: 0.1, y: 0.1, width: 0.25, height: 0.25, rotation: 0 },

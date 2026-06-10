@@ -73,7 +73,7 @@ test("Cmd/Ctrl + click on a nested frame selects the leaf directly (parent-first
   // `locator.click({ modifiers })` populates the synthetic MouseEvent's
   // metaKey / ctrlKey correctly (the bare `mouse.click({ modifiers })`
   // form in headless Chromium does not).
-  await page.locator(`[data-frame-id="${childId}"]`).click({
+  await page.locator(`[data-testid="block-frame"][data-frame-id="${childId}"]`).click({
     modifiers: ["ControlOrMeta"],
   });
   await expect.poll(() => singleSelectionId(page)).toBe(childId);
@@ -92,10 +92,10 @@ test("Cmd-click works from any starting selection state (depth-blind)", async ({
     const last = w.__weaveDoc?.root.children?.at(-1);
     return last === undefined ? "" : String(last.id);
   });
-  await page.locator(`[data-frame-id="${siblingId}"]`).click();
+  await page.locator(`[data-testid="block-frame"][data-frame-id="${siblingId}"]`).click();
   await expect.poll(() => singleSelectionId(page)).toBe(siblingId);
   // Cmd-click from the sibling onto a deep nested leaf → leaf is selected.
-  await page.locator(`[data-frame-id="${childId}"]`).click({
+  await page.locator(`[data-testid="block-frame"][data-frame-id="${childId}"]`).click({
     modifiers: ["ControlOrMeta"],
   });
   await expect.poll(() => singleSelectionId(page)).toBe(childId);

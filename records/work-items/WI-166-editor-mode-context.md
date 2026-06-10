@@ -1,6 +1,6 @@
 # WI-166 — EditorModeContext: 모드별 정책 합성 아키텍처 (설계)
 
-- **Status**: IN PROGRESS — P1·P2 완료 (2026-06-10), P3-P5 대기
+- **Status**: IN PROGRESS — P1·P2·P3 완료 (2026-06-10), P4-P5 대기
 - **Date**: 2026-06-10
 - **Decision Record**: DR-114
 - **Engineering Plan**: features/editor-mode-context/ENGINEERING_PLAN.md
@@ -152,6 +152,70 @@
     프로브 inflight 0 안착). 에디터-모드 코드와 무관한 dev-서버/벤더링
     이슈 — 전체 스위트 green은 이 환경의 기준선이 아니다.
 
+## P3 구현 (2026-06-10)
+
+- **`HitPolicy` 추가** (types.ts REQUIRED 키, 소비처와 같은 변경 — G1/G5):
+  `selectTarget(hitId, doc, HitSelectContext)` /
+  `moveTarget(hitId, doc, HitMoveContext)`. `ClickIntent`("plain"/"deep"/
+  "toggle")는 interactions/selection-context에서 types.ts로 이주 — 정책
+  입력 어휘. 두 ctx 분리: select는 순수 데이터(intent/currentId/
+  activePageId), move는 데이터 + **주입 함수 심 2개**(`climbToMovable` =
+  agocraft LayoutEngine canMove 클라임, `admit` = RolePolicy.movable ∩
+  DR-061 잠금) — 정책은 "어느 아이템"만 결정, 스테이지가 "움직여도 되는가"
+  소유권 유지(엔진/잠금 로직이 document/로 새지 않음).
+- **`pieces/hit-resolution.ts`**: `parentFirstSelect`(기존 selectFromHit
+  알고리즘 원형 이주 — deep/toggle 조기 반환, in-context 드릴, rootId
+  기준 parent-first 한 단계 진입) + `deepestMovable`(climb→admit) +
+  `parentFirstMovable`(= parentFirstSelect(intent:"plain", currentId) →
+  climb→admit — 클릭과 드래그 move-target의 해석 완전 동등, in-context
+  드릴 패리티 포함). 합성: `DOC_ROOT_HIT`(mixed/canvas-board: select=
+  parentFirst(docRoot), move=deepestMovable — 무회귀) /
+  `ACTIVE_PAGE_HIT`(slide-deck/doc-page: select=move=
+  parentFirst(activePage)).
+- **행동 변경 ③** (DR-114 §3 승인): page-bounded에서 비선택 깊은 자식 위
+  드래그 시작 → 페이지 직속 조상이 move target → commitFrame의
+  제스처당-1회 선택 전환(WI-019/021, 무변경)이 자동으로 **원제스처
+  선택+이동** 산출. 선택된-프레임 리다이렉트(선택 내부 press → 선택
+  이동)는 flavor 무관 스테이지 소유 — 정책에 도달하지 않음.
+- **소비처 치환**: NestedFrame onClick `selectFromHit` →
+  `ctx.hit.selectTarget`(null+페이지hit → clear, WI-163 이스케이프 해치
+  보존), FrameStage resolveTarget 비선택 레그 `movableTargetOrNull` →
+  `hitRef.current.moveTarget`(admitMoveTarget 분리, currentId는 vm 동기
+  파생 — 중첩 삼항, Rule 6 게이트 통과형), DesignPage `hit={editorMode.hit}`.
+- **디커미션 스윕**: selection-context의 `selectFromHit`+`ClickIntent`
+  (~100줄) 삭제(키보드 내비 헬퍼 4종은 잔존), interactions/index 배럴
+  export 제거, `selection-from-hit.test.ts` 삭제 — 전 스위트
+  `hit-resolution.test.ts`(35 tests)로 이주 + moveTarget 신규 스위트.
+
+## Verification (P3)
+
+- 게이트 전수 green (2026-06-10): tsc --noEmit / vitest **1009 pass (98
+  files)** (+12: hit-resolution 35 − 이주분 + editor-mode 레지스트리 합성
+  3) / tokencheck·declarativecheck·puritycheck·inheritancecheck·
+  modeboundarycheck / biome 0 errors.
+- 신규 e2e `editor-mode-hit.spec.ts` 2 passed (retries 0):
+  slide-deck 깊은 자식 드래그 → 페이지 직속 조상 선택+이동(geometry 단언,
+  손자 부모-상대 rect 불변) / mixed 깊은 자식 직접 이동+선택 무회귀.
+- e2e 무회귀 판정 (비교가능 서브셋 13파일: P2 기준선 + figma-* 선택 계열
+  + reparent-multi-selection + text-v1-launch): **40 passed, 3 failed**
+  = 전부 기지 pre-existing red(frame-handles:32 / mode-gate-hardening:110
+  / thumbnail-panel:216). hover-affordance:58/:87 2건은 **green 전환**
+  (아래 배너 원인 — P2 당시 known-red가 환경 요인이었음이 판명).
+- **환경 triage 2건** (P3 코드와 무관, 같은 변경에서 수리):
+  - figma-selection 런치 배너 캘린더 창(2026-06-08~06-15, LG-001 1주
+    자동철회)이 **검증일에 열려 있어** clearAllDesigns의 weave.* 전삭이
+    배너를 재소생 → 캔버스 상단(top-12 z-30) 클릭/드래그 6 spec 가로채기.
+    수리: clearAllDesigns가 dismissal 키 2종을 재시드(helpers.ts),
+    배너 자체를 검증하는 text-v1-launch.spec은 키를 명시 제거로 옵트인.
+  - `page.emulateMedia(reducedMotion)`를 prepareDesign **앞**에 호출하면
+    이 샌드박스에서 design 페이지 networkidle이 영원히 미안착(이분 실측).
+    수리: editor-mode-hit/selection-follows-drag에서 prepareDesign 뒤로
+    이동(reduced motion은 드래그 중에만 유의미).
+  - figma-cmd-click-deep-select/right-click-layer-picker 4 spec의
+    `[data-frame-id=…]` 락레이터가 WI-072(06-01) 이후 썸네일 타일과 strict
+    mode 충돌(중첩 frame이 타일로도 노출) — `[data-testid="block-frame"]`
+    스코핑으로 수리, 5 passed.
+
 ## Verification (설계 단계)
 
 - 설계 단계 — 코드 변경 없음. 게이트·e2e 계획은 ENGINEERING_PLAN 각 phase에
@@ -159,5 +223,5 @@
 
 ## Next
 
-P3 — HitPolicy: page-bounded 원제스처 선택+이동(행동 변경 ③, 신규 e2e 고정).
-이후 P4 InputPolicy(FSM 게이트 구성 주입), P5 최종 스윕.
+P4 — InputPolicy(FSM 게이트 구성 주입), P5 — 최종 스윕(grep 0, G4
+`ctx.mode ===` declarativecheck 패턴 검토, PROJECT_MAP 갱신).

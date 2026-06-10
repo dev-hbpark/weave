@@ -17,7 +17,8 @@
 // Growth contract (DR-114 §6): the context grows one policy interface per
 // concern, added as a REQUIRED key in the SAME change that migrates its
 // consumers (G1/G2). P1 shipped `mode` + `roles`; P2 added view / camera /
-// insertion / rail (dissolving FORMAT_EDITOR_CONFIG); P3 adds hit, P4 input.
+// insertion / rail (dissolving FORMAT_EDITOR_CONFIG); P3 added hit
+// (one-gesture select+move on page-bounded flavors); P4 adds input.
 // A policy stub without consumers would be a second truth source next to the
 // live branch it is meant to absorb — exactly the dead-config drift §6-G5
 // forbids, so keys land with their consumers, never ahead of them.
@@ -203,6 +204,62 @@ export interface RailPolicy {
   readonly clickActivatesPage: boolean;
 }
 
+/** Modifier intent of a frame click — Figma's selection model: plain click
+ *  walks parent-first, Cmd/Ctrl (`deep`) bypasses depth entirely, Shift
+ *  (`toggle`) flips multi-frame membership. Closed list, frozen by the
+ *  Figma model (WI-033). Lives here because it is the HitPolicy's input
+ *  vocabulary; the interactions layer re-uses this type. */
+export type ClickIntent = "plain" | "deep" | "toggle";
+
+/** Inputs for resolving a click hit to the next single selection. */
+export interface HitSelectContext {
+  readonly intent: ClickIntent;
+  /** Current single frame-selection id (a multi-selection's representative
+   *  first id; shape selections → undefined). Drives the "already in
+   *  context → drill to the leaf" heuristic (WI-033 A1). */
+  readonly currentId: string | undefined;
+  /** The active page on page-bounded flavors; undefined on infinite
+   *  canvas (and on the empty-deck edge). */
+  readonly activePageId: string | undefined;
+}
+
+/** Inputs for resolving a drag-start hit to its move target. The two
+ *  function fields are engine seams the CONSUMER injects: layout climbing
+ *  (agocraft LayoutEngine `canMove`) and capability ∩ lock admission stay
+ *  owned by the stage — the policy only decides WHICH item to aim at
+ *  (DR-114 v2: policies are pure; liveness arrives as arguments). */
+export interface HitMoveContext {
+  readonly currentId: string | undefined;
+  readonly activePageId: string | undefined;
+  /** Nearest ancestor whose layout permits moving its own position (a
+   *  flex/grid-managed child climbs to its container — Figma parity). */
+  climbToMovable(id: string): string;
+  /** Capability (RolePolicy.movable) ∩ lock (DR-061) admission of the
+   *  climbed target. */
+  admit(id: string): boolean;
+}
+
+/** WI-166 P3 / DR-114 §3 — how a pointer hit resolves to a select target
+ *  (click) and a move target (drag start). Absorbs `selectFromHit`'s
+ *  contextRootId branch and FrameStage's deepest-`[data-frame-id]` move
+ *  resolution. Routing BOTH through one policy is what produces the
+ *  one-gesture select+move on page-bounded flavors: `commitFrame` already
+ *  selects the move target once per gesture (`moveSelectionSessionRef`),
+ *  so resolving the move target parent-first makes a drag on an unselected
+ *  deep child select+move its page-direct ancestor in a single gesture. */
+export interface HitPolicy {
+  /** Next single selection for a click hit, or null = background click /
+   *  hit outside the doc. The consumer disambiguates the two nulls: a hit
+   *  ON the active page clears the selection (Canva: clicking the page
+   *  deselects), an unknown id falls back to the raw target (legacy). */
+  selectTarget(hitId: string, doc: AgocraftDocument, ctx: HitSelectContext): string | null;
+  /** Move target for a drag starting on an UNSELECTED item, or null =
+   *  decline the move (the drag falls through to the rubber band). Drags
+   *  starting INSIDE the current selection never reach this — they move
+   *  the selection itself (stage-owned redirect, flavor-independent). */
+  moveTarget(hitId: string, doc: AgocraftDocument, ctx: HitMoveContext): string | null;
+}
+
 /** The composed per-flavor editor context. One composition file per flavor
  *  under `modes/`, resolved through the EDITOR_MODES registry — a new
  *  flavor is one composition file + one registry row (DR-114 §6-G6). */
@@ -213,4 +270,5 @@ export interface EditorModeContext {
   readonly camera: CameraPolicy;
   readonly insertion: InsertionPolicy;
   readonly rail: RailPolicy;
+  readonly hit: HitPolicy;
 }

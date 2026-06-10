@@ -5,6 +5,7 @@
 // rail-less board), never a consumer.
 
 import { FREE_CAMERA } from "../pieces/camera.js";
+import { DOC_ROOT_HIT } from "../pieces/hit-resolution.js";
 import { ROOT_INSERTION } from "../pieces/insertion.js";
 import { ALL_ELEMENTS_ROLES } from "../pieces/item-roles.js";
 import { OVERVIEW_RAIL } from "../pieces/rail.js";
@@ -18,4 +19,5 @@ export const CANVAS_BOARD_MODE: EditorModeContext = {
   camera: FREE_CAMERA,
   insertion: ROOT_INSERTION,
   rail: OVERVIEW_RAIL,
+  hit: DOC_ROOT_HIT,
 };

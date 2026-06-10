@@ -29,16 +29,16 @@ import {
 import { isDomainItem } from "../../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
 import { ParentFrameHeightContext } from "../../document/domains/parent-frame-context.js";
-import { capabilityOf, type RolePolicy } from "../../document/editor-mode/types.js";
+import {
+  type ClickIntent,
+  capabilityOf,
+  type HitPolicy,
+  type RolePolicy,
+} from "../../document/editor-mode/types.js";
 import { useCroppingItemId, useIsCropping } from "../../document/interactions/cropping-state.js";
 import { useIsFrameHovered } from "../../document/interactions/frame-hover-store.js";
 import { useSelectionChromeOrNull } from "../../document/interactions/selection-chrome-context.js";
-import {
-  type ClickIntent,
-  type Selection,
-  SelectionVmContext,
-  selectFromHit,
-} from "../../document/interactions/selection-context.js";
+import { SelectionVmContext } from "../../document/interactions/selection-context.js";
 import {
   HIT_THRESHOLD_AREA_PX2,
   TotalScaleContext,
@@ -112,11 +112,11 @@ interface NestedFrameProps {
   // removed alongside the drill-in opacity / dim chain in
   // NestedFrame's body. No frame is ever dimmed today.
   /** WI-033 A1+A2 — the AgocraftDocument that owns this frame's tree.
-   *  When provided, NestedFrame's onClick routes through `selectFromHit`
-   *  to apply Figma's parent-first auto-select + Cmd/Ctrl deep-select
-   *  semantics. When undefined, falls back to the legacy "select the
-   *  clicked frame" behaviour (backward compat for any caller that
-   *  hasn't been wired yet). */
+   *  When provided, NestedFrame's onClick routes through the injected
+   *  HitPolicy (`hit.selectTarget`) to apply Figma's parent-first
+   *  auto-select + Cmd/Ctrl deep-select semantics. When undefined, falls
+   *  back to the legacy "select the clicked frame" behaviour (backward
+   *  compat for any caller that hasn't been wired yet). */
   readonly doc?: AgocraftDocument | undefined;
   /** WI-033 A4 — fired on right-click. Caller (FrameStage) converts the
    *  viewport coords to design-plane local, runs `findFramesAtPoint`,
@@ -126,10 +126,11 @@ interface NestedFrameProps {
   readonly onContextMenuRequest?:
     | ((itemId: string, clientX: number, clientY: number) => void)
     | undefined;
-  /** WI-163 — the active page's id on page-bounded formats: a plain click
-   *  on it clears the selection instead of selecting it, and parent-first
-   *  walks one level INSIDE it (selectFromHit's contextRootId — HitPolicy
-   *  absorbs this in WI-166 P3). Undefined on infinite canvas. */
+  /** WI-163 — the active page's id on page-bounded formats: fed to the
+   *  HitPolicy as `activePageId` (parent-first walks one level INSIDE it),
+   *  and used to disambiguate a null select result — a null on an artboard
+   *  hit is a background click that clears the selection. Undefined on
+   *  infinite canvas. */
   readonly artboardId?: string | undefined;
   /** WI-166 / DR-114 — injected RolePolicy (interface only — the policy is
    *  composed at the composition root). Decides per-item capabilities:
@@ -137,6 +138,11 @@ interface NestedFrameProps {
    *  selection chrome drops ALL canvas handles for `canvasHandles: false`
    *  items (a stage/page is editing chrome, not an object — WI-163). */
   readonly roles: RolePolicy;
+  /** WI-166 P3 / DR-114 — injected HitPolicy. onClick resolves the next
+   *  selection through `hit.selectTarget` (parent-first from the document
+   *  root on free placement, from the active page on page-bounded — the
+   *  former `selectFromHit` + contextRootId pair). */
+  readonly hit: HitPolicy;
 }
 
 export function NestedFrame({
@@ -164,6 +170,7 @@ export function NestedFrame({
   onContextMenuRequest,
   artboardId,
   roles,
+  hit,
 }: NestedFrameProps) {
   const itemId = String(item.id);
   // WI-033 — vm reference for synchronous selection read inside onClick.
@@ -208,11 +215,11 @@ export function NestedFrame({
 
   // WI-033 P2 — manual 2-click fit-to-frame counter removed. It used to
   // dispatch `onEnter?.(itemId)` (drill-in) on the second qualifying
-  // click and `return` early, which prevented `selectFromHit` from
+  // click and `return` early, which prevented the hit resolution from
   // running. With drill-in retired (DR-017) and the counter's reason
-  // for existing gone, the frame's onClick path now runs `selectFromHit`
-  // on every press — A1's parent-first heuristic does its own
-  // "current selection in trail → drill to leaf" derivation.
+  // for existing gone, the frame's onClick path now runs
+  // `hit.selectTarget` on every press — A1's parent-first heuristic does
+  // its own "current selection in trail → drill to leaf" derivation.
   const attrs = item.attrs as { frame?: ItemFrame };
   const frame = attrs.frame;
   const selfRef = useRef<HTMLDivElement>(null);
@@ -485,6 +492,7 @@ export function NestedFrame({
       onCommitHotspotRegion={onCommitHotspotRegion}
       artboardId={artboardId}
       roles={roles}
+      hit={hit}
     />
   ));
 
@@ -546,7 +554,7 @@ export function NestedFrame({
         // WI-033 NOTE: when the router DOES claim (the common path),
         // FrameMoveBinding does its own `vm.itemSelection.set(itemId)`
         // raw single-replace (frame-manip.ts:154), which fights with
-        // A1's parent-first heuristic in `selectFromHit`. The Figma-
+        // A1's parent-first heuristic in `hit.selectTarget`. The Figma-
         // aligned override happens in `onClick` below. Removing the
         // raw set at its source requires an agocraft option (see
         // HANDOFF-011 — `CreateFrameMoveBindingDeps.disableSelectionSet`);
@@ -616,12 +624,12 @@ export function NestedFrame({
         }
         // WI-033 P2 — manual 2-click counter removed alongside drill-in
         // mode. The counter used to fire `onEnter?.(itemId)` on the
-        // second click and `return` early, which suppressed
-        // `selectFromHit` and prevented A1's drill heuristic from
+        // second click and `return` early, which suppressed the hit
+        // resolution and prevented A1's drill heuristic from
         // running. Text-edit double-click is still handled by the
         // EditableText component on `[data-double-click-edit="true"]`
         // (native dblclick → enter edit mode); the frame's onClick
-        // path now just runs `selectFromHit` on every press.
+        // path now just runs `hit.selectTarget` on every press.
         e.stopPropagation();
         // WI-033 — Figma selection model parity:
         //   • Shift (and Cmd+Shift / Ctrl+Shift) → multi-toggle. Adds
@@ -669,9 +677,11 @@ export function NestedFrame({
             (t instanceof HTMLElement
               ? t.closest("[data-frame-id]")?.getAttribute("data-frame-id")
               : null) ?? itemId;
-          const current: Selection | null =
-            selectedId === undefined ? null : { kind: "frame", id: selectedId };
-          const next = selectFromHit(targetFrameId, intent, doc, current, artboardId);
+          const next = hit.selectTarget(targetFrameId, doc, {
+            intent,
+            currentId: selectedId,
+            activePageId: artboardId,
+          });
           // WI-163 — null on an artboard hit = background click → clear the
           // selection (Canva: clicking the page deselects). The legacy null
           // fallback (hit not in doc) keeps selecting the raw target.
@@ -679,7 +689,7 @@ export function NestedFrame({
             onSelect?.(undefined);
             return;
           }
-          onSelect?.(next === null ? targetFrameId : next.id);
+          onSelect?.(next ?? targetFrameId);
           return;
         }
         onSelect?.(itemId);

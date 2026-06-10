@@ -51,6 +51,7 @@ import { resizeCropWindow, setStraighten } from "../document/crop-geometry.js";
 import {
   type CameraPolicy,
   capabilityOf,
+  type HitPolicy,
   type ItemCapabilities,
   type RolePolicy,
   type ViewPolicy,
@@ -183,6 +184,14 @@ export interface FrameStageProps {
    *  page-bounded formats — WI-163) decline all three. Replaces the local
    *  `isArtboardId` predicate. Lock (DR-061) stays orthogonal. */
   readonly roles: RolePolicy;
+  /** WI-166 P3 / DR-114 — injected HitPolicy. `frameAccess.resolveTarget`
+   *  resolves a drag-start on an UNSELECTED item through `hit.moveTarget`:
+   *  deepest-movable on free placement (unchanged), parent-first from the
+   *  active page on page-bounded flavors — which, combined with
+   *  commitFrame's once-per-gesture selection, yields the one-gesture
+   *  select+move. Drags starting inside the current selection keep the
+   *  stage-owned redirect (move the selection itself). */
+  readonly hit: HitPolicy;
   readonly onSelect?: ((itemId: string | undefined) => void) | undefined;
   /** Shift/Cmd/Ctrl + click on a frame toggles it in/out of the multi
    *  selection (Figma parity). Fires alongside the existing `onSelect`
@@ -531,6 +540,11 @@ export function FrameStage(props: FrameStageProps) {
   // zoomToBox no-ops on it).
   const activePage = visibleFrameIds !== undefined && frames.length === 1 ? frames[0] : undefined;
   const activePageId = activePage === undefined ? undefined : String(activePage.id);
+  // WI-166 P3 — ref-mirrored for the stable (deps-`[]`) frameAccess
+  // closure: `resolveTarget` feeds the live active page into
+  // `hit.moveTarget` (parent-first root on page-bounded flavors).
+  const activePageIdRef = useRef(activePageId);
+  activePageIdRef.current = activePageId;
   const zoomToBoxRef = useRef(zoomToBox);
   zoomToBoxRef.current = zoomToBox;
   const docRef = useRef(doc);
@@ -755,13 +769,17 @@ export function FrameStage(props: FrameStageProps) {
   // the absorbed `isArtboardId` returning false.
   const rolesRef = useRef(props.roles);
   rolesRef.current = props.roles;
+  // WI-166 P3 — injected HitPolicy, ref-mirrored for the same stable-closure
+  // reason as `rolesRef` above.
+  const hitRef = useRef(props.hit);
+  hitRef.current = props.hit;
   const itemCapability = (id: string): ItemCapabilities => {
     const d = docRef.current;
     if (d === undefined) return rolesRef.current.capabilities.element;
     return capabilityOf(rolesRef.current, d, id);
   };
   // Selection-follows-move: the FrameMoveBinding runs with
-  // `disableSelectionSet: true` so plain clicks keep selectFromHit's
+  // `disableSelectionSet: true` so plain clicks keep the HitPolicy's
   // parent-first model, and after a drag its onPointerUp swallows the
   // click — so neither path switches selection when a drag starts on an
   // UNSELECTED frame. commitFrame reconciles it once per gesture. These
@@ -841,16 +859,22 @@ export function FrameStage(props: FrameStageProps) {
       }
       return cur;
     }
-    /** DR-061 — the movable target for `id`, or null when that target is LOCKED
-     *  (decline the move gesture). WI-163 — also null when the target's role
-     *  declines moving (a stage/page): pages don't move; the declined drag
-     *  falls through to the P4 rubber band (acceptWithinPage already admits
-     *  in-page starts). */
+    /** Capability (RolePolicy.movable — WI-163: a stage/page declines) ∩
+     *  lock (DR-061) admission of a climbed move target. The HitPolicy's
+     *  `admit` seam — the policy decides WHICH item to aim at, the stage
+     *  keeps owning whether that item may move at all. */
+    function admitMoveTarget(id: ItemId): boolean {
+      if (!itemCapability(String(id)).movable) return false;
+      const it = findItem(id);
+      return !(it !== undefined && isItemLocked(it));
+    }
+    /** The movable target for `id`, or null when admission declines it (a
+     *  declined drag falls through to the P4 rubber band — acceptWithinPage
+     *  already admits in-page starts). Used by the selected-frame redirect
+     *  below; the unselected-hit leg goes through `hit.moveTarget`. */
     function movableTargetOrNull(id: ItemId): ItemId | null {
       const moved = climbToMovable(id);
-      if (!itemCapability(String(moved)).movable) return null;
-      const it = findItem(moved);
-      return it !== undefined && isItemLocked(it) ? null : moved;
+      return admitMoveTarget(moved) ? moved : null;
     }
     return {
       resolveTarget(target) {
@@ -893,14 +917,41 @@ export function FrameStage(props: FrameStageProps) {
         // No selection redirect → the press must land on a frame body, not
         // a shape's geometry: pressing a shape with nothing selected keeps
         // the legacy "select, don't move" behavior. Resolve the deepest
-        // frame, then climb to its nearest movable ancestor (a layout child
-        // moves its container — Figma auto-layout parity).
+        // frame, then hand the WHICH-item decision to the injected
+        // HitPolicy (WI-166 P3): free placement climbs the deepest hit to
+        // its nearest movable ancestor (a layout child moves its container
+        // — Figma auto-layout parity, unchanged); page-bounded flavors
+        // resolve parent-first from the active page, so a drag on an
+        // unselected deep child aims at its page-direct ancestor —
+        // commitFrame's once-per-gesture selection makes that a
+        // one-gesture select+move.
         if (target.closest("[data-shape-id]") !== null) return null;
         const frameEl = target.closest("[data-frame-id]");
         if (frameEl === null) return null;
         const raw = frameEl.getAttribute("data-frame-id");
         if (raw === null) return null;
-        return movableTargetOrNull(raw as ItemId);
+        const d = docRef.current;
+        if (d === undefined) return movableTargetOrNull(raw as ItemId);
+        // Representative current-selection id (multi → first id), mirroring
+        // useSelection's single-select view — feeds the policy's in-context
+        // drill heuristic.
+        const selNow = vmNow === null ? undefined : vmNow.itemSelection.state.get();
+        const firstMulti =
+          selNow !== undefined && selNow.kind === "multi"
+            ? Array.from(selNow.items as Iterable<unknown>)[0]
+            : undefined;
+        const currentId =
+          selNow !== undefined && selNow.kind === "single"
+            ? String(selNow.itemId)
+            : firstMulti !== undefined
+              ? String(firstMulti)
+              : undefined;
+        return hitRef.current.moveTarget(raw, d, {
+          currentId,
+          activePageId: activePageIdRef.current,
+          climbToMovable: (id) => String(climbToMovable(id as ItemId)),
+          admit: (id) => admitMoveTarget(id as ItemId),
+        }) as ItemId | null;
       },
       readFrame(itemId) {
         const item = findItem(itemId);
@@ -1298,7 +1349,7 @@ export function FrameStage(props: FrameStageProps) {
           // HANDOFF-011 / WI-033 — opt out of the binding's raw
           // `vm.itemSelection.set(itemId)` on plain pointerdown so
           // NestedFrame's onClick can apply Figma's parent-first /
-          // Cmd-deep / Shift-toggle semantics via `selectFromHit`.
+          // Cmd-deep / Shift-toggle semantics via `hit.selectTarget`.
           disableSelectionSet: true,
           // WI-019/WI-021 — body-drag move is resolved through
           // `frameAccess.resolveTarget`, which climbs a layout-managed
@@ -1739,6 +1790,7 @@ export function FrameStage(props: FrameStageProps) {
                 onSelect={onSelect}
                 artboardId={activePageId}
                 roles={props.roles}
+                hit={props.hit}
                 doc={props.document}
                 onContextMenuRequest={handleFrameContextMenu}
                 onUpdateItem={props.onUpdateItem}

@@ -156,6 +156,12 @@ test("launch banner dismissal persists across reload", async ({ page }) => {
     const FAKE_NOW = Date.parse("2026-06-09T00:00:00Z");
     Date.now = () => FAKE_NOW;
   });
+  // clearAllDesigns pre-seeds the dismissal keys (banner-overlap hygiene
+  // for every other spec — WI-166 P3); this spec tests the banner itself,
+  // so un-dismiss before the design page mounts.
+  await page.evaluate(() => {
+    window.localStorage.removeItem("weave.launch.text-v1.dismissed-at");
+  });
   await prepareDesign(page, { flavor: "mixed", title: "Banner-A" });
 
   const banner = page.getByTestId("text-v1-launch-banner");

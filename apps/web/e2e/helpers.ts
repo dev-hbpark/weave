@@ -33,6 +33,16 @@ export async function clearAllDesigns(page: Page) {
         window.localStorage.removeItem(key);
       }
     }
+    // WI-166 P3 — re-seed the launch-banner dismissals the wipe above just
+    // removed. The banners are calendar-gated ([LAUNCH_AT, RETRACT_AT]) and
+    // float over the canvas top (absolute top-12 z-30); while a launch
+    // window is OPEN on the real wall clock, an un-dismissed banner
+    // intercepts every click/drag aimed at frames near the top edge —
+    // 6 selection/drag specs went red the day the figma-selection window
+    // opened (2026-06-08) with zero code change. Specs that exercise a
+    // banner itself (text-v1-launch.spec.ts) remove these keys explicitly.
+    window.localStorage.setItem("weave.launch.figma-selection.dismissed-at", "1");
+    window.localStorage.setItem("weave.launch.text-v1.dismissed-at", "1");
   });
 }
 

@@ -2,6 +2,7 @@
 // (stage) at a time. Composition only — pick pieces, no logic (DR-114 §2).
 
 import { ACTIVE_PAGE_CAMERA } from "../pieces/camera.js";
+import { ACTIVE_PAGE_HIT } from "../pieces/hit-resolution.js";
 import { ACTIVE_PAGE_INSERTION } from "../pieces/insertion.js";
 import { ROOT_STAGE_ROLES } from "../pieces/item-roles.js";
 import { PAGE_LIFECYCLE_RAIL } from "../pieces/rail.js";
@@ -15,4 +16,5 @@ export const SLIDE_DECK_MODE: EditorModeContext = {
   camera: ACTIVE_PAGE_CAMERA,
   insertion: ACTIVE_PAGE_INSERTION,
   rail: PAGE_LIFECYCLE_RAIL,
+  hit: ACTIVE_PAGE_HIT,
 };

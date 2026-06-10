@@ -39,104 +39,11 @@ export type Selection =
       readonly shapeId: string;
     };
 
-/** Intent of a frame click — surfaces the user's modifier keys to the
- *  selection state machine. Figma's selection model: plain clicks walk
- *  one level deeper through nested frames (parent-first), Cmd/Ctrl
- *  bypasses depth entirely (deep), and Shift toggles multi-frame.
- *
- *  Closed list, frozen by the Figma model. Single dispatch site inside
- *  `selectFromHit` — kept file-internal so future modes go through the
- *  helper's signature, not a registry. */
-export type ClickIntent = "plain" | "deep" | "toggle";
-
-/** WI-033 A1 + A2 — pure resolver from a frame click hit to the next
- *  selection state. Caller is responsible for applying the result via
- *  `selectionContext.selectFrame(result.id)` (or equivalent vm setter
- *  for multi-frame toggle paths).
- *
- *  Algorithm (FIGMA_SELECTION_MODEL_SPEC §2.1):
- *  - `intent: "deep"` (Cmd/Ctrl-click) — return the leaf hit, depth-blind.
- *  - `intent: "toggle"` (Shift-click) — caller routes to multi-frame
- *    toggleFrames; this helper still returns the hit as the
- *    representative leaf so single-selection consumers stay coherent.
- *  - `intent: "plain"` — "already-in-context" heuristic. The user is
- *    considered to be in a context once *any* frame on the hit's trail
- *    is either the current selection itself OR the parent of the
- *    current selection. In that case → return the leaf hit (drill).
- *    Otherwise the user is switching contexts → only walk one level
- *    in from the root and return the top-level frame on the trail.
- *
- *    The parent-of-current arm exists for the "sibling pick inside the
- *    already-entered frame" path: once `text1` inside `FrameA` is
- *    selected, clicking `text2` (a sibling inside the same `FrameA`)
- *    must select `text2` directly — `FrameA` is on `text2`'s trail and
- *    is the parent of `text1`, so the click is still "in context". A
- *    rule that only checked `current ∈ trail` would re-select `FrameA`
- *    on every sibling switch (the bug this fix removes).
- *
- *  WI-163 — `contextRootId` (the active PAGE on page-bounded formats)
- *  shifts the model's root: the page is an ARTBOARD, not a selectable
- *  object. A plain hit on the page itself returns null (background —
- *  caller clears the selection), and parent-first walks one level in
- *  from the PAGE, not from the document root. `intent: "deep"`
- *  deliberately still selects the page — the escape hatch that keeps
- *  page-background (fill) editing reachable; transform handles stay
- *  suppressed at the chrome/gesture layer regardless.
- *
- *  Pure: no React, no vm, no DOM. Doc + current + hit + intent in,
- *  Selection|null out. Testable in isolation. */
-export function selectFromHit(
-  hitId: string,
-  intent: ClickIntent,
-  doc: AgocraftDocument,
-  current: Selection | null,
-  contextRootId?: string,
-): { readonly kind: "frame"; readonly id: string } | null {
-  if (intent === "deep" || intent === "toggle") {
-    // WI-163 — toggle may not add the artboard to a multi-selection.
-    // (Deep keeps it — the page-fill escape hatch.)
-    if (intent === "toggle" && hitId === contextRootId) return null;
-    return { kind: "frame", id: hitId };
-  }
-  // WI-163 — a plain hit on the artboard itself is a background click.
-  if (contextRootId !== undefined && hitId === contextRootId) return null;
-  const trail = findTrailDeep(doc, hitId);
-  if (trail === undefined || trail.length === 0) {
-    // hitId is the root itself or not in the doc — nothing to select.
-    return null;
-  }
-  const currentId = current?.kind === "frame" ? current.id : undefined;
-  // Parent of the current selection — the frame whose viewport the user
-  // is currently treating as "root". `parentOf` returns undefined when
-  // the current selection is a top-level frame (its parent is the
-  // document root, which is intentionally absent from the trail).
-  const currentParentId = currentId !== undefined ? parentOf(currentId, doc) : undefined;
-  const inCurrentContext =
-    currentId !== undefined &&
-    trail.some((item) => {
-      const id = String(item.id);
-      return id === currentId || id === currentParentId;
-    });
-  if (inCurrentContext) {
-    // Same context — let the click drill all the way to the leaf hit.
-    return { kind: "frame", id: hitId };
-  }
-  // Different context — A1 parent-first: walk one level in from the root.
-  // WI-163 — with an artboard context root on the trail, "one level in"
-  // starts INSIDE the page (the page itself is never the parent-first
-  // pick). Falls back to trail[0] when the root is absent from the trail
-  // (hit outside the page — page-scoped rendering makes this unreachable,
-  // kept as a safe default).
-  if (contextRootId !== undefined) {
-    const rootIdx = trail.findIndex((item) => String(item.id) === contextRootId);
-    if (rootIdx !== -1) {
-      const firstInside = trail[rootIdx + 1];
-      return firstInside === undefined ? null : { kind: "frame", id: String(firstInside.id) };
-    }
-  }
-  const topLevel = trail[0];
-  return topLevel === undefined ? null : { kind: "frame", id: String(topLevel.id) };
-}
+// WI-033 A1+A2 `selectFromHit` and its `ClickIntent` type moved to the
+// editor-mode layer in WI-166 P3: the parent-first resolver is now the
+// HitPolicy select engine at `editor-mode/pieces/hit-resolution.ts`
+// (`parentFirstSelect`), injected into NestedFrame as `ctx.hit`. The
+// intent vocabulary lives in `editor-mode/types.ts` (`ClickIntent`).
 
 /** WI-033 A3 — keyboard navigation helpers (`Enter`, `Shift+Enter`, `Tab`,
  *  `Shift+Tab`). Pure functions; caller routes the result to
