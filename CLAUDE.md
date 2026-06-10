@@ -36,6 +36,10 @@ For UI work, **Design System Triage** is a Build (step 6) sub-step that runs bef
 
 Feature-level work should be possible mostly from `features/<feature>/`.
 
+## Code design conventions (precedence vs OS-root Rule 2)
+
+weave is a host app, not a tree-shakeable library, and it consumes agocraft via vendored `@agocraft/*` packages. weave follows **OS-root `CODE_STRUCTURE_DESIGN_RULES.md` Rule 2 as written** — classes are fine for stateful runtime objects; weave does **not** adopt agocraft's stricter factory-only strengthening (agocraft DR-013). This is stated explicitly because weave sits next to agocraft, which strengthened the rule, so the difference is a recorded decision, not an inconsistency. All other rules apply unchanged: Rule 6 (no `switch`/`if-chain` on a closed-list discriminant — **including `operation`/`status`-style ones the lint gate misses**), Rule 2 named-export shape, Rule 4 / the single command-sourced mutation path above, and Rule 5 round-trip integrity for anything persisted to KV.
+
 ## Document mutation rule — every change goes through History
 
 **Any code that mutates the document MUST route through `editor.exec("weave.<verb>", input)`** so it produces a real `Patch`, flows through the editor's `ChangeStream`, and lands in `editor.history` as an undoable transaction. No `setAgoDoc` (or downstream-direct mutator) calls outside `useDocument` / the `applyChange` reducer.
