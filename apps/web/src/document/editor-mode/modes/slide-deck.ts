@@ -1,6 +1,7 @@
 // WI-166 / DR-114 — slide-deck: Canva-style page-bounded editing, one page
 // (stage) at a time. Composition only — pick pieces, no logic (DR-114 §2).
 
+import { PAGE_AGENT_SURFACE } from "../pieces/agent-surface.js";
 import { ACTIVE_PAGE_CAMERA } from "../pieces/camera.js";
 import { ACTIVE_PAGE_HIT } from "../pieces/hit-resolution.js";
 import { STANDARD_INPUT } from "../pieces/input.js";
@@ -19,4 +20,5 @@ export const SLIDE_DECK_MODE: EditorModeContext = {
   rail: PAGE_LIFECYCLE_RAIL,
   hit: ACTIVE_PAGE_HIT,
   input: STANDARD_INPUT,
+  agent: PAGE_AGENT_SURFACE,
 };

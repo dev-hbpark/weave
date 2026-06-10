@@ -1,6 +1,6 @@
 # WI-168 — Flavor-fit 에이전트 커맨드 표면 (AgentSurfacePolicy)
 
-- Status: DESIGN — DR-115 DRAFT, 사용자 리뷰 대기 (2026-06-11)
+- Status: DONE — P1~P3 완료, 전 게이트 green (2026-06-11)
 - Origin: 사용자 지시 — "프레젠테이션에서 지원하지 않는 동작이 가능해질
   여지를 남기지 말 것. 슬라이드 페이지 vs frame 관리 차이를 에이전트에게
   가르치는 노력도 하지 말 것. 내부 커맨드는 동일, 에이전트 노출 유틸은
@@ -41,3 +41,39 @@
   가능), `retargetCommandSchemas` 벤더 1급 지원(누락 키 loud-fail) 확인.
   핫키 분기 현황 조사: V/H만 flavor-분기이며 이미 정책 게이트(use-hand-tool
   `enabled` ← camera.dragPan). DR-115 DRAFT 작성.
+- 2026-06-11: 사용자 승인("구현진행해") → P1~P3 구현 완료.
+  - **P1**: `types.ts`에 `AgentHostContext` / `AgentToolAdapter` /
+    `AgentSurfacePolicy` + `EditorModeContext.agent`. 설계 대비 1개 정제:
+    어댑터 `schema`는 리터럴이 아닌 **함수형 `(base) => AgentCommandSpec`**
+    — pieces가 앱-레이어 카탈로그(WEAVE_COMMAND_SCHEMAS)를 import하지 않고
+    오버레이만 기술 (모듈 경계 유지). `retargetCommandSchemas`는 미사용 —
+    함수형 schema가 그 역할(rename/patch/loud-fail)을 흡수.
+  - **P1 façade**: `features/aku/agent/agent-surface.ts` `bindAgentSurface`
+    — "all"은 identity triple(무회귀 toBe-고정), allow-list는 읽기 전용
+    CommandRegistry 뷰 + 스키마 오버레이 + exec 프록시(미노출 이름
+    fail-closed `agent-tool-not-exposed`). 주입: AkuAssistant
+    `agentSurface` 필수 prop ← DesignPage `editorMode.agent`.
+  - **P2**: `pieces/agent-surface.ts` — PAGE 표면 = pass-through 40 +
+    어댑터 5(item.add/chart.add/paste/reparent/batch) + 신규 노출명
+    `weave.page.add`(item.add 랩핑: kind=frame/containerId=root/FULL_FRAME
+    스탬프, 스프레드 뒤 스탬프라 에이전트가 override 불가). pageLine
+    하드코딩 → `promptFragment` 흡수. 디커미션: `agent-page-target.ts`
+    (+ 테스트) 제거, roundGroup의 retarget 호출 제거 (min-size/container/
+    text-box 가드는 유지 — flavor-free).
+  - **P3 회귀 1건 발견·수정**: bind 시점에 라이브 레지스트리 대상
+    "unregistered command" loud-fail을 걸었더니 **첫 렌더 시점엔 커맨드
+    등록 전(useWeaveEditor 이펙트가 마운트 후 등록)이라 page-bounded
+    flavor 전체가 블랭크 마운트** (e2e 13파일 서브셋이 slide-deck 3건
+    신규 red로 검출). 수정: 커맨드 해석을 lazy로 — bind 시점 loud-fail은
+    정적 판정 가능한 것만(중복 exposedName / 스키마 누락), 등록 검증은
+    `list()`(connect 시점) loud-fail로 이동. 단위 2건 추가(late
+    registration / list-time loud-fail).
+  - 검증: tsc clean · vitest 102파일/1042 green · 구조 게이트 5종 OK ·
+    e2e 비교 서브셋 13파일 = 기준선 정확 복원(40 passed / 3 known-red:
+    frame-handles:32, mode-gate-hardening:110, thumbnail-panel:216).
+  - 잔여 리스크(수용): ① mapInput은 순수 입력 변환이라
+    `frame.removeKeepingChildren`을 활성 페이지 자체에 적용하는 호출은
+    막지 못함(문서 구조를 모름 — PAGE_AGENT_SURFACE doc comment에 기록).
+    ② `weave.batch` 내부 op는 byName Map으로 직접 디스패치되어 roundGroup
+    입력 가드를 우회 — pre-existing, 본 WI 비-scope. batch 어댑터는 inner
+    op 번역(page.add/add 리타겟)은 수행.

@@ -2638,10 +2638,14 @@ function DesignPageBody() {
                                       height: design.height,
                                       background: design.background,
                                     }}
-                                    // WI-153 P4 — page-bounded: agent non-frame root-adds
-                                    // are retargeted onto the active page (same policy
-                                    // source as toolbar/drop adds).
+                                    // WI-153 P4 / WI-168 — page-bounded: feeds the agent
+                                    // surface's host context (active page for mapInput +
+                                    // promptFragment; same policy source as toolbar adds).
                                     defaultAddContainerId={defaultAddContainerId}
+                                    // WI-168 (DR-115) — the flavor's agent command surface:
+                                    // free placement = full pass-through, page-bounded =
+                                    // closed allow-list with wrapped tools (weave.page.add).
+                                    agentSurface={editorMode.agent}
                                     // WI-065 — after the agent adds slide(s), fit the deck
                                     // at the shared 70% (agent edits skip the UI add-fit).
                                     onFramesAdded={handleFitAll}

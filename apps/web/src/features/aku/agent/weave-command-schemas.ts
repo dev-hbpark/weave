@@ -597,6 +597,10 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.dropGridCell": "그리드 셀 이동",
   "weave.item.setDecoration": "장식 설정",
   "weave.batch": "일괄 실행",
+  // WI-168 (DR-115) — wrapped agent tool on page-bounded flavors (internally
+  // weave.item.add kind:"frame" at the root). Not a registry name — listed so
+  // the edit-chip label resolves when the agent streams this tool.
+  "weave.page.add": "페이지 추가",
 };
 
 const label = (name: string): string => WEAVE_COMMAND_LABELS[name] ?? name;

@@ -10,6 +10,7 @@ import type { Editor } from "@agocraft/editor";
 import { OnboardingCoachmark } from "@weave/design-system";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { AgentSurfacePolicy } from "../../document/editor-mode/types.js";
 import { useSelection } from "../../document/interactions/selection-context.js";
 import type { AkuComposerSeed } from "./AkuComposer.js";
 import { AkuInteractionLock } from "./AkuInteractionLock.js";
@@ -42,6 +43,7 @@ export function AkuAssistant({
   designLoaded,
   designInfo,
   defaultAddContainerId,
+  agentSurface,
   onFramesAdded,
   onZoomToFrame,
 }: {
@@ -54,10 +56,13 @@ export function AkuAssistant({
   /** Canvas px size + background from the Design view-model — passed to the
    *  agent per task so it can size text against the real canvas. */
   readonly designInfo: { width: number; height: number; background: string };
-  /** WI-153 P4 — host's default add container (= the ACTIVE PAGE id on
-   *  page-bounded formats, undefined on infinite canvas). Agent non-frame
-   *  root-adds are retargeted into it. */
+  /** WI-153 P4 / WI-168 — host's default add container (= the ACTIVE PAGE id
+   *  on page-bounded formats, undefined on infinite canvas). Feeds the agent
+   *  surface's host context (mapInput + promptFragment). */
   readonly defaultAddContainerId?: string | undefined;
+  /** WI-168 (DR-115) — the flavor's agent command surface
+   *  (EditorModeContext.agent), injected from the composition root. */
+  readonly agentSurface: AgentSurfacePolicy;
   /** WI-065 — fit the camera after the agent adds top-level frame(s). */
   readonly onFramesAdded?: (() => void) | undefined;
   /** WI-125 — center+fit a frame by id (DesignPage's zoom-to-frame). Used to fit
@@ -114,6 +119,7 @@ export function AkuAssistant({
     getSelection: () => [...selRef.current],
     getDesignInfo: () => designInfoRef.current,
     getDefaultAddContainerId: () => defaultAddContainerIdRef.current,
+    agentSurface,
     designId,
     designLoaded,
     settings,

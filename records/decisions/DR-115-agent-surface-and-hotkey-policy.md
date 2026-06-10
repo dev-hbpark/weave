@@ -1,6 +1,7 @@
 # DR-115 — Flavor-fit 에이전트 커맨드 표면 + 핫키 정책 (EditorModeContext 확장)
 
-- Status: DRAFT (사용자 리뷰 대기)
+- Status: ACCEPTED — 사용자 승인("구현진행해") + WI-168 P1~P3 구현 완료
+  (2026-06-11; as-built 차이는 §7)
 - Date: 2026-06-11
 - Related: DR-114 (EditorModeContext §6-G1 열린 정책 집합), WI-167 (chart.add
   리타겟 갭 — 이 DR의 직접 동기), DR-064/WI-095 (전 커맨드 노출 — **본 DR이
@@ -161,3 +162,36 @@ allow-list가 표면을 소유한다. 신규 커맨드 추가 시 각 flavor 표
   선례).
 - e2e: 기존 aku 스펙 무회귀 + slide-deck에서 page.add 경로 1건.
 - 게이트 5종 + 기존 비교가능 서브셋 무회귀.
+
+## 7. As-built 노트 (구현 중 확정된 차이, WI-168)
+
+1. **어댑터 `schema`는 함수형** — §2a의 리터럴 `schema?: AgentCommandSpec`
+   대신 `schema?: (base: AgentCommandSpec | undefined) => AgentCommandSpec`.
+   pieces(editor-mode 모듈)가 앱-레이어 카탈로그(WEAVE_COMMAND_SCHEMAS)를
+   import하지 않고 베이스 위 오버레이만 기술 — 모듈 경계(Rule 1) 유지.
+   base 부재 시 어댑터가 loud-fail(`requireBase`). 이 함수형이 §2c의
+   `retargetCommandSchemas` 역할(only/rename/patch + 누락 키 loud-fail)을
+   흡수해 **벤더 유틸은 미사용**.
+2. **`tools: "all"` variant 추가** — free-placement 표면을 45개 열거가 아닌
+   `"all"`(identity triple: editor/commands/schemas 레퍼런스 동일)로 표현.
+   열거식이면 신규 커맨드마다 mixed/canvas-board 등재가 추가 의무가 되는데,
+   그 flavor들의 결정은 "전부 노출"(DR-064 유효 유지)이므로 의도를 그대로
+   타입에 둔다.
+3. **등록 검증 시점: bind가 아니라 `list()`** — bind는 첫 렌더 useMemo에서
+   실행되고 커맨드 등록은 useWeaveEditor 이펙트(마운트 후)다. bind-시점
+   "unregistered command" loud-fail은 page-bounded flavor 전체를 블랭크
+   마운트시켰다(e2e 서브셋이 검출 → 수정). 정적 판정(중복 exposedName,
+   스키마 누락)만 bind-시점, 등록 검증은 connect-시점인 `list()`에서
+   loud-fail. 정적 드리프트는 `editor-mode/agent-surface.coverage.test.ts`
+   (등록 커맨드 전수 triage 강제)가 테스트 레벨에서 닫는다.
+4. **`weave.preset.insertSlide`는 pass-through** — §2b는 어댑터 후보로
+   적었으나 이 커맨드는 "root에 삽입"이 정답인 페이지-수명주기 커맨드라
+   번역할 것이 없다(WI-167 Next의 제외 사례와 동일 판정).
+5. **어댑터 5종 확정**: item.add / chart.add / clipboard.paste(활성 페이지
+   해석) + item.reparent(root→활성 페이지) + batch(inner-op 번역 — 내부
+   batch는 byName 디스패치로 표면을 재진입하지 않으므로 어댑터가 직접
+   번역). 노출명 신설은 `weave.page.add` 1건.
+6. **e2e page.add 경로는 단위로 대체** — 에이전트 e2e는 small-think 서버
+   의존이라 이 환경(no-network sandbox)에서 실행 불가. page.add 경로는
+   순수 입력 변환 + façade exec 프록시 단위로 완결 검증(28 tests).
+   비교가능 e2e 서브셋 13파일은 기준선 정확 복원(40 passed / 3 known-red).

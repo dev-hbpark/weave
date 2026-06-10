@@ -1,7 +1,7 @@
 // WI-166 / DR-114 — InsertionPolicy pieces: where a selection-less add
 // lands. Absorbs FORMAT_EDITOR_CONFIG.defaultContainer (WI-153 P3 /
-// DR-111 D5) — use-item-add and agent-page-target receive the RESOLVED
-// container id and stay policy-free.
+// DR-111 D5) — use-item-add and the agent surface's host context receive
+// the RESOLVED container id and stay policy-free.
 //
 // Pure functions + frozen data only. Consumers never import this file
 // (DR-114 §2b) — they receive a composed InsertionPolicy via injection.

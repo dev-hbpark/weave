@@ -4,6 +4,7 @@
 // edits THIS file only (expected divergence sketched in DR-114 §7 — e.g.
 // rail-less board), never a consumer.
 
+import { FREE_AGENT_SURFACE } from "../pieces/agent-surface.js";
 import { FREE_CAMERA } from "../pieces/camera.js";
 import { DOC_ROOT_HIT } from "../pieces/hit-resolution.js";
 import { STANDARD_INPUT } from "../pieces/input.js";
@@ -22,4 +23,5 @@ export const CANVAS_BOARD_MODE: EditorModeContext = {
   rail: OVERVIEW_RAIL,
   hit: DOC_ROOT_HIT,
   input: STANDARD_INPUT,
+  agent: FREE_AGENT_SURFACE,
 };

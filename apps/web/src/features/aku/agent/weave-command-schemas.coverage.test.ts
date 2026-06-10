@@ -1,9 +1,10 @@
-// WI-095 / DR-064 — agent command COVERAGE guard. The agent is given the FULL
-// weave command registry (nothing hidden), and every advertised command must
-// carry a curated argument schema in WEAVE_COMMAND_SCHEMAS. This suite fails if
-// (a) a newly-registered command ships without a schema, or (b) a previously
-// hidden command silently loses its schema again — locking the "all public"
-// decision against drift.
+// WI-095 / DR-064 — agent command COVERAGE guard. Free-placement flavors give
+// the agent the FULL weave command registry (page-bounded flavors own a closed
+// allow-list — WI-168 / DR-115, guarded by editor-mode/agent-surface.coverage),
+// and every registered command must carry a curated argument schema in
+// WEAVE_COMMAND_SCHEMAS regardless of flavor (the base every surface resolves
+// against). This suite fails if (a) a newly-registered command ships without a
+// schema, or (b) a previously hidden command silently loses its schema again.
 
 import { describe, expect, it } from "vitest";
 import { buildWeaveCommands, type WeaveCommandTargets } from "../../../document/commands.js";
@@ -14,8 +15,8 @@ const noopTargets: WeaveCommandTargets = {
   reset: () => {},
 };
 
-// Every command the editor registers = every tool the agent is offered (the
-// reverse-MCP bridge advertises the registry's list() verbatim — no filter).
+// Every command the editor registers = every tool the agent is offered on
+// free-placement flavors (the bridge advertises the bound surface's list()).
 const REGISTERED = buildWeaveCommands(noopTargets, defaultPresetRegistry()).map((c) => c.name);
 
 // The set that DR-064 un-hid (was filtered out of the agent before WI-095).

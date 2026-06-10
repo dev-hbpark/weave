@@ -39,6 +39,12 @@ design root")인데 WI-153 P4 가드가 `weave.item.add`만 검사해 빠졌다.
 
 ## Next
 
-없음. 향후 containerId-optional 신규 add 계열 커맨드를 에이전트에 노출할 때는
+~~없음. 향후 containerId-optional 신규 add 계열 커맨드를 에이전트에 노출할 때는
 `ROOT_ADD_COMMANDS` 등재 여부를 체크리스트에 포함할 것 (이번 갭의 재발 방지
-포인트 — weave.preset.insertSlide처럼 "root가 정답"인 커맨드는 제외).
+포인트 — weave.preset.insertSlide처럼 "root가 정답"인 커맨드는 제외).~~
+
+**SUPERSEDED by DR-115 / WI-168 (2026-06-11)** — 가드(교정) 모델 자체가
+flavor별 AgentSurfacePolicy(닫힌 allow-list + 어댑터)로 대체되었다.
+`agent-page-target.ts`(`ROOT_ADD_COMMANDS` 포함)는 디커미션. 위 체크리스트의
+재발 방지는 이제 `editor-mode/agent-surface.coverage.test.ts`의 exhaustiveness
+가드(신규 등록 커맨드는 enlist 또는 명시 exclude를 강제)가 구조적으로 수행한다.

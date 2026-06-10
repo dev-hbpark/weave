@@ -2,7 +2,7 @@
 //
 // THE ONLY FILE CONSUMERS MAY IMPORT from `editor-mode/` (DR-114 §2b).
 // Consumers (FrameStage, NestedFrame, selection-context, FSM gates, the rail
-// host, use-item-add, agent-page-target, PresentPage …) depend on the policy
+// host, use-item-add, the Aku agent bridge, PresentPage …) depend on the policy
 // INTERFACES here and receive implementations by manual injection — React
 // props / Provider, or plain function arguments for non-React consumers.
 // Importing `pieces/`, `modes/` or `registry.ts` from a consumer is a layer
@@ -24,6 +24,7 @@
 // live branch it is meant to absorb — exactly the dead-config drift §6-G5
 // forbids, so keys land with their consumers, never ahead of them.
 
+import type { AgentCommandSpec } from "@agocraft/agent-client";
 import type { Document as AgocraftDocument } from "@agocraft/core";
 
 /** Declarative metadata for debug / telemetry / present surfaces — never a
@@ -173,8 +174,9 @@ export interface CameraPolicy {
 }
 
 /** WI-153 P3 (DR-111 D5) / DR-114 — where a selection-less add lands.
- *  Absorbs FORMAT_EDITOR_CONFIG.defaultContainer for use-item-add AND
- *  agent-page-target (both receive the RESOLVED id — they stay policy-free). */
+ *  Absorbs FORMAT_EDITOR_CONFIG.defaultContainer for use-item-add and the
+ *  agent surface's AgentHostContext (both receive the RESOLVED id — they
+ *  stay policy-free; DR-115 §2a: no dual truth for the active page). */
 export interface InsertionPolicy {
   /** Container for an add when nothing (or a non-frame) is selected.
    *  `undefined` = design root. Page-bounded flavors return the active
@@ -322,6 +324,51 @@ export interface InputPolicy {
   readonly gates: Readonly<Record<InteractionGateKey, ReadonlySet<InteractionMode>>>;
 }
 
+/** WI-168 / DR-115 — host runtime values an agent-tool adapter may consult.
+ *  Policies stay pure (DR-114 v2 change ③): the React layer builds this per
+ *  exec from live refs. `activeContainerId`'s value SOURCE is
+ *  InsertionPolicy.containerFor — the host context only transports it
+ *  (DR-115 §2a: no dual truth for the active page). */
+export interface AgentHostContext {
+  readonly rootId: string;
+  /** Active page id (page-bounded; infinite = undefined). */
+  readonly activeContainerId: string | undefined;
+}
+
+/** WI-168 / DR-115 — one agent-exposed tool = an adapter over an internal
+ *  command. `exposedName` may differ from `command` (a wrapped tool such as
+ *  `weave.page.add`). `mapInput` is a PURE function — host runtime values
+ *  arrive via the AgentHostContext argument. `schema` is a function of the
+ *  internal command's base spec so composition files never import the
+ *  app-layer schema catalogue (the façade passes the base in). */
+export interface AgentToolAdapter {
+  readonly exposedName: string;
+  /** Internal weave.* command (execution truth — Rule 4 unchanged). */
+  readonly command: string;
+  /** Exposure schema/description overlay; receives the internal command's
+   *  base spec (undefined when the catalogue has none). */
+  readonly schema?: (base: AgentCommandSpec | undefined) => AgentCommandSpec;
+  readonly mapInput?: (input: unknown, host: AgentHostContext) => unknown;
+}
+
+/** WI-168 / DR-115 — the flavor-fit agent command surface. The internal
+ *  command registry stays single (Rule 4 / History contract); only what the
+ *  agent SEES is policy. `"all"` = the full registered surface, unchanged
+ *  (DR-064 stays valid for free-placement flavors). An explicit list is a
+ *  CLOSED allow-list: a command not listed does not exist for the agent —
+ *  unsupported operations are unrepresentable rather than guarded after the
+ *  fact (the WI-167 recurrence class, removed structurally). New commands
+ *  must be enlisted per flavor (or deliberately left off) — omission fails
+ *  safe as "not exposed" (DR-115 §5). */
+export interface AgentSurfacePolicy {
+  /** `"all"` = pass-through of every registered command. Otherwise a closed
+   *  allow-list: string = unchanged pass-through, adapter = wrapped tool. */
+  readonly tools: "all" | ReadonlyArray<string | AgentToolAdapter>;
+  /** Flavor-specific system-prompt fragment (absorbs the hardcoded
+   *  pageLine). Empty/omitted = no fragment. */
+  readonly promptFragment?: (host: AgentHostContext) => string;
+}
+
 /** The composed per-flavor editor context. One composition file per flavor
  *  under `modes/`, resolved through the EDITOR_MODES registry — a new
  *  flavor is one composition file + one registry row (DR-114 §6-G6). */
@@ -334,4 +381,5 @@ export interface EditorModeContext {
   readonly rail: RailPolicy;
   readonly hit: HitPolicy;
   readonly input: InputPolicy;
+  readonly agent: AgentSurfacePolicy;
 }

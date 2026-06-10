@@ -9,9 +9,12 @@
 // action — and STREAMS progress (`turn` / `tool` / `response`) which we render
 // as live edit-chips before the final reply lands.
 //
-// Coverage is automatic: `connectAgocraftAgent` enumerates the whole command
-// registry, so every weave editing command is an agent tool. `WEAVE_COMMAND_SCHEMAS`
-// supplies the argument contracts (DR-009).
+// The tool surface is the FLAVOR'S decision (WI-168 / DR-115): the injected
+// `agentSurface` policy (EditorModeContext.agent) binds to the registry /
+// schemas / editor triple via `bindAgentSurface`. Free-placement flavors pass
+// the whole command registry through (DR-064); page-bounded flavors expose a
+// closed allow-list with wrapped tools (weave.page.add 등). `WEAVE_COMMAND_SCHEMAS`
+// supplies the base argument contracts (DR-009).
 
 import {
   type AgentRunState,
@@ -28,6 +31,7 @@ import type { Document as AgocraftDocument, Schema } from "@agocraft/core";
 import { CommandRegistryToken, type Editor } from "@agocraft/editor";
 import { DEFAULT_THEME, THEMES } from "@weave/design-system";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentHostContext, AgentSurfacePolicy } from "../../../document/editor-mode/types.js";
 import {
   clearConversation,
   loadConversation,
@@ -46,8 +50,8 @@ import type {
 } from "../types.js";
 import { stampContainerGuard } from "./agent-container-guard.js";
 import { stampMinSizeGuard } from "./agent-min-size-guard.js";
-import { retargetAgentRootAdd } from "./agent-page-target.js";
 import { decideResume } from "./agent-resume.js";
+import { bindAgentSurface } from "./agent-surface.js";
 import { fixAgentTextBox } from "./agent-text-resize.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
 import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./design-styles.js";
@@ -231,16 +235,13 @@ function activityFor(st: AgentRunState): string | undefined {
   return undefined; // done / error / aborted → caption cleared
 }
 
-// WI-095 (DR-064) — NO commands are hidden from the agent anymore. The previously
-// hidden set (preset.* + the WI-063 subsumed setters setFill / setCornerRadius /
-// setVertices / setDecoration / image.setCrop / item.flip, the multi-selection
-// legacy items.resizeMulti / items.remove / items.duplicate, and doc.reset) is now
-// fully advertised: every one carries a curated schema in WEAVE_COMMAND_SCHEMAS
-// (presets gained a closed presetId enum so the agent can't guess an invalid id).
-// The consolidated commands (weave.item.add / weave.item.update / weave.items.update
-// / weave.items.lifecycle) remain the preferred path; the re-exposed setters are
-// redundant-but-available direct alternatives. The agent therefore sees the FULL
-// registered command set — `describeCommands` reads the registry's `list()` as-is.
+// WI-095 (DR-064, partially amended by DR-115) — commands are not hidden for
+// CURATION reasons: every registered command carries a schema in
+// WEAVE_COMMAND_SCHEMAS and free-placement flavors still advertise the FULL
+// registered set. What the agent sees is now the FLAVOR'S decision (WI-168):
+// the injected AgentSurfacePolicy either passes everything through ("all") or
+// owns a closed allow-list with wrapped tools — `describeCommands` reads the
+// bound surface's `list()` as-is, so the policy controls the advertised names.
 
 export function useAkuAgent(deps: {
   readonly editor: Editor;
@@ -250,12 +251,16 @@ export function useAkuAgent(deps: {
    *  size + background. Injected per task so the agent can size text (fontSize
    *  is absolute design-px) relative to the actual canvas. */
   readonly getDesignInfo?: () => { width: number; height: number; background: string };
-  /** WI-153 P4 (DR-111 D5) — host's default add container = the ACTIVE PAGE id on
-   *  page-bounded formats (slide-deck / doc-page), undefined on infinite canvas.
-   *  Agent root-adds of NON-frame kinds are retargeted into it (the root is page
-   *  chrome there — a leaf at the root would be invisible). Frame adds stay at the
-   *  root: a top-level frame IS a new slide. */
+  /** WI-153 P4 (DR-111 D5) / WI-168 — host's default add container = the ACTIVE
+   *  PAGE id on page-bounded formats (slide-deck / doc-page), undefined on
+   *  infinite canvas. Feeds AgentHostContext.activeContainerId — the surface
+   *  adapters' mapInput and the flavor's promptFragment read it (the value
+   *  SOURCE is InsertionPolicy.containerFor; this getter only transports it). */
   readonly getDefaultAddContainerId?: () => string | undefined;
+  /** WI-168 (DR-115) — the flavor's agent command surface
+   *  (EditorModeContext.agent). Render-stable: the composed policy is frozen
+   *  static data per flavor, injected from the composition root. */
+  readonly agentSurface: AgentSurfacePolicy;
   readonly designId: string;
   /** WI-065 — called after a turn that ADDED top-level frame(s), so the host can
    *  fit the camera to the new content (agent edits go straight through
@@ -279,7 +284,7 @@ export function useAkuAgent(deps: {
   // guard test (use-aku-agent.deps-guard.test.ts) enforces it, so a future dep
   // can never be read straight off the first-render `deps` and go stale
   // (WI-075 / DR-030).
-  const { editor, designId, url: urlProp, token: tokenProp, designLoaded } = deps;
+  const { editor, designId, url: urlProp, token: tokenProp, designLoaded, agentSurface } = deps;
   const url = urlProp ?? envStr("VITE_AKU_AGENT_URL") ?? DEV_URL;
   // Token precedence: injected dep → env → saved-in-browser → none (prompt).
   const [token, setTokenState] = useState<string | null>(
@@ -385,11 +390,10 @@ export function useAkuAgent(deps: {
   const queueStatusRef = useRef<QueueStatus | null>(null);
   queueStatusRef.current = queueStatus;
 
-  // WI-095 (DR-064) — the agent gets the FULL command registry (no hiding). Every
-  // weave.* command is advertised as a tool; presets carry a closed presetId enum
-  // (the prior preset-not-found guessing was the reason they were hidden), and the
-  // re-exposed setters are redundant-but-available alternatives to the consolidated
-  // item.add / item.update commands.
+  // The REGISTERED command set (single registry — Rule 4). What the agent is
+  // shown is the bound surface's view of this (WI-168 / DR-115): "all" on
+  // free-placement flavors (WI-095 / DR-064 unchanged there), a closed
+  // allow-list with wrapped tools on page-bounded flavors.
   const commands = useMemo(() => editor.container.resolve(CommandRegistryToken), [editor]);
   // DEV diagnostic for the "No command registered with name weave.item.add" class
   // of runtime errors (stale build / registry mismatch). Logs the command set the
@@ -414,25 +418,20 @@ export function useAkuAgent(deps: {
   const roundGroup = useMemo(
     () =>
       makeRoundGroupingEditor(editor, {
-        // Agent-only input transforms (the toolbar never goes through this proxy):
+        // Agent-only input transforms (the toolbar never goes through this proxy).
+        // These are flavor-FREE input-reliability guards — mode-dependent
+        // retargeting moved UP into the surface adapters (WI-168 / DR-115;
+        // the surface proxy resolves the final containerId BEFORE this runs,
+        // so fixAgentTextBox still sees the final target):
         //  • DR-098 — agent-created text gets a FIXED-size box (free placement only).
         //  • DR-101 — font size is FIXED design-px; NO px→ratio grounding (DR-091
         //    superseded) so text never rescales when a frame/parent is resized.
         //  • WI-147 — switch ON the command's min-size reject for agent adds only.
         //  • WI-150 — switch ON the command's container-is-frame reject (needs no
         //    design px, so it is stamped before the design-undefined early return).
-        //  • WI-153 P4 — retarget non-frame ROOT adds onto the active page on
-        //    page-bounded formats. Runs FIRST: fixAgentTextBox reads containerId
-        //    to pick free-vs-layout text sizing, so it must see the final target.
         transformInput: (commandName, input) => {
           const doc = depsRef.current.getDocument();
-          const targeted = retargetAgentRootAdd(
-            commandName,
-            input,
-            String(doc.root.id),
-            depsRef.current.getDefaultAddContainerId?.(),
-          );
-          const sized = fixAgentTextBox(commandName, targeted, doc);
+          const sized = fixAgentTextBox(commandName, input, doc);
           const guarded = stampContainerGuard(commandName, sized);
           const design = depsRef.current.getDesignInfo?.();
           if (design === undefined) return guarded;
@@ -443,6 +442,27 @@ export function useAkuAgent(deps: {
   );
   const roundGroupRef = useRef(roundGroup);
   roundGroupRef.current = roundGroup;
+  // WI-168 (DR-115) — bind the flavor's agent surface over the round-grouping
+  // proxy: the bridge consumes the bound {editor, commands, schemas} triple.
+  // "all" (free placement) binds to the identity triple — zero behavior
+  // change; page-bounded policies expose the closed allow-list with wrapped
+  // tools (weave.page.add 등). Misconfiguration throws HERE (loud-fail) so a
+  // broken surface never reaches connect. Host values (root id, active page)
+  // are read per exec via depsRef — live, never captured.
+  const surface = useMemo(
+    () =>
+      bindAgentSurface({
+        policy: agentSurface,
+        editor: roundGroup.editor,
+        commands,
+        baseSchemas: WEAVE_COMMAND_SCHEMAS,
+        getHost: (): AgentHostContext => ({
+          rootId: String(depsRef.current.getDocument().root.id),
+          activeContainerId: depsRef.current.getDefaultAddContainerId?.(),
+        }),
+      }),
+    [agentSurface, roundGroup, commands],
+  );
   const history = useMemo<AkuHistoryController>(
     () => ({
       depth: () => editor.history.undoSize(),
@@ -490,12 +510,15 @@ export function useAkuAgent(deps: {
       // (small-think DR-010): no consumer-side Promise.race, and transient drops
       // self-heal — the handle re-dials and re-submits in-flight turns.
       const connect = connectAgocraftAgent({
-        // The bridge runs every agent tool call through this proxy so a round's
-        // calls share one transaction id → one Cmd+Z (WI-060).
-        editor: roundGroup.editor,
-        commands,
+        // The bridge drives the BOUND surface (WI-168): surface.editor resolves
+        // exposed tool names → internal commands (+ mapInput) and forwards to
+        // the round-grouping proxy underneath, so a round's calls still share
+        // one transaction id → one Cmd+Z (WI-060). surface.commands/schemas
+        // control the advertised tool set per flavor (DR-115).
+        editor: surface.editor,
+        commands: surface.commands,
         getDocument: () => depsRef.current.getDocument(),
-        schemas: WEAVE_COMMAND_SCHEMAS,
+        schemas: surface.schemas,
         // Curated, weave-accurate capabilities → grounds the agent's (cached)
         // system prompt in weave's kinds/attrs/coordinate model (WI-054 hardening).
         capabilities: WEAVE_CAPABILITIES,
@@ -540,7 +563,7 @@ export function useAkuAgent(deps: {
       );
     }
     return connectingRef.current;
-  }, [editor, roundGroup, commands, designId, url, token]);
+  }, [editor, surface, designId, url, token]);
 
   // Connect-on-init (WI-034 4b): once the SAVED design has loaded and a token is present, open
   // the link eagerly (instead of lazily on first submit) so a browser refresh reconnects within
@@ -716,15 +739,15 @@ export function useAkuAgent(deps: {
       const selected = depsRef.current.getSelection();
       const selectionLine =
         selected.length > 0 ? `\n\n[컨텍스트] 현재 선택된 아이템 id: ${selected.join(", ")}` : "";
-      // WI-153 P4 — page-bounded formats: tell the agent which page is active and
-      // that ROOT leaves are invisible there. The transformInput retarget
-      // (`retargetAgentRootAdd`) enforces this anyway; the line keeps the agent's
-      // mental model in sync so it places content deliberately, not by correction.
-      const activePage = depsRef.current.getDefaultAddContainerId?.();
+      // WI-168 (DR-115) — the flavor's surface carries its own prompt fragment
+      // (page-bounded: the live active-page anchor + weave.page.add; free
+      // placement contributes nothing). The wrapped tools carry the semantics,
+      // so this stays short — it only anchors LIVE state the schemas can't.
       const pageLine =
-        activePage !== undefined
-          ? `\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집 중이며 현재 활성 페이지 frame id는 ${activePage} 입니다. 새 콘텐츠(텍스트/도형/이미지/차트 등)는 이 페이지(또는 그 안의 frame)를 containerId 로 지정해 넣으세요 — root 에 둔 leaf 는 화면에 보이지 않습니다. 새 페이지가 필요할 때만 root 에 kind:"frame" 을 추가하세요(최상위 frame = 새 슬라이드).`
-          : "";
+        agentSurface.promptFragment?.({
+          rootId: String(depsRef.current.getDocument().root.id),
+          activeContainerId: depsRef.current.getDefaultAddContainerId?.(),
+        }) ?? "";
       const primer = AKU_ABLATION.taskPrimer ? WEAVE_TASK_PRIMER : "";
       // [현재 테마] — off frees the agent to commit to the content's own palette.
       const themeLine = s.sendTheme ? currentThemeLine() : "";
@@ -915,7 +938,7 @@ export function useAkuAgent(deps: {
         }
       }
     },
-    [commit, editor, getHandle, patchLastAssistant, uploadImages],
+    [agentSurface, commit, editor, getHandle, patchLastAssistant, uploadImages],
   );
 
   const send = useCallback(

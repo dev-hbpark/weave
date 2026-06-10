@@ -5,6 +5,7 @@
 // DR-114 §7 — e.g. vertical page stack, "flow-block" role), never a
 // consumer.
 
+import { PAGE_AGENT_SURFACE } from "../pieces/agent-surface.js";
 import { ACTIVE_PAGE_CAMERA } from "../pieces/camera.js";
 import { ACTIVE_PAGE_HIT } from "../pieces/hit-resolution.js";
 import { STANDARD_INPUT } from "../pieces/input.js";
@@ -23,4 +24,5 @@ export const DOC_PAGE_MODE: EditorModeContext = {
   rail: PAGE_LIFECYCLE_RAIL,
   hit: ACTIVE_PAGE_HIT,
   input: STANDARD_INPUT,
+  agent: PAGE_AGENT_SURFACE,
 };

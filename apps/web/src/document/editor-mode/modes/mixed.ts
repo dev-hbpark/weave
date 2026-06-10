@@ -1,6 +1,7 @@
 // WI-166 / DR-114 — mixed: Figma-style free-placement infinite canvas.
 // Composition only — pick pieces, no logic (DR-114 §2).
 
+import { FREE_AGENT_SURFACE } from "../pieces/agent-surface.js";
 import { FREE_CAMERA } from "../pieces/camera.js";
 import { DOC_ROOT_HIT } from "../pieces/hit-resolution.js";
 import { STANDARD_INPUT } from "../pieces/input.js";
@@ -19,4 +20,5 @@ export const MIXED_MODE: EditorModeContext = {
   rail: OVERVIEW_RAIL,
   hit: DOC_ROOT_HIT,
   input: STANDARD_INPUT,
+  agent: FREE_AGENT_SURFACE,
 };
