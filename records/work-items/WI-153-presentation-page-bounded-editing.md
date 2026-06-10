@@ -1,6 +1,6 @@
 # WI-153 — 타입별 편집화면 + 프레젠테이션/문서 page-bounded(캔바식) 편집
 
-Status: **In Progress** (P1·P2.1·P2.2 완료 · P2.5/P3/P4 일부 작업 중)
+Status: **In Progress** (P1·P2.1·P2.2·P2.5 완료 + P3 매트/P4 hover 억제 선행 · 다음: P3 소속+클램프)
 Owner: hbpark
 Updated: 2026-06-10
 

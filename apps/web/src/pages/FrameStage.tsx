@@ -100,8 +100,24 @@ export interface FrameStageProps {
    *  any read-only host that wants the same recursion logic. */
   readonly editing?: boolean;
   /** Mixed flavor renders as an infinite panable canvas (Figma-style).
-   *  Defaults to false, which keeps the legacy fit-to-viewport behavior. */
+   *  Defaults to false, which keeps the legacy fit-to-viewport behavior.
+   *  NOTE: this governs the PLACEMENT model (free / show-all-frames), NOT the
+   *  camera — page-bounded formats also allow zoom (see `cameraEnabled`). */
   readonly infiniteCanvas?: boolean;
+  /** WI-153 P2.5 — allow camera zoom (ctrl/⌘+wheel, ⌘±, pan transform). Decoupled
+   *  from `infiniteCanvas` so page-bounded (one-page) editing can zoom too. Defaults
+   *  to `infiniteCanvas` (back-compat: infinite implied camera). */
+  readonly cameraEnabled?: boolean;
+  /** WI-153 P2.5 — shrink + offset the base fit so the design fits INSIDE the chrome
+   *  (header on top, thumbnail rail on the bottom) instead of under it. Pixels. */
+  readonly fitInset?:
+    | {
+        readonly top?: number;
+        readonly bottom?: number;
+        readonly left?: number;
+        readonly right?: number;
+      }
+    | undefined;
   /** Externally-controlled hand-mode flag (toolbar V/H toggle). When true,
    *  every pointer down on the canvas pans rather than starting a rubber-
    *  band. Space+drag also activates pan independent of this flag. */
@@ -211,6 +227,7 @@ export function FrameStage(props: FrameStageProps) {
     document: doc,
     editing = true,
     infiniteCanvas = false,
+    cameraEnabled = infiniteCanvas,
     handMode = false,
     background = "#ffffff",
     renderHoverOverlay,
@@ -338,11 +355,19 @@ export function FrameStage(props: FrameStageProps) {
   // Mixed/infinite canvas gets 10% breathing room so frames near the edges
   // aren't pressed against the viewport; stacked flavors use the full box
   // (legacy width-fit when outer has aspectRatio matches the design).
-  const paddingFactor = infiniteCanvas ? 0.9 : 1;
-  const baseScale =
-    Math.min(outerSize.width / designWidth, outerSize.height / designHeight) * paddingFactor;
-  const baseTx = (outerSize.width - designWidth * baseScale) / 2;
-  const baseTy = (outerSize.height - designHeight * baseScale) / 2;
+  // WI-153 P2.5 — fit INSIDE the chrome: shrink the available box by the header /
+  // rail insets and center the design within that region (not the full viewport),
+  // so a page-bounded page isn't hidden under the top bar + thumbnail rail.
+  const insetT = props.fitInset?.top ?? 0;
+  const insetB = props.fitInset?.bottom ?? 0;
+  const insetL = props.fitInset?.left ?? 0;
+  const insetR = props.fitInset?.right ?? 0;
+  const availW = Math.max(1, outerSize.width - insetL - insetR);
+  const availH = Math.max(1, outerSize.height - insetT - insetB);
+  const paddingFactor = infiniteCanvas ? 0.9 : 0.95;
+  const baseScale = Math.min(availW / designWidth, availH / designHeight) * paddingFactor;
+  const baseTx = insetL + (availW - designWidth * baseScale) / 2;
+  const baseTy = insetT + (availH - designHeight * baseScale) / 2;
 
   // DR-017 Phase 2 — pan state lives on vm.camera (MotionValue slots).
   // Local `pan` mirror is kept so the existing render code reading
@@ -434,9 +459,9 @@ export function FrameStage(props: FrameStageProps) {
     [outerSize, baseScale, baseTx, baseTy, setPan],
   );
   useEffect(() => {
-    if (!infiniteCanvas) return undefined;
+    if (!cameraEnabled) return undefined;
     return setCameraFitBox(zoomToBox);
-  }, [infiniteCanvas, zoomToBox]);
+  }, [cameraEnabled, zoomToBox]);
 
   // WI-033 P2 — pan-reset-on-entered-frame-change effect removed
   // alongside drill-in mode (DR-017). The user's pan/zoom now persists
@@ -539,7 +564,7 @@ export function FrameStage(props: FrameStageProps) {
   // sliding out of the viewport on pinch.
   // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
-    if (!infiniteCanvas) return undefined;
+    if (!cameraEnabled) return undefined;
     const el = outerRef.current;
     if (el === null) return undefined;
     const handler = (e: WheelEvent) => {
@@ -573,7 +598,7 @@ export function FrameStage(props: FrameStageProps) {
     return () => {
       el.removeEventListener("wheel", handler);
     };
-  }, [infiniteCanvas, bumpWheel]);
+  }, [cameraEnabled, bumpWheel]);
 
   // Zoom hotkeys (Figma parity): Cmd/Ctrl + "=" zoom in, "-" zoom out
   // (anchored at the viewport centre via `nextPanForZoom`), "0" resets to
@@ -581,7 +606,7 @@ export function FrameStage(props: FrameStageProps) {
   // own page-zoom. Lives here — not the agocraft hotkey registry — so it
   // shares the camera channel + outer rect the wheel zoom already uses.
   useEffect(() => {
-    if (!infiniteCanvas) return undefined;
+    if (!cameraEnabled) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       const el = outerRef.current;
@@ -606,7 +631,7 @@ export function FrameStage(props: FrameStageProps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [infiniteCanvas, setPan]);
+  }, [cameraEnabled, setPan]);
 
   // DR-017 Phase 2~4 — Pan / FrameMove gestures live on the GestureRouter.
   // PanBinding writes vm.camera.tx/ty directly (60Hz MotionValue).
@@ -1340,13 +1365,13 @@ export function FrameStage(props: FrameStageProps) {
   const totalScaleMV = useMotionValue(baseScale * pan.scale);
   useEffect(() => {
     const update = () => {
-      const next = planeScaleMV.get() * (infiniteCanvas ? pan.scale : 1);
+      const next = planeScaleMV.get() * (cameraEnabled ? pan.scale : 1);
       if (next !== totalScaleMV.get()) totalScaleMV.set(next);
     };
     update();
     const off = planeScaleMV.on("change", update);
     return off;
-  }, [planeScaleMV, pan.scale, infiniteCanvas, totalScaleMV]);
+  }, [planeScaleMV, pan.scale, cameraEnabled, totalScaleMV]);
 
   const handleBackgroundClick = useCallback(() => {
     if (!selectionAllowedOuter) return;
@@ -1492,7 +1517,7 @@ export function FrameStage(props: FrameStageProps) {
                 style={{
                   position: "absolute",
                   inset: 0,
-                  ...(infiniteCanvas
+                  ...(cameraEnabled
                     ? {
                         transform: `translate(${pan.tx}px, ${pan.ty}px) scale(${pan.scale})`,
                         transformOrigin: "center center",
@@ -1513,6 +1538,14 @@ export function FrameStage(props: FrameStageProps) {
                     x: planeTxMV,
                     y: planeTyMV,
                     scale: planeScaleMV,
+                    // WI-153 P3 — page-bounded mode: matte EVERYTHING outside the page
+                    // (this design-plane box) as a non-editable gray region. A single
+                    // huge box-shadow halo tracks the plane's pan/zoom transform and is
+                    // paint-only (does not capture pointer events). Infinite canvas is
+                    // unaffected (no visibleFrameIds → no matte).
+                    ...(props.visibleFrameIds !== undefined
+                      ? { boxShadow: "0 0 0 100000px var(--canvas-matte, #6f737b)" }
+                      : {}),
                     // WI-037 / DR-018 — only hint will-change while a
                     // zoom/pan gesture is active. See the comment on
                     // `gestureActive` (top of the FrameStage body) for the

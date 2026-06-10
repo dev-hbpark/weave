@@ -92,3 +92,13 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
   별도 slice.
 - **P2.4 카메라 fit-to-active-page (보류)**: FULL_FRAME 스택 페이지는 디자인 박스=페이지 박스라 현재 fit이
   이미 정확. 비-풀프레임 페이지에서만 필요하며 base-fit 수학을 건드려 좌표/오버레이 정합 리스크 → 후순위.
+- **P2.5 완료 — 카메라/크롬 정합**: ① `FrameStage.cameraEnabled` 신설 — 줌(ctrl/⌘휠·⌘±·⌘0)을
+  `infiniteCanvas`(배치 모델)에서 분리, page-bounded도 줌 가능(기본값 `infiniteCanvas` → 무한 캔버스
+  동작 불변). ② `fitInset` — 헤더 48px + 썸네일 레일 높이(ResizeObserver 측정)를 뺀 영역 안에 페이지
+  fit(크롬 아래 숨던 문제 해소). SVL: fit top=65.7(≥48)·레일 위, ⌘= 1196→1435px·⌘0 복원, mixed 불변.
+- **P3 선행 — 페이지 매트**: design plane에 `box-shadow` 100000px 헤일로로 페이지 밖을 회색 매트
+  처리(paint-only, 포인터 불간섭, pan/zoom 추적). `visibleFrameIds` 있을 때만 → 무한 캔버스 무영향.
+  나머지 P3(소속 강제 + 소프트 클램프)는 미착수.
+- **P4 선행 — phantom hover 억제**: 레일이 모든 페이지에 `data-frame-kind`를 게시 → 비활성 페이지 hover가
+  `frameHoverStore`로 투영되던 것을 `visibleFrameIds` 기반 차단. SVL(스토어 직접 관찰): 비활성 레일
+  hover=null, 활성 레일/캔버스 hover=정상.

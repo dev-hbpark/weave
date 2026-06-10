@@ -1041,6 +1041,32 @@ function DesignPageBody() {
     () => (!infiniteCanvas && activePageId !== undefined ? new Set([activePageId]) : undefined),
     [infiniteCanvas, activePageId],
   );
+  // WI-153 P2.5 — measure the thumbnail rail (variable height) so the page-bounded
+  // fit sits ABOVE it and BELOW the fixed 48px header (h-12), not hidden under the
+  // chrome. Callback ref → re-measures when the rail mounts/unmounts or resizes.
+  const [railEl, setRailEl] = useState<HTMLDivElement | null>(null);
+  const [railHeight, setRailHeight] = useState(0);
+  useEffect(() => {
+    if (railEl === null) {
+      setRailHeight(0);
+      return;
+    }
+    const measure = () => setRailHeight(railEl.getBoundingClientRect().height);
+    const ro = new ResizeObserver(measure);
+    ro.observe(railEl);
+    measure();
+    return () => ro.disconnect();
+  }, [railEl]);
+  // Inset the base fit only for page-bounded formats (infinite keeps its full-plane
+  // fit + free pan). 48 = DesignHeader h-12.
+  const fitInset = useMemo(
+    () => (!infiniteCanvas ? { top: 48, bottom: railHeight } : undefined),
+    [infiniteCanvas, railHeight],
+  );
+  // WI-153 P4 — latest-value mirror so the hover bridge (deps: [hoverContext]) can
+  // gate on the active page without re-subscribing.
+  const visibleFrameIdsRef = useRef(visibleFrameIds);
+  visibleFrameIdsRef.current = visibleFrameIds;
 
   const removeItem = (itemId: string) => editor.exec("weave.item.remove", { itemId, containerId });
   const updateItem: typeof rawUpdateItem = (itemId, patch) =>
@@ -1213,10 +1239,23 @@ function DesignPageBody() {
   useEffect(() => {
     const { hoveredKind, hoveredId } = hoverContext;
     if (hoveredKind === "handle") return; // over a handle — keep current item
+    const doc = docInAgocraftRef.current;
+    // WI-153 P4 — page-bounded: only the ACTIVE page is mounted on the canvas, but the
+    // thumbnail rail still publishes `data-frame-kind` for every page, which the
+    // model-driven hover projector would paint as a phantom outline on a non-active
+    // page. Suppress hover for any top-level page that isn't the visible one.
+    const visible = visibleFrameIdsRef.current;
+    if (
+      visible !== undefined &&
+      hoveredId !== undefined &&
+      !visible.has(hoveredId) &&
+      doc.root.children.some((c) => String(c.id) === hoveredId)
+    ) {
+      frameHoverStore.set(null);
+      return;
+    }
     frameHoverStore.set(
-      hoveredId !== undefined && findItemDeep(docInAgocraftRef.current, hoveredId) !== undefined
-        ? hoveredId
-        : null,
+      hoveredId !== undefined && findItemDeep(doc, hoveredId) !== undefined ? hoveredId : null,
     );
   }, [hoverContext]);
 
@@ -2242,6 +2281,11 @@ function DesignPageBody() {
                                       editor={editor}
                                       editing={true}
                                       infiniteCanvas={infiniteCanvas}
+                                      // WI-153 P2.5 — the editor always allows zoom
+                                      // (decoupled from the placement model), and
+                                      // page-bounded fits inside the header + rail.
+                                      cameraEnabled={true}
+                                      fitInset={fitInset}
                                       handMode={handMode}
                                       // WI-033 P2 — enteredId / onEnter (drill-in mode,
                                       // Phase 12) removed. onFitAll restored: empty-canvas
@@ -2371,7 +2415,10 @@ function DesignPageBody() {
                           directly. */}
                                 {typeof document !== "undefined" &&
                                   createPortal(
-                                    <div className="fixed inset-x-0 bottom-0 z-[46]">
+                                    <div
+                                      ref={setRailEl}
+                                      className="fixed inset-x-0 bottom-0 z-[46]"
+                                    >
                                       <ThumbnailPanel
                                         design={design}
                                         setPresentationOrder={setPresentationOrderViaEditor}
