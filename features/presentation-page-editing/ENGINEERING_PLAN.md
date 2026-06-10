@@ -197,3 +197,16 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
   - `zoomToBox` 인셋 센터링: avail 영역(fitInset 제외) 기준 scale+센터 — page-bounded fit이 헤더/레일
     아래 숨던 문제 보정. 인셋 0(무한 캔버스)이면 수치 동일 → mixed 회귀 0 (SVL 8·9 확인).
   - 검증: 유닛 938/938 · gates green · SVL 9/9 · e2e 2건(`page-camera-fit.spec.ts`) — 상세 WI-157.
+- **후속 — 멀티셀렉트 그룹 단위 min-overlap 완료 (P3 잔여, WI-159)**:
+  - 문제: P3 소프트 클램프가 멤버별 개별 적용 → 멀티 드래그가 가장자리에서 멤버를 하나씩
+    세워 **그룹 상대 배치가 찌그러짐**.
+  - 해법: **공유 델타를 한 번만 클램프** — 페이지 직계·비회전 멤버들의 허용 델타 구간을
+    교집합(`clampSharedDelta`, page-clamp.ts) → 강체 평행이동 + 모든 멤버 per-item
+    min-overlap(D5) 유지. 유니온 박스 방식은 뒤따르는 멤버의 완전 이탈(D5 위반)로 기각.
+  - 벤더 비접촉: agocraft `FrameMoveBinding`의 `snap.begin(primary, movingItemIds)`이 첫
+    computeMove 전에 실제 이동 집합을 알려주는 시임 — `frameMoveSnap`을 래핑해 begin에서
+    그룹 박스 ref 캡처(멀티 + 페이지 컨텍스트일 때만), end에서 해제. computeMove는 그룹
+    ref가 있으면 `clampSharedDelta`, 없으면 기존 단일 클램프(불변). shift-드래그는 binding이
+    단일 id만 전달 → 자동 미발동.
+  - 검증: 유닛 960/960(`clampSharedDelta` 5건 추가) · gates green · SVL 10/10(삭제) · e2e
+    2건(`page-group-clamp.spec.ts` — P3 단일 + WI-159 그룹, P3 첫 영구 e2e) — 상세 WI-159.

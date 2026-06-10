@@ -1,7 +1,7 @@
 // WI-153 P3 / DR-111 D6 — soft min-overlap clamp math.
 
 import { describe, expect, it } from "vitest";
-import { clampAxis, clampFrameToPage } from "./page-clamp.js";
+import { clampAxis, clampFrameToPage, clampSharedDelta } from "./page-clamp.js";
 
 describe("clampAxis (min-overlap with [0,1])", () => {
   it("leaves a fully on-page position untouched", () => {
@@ -53,5 +53,59 @@ describe("clampFrameToPage", () => {
     );
     expect(next.x).toBeCloseTo(0.95);
     expect(next.y).toBeCloseTo(0.05 - 0.2);
+  });
+});
+
+// WI-159 — group (multi-select) min-overlap: rigid shared-delta clamp.
+
+describe("clampSharedDelta", () => {
+  const spec = { minX: 0.05, minY: 0.05 };
+  const a = { x: 0.1, y: 0.4, width: 0.2, height: 0.2 };
+  const b = { x: 0.6, y: 0.4, width: 0.2, height: 0.2 };
+
+  it("passes an in-page delta through untouched", () => {
+    const d = clampSharedDelta([a, b], 0.1, 0.05, spec);
+    expect(d.dx).toBeCloseTo(0.1);
+    expect(d.dy).toBeCloseTo(0.05);
+  });
+
+  it("an empty member set never clamps", () => {
+    expect(clampSharedDelta([], -5, 5, spec)).toEqual({ dx: -5, dy: 5 });
+  });
+
+  it("the most restrictive member binds: leftward drag stops at the LEFTMOST member's limit", () => {
+    // a may go down to minX - width - a.x = 0.05-0.2-0.1 = -0.25;
+    // b down to 0.05-0.2-0.6 = -0.75. Intersection lower bound = -0.25.
+    const d = clampSharedDelta([a, b], -2, 0, spec);
+    expect(d.dx).toBeCloseTo(-0.25);
+    expect(d.dy).toBe(0);
+    // EVERY member keeps min overlap (D5 per-item invariant)...
+    expect(a.x + d.dx + a.width).toBeCloseTo(spec.minX); // a pinned at its own limit
+    expect(b.x + d.dx + b.width).toBeGreaterThan(spec.minX);
+    // ...and the translation is rigid (same delta → gap invariant).
+    expect(b.x + d.dx - (a.x + d.dx)).toBeCloseTo(b.x - a.x);
+  });
+
+  it("rightward drag stops at the RIGHTMOST member's limit", () => {
+    // b may go up to 1 - minX - b.x = 0.95-0.6 = 0.35; a up to 0.85.
+    const d = clampSharedDelta([a, b], 2, 0, spec);
+    expect(d.dx).toBeCloseTo(0.35);
+  });
+
+  it("clamps both axes independently", () => {
+    const d = clampSharedDelta([a, b], -2, 2, spec);
+    expect(d.dx).toBeCloseTo(-0.25);
+    // y: both at 0.4, height 0.2 → up to 1-0.05-0.4 = 0.55.
+    expect(d.dy).toBeCloseTo(0.55);
+  });
+
+  it("a member smaller than min must stay fully inside (effective min = its size)", () => {
+    const tiny = { x: 0.5, y: 0.5, width: 0.02, height: 0.02 };
+    const d = clampSharedDelta([a, tiny], -2, 0, spec);
+    // tiny: m = size → lower delta bound = 0 - 0.5 = -0.5; a's bound = -0.25 binds.
+    expect(d.dx).toBeCloseTo(-0.25);
+    const dRight = clampSharedDelta([a, tiny], 2, 0, spec);
+    // tiny: upper = 1 - 0.02 - 0.5 = 0.48; a's = 0.85 → tiny binds.
+    expect(dRight.dx).toBeCloseTo(0.48);
   });
 });

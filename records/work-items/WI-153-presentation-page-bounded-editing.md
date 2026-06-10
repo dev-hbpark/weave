@@ -57,4 +57,7 @@ P1~P5 전부 완료 (P5: 마법사 "Presentation" 카피 + 툴바는 기존 게�
   컴포지트 명령으로 양 보류 사유 해소 — 전용 subtree-clone 명령 불필요했음).
 - ~~**카메라 fit-to-active-page** (P2.4 보류)~~ — **완료, [WI-157](WI-157-camera-fit-active-page.md)**
   (base-fit 비접촉: 유저 카메라 `zoomToBox` 레이어에서 페이지 박스 fit + FULL 복귀 시 베이스 복원).
-- 멀티셀렉트 그룹 단위 min-overlap, 회전 박스 경계 정합, doc-page 전용 툴바 분리 여부.
+- ~~**멀티셀렉트 그룹 단위 min-overlap**~~ — **완료, [WI-159](WI-159-group-min-overlap.md)**
+  (공유 델타를 멤버 허용 구간 교집합으로 1회 클램프 → 강체 평행이동 + per-member D5 유지;
+  벤더 비접촉 — `snap.begin` 시임).
+- 회전 박스 경계 정합, doc-page 전용 툴바 분리 여부.

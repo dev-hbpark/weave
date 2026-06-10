@@ -41,3 +41,70 @@ export function clampFrameToPage(
     y: clampAxis(frame.y, frame.height, spec.minY),
   };
 }
+
+// ---------------------------------------------------------------------------
+// WI-159 — multi-select GROUP min-overlap (rigid shared-delta clamp).
+//
+// A multi-select drag translates every member by the SAME delta. Clamping each
+// member individually (clampFrameToPage) deforms the group at page edges:
+// members hit their personal clamp limit at different deltas and stop one by
+// one while the rest keep moving. The fix clamps the shared DELTA once —
+// intersect every member's allowed-delta interval (the delta form of the
+// clampAxis position interval) and clamp into the intersection — so the group
+// translates rigidly AND every member keeps its own min overlap (DR-111 D5's
+// per-item "never lost off-page" invariant is preserved; a union-box clamp
+// would let a trailing member end fully off-page, invisible and unclickable).
+//
+// Pure math; the caller (FrameStage `computeMove`) guarantees every member
+// receives identical inputs (same member set, same parent dims, same viewport
+// delta), so each member independently computes the identical clamped delta.
+
+export interface RatioBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Per-axis: clamp the shared delta into ∩ᵢ [mᵢ-sizeᵢ-posᵢ, 1-mᵢ-posᵢ].
+ *  Each member's own start position is valid (previous drags clamped it), so
+ *  the intersection is never empty for valid inputs; if a pre-invalid state
+ *  makes it empty, the hi bound wins deterministically (no NaN). */
+function clampDeltaAxis(
+  members: ReadonlyArray<{ readonly pos: number; readonly size: number }>,
+  delta: number,
+  min: number,
+): number {
+  let lo = Number.NEGATIVE_INFINITY;
+  let hi = Number.POSITIVE_INFINITY;
+  for (const { pos, size } of members) {
+    const m = Math.min(Math.max(min, 0), size);
+    lo = Math.max(lo, m - size - pos);
+    hi = Math.min(hi, 1 - m - pos);
+  }
+  return Math.min(Math.max(delta, lo), hi);
+}
+
+/** Clamp a shared translation delta (parent-ratio units) so EVERY member box
+ *  keeps the spec's min overlap with the page [0,1]×[0,1]. Empty `members`
+ *  returns the delta unchanged. */
+export function clampSharedDelta(
+  members: ReadonlyArray<RatioBox>,
+  dx: number,
+  dy: number,
+  spec: PageClampSpec,
+): { dx: number; dy: number } {
+  if (members.length === 0) return { dx, dy };
+  return {
+    dx: clampDeltaAxis(
+      members.map((f) => ({ pos: f.x, size: f.width })),
+      dx,
+      spec.minX,
+    ),
+    dy: clampDeltaAxis(
+      members.map((f) => ({ pos: f.y, size: f.height })),
+      dy,
+      spec.minY,
+    ),
+  };
+}
