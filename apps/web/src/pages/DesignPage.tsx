@@ -82,6 +82,7 @@ import {
   type DocFlavor,
   type DomainKind,
   effectivePresentationOrder,
+  FULL_FRAME,
   firstChildOf,
   InteractionModeProvider,
   type ItemFrame,
@@ -98,7 +99,6 @@ import {
   useTooltipsAllowed,
 } from "../document";
 import { computeAddFrame } from "../document/add-geometry.js";
-import { formatEditorConfig } from "../document/format-editor-config.js";
 import {
   absoluteFrameBox,
   findItemDeep,
@@ -115,6 +115,7 @@ import {
   type RatioFrame,
 } from "../document/coordinate-projection.js";
 import { useExportImport } from "../document/export-import/use-export-import.js";
+import { formatEditorConfig } from "../document/format-editor-config.js";
 import {
   croppingState,
   isCroppingNow,
@@ -2390,6 +2391,18 @@ function DesignPageBody() {
                                         onClearFocus={handleClearFocus}
                                         onZoomToFrame={handleZoomToFrame}
                                         onToggleSlide={toggleFrameSlide}
+                                        onAddPage={() => {
+                                          // WI-153 P2 — add a blank page (top-level
+                                          // frame) and make it the active page.
+                                          const r = editor.exec<unknown, string>("weave.item.add", {
+                                            kind: "frame",
+                                            frame: FULL_FRAME,
+                                          });
+                                          if (r.ok) {
+                                            setSelectedFrameId(r.value);
+                                            if (!infiniteCanvas) setActivePageId(r.value);
+                                          }
+                                        }}
                                       />
                                     </div>,
                                     document.body,

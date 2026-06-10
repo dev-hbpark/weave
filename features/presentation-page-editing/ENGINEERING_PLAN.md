@@ -79,3 +79,16 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
 - 회전 박스 경계 정합(후순위).
 - doc-page 툴바가 slide-deck과 동일/분리 여부(P5).
 - 멀티셀렉트 이동 시 그룹 단위 min-overlap 처리.
+
+## 진행 로그
+- **P1 완료** (commit a2be8b1): `FORMAT_EDITOR_CONFIG` 레지스트리. 동작 변화 0.
+- **P2.1 완료** (commit fad7e03): `useActivePage` + `FrameStage.visibleFrameIds` → page-bounded는 활성
+  페이지 한 장만 렌더, 레일 single-click이 페이지 전환. 무한 캔버스 불변.
+- **P2.2 완료**: 레일 "+" 빈 페이지 추가(`weave.item.add` FULL_FRAME) → 활성 페이지로. ThumbnailPanel에
+  `onAddPage` + IconPlus 타일.
+- **P2.3 (보류→다음) 페이지 복제**: `weave.item.duplicate`는 0.02 nudge가 있어 FULL_FRAME 페이지가 어긋남.
+  `weave.batch`는 batch 중 생성된 id를 후속 op가 못 참조 → duplicate+frame-normalize 원자화 불가. 깔끔한
+  복제는 **subtree를 source frame 그대로 한 트랜잭션에 클론하는 전용 명령**(예: page-scope duplicate)이 필요 →
+  별도 slice.
+- **P2.4 카메라 fit-to-active-page (보류)**: FULL_FRAME 스택 페이지는 디자인 박스=페이지 박스라 현재 fit이
+  이미 정확. 비-풀프레임 페이지에서만 필요하며 base-fit 수학을 건드려 좌표/오버레이 정합 리스크 → 후순위.

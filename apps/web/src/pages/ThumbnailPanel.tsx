@@ -25,7 +25,7 @@
 // desaturate / soften so the panel itself reflects the global lock.
 
 import type { Item as AgocraftItem } from "@agocraft/core";
-import { IconDiamond, IconDocLines, IconFrame, IconSparkle } from "@weave/design-system";
+import { IconDiamond, IconDocLines, IconFrame, IconPlus, IconSparkle } from "@weave/design-system";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -132,6 +132,10 @@ export interface ThumbnailPanelProps {
    *  from the slide deck (it moves to the non-slide section); `true` re-adds it.
    *  The host dispatches `weave.item.update` setting `attrs.presentable`. */
   readonly onToggleSlide?: ((id: string, presentable: boolean) => void) | undefined;
+  /** WI-153 P2 — add a new blank page (a top-level frame) at the end of the deck.
+   *  When provided, a trailing "+" tile renders in the rail. The host adds the frame
+   *  + makes it the active page. */
+  readonly onAddPage?: (() => void) | undefined;
 }
 
 /** WI-072 — small "deck membership" glyph (stacked rectangles). Active = the
@@ -241,6 +245,7 @@ export function ThumbnailPanel({
   onClearFocus,
   onZoomToFrame,
   onToggleSlide,
+  onAddPage,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
   useParams<{ id: string }>();
@@ -719,6 +724,25 @@ export function ThumbnailPanel({
             </div>
           );
         })}
+        {/* WI-153 P2 — add a blank page at the end of the deck (Canva-style "+"). */}
+        {onAddPage !== undefined ? (
+          <button
+            type="button"
+            onClick={onAddPage}
+            data-testid="thumbnail-add-page"
+            aria-label="페이지 추가"
+            title="페이지 추가"
+            className={
+              "shrink-0 self-end flex items-center justify-center w-16 h-[124px] rounded-[var(--radius-md)] " +
+              "border border-dashed border-[color:var(--border-default)] text-[color:var(--text-muted)] " +
+              "transition-[background,border-color,color] duration-[var(--motion-quick)] " +
+              "hover:border-[color:var(--accent)] hover:text-[color:var(--accent)] hover:bg-[color:var(--surface-hover)] " +
+              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
+            }
+          >
+            <IconPlus size={18} />
+          </button>
+        ) : null}
         {/* WI-072 — non-slide section: frames opted out of the deck. Visually
             separated (divider + label) and rendered as dimmed, dashed, numberless
             tiles. Still selectable; the deck toggle re-adds them. */}
