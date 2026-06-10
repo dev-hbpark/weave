@@ -735,6 +735,17 @@ export function FrameStage(props: FrameStageProps) {
     const it = findItemDeep(d, id);
     return it !== undefined && isItemLocked(it);
   };
+  // WI-163 — is `id` a PAGE (artboard) in a page-bounded format? Pages are
+  // fixed editing contexts, not objects: no move / resize / rotate via canvas
+  // gestures (Canva model). Mode-derived (page-scoped render active && the
+  // item is a root-direct frame) — NOT a persisted attr, so mixed /
+  // canvas-board top-level frames stay ordinary objects.
+  const isArtboardId = (id: string): boolean => {
+    if (visibleFrameIdsRef.current === undefined) return false;
+    const d = docRef.current;
+    if (d === undefined) return false;
+    return d.root.children.some((c) => String(c.id) === id);
+  };
   // Selection-follows-move: the FrameMoveBinding runs with
   // `disableSelectionSet: true` so plain clicks keep selectFromHit's
   // parent-first model, and after a drag its onPointerUp swallows the
@@ -817,9 +828,12 @@ export function FrameStage(props: FrameStageProps) {
       return cur;
     }
     /** DR-061 — the movable target for `id`, or null when that target is LOCKED
-     *  (decline the move gesture). */
+     *  (decline the move gesture). WI-163 — also null when the target is a
+     *  page (artboard): pages don't move; the declined drag falls through to
+     *  the P4 rubber band (acceptWithinPage already admits in-page starts). */
     function movableTargetOrNull(id: ItemId): ItemId | null {
       const moved = climbToMovable(id);
+      if (isArtboardId(String(moved))) return null;
       const it = findItem(moved);
       return it !== undefined && isItemLocked(it) ? null : moved;
     }
@@ -1384,7 +1398,8 @@ export function FrameStage(props: FrameStageProps) {
       if (rot !== null) {
         const itemId = handleItemId(rot);
         if (itemId === null) return;
-        if (isLockedItemId(String(itemId))) return; // DR-061 — locked: no rotate
+        // DR-061 locked / WI-163 artboard: no rotate
+        if (isLockedItemId(String(itemId)) || isArtboardId(String(itemId))) return;
         const center = centerOf(itemId);
         const origin = toHandlePointer(e);
         const startVec = { x: origin.clientX - center.x, y: origin.clientY - center.y };
@@ -1471,7 +1486,8 @@ export function FrameStage(props: FrameStageProps) {
       const dir = dirAttr as ResizeDir;
       const itemId = handleItemId(rsz);
       if (itemId === null) return;
-      if (isLockedItemId(String(itemId))) return; // DR-061 — locked: no resize
+      // DR-061 locked / WI-163 artboard: no resize
+      if (isLockedItemId(String(itemId)) || isArtboardId(String(itemId))) return;
       e.preventDefault();
       e.stopPropagation();
       const origin = toHandlePointer(e);
@@ -1706,6 +1722,7 @@ export function FrameStage(props: FrameStageProps) {
                   : {})}
                 {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
                 onSelect={onSelect}
+                artboardId={activePageId}
                 doc={props.document}
                 onContextMenuRequest={handleFrameContextMenu}
                 onUpdateItem={props.onUpdateItem}

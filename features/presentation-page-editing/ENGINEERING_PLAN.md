@@ -237,3 +237,18 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
     slide-deck "슬라이드…" 유지) · 유닛 969/969 · gates green — 상세 WI-162.
   - **WI-153 후속 슬라이스 체인 소진** (155 복제 · 157 카메라 fit · 159 그룹 클램프 ·
     160 회전 클램프 · 162 툴바 결정).
+- **후속 — 페이지 = 아트보드 제약 완료 (사용자 보고, WI-163)**:
+  - 문제(라이브 재현): page-bounded 편집에서 페이지(최상위 프레임)가 일반 아이템처럼
+    선택(변형 핸들 노출)·드래그 이동·삭제·키보드 내비 대상 — 캔바/미리캔버스의 "페이지 =
+    고정 아트보드" 모델 위반. 특히 WI-033 parent-first가 doc root 기준이라 **페이지 안
+    아이템 첫 클릭이 페이지를 선택**하는 게 핸들 노출 주 경로.
+  - 해법: 술어 `page-bounded && root 직계` = 아트보드(모드 파생, 영속 attr 아님)를 DR-061
+    잠금 게이트와 같은 컷포인트에 적용 — ① `selectFromHit`에 `contextRootId`(plain/toggle
+    히트 = null, parent-first는 페이지 안쪽 1레벨부터) ② `movableTargetOrNull` 거부(러버밴드
+    폴스루) ③ 크롬 필터 `locked ‖ isArtboard`(잠금 배지는 제외) ④ rotate/resize 러너 게이트
+    ⑤ 삭제 3경로 제외 ⑥ 내비게이터 "nextId가 아트보드면 no-op" 단일 규칙 + 화살표 너지
+    필터. **Escape hatch**: Cmd/Ctrl deep-클릭은 페이지 선택 허용(배경 fill 편집 보존) —
+    변형/삭제/너지는 여전히 차단. mixed/canvas-board 불변(회귀 e2e).
+  - 검증: SVL 5/5(삭제) · 유닛 977/977(+8 contextRootId) · e2e 4건
+    `page-artboard.spec.ts`(클릭 해제/드래그 불변/아이템 선택/escape hatch+핸들 0+Backspace
+    생존/mixed 회귀) · gates green — 상세 WI-163.

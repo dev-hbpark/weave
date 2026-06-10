@@ -156,6 +156,61 @@ describe("selectFromHit — toggle intent (Shift)", () => {
   });
 });
 
+// WI-163 — page-bounded formats pass `contextRootId` = the active PAGE.
+// The page is an ARTBOARD: plain/toggle hits on it resolve to null
+// (background / not-multi-selectable), parent-first starts INSIDE it,
+// and only Cmd/Ctrl deep keeps selecting it (page-fill escape hatch).
+//
+//   root
+//   └── P            (the active page = contextRootId)
+//       ├── X
+//       └── N
+//           └── Na
+const PAGE_TREE = doc(frame("root", [frame("P", [frame("X"), frame("N", [frame("Na")])])]));
+
+describe("selectFromHit — WI-163 artboard context root", () => {
+  it("plain hit ON the page → null (background click)", () => {
+    const next = selectFromHit("P", "plain", PAGE_TREE, null, "P");
+    expect(next).toBeNull();
+  });
+
+  it("plain hit on a deep leaf, no selection → first level INSIDE the page (not the page)", () => {
+    // Na's trail = [P, N, Na]; without the context root this would pick P.
+    const next = selectFromHit("Na", "plain", PAGE_TREE, null, "P");
+    expect(next).toEqual({ kind: "frame", id: "N" });
+  });
+
+  it("plain hit on a page-direct item, no selection → that item", () => {
+    const next = selectFromHit("X", "plain", PAGE_TREE, null, "P");
+    expect(next).toEqual({ kind: "frame", id: "X" });
+  });
+
+  it("in-context drill is unchanged: N selected → clicking Na drills to Na", () => {
+    const next = selectFromHit("Na", "plain", PAGE_TREE, sel("N"), "P");
+    expect(next).toEqual({ kind: "frame", id: "Na" });
+  });
+
+  it("deep (Cmd/Ctrl) hit ON the page → the page (fill-editing escape hatch)", () => {
+    const next = selectFromHit("P", "deep", PAGE_TREE, null, "P");
+    expect(next).toEqual({ kind: "frame", id: "P" });
+  });
+
+  it("toggle (Shift) hit ON the page → null (page never joins a multi-selection)", () => {
+    const next = selectFromHit("P", "toggle", PAGE_TREE, sel("X"), "P");
+    expect(next).toBeNull();
+  });
+
+  it("toggle on an in-page item is unchanged", () => {
+    const next = selectFromHit("X", "toggle", PAGE_TREE, sel("N"), "P");
+    expect(next).toEqual({ kind: "frame", id: "X" });
+  });
+
+  it("undefined contextRootId keeps the WI-033 model intact (top-level pick)", () => {
+    const next = selectFromHit("Na", "plain", PAGE_TREE, null);
+    expect(next).toEqual({ kind: "frame", id: "P" });
+  });
+});
+
 describe("selectFromHit — edge cases", () => {
   it("hit id not in the tree → null (caller falls back)", () => {
     const next = selectFromHit("missing", "plain", TREE, null);

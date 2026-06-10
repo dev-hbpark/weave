@@ -1053,6 +1053,19 @@ function DesignPageBody() {
     () => (!infiniteCanvas && activePageId !== undefined ? new Set([activePageId]) : undefined),
     [infiniteCanvas, activePageId],
   );
+  // WI-163 — page(artboard) predicate: page-bounded mode && root-direct item
+  // = a PAGE. Pages are fixed editing contexts (Canva model): no delete via
+  // canvas gestures, no keyboard-nav onto them, no arrow nudge. Mode-derived
+  // — never a persisted attr. Ref-based so the deps-[] effects below
+  // (deleters / navigator / keyboard) read the live flavor + doc.
+  const infiniteCanvasRef = useRef(infiniteCanvas);
+  infiniteCanvasRef.current = infiniteCanvas;
+  const isArtboardId = useCallback((id: string): boolean => {
+    if (infiniteCanvasRef.current) return false;
+    const doc = docInAgocraftRef.current;
+    if (doc === undefined) return false;
+    return doc.root.children.some((c) => String(c.id) === id);
+  }, []);
   // WI-153 P3 (DR-111 D5) — default add container. Page-bounded formats route
   // selection-less adds into the ACTIVE PAGE instead of the design root (root is
   // page chrome there, not an editing surface). Policy from the format registry;
@@ -1459,9 +1472,15 @@ function DesignPageBody() {
       const doc = docInAgocraftRef.current;
       if (currentId === undefined || doc === undefined) return;
       const nextId = NAV_HELPERS[dir](currentId, doc);
-      if (nextId !== undefined) selectFrame(nextId);
+      if (nextId === undefined) return;
+      // WI-163 — keyboard nav never lands ON a page (artboard): drillUp from
+      // a top-level item would select it, and sibling-cycling FROM the page
+      // (escape-hatch deep selection) would walk the HIDDEN pages. drillDown
+      // (page → first child) returns a non-page id, so it stays allowed.
+      if (isArtboardId(nextId)) return;
+      selectFrame(nextId);
     });
-  }, [selectFrame]);
+  }, [selectFrame, isArtboardId]);
 
   // DR-027 / WI-071 Phase 2 — WI-020 item-add cluster ("+" add menu + R/T/L/F
   // tool-hotkey adder + slide-preset dialog state) extracted to a cooperating
@@ -1487,6 +1506,8 @@ function DesignPageBody() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return setFrameDeleter((frameId) => {
+      // WI-163 — pages are not deletable via canvas gestures (rail's job).
+      if (isArtboardId(frameId)) return;
       // DR-061 — a locked item is protected from deletion.
       const it = findItemDeep(docInAgocraftRef.current, frameId);
       if (it !== undefined && isItemLocked(it)) return;
@@ -1589,8 +1610,9 @@ function DesignPageBody() {
   useEffect(() => {
     return setMultiDeleter(() => {
       const all = Array.from(selectedIdsRef.current);
-      // DR-061 — never delete locked items; only the unlocked ones go.
+      // DR-061 — never delete locked items; WI-163 — never delete pages.
       const ids = all.filter((id) => {
+        if (isArtboardId(id)) return false;
         const it = findItemDeep(docInAgocraftRef.current, id);
         return !(it !== undefined && isItemLocked(it));
       });
@@ -1735,9 +1757,10 @@ function DesignPageBody() {
         // Otherwise remove every selected item in ONE batch (single undo).
         const all = Array.from(selectedIdsRef.current);
         if (all.length === 0) return;
-        // DR-061 — locked items are protected from deletion; delete only the
-        // unlocked ones. Always preventDefault so Backspace never navigates.
+        // DR-061 — locked items are protected from deletion; WI-163 — pages
+        // (artboards) too. Always preventDefault so Backspace never navigates.
         const ids = all.filter((id) => {
+          if (isArtboardId(id)) return false;
           const it = findItemDeep(docInAgocraftRef.current, id);
           return !(it !== undefined && isItemLocked(it));
         });
@@ -1779,7 +1802,9 @@ function DesignPageBody() {
         e.key === "ArrowLeft" ||
         e.key === "ArrowRight"
       ) {
-        const ids = Array.from(selectedIdsRef.current);
+        // WI-163 — pages (artboards) never move; the escape-hatch deep
+        // selection (page fill editing) must not arrow-nudge the page.
+        const ids = Array.from(selectedIdsRef.current).filter((id) => !isArtboardId(id));
         if (ids.length === 0) return;
         const doc = docInAgocraftRef.current;
         if (doc === undefined) return;
@@ -1816,7 +1841,7 @@ function DesignPageBody() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editor, selectFrames, selectFrame, dissolveFrame, applyCrop]);
+  }, [editor, selectFrames, selectFrame, dissolveFrame, applyCrop, isArtboardId]);
   // Multi-selection align / distribute — single slot dispatched by the
   // 8 `multi.align-*` / `multi.distribute-*` commands. Steps:
   //   1. Read the live selected ids + doc through refs (selection /

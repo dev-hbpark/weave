@@ -74,6 +74,15 @@ export type ClickIntent = "plain" | "deep" | "toggle";
  *    rule that only checked `current ∈ trail` would re-select `FrameA`
  *    on every sibling switch (the bug this fix removes).
  *
+ *  WI-163 — `contextRootId` (the active PAGE on page-bounded formats)
+ *  shifts the model's root: the page is an ARTBOARD, not a selectable
+ *  object. A plain hit on the page itself returns null (background —
+ *  caller clears the selection), and parent-first walks one level in
+ *  from the PAGE, not from the document root. `intent: "deep"`
+ *  deliberately still selects the page — the escape hatch that keeps
+ *  page-background (fill) editing reachable; transform handles stay
+ *  suppressed at the chrome/gesture layer regardless.
+ *
  *  Pure: no React, no vm, no DOM. Doc + current + hit + intent in,
  *  Selection|null out. Testable in isolation. */
 export function selectFromHit(
@@ -81,10 +90,16 @@ export function selectFromHit(
   intent: ClickIntent,
   doc: AgocraftDocument,
   current: Selection | null,
+  contextRootId?: string,
 ): { readonly kind: "frame"; readonly id: string } | null {
   if (intent === "deep" || intent === "toggle") {
+    // WI-163 — toggle may not add the artboard to a multi-selection.
+    // (Deep keeps it — the page-fill escape hatch.)
+    if (intent === "toggle" && hitId === contextRootId) return null;
     return { kind: "frame", id: hitId };
   }
+  // WI-163 — a plain hit on the artboard itself is a background click.
+  if (contextRootId !== undefined && hitId === contextRootId) return null;
   const trail = findTrailDeep(doc, hitId);
   if (trail === undefined || trail.length === 0) {
     // hitId is the root itself or not in the doc — nothing to select.
@@ -107,6 +122,18 @@ export function selectFromHit(
     return { kind: "frame", id: hitId };
   }
   // Different context — A1 parent-first: walk one level in from the root.
+  // WI-163 — with an artboard context root on the trail, "one level in"
+  // starts INSIDE the page (the page itself is never the parent-first
+  // pick). Falls back to trail[0] when the root is absent from the trail
+  // (hit outside the page — page-scoped rendering makes this unreachable,
+  // kept as a safe default).
+  if (contextRootId !== undefined) {
+    const rootIdx = trail.findIndex((item) => String(item.id) === contextRootId);
+    if (rootIdx !== -1) {
+      const firstInside = trail[rootIdx + 1];
+      return firstInside === undefined ? null : { kind: "frame", id: String(firstInside.id) };
+    }
+  }
   const topLevel = trail[0];
   return topLevel === undefined ? null : { kind: "frame", id: String(topLevel.id) };
 }

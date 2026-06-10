@@ -125,6 +125,13 @@ interface NestedFrameProps {
   readonly onContextMenuRequest?:
     | ((itemId: string, clientX: number, clientY: number) => void)
     | undefined;
+  /** WI-163 — the active page's id on page-bounded formats. That frame is
+   *  an ARTBOARD: a plain click on it clears the selection instead of
+   *  selecting it, parent-first walks one level INSIDE it, Shift-toggle
+   *  skips it, and its selection chrome (deep-click escape hatch) carries
+   *  no transform handles. Undefined on infinite canvas — top-level
+   *  frames stay ordinary objects. */
+  readonly artboardId?: string | undefined;
 }
 
 export function NestedFrame({
@@ -150,6 +157,7 @@ export function NestedFrame({
   onCommitHotspotRegion,
   doc,
   onContextMenuRequest,
+  artboardId,
 }: NestedFrameProps) {
   const itemId = String(item.id);
   // WI-033 — vm reference for synchronous selection read inside onClick.
@@ -469,6 +477,7 @@ export function NestedFrame({
       selectedHotspotId={selectedHotspotId}
       onSelectHotspot={onSelectHotspot}
       onCommitHotspotRegion={onCommitHotspotRegion}
+      artboardId={artboardId}
     />
   ));
 
@@ -632,7 +641,8 @@ export function NestedFrame({
             ? "deep"
             : "plain";
         if (intent === "toggle" && onToggleSelect !== undefined) {
-          onToggleSelect(itemId);
+          // WI-163 — the artboard never joins a multi-selection.
+          if (itemId !== artboardId) onToggleSelect(itemId);
           return;
         }
         if (selectedIds !== undefined && selectedIds.size > 1 && selectedIds.has(itemId)) {
@@ -652,7 +662,14 @@ export function NestedFrame({
               : null) ?? itemId;
           const current: Selection | null =
             selectedId === undefined ? null : { kind: "frame", id: selectedId };
-          const next = selectFromHit(targetFrameId, intent, doc, current);
+          const next = selectFromHit(targetFrameId, intent, doc, current, artboardId);
+          // WI-163 — null on an artboard hit = background click → clear the
+          // selection (Canva: clicking the page deselects). The legacy null
+          // fallback (hit not in doc) keeps selecting the raw target.
+          if (next === null && targetFrameId === artboardId) {
+            onSelect?.(undefined);
+            return;
+          }
           onSelect?.(next === null ? targetFrameId : next.id);
           return;
         }
@@ -746,10 +763,14 @@ export function NestedFrame({
                 ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
                 : undefined;
             const locked = isItemLocked(item);
+            // WI-163 — the artboard (deep-click escape hatch selection) reuses
+            // the DR-061 filter: no transform handles. Unlike locked, no badge
+            // below — the page is an artboard, not a locked object.
+            const isArtboard = itemId === artboardId;
             const handles = applyLayoutConstraintFilter(
               selectionChromeRef.current?.resolve(info) ?? [],
               constraints,
-              locked, // DR-061 — locked → no transform handles
+              locked || isArtboard, // DR-061 — locked → no transform handles
             ).map((spec) => {
               const pos = resolveAnchor(spec.anchor, bounds);
               return {
