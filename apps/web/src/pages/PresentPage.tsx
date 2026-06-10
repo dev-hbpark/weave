@@ -26,28 +26,28 @@ import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
 
 // Phase 13d-3 — entrance-animation Web Animations API keyframes per mode.
+// Closed-owned mode union → a Record table, not a `switch` (Rule 6): a new mode
+// is a compile error to add an entry, and there is no in-body discriminant
+// branch. The `?? ` no-op keyframe preserves the prior `default` arm and defends
+// a malformed runtime mode (`[mode]` is `| undefined` under noUncheckedIndexedAccess).
+const ENTRANCE_KEYFRAMES: Record<EntranceAnimationBehavior["mode"], Keyframe[]> = {
+  fade: [{ opacity: 0 }, { opacity: 1 }],
+  "slide-up": [
+    { opacity: 0, transform: "translateY(24px)" },
+    { opacity: 1, transform: "translateY(0)" },
+  ],
+  "slide-down": [
+    { opacity: 0, transform: "translateY(-24px)" },
+    { opacity: 1, transform: "translateY(0)" },
+  ],
+  "zoom-in": [
+    { opacity: 0, transform: "scale(0.85)" },
+    { opacity: 1, transform: "scale(1)" },
+  ],
+};
+
 function entranceKeyframes(mode: EntranceAnimationBehavior["mode"]): Keyframe[] {
-  switch (mode) {
-    case "fade":
-      return [{ opacity: 0 }, { opacity: 1 }];
-    case "slide-up":
-      return [
-        { opacity: 0, transform: "translateY(24px)" },
-        { opacity: 1, transform: "translateY(0)" },
-      ];
-    case "slide-down":
-      return [
-        { opacity: 0, transform: "translateY(-24px)" },
-        { opacity: 1, transform: "translateY(0)" },
-      ];
-    case "zoom-in":
-      return [
-        { opacity: 0, transform: "scale(0.85)" },
-        { opacity: 1, transform: "scale(1)" },
-      ];
-    default:
-      return [{ opacity: 1 }, { opacity: 1 }];
-  }
+  return ENTRANCE_KEYFRAMES[mode] ?? [{ opacity: 1 }, { opacity: 1 }];
 }
 
 interface PresentSceneProps {
