@@ -186,3 +186,14 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
   - e2e (영구, `e2e/new-design.spec.ts` 2건 — Document mutation rule 체크리스트의 "e2e가
     Cmd+Z/Cmd+Shift+Z를 커버" 항목 충족): 레일 복제→클론 검증→키보드 Cmd+Z 롤백→Cmd+Shift+Z
     재적용 + mixed 레일 복제 버튼 부재. targeted run 3 passed / 1 skipped(기존 skip).
+- **후속 — 카메라 fit-to-active-page 완료 (P2.4 보류분, WI-157)**:
+  - 보류 리스크(base-fit 수학 변경 → 좌표/오버레이 정합)를 **base-fit 비접촉**으로 회피: 이미 있는
+    유저 카메라 박스 핏(`zoomToBox` — thumbnail dblclick/에이전트 카메라와 동일 채널)으로 해결.
+  - `pageFitBox` 순수 헬퍼(`src/pages/page-fit.ts`, page-clamp.ts 패턴): FULL_FRAME(epsilon,
+    rotation 포함) → undefined, 아니면 design-px 박스. 유닛 4건.
+  - FrameStage 페이지 전환 effect: 비-FULL → `zoomToBox(box, 1)`; FULL 복귀 + 직전이 page-fit이면
+    `setPan({0,0,1})` 베이스 복원; FULL→FULL은 불간섭(유저 줌 보존). 페이지 박스는 ref로 fire-time에
+    읽어 페이지 리사이즈 제스처와 비충돌(deps = 페이지 id + stage ready — mount 측정 레이스 해소).
+  - `zoomToBox` 인셋 센터링: avail 영역(fitInset 제외) 기준 scale+센터 — page-bounded fit이 헤더/레일
+    아래 숨던 문제 보정. 인셋 0(무한 캔버스)이면 수치 동일 → mixed 회귀 0 (SVL 8·9 확인).
+  - 검증: 유닛 938/938 · gates green · SVL 9/9 · e2e 2건(`page-camera-fit.spec.ts`) — 상세 WI-157.

@@ -84,6 +84,7 @@ import { nextPanForZoom } from "./frame-stage/camera-math.js";
 import { perceivedLuminance } from "./frame-stage/luminance.js";
 import { NestedFrame } from "./frame-stage/NestedFrame.js";
 import { useViewportCulling } from "./frame-stage/use-viewport-culling.js";
+import { pageFitBox } from "./page-fit.js";
 
 export interface FrameMenuContext {
   readonly layers: ReadonlyArray<LayerHit>;
@@ -468,23 +469,68 @@ export function FrameStage(props: FrameStageProps) {
       // 0.9 = the normal fit margin; `fillFactor` (default 1) scales it further
       // down so callers can fit at a fraction of the usual size (e.g. 0.7).
       const MARGIN = 0.9 * fillFactor;
+      // WI-157 — fit + centre within the CHROME-INSET region (header / rail),
+      // matching the base fit's avail box. Insets are 0 on infinite canvas, so
+      // the math reduces to the previous full-viewport form there.
       const rawScale = Math.min(
-        (W * MARGIN) / (box.w * baseScale),
-        (H * MARGIN) / (box.h * baseScale),
+        (availW * MARGIN) / (box.w * baseScale),
+        (availH * MARGIN) / (box.h * baseScale),
       );
       const scale = Math.max(0.1, Math.min(8, rawScale));
       const cx = box.x + box.w / 2;
       const cy = box.y + box.h / 2;
       const olx = baseTx + cx * baseScale;
       const oly = baseTy + cy * baseScale;
-      setPan({ tx: -(olx - W / 2) * scale, ty: -(oly - H / 2) * scale, scale });
+      // Solve `screen = (ol - W/2)*scale + W/2 + t` for the box centre landing
+      // at the avail-region centre (insetL + availW/2). With scale 1 and a
+      // plane-centre box this yields t = 0 — the base fit, exactly.
+      const targetX = insetL + availW / 2;
+      const targetY = insetT + availH / 2;
+      setPan({
+        tx: targetX - W / 2 - (olx - W / 2) * scale,
+        ty: targetY - H / 2 - (oly - H / 2) * scale,
+        scale,
+      });
     },
-    [outerSize, baseScale, baseTx, baseTy, setPan],
+    [outerSize, availW, availH, insetL, insetT, baseScale, baseTx, baseTy, setPan],
   );
   useEffect(() => {
     if (!cameraEnabled) return undefined;
     return setCameraFitBox(zoomToBox);
   }, [cameraEnabled, zoomToBox]);
+
+  // WI-157 (WI-153 P2.4) — fit-to-active-page. The base fit frames the whole
+  // design plane; that equals the page only for FULL_FRAME pages. When the
+  // ACTIVE page (page-scoped render: visibleFrameIds → single frame) is
+  // non-FULL_FRAME, fit the user camera to its box; when switching back to a
+  // FULL_FRAME page FROM a page-fit camera, restore the base fit. FULL→FULL
+  // switches never touch the camera (user zoom survives slide flipping —
+  // pre-existing behavior). The page BOX is read through a ref at fire time
+  // and is NOT a dependency, so resizing the page itself doesn't re-fire a
+  // fit mid-gesture; deps are the page id + the first real stage measure
+  // (mount race: outerSize starts 0×0 and zoomToBox no-ops on it).
+  const activePage = visibleFrameIds !== undefined && frames.length === 1 ? frames[0] : undefined;
+  const activePageId = activePage === undefined ? undefined : String(activePage.id);
+  const activePageRef = useRef(activePage);
+  activePageRef.current = activePage;
+  const zoomToBoxRef = useRef(zoomToBox);
+  zoomToBoxRef.current = zoomToBox;
+  const lastPageFitRef = useRef<string | undefined>(undefined);
+  const stageReady = outerSize.width > 0 && outerSize.height > 0;
+  useEffect(() => {
+    if (!cameraEnabled || !stageReady || activePageId === undefined) return;
+    const page = activePageRef.current;
+    if (page === undefined || String(page.id) !== activePageId) return;
+    const frame = (page.attrs as { frame?: ItemFrame }).frame;
+    const box = frame === undefined ? undefined : pageFitBox(frame, designWidth, designHeight);
+    if (box !== undefined) {
+      zoomToBoxRef.current(box, 1);
+      lastPageFitRef.current = activePageId;
+    } else if (lastPageFitRef.current !== undefined) {
+      setPan({ tx: 0, ty: 0, scale: 1 });
+      lastPageFitRef.current = undefined;
+    }
+  }, [cameraEnabled, stageReady, activePageId, designWidth, designHeight, setPan]);
 
   // WI-033 P2 — pan-reset-on-entered-frame-change effect removed
   // alongside drill-in mode (DR-017). The user's pan/zoom now persists
