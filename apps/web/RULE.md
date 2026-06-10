@@ -18,6 +18,14 @@ Document state persists to KV in a **shared anonymous workspace where mixed-vers
 
 `apps/web/api/*` MUST call `assertKvAvailable(res)`, validate input via `_lib/validate.ts`, respond via `apiError(res, …)`, and build KV keys via `_lib/keys.ts` (never hardcode the `shared:` prefix). `window.__weave*` diagnostics are gated behind `import.meta.env.DEV`.
 
+## UI components (view/logic separation · extensibility · reuse)
+
+Follow OS-root `docs/04-specialized-engineering/UI_COMPONENT_STRUCTURE.md`. In weave's React app:
+
+- **View / logic split (Lens 1).** A component is a **view** (pure render of props — no `fetch`, no store read for document/business state, no domain `useEffect`) or a **hook** (`useX()` owns state + effects + derivations + `editor.exec` dispatch). The ViewModel (`EditorViewModel` / signals) and `useDocument` / `useWeaveEditor` are the logic owners; components render their output. Litmus: the view renders from hand-made props with no provider; the hook tests with `renderHook`.
+- **Extensibility (Lens 2).** Per-kind UI resolves through a registry — `DOMAIN_RENDERERS`, `SelectionChromeRegistry`, `toolbarSectionRegistry` (one adapter per kind in the kind's own module) — never `switch (item.kind)` in JSX. Cross-cutting affordances register a `SelectionHandleProvider`. Vary primitives by composition (slots / compound components), not boolean-prop sprawl.
+- **Reuse (Lens 3).** All reusable UI lives in `@weave/design-system` (`features/design-system/RULE.md` + `design-system-triage`); app code only *composes* primitives; tokens not literals; a11y + reduced-motion defaults ship in the primitive.
+
 ## Tree-shaking (Rule 2)
 
 Named const exports; no object-catalogue / default mega-object exports (gated by `tools/check_token_catalog.sh`). Anything `packages/*` re-exports as a public surface prefers free functions over class-method surfaces.

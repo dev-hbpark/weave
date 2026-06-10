@@ -2,8 +2,9 @@
 
 **Current state:** scaffold (no code). weave's active components live in `apps/web/src`; the shared design system is `packages/design-system/` (`@weave/design-system`). This package is reserved for extraction of genuinely shared, domain-free UI primitives; otherwise a Decommission Sweep candidate.
 
-Rules that bind UI code:
+Rules that bind UI code (canonical: OS-root `docs/04-specialized-engineering/UI_COMPONENT_STRUCTURE.md`):
 
+- **View / logic separation (Lens 1).** A component is a *view* (pure render of props — no fetch/store/business-effect) or a *hook* (`useX()` owns logic). Primitives are pure views; behavior is injected. Litmus: the view renders from props with no provider; the hook tests with `renderHook`.
 - **Design System Triage runs before any component is added or modified** (root `CLAUDE.md`): walk reuse / extend / grow / escape against `@weave/design-system`, not app-local CSS. Steps 3–5 (new primitive / token / theme) and public-facing surfaces trigger a `records/design-reviews/DR-design-<NNN>` collaboration.
 - **No feature logic in shared UI primitives** — primitives stay domain-free (frontend-architecture rule); feature behavior is injected.
 - **Prefer platform primitives** (`<dialog>` / Popover API / CSS Anchor Positioning / Container Queries) before a custom component or third-party lib — OS `docs/04-specialized-engineering/MODERN_WEB_GUIDANCE.md`.
