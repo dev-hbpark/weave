@@ -23,18 +23,28 @@
 // deliberately NO separate `agentRootAdd` policy field; it would always
 // mirror the insertion policy).
 
-/** Retarget an agent `weave.item.add` aimed at the doc ROOT into the host's
- *  default add container (the active page on page-bounded formats).
- *  No-op when: not item.add, non-object input, no default container,
- *  container is already a non-root frame, or the add is itself a frame
- *  (= a new page — the legitimate root add). Pure. */
+/** Agent commands that PLACE new content via an optional `containerId`
+ *  defaulting to the doc root (commands.ts `findContainer`). WI-167 — chart
+ *  creation was missed by the WI-153 P4 guard: `weave.chart.add` is the
+ *  agent's PRIMARY chart tool and its omitted containerId landed charts at
+ *  the root = invisible on page-bounded formats. A chart is content, never
+ *  a page, so it gets no frame-style exemption (the `kind === "frame"`
+ *  check below is vacuous for it — chart.add input carries no `kind`). */
+const ROOT_ADD_COMMANDS: ReadonlySet<string> = new Set(["weave.item.add", "weave.chart.add"]);
+
+/** Retarget an agent content add (`weave.item.add` / `weave.chart.add`)
+ *  aimed at the doc ROOT into the host's default add container (the active
+ *  page on page-bounded formats). No-op when: not a root-add command,
+ *  non-object input, no default container, container is already a non-root
+ *  frame, or the add is itself a frame (= a new page — the legitimate root
+ *  add). Pure. */
 export function retargetAgentRootAdd(
   commandName: string,
   input: unknown,
   rootId: string,
   defaultContainerId: string | undefined,
 ): unknown {
-  if (commandName !== "weave.item.add") return input;
+  if (!ROOT_ADD_COMMANDS.has(commandName)) return input;
   if (defaultContainerId === undefined || defaultContainerId === rootId) return input;
   if (typeof input !== "object" || input === null) return input;
   const record = input as Record<string, unknown>;

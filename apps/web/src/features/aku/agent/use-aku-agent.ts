@@ -723,7 +723,7 @@ export function useAkuAgent(deps: {
       const activePage = depsRef.current.getDefaultAddContainerId?.();
       const pageLine =
         activePage !== undefined
-          ? `\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집 중이며 현재 활성 페이지 frame id는 ${activePage} 입니다. 새 콘텐츠(텍스트/도형/이미지 등)는 이 페이지(또는 그 안의 frame)를 containerId 로 지정해 넣으세요 — root 에 둔 leaf 는 화면에 보이지 않습니다. 새 페이지가 필요할 때만 root 에 kind:"frame" 을 추가하세요(최상위 frame = 새 슬라이드).`
+          ? `\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집 중이며 현재 활성 페이지 frame id는 ${activePage} 입니다. 새 콘텐츠(텍스트/도형/이미지/차트 등)는 이 페이지(또는 그 안의 frame)를 containerId 로 지정해 넣으세요 — root 에 둔 leaf 는 화면에 보이지 않습니다. 새 페이지가 필요할 때만 root 에 kind:"frame" 을 추가하세요(최상위 frame = 새 슬라이드).`
           : "";
       const primer = AKU_ABLATION.taskPrimer ? WEAVE_TASK_PRIMER : "";
       // [현재 테마] — off frees the agent to commit to the content's own palette.

@@ -48,6 +48,34 @@ describe("retargetAgentRootAdd", () => {
     expect(retargetAgentRootAdd("weave.item.add", "x", ROOT, PAGE)).toBe("x");
   });
 
+  // WI-167 — weave.chart.add is the agent's primary chart tool; its omitted
+  // containerId defaulted to the root = invisible chart on page-bounded
+  // formats. A chart is content, never a page → no frame-style exemption.
+  it("rewrites a chart add with omitted containerId to the active page", () => {
+    const out = retargetAgentRootAdd("weave.chart.add", { chartType: "bar" }, ROOT, PAGE);
+    expect(out).toEqual({ chartType: "bar", containerId: PAGE });
+  });
+
+  it("rewrites a chart add with explicit root containerId to the active page", () => {
+    const out = retargetAgentRootAdd(
+      "weave.chart.add",
+      { chartType: "line", containerId: ROOT },
+      ROOT,
+      PAGE,
+    );
+    expect(out).toEqual({ chartType: "line", containerId: PAGE });
+  });
+
+  it("leaves a chart add into a real frame untouched", () => {
+    const input = { chartType: "pie", containerId: "frame-7" };
+    expect(retargetAgentRootAdd("weave.chart.add", input, ROOT, PAGE)).toBe(input);
+  });
+
+  it("chart add no-op without a default container (infinite-canvas formats)", () => {
+    const input = { chartType: "bar" };
+    expect(retargetAgentRootAdd("weave.chart.add", input, ROOT, undefined)).toBe(input);
+  });
+
   it("preserves the rest of the input untouched on rewrite", () => {
     const out = retargetAgentRootAdd(
       "weave.item.add",
