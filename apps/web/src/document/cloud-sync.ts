@@ -80,6 +80,48 @@ export async function fetchDesignCloud(id: string): Promise<Design | null> {
   return body?.design ?? null;
 }
 
+// WI-161 — load the snapshot AND its delta patch log in one request. The
+// `[id]` GET returns `{ design, patches }`; the caller replays `patches` onto
+// the hydrated snapshot. `patches` is absent (→ []) for pre-delta servers or
+// freshly-compacted designs, so this degrades to a plain snapshot load.
+export async function fetchDesignWithPatchesCloud(
+  id: string,
+): Promise<{ design: Design; patches: ReadonlyArray<string> } | null> {
+  const resp = await safeFetch(`/api/designs/${encodeURIComponent(id)}`);
+  if (resp === null || resp.status !== 200) return null;
+  const body = (await resp.json().catch(() => null)) as {
+    design?: Design;
+    patches?: unknown;
+  } | null;
+  if (body?.design === undefined) return null;
+  const patches = Array.isArray(body.patches)
+    ? body.patches.filter((p): p is string => typeof p === "string")
+    : [];
+  return { design: body.design, patches };
+}
+
+// WI-161 — append a delta batch under the optimistic base-count guard.
+//   { ok: true, count }  — appended; `count` = new server log length
+//   { ok: false }        — conflict / overflow / endpoint-absent / network
+//                          error → caller falls back to a full snapshot save.
+export async function pushDesignPatchesCloud(
+  id: string,
+  serializedPatches: ReadonlyArray<string>,
+  baseCount: number,
+): Promise<{ ok: true; count: number } | { ok: false }> {
+  const resp = await safeFetch(`/api/patches/${encodeURIComponent(id)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ baseCount, patches: [...serializedPatches] }),
+  });
+  if (resp === null || !resp.ok) return { ok: false };
+  const body = (await resp.json().catch(() => null)) as { ok?: boolean; count?: number } | null;
+  if (body?.ok === true && typeof body.count === "number") {
+    return { ok: true, count: body.count };
+  }
+  return { ok: false };
+}
+
 // Cadence is owned by the consumer attaching to editor.changeStream via
 // `scheduling.debounce(N)` (see use-weave-editor.ts). This function is
 // the leaf write — it fires immediately and the caller is responsible

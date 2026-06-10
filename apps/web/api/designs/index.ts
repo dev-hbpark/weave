@@ -11,7 +11,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { apiError } from "../_lib/errors.js";
-import { designIndexKey, designKey } from "../_lib/keys.js";
+import { designIndexKey, designKey, designPatchesKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
 import {
   enforceContentLength,
@@ -152,6 +152,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
       throw err;
     }
+    // WI-161 — a full-snapshot save IS the compaction point: the snapshot now
+    // carries the whole document, so the delta tail is superseded and cleared.
+    // (Also the fallback path for delta conflicts/overflow and the first save.)
+    await kv.set(designPatchesKey(design.id), []);
     const ids = await readIndex();
     const next = [design.id, ...ids.filter((x) => x !== design.id)];
     await writeIndex(next);

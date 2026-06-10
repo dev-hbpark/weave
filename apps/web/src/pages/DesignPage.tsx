@@ -107,6 +107,7 @@ import {
 } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
+import { pushDesignPatchesCloud } from "../document/cloud-sync.js";
 import {
   basisFromFrameSample,
   basisFromLetterbox,
@@ -569,6 +570,15 @@ function DesignPageBody() {
     },
     applyChange,
     persist: persistNow,
+    // WI-161 — delta persistence: the debounced save sends only changed
+    // patches to /api/designs/:id/patches; `pushSnapshot` (full-PUT, also the
+    // conflict/compaction fallback) is the awaitable full save. Robust fallback
+    // keeps this safe even where the endpoint is absent (degrades to full-PUT).
+    deltaTransport: {
+      pushPatches: (serialized, baseCount) =>
+        pushDesignPatchesCloud(designId, serialized, baseCount),
+      pushSnapshot: persistNowAwaitable,
+    },
     // WI-028 — gated by SYNC_ENABLED at the top of this file. When OFF
     // we still pass `replaceDocumentFromRemote` (cheap — just a ref
     // mirror inside the hook) so flipping the flag back to true is a

@@ -49,7 +49,33 @@ import {
 import { useEffect, useMemo, useRef } from "react";
 import * as Y from "yjs";
 import { registerWeaveCommands, type WeaveCommandTargets } from "./commands.js";
+import {
+  createDeltaPersistController,
+  type DeltaPersistController,
+  type PushPatchesResult,
+} from "./delta/delta-controller.js";
 import { noteAppliedChangeOrigin } from "./history-replay-state.js";
+
+// WI-161 — delta persistence: send only changed patches (append) per save and
+// compact to a full snapshot periodically, instead of re-PUTting the whole
+// design every time. Robust full-snapshot fallback means that where the
+// `/api/designs/:id/patches` endpoint is absent or a conflict occurs, this
+// degrades to today's full-PUT (LWW) path — so it is safe to ship enabled.
+// Flip to `false` as an instant kill switch. See WI-161 / DR-113.
+export const DELTA_PERSIST_ENABLED = true;
+
+/** WI-161 — transport for delta persistence, supplied by the host (which knows
+ *  the design id + how to serialize the full snapshot). */
+export interface DeltaTransport {
+  /** Append serialized patches under the optimistic base-count guard. */
+  readonly pushPatches: (
+    serialized: ReadonlyArray<string>,
+    baseCount: number,
+  ) => Promise<PushPatchesResult>;
+  /** Full-snapshot save (server clears the patch log) — today's full-PUT. */
+  readonly pushSnapshot: () => Promise<boolean>;
+}
+
 // WI-032 Phase 3b — canvas-shape capability + agocraft-bridge removed
 // alongside the legacy `canvas-design` kind.
 import { attachIndexedDbPersistence } from "./sync/offline-persistence.js";
@@ -79,6 +105,12 @@ export interface UseWeaveEditorDeps {
   readonly persist?: () => void;
   /** Trailing-edge debounce for the persist sink. Default 500ms. */
   readonly persistDebounceMs?: number;
+  /** WI-161 — delta-persistence transport. When provided (and
+   *  `DELTA_PERSIST_ENABLED`), the debounced storage tick flushes only the
+   *  changed patches via this transport (with full-snapshot compaction +
+   *  fallback) instead of calling `persist()` every time. Omit to keep the
+   *  plain full-PUT path. `pushSnapshot` is typically `persistNowAwaitable`. */
+  readonly deltaTransport?: DeltaTransport;
   /** WI-028 Phase 3 — enable collaborative sync. When set, the hook
    *  wires a SyncEngine + Y.Doc + HttpPollProvider to the editor's
    *  ChangeStream so local edits mirror into the Y.Doc and push to the
@@ -138,6 +170,25 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     deps.replaceDocumentFromRemote,
   );
   replaceDocumentFromRemoteRef.current = deps.replaceDocumentFromRemote;
+  // WI-161 — delta transport read through a ref so the controller (created once)
+  // always calls the latest host transport without re-instantiating.
+  const deltaTransportRef = useRef<UseWeaveEditorDeps["deltaTransport"]>(deps.deltaTransport);
+  deltaTransportRef.current = deps.deltaTransport;
+  const deltaControllerRef = useRef<DeltaPersistController | undefined>(undefined);
+  if (DELTA_PERSIST_ENABLED && deltaControllerRef.current === undefined) {
+    deltaControllerRef.current = createDeltaPersistController({
+      pushPatches: (serialized, baseCount) => {
+        const t = deltaTransportRef.current;
+        return t !== undefined
+          ? t.pushPatches(serialized, baseCount)
+          : Promise.resolve({ ok: false } as const);
+      },
+      pushSnapshot: () => {
+        const t = deltaTransportRef.current;
+        return t !== undefined ? t.pushSnapshot() : Promise.resolve(false);
+      },
+    });
+  }
 
   const editor = useMemo<Editor>(() => {
     const container = createContainer();
@@ -390,7 +441,13 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
     // ctx.document. The pre-WI-024 add/remove/update/updateBehavior proxy
     // entries were vestigial (no command called them) and are removed.
     const proxy: WeaveCommandTargets = {
-      reset: () => targetsRef.current?.reset(),
+      reset: () => {
+        // WI-161 — reset is the snapshot boundary: drop the delta buffer and
+        // force the next save to a fresh full snapshot (it bypasses the
+        // ChangeStream, so the controller can't learn of it from a patch).
+        deltaControllerRef.current?.markSnapshotBoundary();
+        targetsRef.current?.reset();
+      },
     };
     const offCommands = registerWeaveCommands(editor, proxy);
 
@@ -417,13 +474,37 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
       { origins: ["user-command", "system"] },
     );
 
+    // WI-161 — delta-record sink. Immediate (not debounced): every change's
+    // Patch is buffered in the controller as it happens; the debounced storage
+    // tick below decides when to flush (append vs compact). Same origins as the
+    // storage sink so undo/redo ("system") replays are persisted too. Only
+    // active when the host supplied a delta transport.
+    const deltaController = deltaControllerRef.current;
+    const deltaActive = DELTA_PERSIST_ENABLED && deps.deltaTransport !== undefined;
+    let offDeltaRecord: (() => void) | undefined;
+    if (deltaActive && deltaController !== undefined) {
+      offDeltaRecord = editor.changeStream.subscribe(
+        (change) => {
+          const patch = changeToPatch(change);
+          if (patch !== undefined) deltaController.recordPatch(patch);
+        },
+        { origins: ["user-command", "system"] },
+      );
+    }
+
     // Storage sink — attached to the SAME ChangeStream but via a debounced
     // SchedulingPolicy (OS Rule 4: producer policy-free, consumer self-
     // scheduled). Render path above stays immediate; persistence batches
     // here so a 60Hz drag produces at most one save per debounce window.
+    // WI-161 — when delta is active, the tick flushes only the buffered patches
+    // (with compaction + fallback) instead of re-PUTting the whole design.
     const persistDebounceMs = deps.persistDebounceMs ?? 500;
     const storageSink: ChangeSink = {
       flush() {
+        if (deltaActive && deltaController !== undefined) {
+          void deltaController.flush();
+          return;
+        }
         const persist = persistRef.current;
         if (persist === undefined) return;
         persist();
@@ -463,6 +544,7 @@ export function useWeaveEditor(deps: UseWeaveEditorDeps): UseWeaveEditorResult {
 
     return () => {
       offSyncSink?.();
+      offDeltaRecord?.();
       offStorageSink();
       offChangeSink();
       offBridge();

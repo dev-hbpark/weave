@@ -1,11 +1,15 @@
 // WI-025 — single-design endpoint (globally shared workspace).
 //
-// GET    /api/designs/:id  → full Design JSON
-// DELETE /api/designs/:id  → remove from KV + index
+// GET    /api/designs/:id  → { design, patches, patchCount }
+//          WI-161 — the full snapshot PLUS the delta patch log (so the client
+//          loads everything in one round trip and replays the log onto the
+//          snapshot). `patches` is empty for designs saved before delta or
+//          right after a compaction.
+// DELETE /api/designs/:id  → remove the design + its patch log from KV + index
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { apiError } from "../_lib/errors.js";
-import { designIndexKey, designKey } from "../_lib/keys.js";
+import { designIndexKey, designKey, designPatchesKey } from "../_lib/keys.js";
 import { assertKvAvailable, kv } from "../_lib/kv.js";
 import { isValidId } from "../_lib/validate.js";
 
@@ -24,12 +28,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       apiError(res, 404, "NOT_FOUND", "Design not found");
       return;
     }
-    res.status(200).json({ design: d });
+    // WI-161 — return the delta tail alongside the snapshot so the client
+    // reconstructs the live document in a single request.
+    const patches = (await kv.get<string[]>(designPatchesKey(id))) ?? [];
+    res.status(200).json({ design: d, patches, patchCount: patches.length });
     return;
   }
 
   if (req.method === "DELETE") {
-    await kv.del(designKey(id));
+    await kv.del(designKey(id), designPatchesKey(id));
     const ids = (await kv.get<string[]>(designIndexKey())) ?? [];
     await kv.set(
       designIndexKey(),

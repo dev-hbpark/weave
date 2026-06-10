@@ -12,6 +12,13 @@ export function designIndexKey(): string {
   return `${GLOBAL_SCOPE}:designs`;
 }
 
+/** WI-161 — append-only delta patch log for a design (a `string[]` of opaque
+ *  JSON-encoded Patch entries). Paired with the full snapshot under
+ *  `designKey(id)`: a full-snapshot save clears this log (compaction). */
+export function designPatchesKey(id: string): string {
+  return `${GLOBAL_SCOPE}:design:${id}:patches`;
+}
+
 export function resourceKey(id: string): string {
   return `${GLOBAL_SCOPE}:resource:${id}`;
 }

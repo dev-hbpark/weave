@@ -18,7 +18,8 @@ import {
   updateChild,
   updateUnitAttrs,
 } from "./agocraft-mirror.js";
-import { fetchDesignCloud } from "./cloud-sync.js";
+import { fetchDesignWithPatchesCloud } from "./cloud-sync.js";
+import { replaySerializedPatches } from "./delta/replay.js";
 import { rehydrateDocumentFonts } from "./fonts/rehydrate.js";
 import { clearNewDesign, peekNewDesign } from "./new-design-handoff.js";
 import { createDefaultItem } from "./seed.js";
@@ -250,15 +251,16 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
     if (initial.current?.source !== "blank" && !preferCloud) return undefined;
     let cancelled = false;
     void (async () => {
-      const raw = await fetchDesignCloud(id);
+      const fetched = await fetchDesignWithPatchesCloud(id);
       if (cancelled) return;
-      if (raw === null) {
+      if (fetched === null) {
         // Cloud unreachable. The initial paint already holds the offline
         // edit ("local") or the prompt-free read-cache ("cache") when one
         // exists — present mode keeps showing that instead of going blank.
         setIsLoading(false);
         return;
       }
+      const raw = fetched.design;
       // Refresh the local read-cache so a later server-unreachable open
       // (present mode) can fall back to this known-good copy. Done before
       // the race guard so the cache stays current even when an in-progress
@@ -273,11 +275,17 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
         setIsLoading(false);
         return;
       }
-      setDesign(hydrated);
+      // WI-161 — replay the delta tail onto the snapshot to reconstruct the
+      // live document. Empty tail (pre-delta / just-compacted) → snapshot as-is.
+      const restored =
+        fetched.patches.length > 0
+          ? { ...hydrated, document: replaySerializedPatches(hydrated.document, fetched.patches) }
+          : hydrated;
+      setDesign(restored);
       // WI-136 — the cloud copy arrived after mount (LS-miss / present mode), so
       // the mount-time rehydrate ran against the blank placeholder. Load the
       // fonts the fetched document actually references.
-      rehydrateDocumentFonts(hydrated.document);
+      rehydrateDocumentFonts(restored.document);
       setIsLoading(false);
     })();
     return () => {
@@ -325,9 +333,18 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
       }
       removeLocalDesign(id);
       setIsLoading(true);
-      const raw = await fetchDesignCloud(id);
+      const fetched = await fetchDesignWithPatchesCloud(id);
+      const hydratedRaw =
+        fetched === null
+          ? undefined
+          : hydrateSerializedDesign(fetched.design as unknown as SerializedDesignV5);
       const hydrated =
-        raw === null ? undefined : hydrateSerializedDesign(raw as unknown as SerializedDesignV5);
+        hydratedRaw !== undefined && fetched !== null && fetched.patches.length > 0
+          ? {
+              ...hydratedRaw,
+              document: replaySerializedPatches(hydratedRaw.document, fetched.patches),
+            }
+          : hydratedRaw;
       const current = designRef.current;
       const next =
         hydrated ??
