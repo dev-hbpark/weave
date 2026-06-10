@@ -1169,6 +1169,19 @@ function DesignPageBody() {
     designHeight: design.height,
   });
 
+  // WI-153 P4 — agent working-camera on page-bounded formats must also SWITCH the
+  // active page: only the active page renders, so fitting the camera to a hidden
+  // slide would show nothing. Membership-guarded against the page order —
+  // `setActivePageId` falls back to the FIRST page for unknown ids
+  // (resolveActivePage), so passing a non-page id would wrongly jump the view.
+  const handleAgentZoomToFrame = useCallback(
+    (frameId: string) => {
+      if (!infiniteCanvas && presentationOrder.includes(frameId)) setActivePageId(frameId);
+      handleZoomToFrame(frameId);
+    },
+    [infiniteCanvas, presentationOrder, setActivePageId, handleZoomToFrame],
+  );
+
   // WI-033 P2 dead-code cleanup — `enteredFrameStack` consumer +
   // `setEnteredFrameId` callback removed. Phase 12 drill-in mode is
   // deprecated (DR-017); the vm slot itself stays on agocraft until
@@ -2331,11 +2344,20 @@ function DesignPageBody() {
                                         if (kindRaw === "") return;
                                         e.preventDefault();
                                         const kind = kindRaw as DomainKind;
+                                        // WI-153 P4 (DR-111 D5) — page-bounded: an
+                                        // empty-canvas drop arrives with the ROOT
+                                        // containerId; retarget it to the active page
+                                        // (root is page chrome there, not an editing
+                                        // surface). Hovered-frame drops pass through.
+                                        const target =
+                                          containerId === String(docInAgocraft.root.id)
+                                            ? (defaultAddContainerIdRef.current ?? containerId)
+                                            : containerId;
                                         const result = editor.exec<unknown, string>(
                                           "weave.item.add",
                                           {
                                             kind,
-                                            containerId,
+                                            containerId: target,
                                             frame: {
                                               x: 0.3,
                                               y: 0.3,
@@ -2480,12 +2502,18 @@ function DesignPageBody() {
                                     height: design.height,
                                     background: design.background,
                                   }}
+                                  // WI-153 P4 — page-bounded: agent non-frame root-adds
+                                  // are retargeted onto the active page (same policy
+                                  // source as toolbar/drop adds).
+                                  defaultAddContainerId={defaultAddContainerId}
                                   // WI-065 — after the agent adds slide(s), fit the deck
                                   // at the shared 70% (agent edits skip the UI add-fit).
                                   onFramesAdded={handleFitAll}
                                   // WI-125 — fit the camera to each NEW slide the agent
-                                  // creates, at its creation moment.
-                                  onZoomToFrame={handleZoomToFrame}
+                                  // creates, at its creation moment. WI-153 P4 — the
+                                  // agent wrapper also switches the active page on
+                                  // page-bounded formats (hidden slides don't render).
+                                  onZoomToFrame={handleAgentZoomToFrame}
                                 />
                                 <CursorTooltipBridge
                                   hover={hoverContext}

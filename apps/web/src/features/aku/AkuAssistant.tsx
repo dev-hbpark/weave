@@ -41,6 +41,7 @@ export function AkuAssistant({
   designId,
   designLoaded,
   designInfo,
+  defaultAddContainerId,
   onFramesAdded,
   onZoomToFrame,
 }: {
@@ -53,6 +54,10 @@ export function AkuAssistant({
   /** Canvas px size + background from the Design view-model — passed to the
    *  agent per task so it can size text against the real canvas. */
   readonly designInfo: { width: number; height: number; background: string };
+  /** WI-153 P4 — host's default add container (= the ACTIVE PAGE id on
+   *  page-bounded formats, undefined on infinite canvas). Agent non-frame
+   *  root-adds are retargeted into it. */
+  readonly defaultAddContainerId?: string | undefined;
   /** WI-065 — fit the camera after the agent adds top-level frame(s). */
   readonly onFramesAdded?: (() => void) | undefined;
   /** WI-125 — center+fit a frame by id (DesignPage's zoom-to-frame). Used to fit
@@ -78,6 +83,8 @@ export function AkuAssistant({
   selRef.current = selectedIds;
   const designInfoRef = useRef(designInfo);
   designInfoRef.current = designInfo;
+  const defaultAddContainerIdRef = useRef(defaultAddContainerId);
+  defaultAddContainerIdRef.current = defaultAddContainerId;
 
   const { settings, setSetting } = useAkuSettings();
 
@@ -106,6 +113,7 @@ export function AkuAssistant({
     getDocument: () => docRef.current,
     getSelection: () => [...selRef.current],
     getDesignInfo: () => designInfoRef.current,
+    getDefaultAddContainerId: () => defaultAddContainerIdRef.current,
     designId,
     designLoaded,
     settings,

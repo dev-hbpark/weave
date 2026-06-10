@@ -46,6 +46,7 @@ import type {
 } from "../types.js";
 import { stampContainerGuard } from "./agent-container-guard.js";
 import { stampMinSizeGuard } from "./agent-min-size-guard.js";
+import { retargetAgentRootAdd } from "./agent-page-target.js";
 import { decideResume } from "./agent-resume.js";
 import { fixAgentTextBox } from "./agent-text-resize.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
@@ -249,6 +250,12 @@ export function useAkuAgent(deps: {
    *  size + background. Injected per task so the agent can size text (fontSize
    *  is absolute design-px) relative to the actual canvas. */
   readonly getDesignInfo?: () => { width: number; height: number; background: string };
+  /** WI-153 P4 (DR-111 D5) — host's default add container = the ACTIVE PAGE id on
+   *  page-bounded formats (slide-deck / doc-page), undefined on infinite canvas.
+   *  Agent root-adds of NON-frame kinds are retargeted into it (the root is page
+   *  chrome there — a leaf at the root would be invisible). Frame adds stay at the
+   *  root: a top-level frame IS a new slide. */
+  readonly getDefaultAddContainerId?: () => string | undefined;
   readonly designId: string;
   /** WI-065 — called after a turn that ADDED top-level frame(s), so the host can
    *  fit the camera to the new content (agent edits go straight through
@@ -414,9 +421,18 @@ export function useAkuAgent(deps: {
         //  • WI-147 — switch ON the command's min-size reject for agent adds only.
         //  • WI-150 — switch ON the command's container-is-frame reject (needs no
         //    design px, so it is stamped before the design-undefined early return).
+        //  • WI-153 P4 — retarget non-frame ROOT adds onto the active page on
+        //    page-bounded formats. Runs FIRST: fixAgentTextBox reads containerId
+        //    to pick free-vs-layout text sizing, so it must see the final target.
         transformInput: (commandName, input) => {
           const doc = depsRef.current.getDocument();
-          const sized = fixAgentTextBox(commandName, input, doc);
+          const targeted = retargetAgentRootAdd(
+            commandName,
+            input,
+            String(doc.root.id),
+            depsRef.current.getDefaultAddContainerId?.(),
+          );
+          const sized = fixAgentTextBox(commandName, targeted, doc);
           const guarded = stampContainerGuard(commandName, sized);
           const design = depsRef.current.getDesignInfo?.();
           if (design === undefined) return guarded;
@@ -700,6 +716,15 @@ export function useAkuAgent(deps: {
       const selected = depsRef.current.getSelection();
       const selectionLine =
         selected.length > 0 ? `\n\n[컨텍스트] 현재 선택된 아이템 id: ${selected.join(", ")}` : "";
+      // WI-153 P4 — page-bounded formats: tell the agent which page is active and
+      // that ROOT leaves are invisible there. The transformInput retarget
+      // (`retargetAgentRootAdd`) enforces this anyway; the line keeps the agent's
+      // mental model in sync so it places content deliberately, not by correction.
+      const activePage = depsRef.current.getDefaultAddContainerId?.();
+      const pageLine =
+        activePage !== undefined
+          ? `\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집 중이며 현재 활성 페이지 frame id는 ${activePage} 입니다. 새 콘텐츠(텍스트/도형/이미지 등)는 이 페이지(또는 그 안의 frame)를 containerId 로 지정해 넣으세요 — root 에 둔 leaf 는 화면에 보이지 않습니다. 새 페이지가 필요할 때만 root 에 kind:"frame" 을 추가하세요(최상위 frame = 새 슬라이드).`
+          : "";
       const primer = AKU_ABLATION.taskPrimer ? WEAVE_TASK_PRIMER : "";
       // [현재 테마] — off frees the agent to commit to the content's own palette.
       const themeLine = s.sendTheme ? currentThemeLine() : "";
@@ -740,7 +765,7 @@ export function useAkuAgent(deps: {
         intentPlan !== undefined
           ? composeIntentTask(intentPlan, depsRef.current.getDocument() as unknown as SigDocument)
           : "";
-      const task = `${primer}${designLine}${themeLine}${styleLine}${themeAdviceLine}${assetLines}${styleRefLines}${selectionLine}${intentBlock}\n\n${text}`;
+      const task = `${primer}${designLine}${pageLine}${themeLine}${styleLine}${themeAdviceLine}${assetLines}${styleRefLines}${selectionLine}${intentBlock}\n\n${text}`;
       const visionImages = styleRefImages.length > 0 ? [...images, ...styleRefImages] : images;
 
       try {

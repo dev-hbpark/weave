@@ -61,6 +61,7 @@ import { findFramesAtPoint, type LayerHit } from "../document/layer-picker/index
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../document/layout/registry.js";
 import { MarqueeSelectionLayer } from "../document/marquee/MarqueeSelectionLayer.js";
 import { clampFrameToPage, type PageClampSpec } from "../document/page-clamp.js";
+import { scopeDocumentToPages } from "../document/page-scope.js";
 import { snapRotation } from "../document/rotation-snap.js";
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
 import { RubberBandLayer } from "../document/rubber-band/RubberBandLayer.js";
@@ -258,6 +259,17 @@ export function FrameStage(props: FrameStageProps) {
   // we are page-scoped and which page is active without rebuilding the access.
   const visibleFrameIdsRef = useRef(visibleFrameIds);
   visibleFrameIdsRef.current = visibleFrameIds;
+  // WI-153 P4 — page-bounded: a rubber-band / marquee may not START on the
+  // MATTE (outside the design plane = outside the page; the matte is not an
+  // editing surface — a matte rubber band would fall back to a stray ROOT
+  // frame, i.e. an accidental new page). Infinite canvas → always true
+  // (drag-to-add anywhere, unchanged). Ref-based so the stable gesture
+  // bindings observe the live policy without re-registering.
+  const acceptWithinPage = useCallback((target: Element): boolean => {
+    if (visibleFrameIdsRef.current === undefined) return true;
+    const plane = designPlaneRef.current;
+    return plane === null || plane.contains(target);
+  }, []);
   // WI-033 P2 — `reduceMotion` useMemo removed alongside the drill-in
   // spring animation. The design plane now snaps to base camera
   // synchronously on resize, which already honours the user's
@@ -1093,6 +1105,10 @@ export function FrameStage(props: FrameStageProps) {
               snapSize: 20,
               name: "rubber-band:design-root",
             }),
+            // WI-153 P4 — page-bounded: no Alt-rubber-band start on the matte
+            // (would create a stray root frame = accidental page). Infinite
+            // canvas → predicate always passes ("draw anywhere", unchanged).
+            acceptTarget: acceptWithinPage,
           });
     // WI-040 — frame-move excluded outside idle / frame-manipulating so
     // hand/panning, context-menu (LayerPicker open), text-editing, and
@@ -1655,6 +1671,9 @@ export function FrameStage(props: FrameStageProps) {
               // pointer flow; the marquee (and the alt-rubber-band downstream)
               // must not start under any of those modes.
               if (!selectionAllowedOuter) return false;
+              // WI-153 P4 — page-bounded: no marquee/rubber-band start on the
+              // matte (outside the page). Infinite canvas → always passes.
+              if (!acceptWithinPage(target)) return false;
               if (!(target instanceof HTMLElement)) return true;
               // WI-034 — frame body 의 빈 영역도 OK. RubberBand 의
               // commit adapter (`adaptWeaveCapabilityToAgocraft`) 가
@@ -1681,8 +1700,11 @@ export function FrameStage(props: FrameStageProps) {
                 containerSize={{ width: designWidth, height: designHeight }}
                 clientToLocal={clientToDesignLocal}
                 getFrames={() =>
-                  root.children
-                    .filter(isDomainItem)
+                  // WI-153 P4 — `frames` (not raw root.children): page-bounded
+                  // stacks hidden FULL_FRAME pages at the same coords; a marquee
+                  // hit-testing the raw doc would scoop invisible pages into the
+                  // selection. Infinite canvas → frames === all top frames.
+                  frames
                     // WI-039 — focus-gate parity with single-click. A dimmed
                     // (stage 1) or isolated (stage 2) frame carries
                     // pointer-events:none, so a click never lands on it; the
@@ -1742,8 +1764,12 @@ export function FrameStage(props: FrameStageProps) {
                   editor={editor}
                   // WI-034 — adapter 의 deepest-frame hit-test 가 live
                   // doc snapshot read. docRef 의 mutation 은 docInAgocraft
-                  // 의 매 render assignment.
-                  getDocument={() => docRef.current}
+                  // 의 매 render assignment. WI-153 P4 — page-bounded 에서는
+                  // hidden 페이지(같은 좌표에 쌓인 FULL_FRAME)와 그 subtree 가
+                  // hit-test 를 가로채지 않도록 보이는 페이지로 스코프.
+                  getDocument={() =>
+                    scopeDocumentToPages(docRef.current, visibleFrameIdsRef.current)
+                  }
                   snapSize={20}
                   clientToLocal={clientToDesignLocal}
                   visualHost={designPlaneRef}

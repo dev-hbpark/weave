@@ -1,6 +1,6 @@
 # WI-153 — 타입별 편집화면 + 프레젠테이션/문서 page-bounded(캔바식) 편집
 
-Status: **In Progress** (P1·P2.1·P2.2·P2.5·P3 완료 + P4 hover 억제 선행 · 다음: P4 추가/에이전트 흐름)
+Status: **In Progress** (P1·P2.1·P2.2·P2.5·P3·P4 완료 · 다음: P5 생성/크롬 + 발표·출력 클립 정합)
 Owner: hbpark
 Updated: 2026-06-10
 
@@ -47,6 +47,8 @@ Updated: 2026-06-10
 
 ## 다음 액션
 
-P4 추가/에이전트 흐름 — 드래그-드롭(onDropAdd)·러버밴드·Aku 추가가 활성 페이지 타깃,
-`config.agentRootAdd === false`로 에이전트 root 배치 금지(WI-150 가드 결합). 진행 로그는
-엔지니어링 플랜 참조 (P3까지 완료: 한 페이지 캔버스 + 매트 + 클립 + 소속 + 소프트 클램프).
+P5 생성/크롬 + 발표·출력 클립 정합 — 마법사 "프레젠테이션" 부각, 툴바 슬림화, Present/Export
+클립을 편집과 일치(WYSIWYG). 진행 로그는 엔지니어링 플랜 참조 (P4까지 완료: 드롭/에이전트
+retarget + 러버밴드·마퀴 페이지 스코프 + 매트 시작 차단 + 에이전트 줌 페이지 전환.
+설계 노트: `agentRootAdd` 레지스트리 필드는 추가하지 않음 — `defaultContainer`와 항상 일치하는
+죽은 설정이라 순수 변환 `retargetAgentRootAdd`가 `defaultContainer` 정책을 직접 따름).

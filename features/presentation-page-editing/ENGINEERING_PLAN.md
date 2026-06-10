@@ -119,3 +119,27 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
 - **P4 선행 — phantom hover 억제**: 레일이 모든 페이지에 `data-frame-kind`를 게시 → 비활성 페이지 hover가
   `frameHoverStore`로 투영되던 것을 `visibleFrameIds` 기반 차단. SVL(스토어 직접 관찰): 비활성 레일
   hover=null, 활성 레일/캔버스 hover=정상.
+- **P4 완료 — 추가/에이전트 흐름 (D5/P4)**:
+  - ① 드롭 retarget: DesignPage `onDropAdd`가 stage 매트 드롭(containerId=root)을
+    `defaultAddContainerIdRef`(활성 페이지)로 retarget. 명시적 프레임 타깃 드롭은 불변.
+  - ② 에이전트 retarget + 프롬프트: 순수 변환 `agent-page-target.ts`(`retargetAgentRootAdd`) —
+    `weave.item.add`의 non-frame leaf가 root(생략 포함)를 향하면 활성 페이지로 rewrite, `kind:"frame"`은
+    면제(최상위 frame = 새 슬라이드). transformInput 파이프라인 **최선두**에서 실행(후속
+    fixAgentTextBox가 containerId를 읽어 free-vs-layout 텍스트 크기를 결정하므로 순서 중요) →
+    fixAgentTextBox → WI-150 containerGuard → WI-147 minSizeGuard. dep `getDefaultAddContainerId`는
+    depsRef 규율(DR-030) 준수. 제출 시 per-task `[페이지 편집]` 프롬프트 라인(활성 페이지 id + root leaf
+    금지 안내) — 변환이 정합성을 강제하고 프롬프트는 멘탈모델 동기화(심층 방어).
+    **설계 노트**: 플랜 스케치의 `agentRootAdd` 레지스트리 필드는 추가하지 않음 — 항상
+    `defaultContainer === "active-page"`와 일치해야 하는 죽은 설정(P3 ②와 동일 근거).
+  - ③ 에이전트 줌 래퍼: `handleAgentZoomToFrame` — 에이전트 작업 카메라(WI-126)가 향하는 frame이
+    `presentationOrder` 멤버일 때만 `setActivePageId`(비페이지 id는 resolveActivePage가 page 1로
+    폴백하므로 멤버십 가드 필수) 후 줌. ThumbnailPanel은 기존 `handleZoomToFrame` 유지.
+  - ④ 러버밴드 페이지 스코프: `page-scope.ts`(`scopeDocumentToPages`, 유닛 4건)로 RubberBandLayer
+    `getDocument`를 visible 페이지로 스코프 — hit-test가 deepest-first 정렬이라 숨은 스택 페이지의
+    중첩 프레임이 가로채던 실버그 수정. 매트에서의 alt-drag 시작은 `acceptWithinPage`(outer
+    alt-override `acceptTarget` + `emptyRegionAccept`)로 차단 — 우발적 root 프레임(=새 페이지) 생성 방지.
+  - ⑤ 마퀴 스코프: MarqueeSelectionLayer `getFrames`도 동일 스코프 — 전체 휩쓸기가 숨은 페이지를
+    선택에 끌어들이지 않음.
+  - SVL 9/9: 매트 드롭→활성 페이지(루트 자식 불변), 2페이지 스택에서 러버밴드 커밋→활성 page2(p1
+    불변), 매트 alt-drag 무반응(팝오버/새 프레임 0), 마퀴가 숨은 page1 미선택, mixed 매트 드롭은
+    여전히 root(회귀 0). 유닛 926/926(신규 agent-page-target 8 + page-scope 4) · gates green.
