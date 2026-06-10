@@ -52,15 +52,15 @@ export async function prepareDesign(
     online = false,
   }: PrepareOptions = {},
 ): Promise<string> {
-  // The e2e dev server is plain `vite` (`pnpm dev`), which does NOT serve the
-  // `apps/web/api/*` Vercel functions. So the online persistence path
-  // (`saveDesign` → fire-and-forget `/api` push) 404s and a freshly-created
-  // design — including the wizard's flavor seed — is never retrievable, so
-  // `useDesign` loads an empty document. Forcing the session offline routes
-  // `saveDesign` through localStorage (which `useDesign` reads first), so the
-  // seed survives the navigate-to-/design/:id round-trip. This overrides only
-  // the `navigator.onLine` getter — real network (the Vite bundle) still
-  // loads. Test-only; production storage behavior is untouched.
+  // WI-154 — the wizard now hands the created Design to the editor in
+  // memory (`new-design-handoff.ts`), so the flavor seed survives the
+  // navigate-to-/design/:id round-trip regardless of network state; the
+  // offline forcing below is no longer needed for that. It is KEPT as the
+  // default because the e2e dev server is plain `vite` (no `apps/web/api/*`
+  // Vercel functions) — staying "offline" routes persistence through
+  // localStorage and keeps specs isolated from fire-and-forget `/api` noise.
+  // This overrides only the `navigator.onLine` getter — real network (the
+  // Vite bundle) still loads. Test-only.
   if (!online) {
     await page.addInitScript(() => {
       Object.defineProperty(window.navigator, "onLine", {
@@ -103,14 +103,12 @@ export async function prepareDesign(
   // us from 11 → 15 group fails).
   await page.waitForLoadState("networkidle");
   if (!online) {
-    // Forcing offline routes the new design through localStorage, so on the
-    // design page `useDesign` opens it as a "local" source and raises the
-    // offline-reconcile dialog (`LocalDesignConflictDialog`). Resolve it via
-    // "save": with no API served the cloud round-trip fails, which releases
-    // the dialog and KEEPS the current (seeded) design loaded — see
-    // `resolveLocalConflict("save")` in use-design.ts. ("discard" would fetch
-    // the absent server copy and blank the canvas.) The dialog blocks all
-    // implicit dismissal, so an explicit action is required.
+    // WI-154 — a fresh create now opens via the in-memory handoff ("fresh"
+    // source), which never raises the offline-reconcile dialog. This block
+    // stays as a safety net for the residual path (e.g. a spec that reopens
+    // the design in the same session after the handoff was committed): a
+    // "local" LS open raises `LocalDesignConflictDialog`; resolve via "save",
+    // which KEEPS the current design loaded when no API is served.
     const conflict = page.getByTestId("local-conflict-dialog");
     if (await conflict.isVisible().catch(() => false)) {
       await page.getByTestId("local-conflict-save").click();

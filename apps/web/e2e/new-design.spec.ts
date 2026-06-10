@@ -32,15 +32,19 @@ test("landing → wizard → editor → add frames via toolbar", async ({ page }
   // slide-deck flavor seeds one slide on creation.
   await expect(page.locator('[data-testid="frame-block"]')).toHaveCount(1);
 
-  // Add another Slide via the editor API (rubber-band gesture is the user-facing path).
+  // WI-153 P2.1 — slide-deck is page-bounded: the canvas renders ONE page
+  // (the active one) at a time, so adding top-level frames grows the
+  // thumbnail rail, not the on-canvas frame count.
   await addFrame(page, "slide");
-  await expect(page.locator('[data-testid="frame-block"]')).toHaveCount(2);
+  await expect(page.locator('[data-testid="thumbnail-1"]')).toBeVisible();
+  await expect(page.locator('[data-testid="frame-block"]')).toHaveCount(1);
 
   // Add a Canvas frame (Phase 11: every domain is a Frame). WI-032 Phase 3
   // — canvas-design also resolves to `frame` via helpers.ts mapping; the
-  // tree now has 3 frames in total (1 wizard seed + 2 added).
+  // tree now has 3 top-level frames = 3 rail pages (1 wizard seed + 2 added).
   await addFrame(page, "canvas-design");
-  await expect(page.locator('[data-testid="frame-block"]')).toHaveCount(3);
+  await expect(page.locator('[data-testid="thumbnail-2"]')).toBeVisible();
+  await expect(page.locator('[data-testid="frame-block"]')).toHaveCount(1);
 });
 
 // WI-032 Phase 3c — toolbar-undo 버튼 클릭이 30s timeout (group 실행 시

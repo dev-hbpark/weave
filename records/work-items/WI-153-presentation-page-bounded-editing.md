@@ -1,8 +1,11 @@
 # WI-153 — 타입별 편집화면 + 프레젠테이션/문서 page-bounded(캔바식) 편집
 
-Status: **Planned** (기획·결정 확정 · P1 착수 예정)
+Status: **In Progress** (P1·P2.1·P2.2 완료 · P2.5/P3/P4 일부 작업 중)
 Owner: hbpark
 Updated: 2026-06-10
+
+> ⚠️ 2026-06-10 — "slide-deck 생성해도 mixed와 차이 없음" 보고는 본 WI의 결함이 아니라 생성→열기
+> 핸드오프 리그레션이 page-bounded 편집을 가린 것. [WI-154](WI-154-new-design-create-handoff.md)에서 수정.
 관련: [FR-024](../feasibility-reviews/FR-024-presentation-page-bounded-editing.md) · [DR-111](../decisions/DR-111-format-editor-config-and-page-bounds.md) · 엔지니어링 플랜 `features/presentation-page-editing/ENGINEERING_PLAN.md` · 리스크 `features/presentation-page-editing/RISK_NOTES.md` · 연동 [WI-150](WI-150-agent-container-is-frame-guard.md)(에이전트 컨테이너=프레임 가드)
 
 ## Problem (사용자 요청)

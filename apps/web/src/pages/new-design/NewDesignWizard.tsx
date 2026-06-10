@@ -26,6 +26,7 @@ import {
 import { type ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { addChild, toAgocraftItem } from "../../document/agocraft-mirror.js";
+import { stashNewDesign } from "../../document/new-design-handoff.js";
 import { createDefaultItem } from "../../document/seed.js";
 import { createBlankDesign, saveDesign } from "../../document/storage.js";
 import {
@@ -107,7 +108,14 @@ export function NewDesignWizard({ open, onOpenChange }: NewDesignWizardProps) {
       const agoItem = toAgocraftItem(weaveItem, now);
       document = addChild(blank.document, agoItem);
     }
-    saveDesign({ ...blank, document });
+    const created = { ...blank, document };
+    // WI-154 — hand the created Design to the editor open directly. While
+    // online, `saveDesign` only fires a fire-and-forget cloud POST (no LS
+    // write under the offline-first model), so the /design/:id open below
+    // raced that POST and fell back to a blank "mixed" placeholder —
+    // dropping the chosen flavor / title / flavor-seeded first page.
+    stashNewDesign(created);
+    saveDesign(created);
     onOpenChange(false);
     navigate(`/design/${id}`);
   };

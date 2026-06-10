@@ -20,6 +20,7 @@ import {
 } from "./agocraft-mirror.js";
 import { fetchDesignCloud } from "./cloud-sync.js";
 import { rehydrateDocumentFonts } from "./fonts/rehydrate.js";
+import { clearNewDesign, peekNewDesign } from "./new-design-handoff.js";
 import { createDefaultItem } from "./seed.js";
 import {
   cacheDesignLocally,
@@ -150,14 +151,25 @@ function withDocument(design: Design, document: AgocraftDocument): Design {
  *     raises the reconcile prompt (it is not an unsynced edit).
  *   • "blank" — no local copy. The returned Design is a blank placeholder
  *     and the host fetches the authoritative copy from the cloud (or
- *     keeps the blank for a brand-new design the cloud doesn't have yet). */
+ *     keeps the blank for a brand-new design the cloud doesn't have yet).
+ *   • "fresh" — WI-154: the wizard just created this design and handed it
+ *     over in memory (one-shot stash). Painted as-is: no reconcile prompt
+ *     (nothing to reconcile against) and no mount-time cloud fetch (the
+ *     wizard's POST may still be in flight; fetching would race it and
+ *     overwrite the seeded design with a blank). */
 function initialDesign(
   id: string,
   preferCloud: boolean,
 ): {
   readonly design: Design;
-  readonly source: "local" | "cache" | "blank";
+  readonly source: "local" | "cache" | "blank" | "fresh";
 } {
+  // WI-154 — a just-created design is handed over in memory by the wizard;
+  // it is fresher than anything LS or the cloud can have. Peek only — the
+  // stash is cleared by a mount effect in `useDesign` (render runs twice
+  // under StrictMode; a render-phase consume would starve the second pass).
+  const fresh = peekNewDesign(id);
+  if (fresh !== undefined) return { design: fresh, source: "fresh" };
   const local = loadDesign(id);
   if (local !== undefined) return { design: local, source: "local" };
   // Present mode falls back to the last cloud copy mirrored locally so a
@@ -186,7 +198,7 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
   const preferCloud = opts.preferCloud ?? false;
   const initial = useRef<{
     readonly design: Design;
-    readonly source: "local" | "cache" | "blank";
+    readonly source: "local" | "cache" | "blank" | "fresh";
   }>();
   if (initial.current === undefined) initial.current = initialDesign(id, preferCloud);
   const [design, setDesign] = useState<Design>(initial.current.design);
@@ -215,6 +227,14 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
   // overwrite the server version before the user picks save/discard).
   const localConflictRef = useRef<boolean>(localConflict);
   localConflictRef.current = localConflict;
+
+  // WI-154 — commit the fresh-create handoff once mounted. Render-phase
+  // reads only peek (StrictMode double-render); clearing here makes the
+  // stash one-shot so a later reopen resolves through LS → cloud instead
+  // of a stale seed. Idempotent — safe under StrictMode's effect re-run.
+  useEffect(() => {
+    if (initial.current?.source === "fresh") clearNewDesign(id);
+  }, [id]);
 
   // Cloud fetch on mount. Fires when there's no local copy ("blank" path) —
   // the cloud is authoritative, so a reopened design picks up edits saved
