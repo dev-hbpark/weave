@@ -8,35 +8,41 @@ import { clearAllDesigns, prepareDesign } from "./helpers.js";
 // PAGE_MIN_OVERLAP_DESIGN_PX = 48 → minX ratio = 48 / designWidth(1920).
 const MIN_X = 48 / 1920;
 
-/** Seed two 0.2×0.2 shapes (x=0.1 / x=0.6) as direct children of the active
- *  page; returns their ids ordered left→right. */
-async function seedTwoShapes(page: Page): Promise<{ idA: string; idB: string }> {
-  const pre = await page.evaluate(() => {
-    type Node = {
-      id: string | number;
-      kind: string;
-      attrs: { frame?: { x: number } };
-      children: ReadonlyArray<Node>;
-    };
-    type W = {
-      __weaveDoc?: { root: Node };
-      __weaveEditor?: { exec: (name: string, input: unknown) => unknown };
-    };
-    const w = window as unknown as W;
-    const pageItem = w.__weaveDoc?.root.children.find((c) => c.kind === "frame");
-    if (pageItem === undefined) throw new Error("no page frame");
-    const pageId = String(pageItem.id);
-    const before = pageItem.children.map((c) => String(c.id));
-    const mk = (x: number) =>
-      w.__weaveEditor?.exec("weave.item.add", {
-        kind: "shape",
-        containerId: pageId,
-        frame: { x, y: 0.4, width: 0.2, height: 0.2, rotation: 0 },
-      });
-    mk(0.1);
-    mk(0.6);
-    return { pageId, before };
-  });
+/** Seed two 0.2×0.2 shapes (x=0.1 / x=0.6, optional per-shape rotation in
+ *  radians) as direct children of the active page; ids ordered left→right. */
+async function seedTwoShapes(
+  page: Page,
+  rotations: readonly [number, number] = [0, 0],
+): Promise<{ idA: string; idB: string }> {
+  const pre = await page.evaluate(
+    ({ rotations }) => {
+      type Node = {
+        id: string | number;
+        kind: string;
+        attrs: { frame?: { x: number } };
+        children: ReadonlyArray<Node>;
+      };
+      type W = {
+        __weaveDoc?: { root: Node };
+        __weaveEditor?: { exec: (name: string, input: unknown) => unknown };
+      };
+      const w = window as unknown as W;
+      const pageItem = w.__weaveDoc?.root.children.find((c) => c.kind === "frame");
+      if (pageItem === undefined) throw new Error("no page frame");
+      const pageId = String(pageItem.id);
+      const before = pageItem.children.map((c) => String(c.id));
+      const mk = (x: number, rotation: number) =>
+        w.__weaveEditor?.exec("weave.item.add", {
+          kind: "shape",
+          containerId: pageId,
+          frame: { x, y: 0.4, width: 0.2, height: 0.2, rotation },
+        });
+      mk(0.1, rotations[0]);
+      mk(0.6, rotations[1]);
+      return { pageId, before };
+    },
+    { rotations },
+  );
   // __weaveDoc is a React-state snapshot — wait for the adds to publish.
   await page.waitForFunction(
     ({ pageId, n }) => {
@@ -147,4 +153,47 @@ test("multi-select drag clamps the GROUP rigidly — gap preserved, no member lo
   expect(a.x).toBeLessThan(0); // clamp actually engaged (bleed happened)
   // ...and no member is fully off-page (D5 per item).
   expect(b.x + b.width).toBeGreaterThanOrEqual(MIN_X - 1e-6);
+});
+
+test("rotated item drag clamps at its visual-AABB limit (WI-160)", async ({ page }) => {
+  await prepareDesign(page, { flavor: "slide-deck" });
+  // A is rotated 90°: its visual AABB on a 16:9 page is (0.2/aspect) wide,
+  // centered on the frame center. Previously rotated items were skipped
+  // entirely (could be dragged fully off-page and lost).
+  const { idA, idB } = await seedTwoShapes(page, [Math.PI / 2, 0]);
+  const ASPECT = 1920 / 1080;
+  const AABB_W = 0.2 / ASPECT; // 0.1125
+  // Pin: AABB right edge = MIN_X → frame.x = MIN_X - AABB_W/2 - width/2 - …
+  // (center preserved: cx = x + 0.1, aabb spans cx ± AABB_W/2).
+  const LEFT_PIN_X = MIN_X - AABB_W / 2 - 0.1;
+
+  await dragX(page, idA, -2500);
+  const a = await readX(page, idA);
+  expect(a.x).toBeCloseTo(LEFT_PIN_X, 6);
+  expect((await readX(page, idB)).x).toBeCloseTo(0.6, 6);
+
+  // Undo back to the start (a long drag spans several history merge windows).
+  for (let i = 0; i < 30; i++) {
+    if (Math.abs((await readX(page, idA)).x - 0.1) < 1e-6) break;
+    await page.keyboard.press("ControlOrMeta+z");
+    await page.waitForTimeout(100);
+  }
+  expect((await readX(page, idA)).x).toBeCloseTo(0.1, 6);
+
+  // Group drag: the rotated member CONTRIBUTES its AABB constraint now —
+  // it binds before the plain member and the group stays rigid.
+  await page.evaluate(
+    ({ idA, idB }) => {
+      const w = window as unknown as {
+        __weaveVm?: { itemSelection: { setMany: (ids: Iterable<string>) => void } };
+      };
+      w.__weaveVm?.itemSelection.setMany([idA, idB]);
+    },
+    { idA, idB },
+  );
+  await dragX(page, idB, -1500);
+  const ga = await readX(page, idA);
+  const gb = await readX(page, idB);
+  expect(ga.x).toBeCloseTo(LEFT_PIN_X, 6); // rotated member binds at its AABB limit
+  expect(gb.x - ga.x).toBeCloseTo(0.5, 6); // rigid
 });

@@ -66,6 +66,7 @@ import {
   clampSharedDelta,
   type PageClampSpec,
   type RatioBox,
+  rotatedAabb,
 } from "../document/page-clamp.js";
 import { scopeDocumentToPages } from "../document/page-scope.js";
 import { snapRotation } from "../document/rotation-snap.js";
@@ -745,7 +746,8 @@ export function FrameStage(props: FrameStageProps) {
   onSelectRef.current = onSelect;
   const moveSelectionSessionRef = useRef<string | null>(null);
   // WI-159 — multi-select GROUP min-overlap. Gesture-start boxes
-  // (parent-ratio units) of the moving PAGE-DIRECT non-rotated members,
+  // (parent-ratio units) of the moving PAGE-DIRECT members (rotated members
+  // as their visual AABB — WI-160),
   // captured by the frameMoveSnap wrapper below (snap.begin is the one host
   // seam that learns the gesture's TRUE target set before the first
   // computeMove; selection state alone would mis-fire on the modified
@@ -983,8 +985,8 @@ export function FrameStage(props: FrameStageProps) {
         // item is a direct child of the active page (page-bounded formats
         // only). Bleed stays allowed; at least the spec's min overlap must
         // remain on-page so an item can never be dragged fully off and lost.
-        // Rotated boxes are skipped (DR-111 "비회전 우선"); snap runs BEFORE
-        // computeMove in the move binding, so the clamp has the last word.
+        // Snap runs BEFORE computeMove in the move binding, so the clamp has
+        // the last word.
         const clampSpec = (parent as { __pageClamp?: PageClampSpec }).__pageClamp;
         if (clampSpec !== undefined) {
           // WI-159 — multi-select drag: clamp the SHARED delta once against
@@ -994,9 +996,7 @@ export function FrameStage(props: FrameStageProps) {
           // end fully off-page. Every member gets identical inputs — same
           // member set (captured at gesture start), same parent dims (same
           // page element), same viewport delta — so each independently
-          // computes the identical clamped delta. Rotated members ride along
-          // rigidly but contribute no constraint (existing rotation-skip
-          // stance; 회전 정합 is a later slice).
+          // computes the identical clamped delta.
           const groupMembers = pageMoveGroupRef.current;
           if (groupMembers !== undefined) {
             const cd = clampSharedDelta(groupMembers, nx - o.x, ny - o.y, clampSpec);
@@ -1009,6 +1009,16 @@ export function FrameStage(props: FrameStageProps) {
             );
             nx = c.x;
             ny = c.y;
+          } else {
+            // WI-160 — rotated single drag: clamp the delta so the item's
+            // rotated visual AABB keeps min overlap (rotation mixes the axes
+            // in pixel space → the parent's px aspect converts back to ratio
+            // units; w/h are the page element's dims captured by
+            // parentRectOf). The rotation-skip stance is retired.
+            const aabb = rotatedAabb(o, w / h);
+            const cd = clampSharedDelta([aabb], nx - o.x, ny - o.y, clampSpec);
+            nx = o.x + cd.dx;
+            ny = o.y + cd.dy;
           }
         }
         return {
@@ -1151,12 +1161,14 @@ export function FrameStage(props: FrameStageProps) {
   );
   // WI-159 — wrap the snap so `begin` (fired by the move binding at the drag
   // threshold, BEFORE the first computeMove, with the gesture's true moving
-  // set) captures the moving PAGE-DIRECT non-rotated members' boxes into
+  // set) captures the moving PAGE-DIRECT members' boxes into
   // `pageMoveGroupRef`; `end` (guaranteed on pointer-up and cancel) clears it.
   // Page-direct = the same DOM predicate `parentRectOf` uses for `__pageClamp`
   // (nearest frame ancestor is the active page), so exactly the members that
   // computeMove will clamp contribute constraints. Frames are read from the
   // live doc — still at their gesture-start values here (no commit has run).
+  // WI-160: rotated members contribute their rotated visual AABB (aspect from
+  // the page element's px rect — all members share the one active page).
   const frameMoveSnap = useMemo<FrameMoveSnap>(
     () => ({
       begin(primaryItemId, movingItemIds) {
@@ -1170,15 +1182,20 @@ export function FrameStage(props: FrameStageProps) {
           typeof document !== "undefined"
         ) {
           const boxes: RatioBox[] = [];
+          let pageAspect: number | undefined;
           for (const id of movingItemIds) {
             const el = document.querySelector(`[data-frame-id="${CSS.escape(String(id))}"]`);
-            const pageId = el?.parentElement
-              ?.closest("[data-frame-id]")
-              ?.getAttribute("data-frame-id");
+            const pageEl = el?.parentElement?.closest("[data-frame-id]");
+            const pageId = pageEl?.getAttribute("data-frame-id");
             if (pageId === null || pageId === undefined || !pages.has(pageId)) continue;
             const frame = (findItemDeep(d, String(id))?.attrs as { frame?: ItemFrame } | undefined)
               ?.frame;
-            if (frame !== undefined && (frame.rotation ?? 0) === 0) boxes.push(frame);
+            if (frame === undefined) continue;
+            if (pageAspect === undefined && pageEl !== null && pageEl !== undefined) {
+              const r = pageEl.getBoundingClientRect();
+              pageAspect = r.height > 0 ? r.width / r.height : 1;
+            }
+            boxes.push(rotatedAabb(frame, pageAspect ?? 1));
           }
           if (boxes.length > 0) pageMoveGroupRef.current = boxes;
         }

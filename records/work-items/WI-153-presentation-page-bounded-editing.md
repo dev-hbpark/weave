@@ -60,4 +60,7 @@ P1~P5 전부 완료 (P5: 마법사 "Presentation" 카피 + 툴바는 기존 게�
 - ~~**멀티셀렉트 그룹 단위 min-overlap**~~ — **완료, [WI-159](WI-159-group-min-overlap.md)**
   (공유 델타를 멤버 허용 구간 교집합으로 1회 클램프 → 강체 평행이동 + per-member D5 유지;
   벤더 비접촉 — `snap.begin` 시임).
-- 회전 박스 경계 정합, doc-page 전용 툴바 분리 여부.
+- ~~**회전 박스 경계 정합**~~ — **완료, [WI-160](WI-160-rotated-box-page-clamp.md)**
+  (회전 AABB(`rotatedAabb`, 부모 종횡비 반영) 기준 델타 클램프 — 단일·그룹 모두; "비회전
+  우선" stance 종료. AABB 근사 한계는 WI-160에 문서화).
+- doc-page 전용 툴바 분리 여부.

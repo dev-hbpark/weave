@@ -210,3 +210,16 @@ const FORMAT_EDITOR_CONFIG: Record<DocFlavor, FormatEditorConfig> = { ... };
     단일 id만 전달 → 자동 미발동.
   - 검증: 유닛 960/960(`clampSharedDelta` 5건 추가) · gates green · SVL 10/10(삭제) · e2e
     2건(`page-group-clamp.spec.ts` — P3 단일 + WI-159 그룹, P3 첫 영구 e2e) — 상세 WI-159.
+- **후속 — 회전 박스 경계 정합 완료 (P3 잔여, WI-160)**:
+  - 문제: P3/WI-159 클램프가 회전 아이템을 스킵("비회전 우선") → 회전 아이템은 페이지 밖으로
+    완전히 드래그 가능(D5 위반 — page clip 때문에 보이지도 클릭되지도 않음).
+  - 해법: 순수 `rotatedAabb(frame, aspect)` (page-clamp.ts) — 회전체의 **비율 공간 시각
+    AABB**. 비율 공간은 축별 정규화인데 회전은 px 공간에서 축을 섞으므로 부모 종횡비가
+    필수(`aabbW = w|cos| + (h/aspect)|sin|`, 중심 보존). 단일 드래그: computeMove 회전 분기가
+    AABB를 멤버 1개로 `clampSharedDelta`(aspect = parent rect px). 그룹: WI-159 snap.begin
+    캡처가 회전 멤버를 스킵하지 않고 AABB로 기여(aspect = 페이지 DOM rect, 1회).
+  - 수용 근사(레코드 문서화): AABB overlap은 실픽셀 overlap의 상한 — 45° 대각 코너 케이스에서
+    48px 미만 실픽셀 가능. 이전(클램프 전무)보다 엄밀히 개선 + 축정렬 회전 정확 + 셀렉션
+    크롬은 body 포털이라 항상 회수 가능.
+  - 검증: 유닛 969/969(`rotatedAabb` 7건 추가) · gates green · SVL 8/8(삭제 — 좌/우 핀
+    공식값 정확 일치) · e2e 3건(`page-group-clamp.spec.ts` 회전 케이스 추가) — 상세 WI-160.

@@ -7,8 +7,9 @@
 // parent-ratio units) must remain inside the page box [0,1]×[0,1].
 //
 // Pure math — the caller (FrameStage's `computeMove`) decides WHEN it applies
-// (page-bounded format + direct child of the active page + rotation 0; rotated
-// boxes are skipped per DR-111 "비회전 우선").
+// (page-bounded format + direct child of the active page). Rotated items clamp
+// against their rotated visual AABB (`rotatedAabb`, WI-160) — the original
+// rotation-skip stance (DR-111 "비회전 우선") is retired.
 
 export interface PageClampSpec {
   /** Minimum on-page overlap along X, as a ratio of the parent width (0..1). */
@@ -106,5 +107,49 @@ export function clampSharedDelta(
       dy,
       spec.minY,
     ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// WI-160 — rotated visual AABB (회전 박스 경계 정합).
+//
+// A rotated item's visual boundary is the axis-aligned bounding box of its
+// ROTATED rect, not the unrotated frame box. Clamping the frame box would
+// mis-judge on-page-ness for wide rotations (e.g. a long text rotated 90°).
+// Ratio space is normalized PER AXIS, while rotation mixes the axes in PIXEL
+// space — so the parent's aspect ratio is required to express the AABB back
+// in ratio units. The center is rotation-invariant and preserved.
+//
+// Accepted approximation (documented in WI-160): AABB overlap is an upper
+// bound on true visible-pixel overlap — at 45° the AABB corners hold no
+// content, so a diagonal corner-escape can keep less than `min` real pixels
+// on-page. Strictly better than the previous no-clamp (full loss possible);
+// exact at axis-aligned rotations; selection chrome is body-portaled and
+// never clipped, so the item stays recoverable regardless.
+
+/** AABB (ratio units) of `frame` rotated by `frame.rotation` RADIANS about its
+ *  center, inside a parent whose pixel aspect ratio (width/height) is
+ *  `aspect`. Rotation 0 (or unset) returns the frame box unchanged. */
+export function rotatedAabb(
+  frame: RatioBox & { readonly rotation?: number },
+  aspect: number,
+): RatioBox {
+  const theta = frame.rotation ?? 0;
+  if (theta === 0) {
+    const { x, y, width, height } = frame;
+    return { x, y, width, height };
+  }
+  const a = aspect > 0 ? aspect : 1;
+  const cos = Math.abs(Math.cos(theta));
+  const sin = Math.abs(Math.sin(theta));
+  // Pixel space (parent = a × 1): wPx = width·a, hPx = height·1.
+  // AABB_px = (wPx·cos + hPx·sin, hPx·cos + wPx·sin); back to ratio (÷a, ÷1).
+  const width = frame.width * cos + (frame.height / a) * sin;
+  const height = frame.height * cos + frame.width * a * sin;
+  return {
+    x: frame.x + frame.width / 2 - width / 2,
+    y: frame.y + frame.height / 2 - height / 2,
+    width,
+    height,
   };
 }

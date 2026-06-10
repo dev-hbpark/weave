@@ -1,7 +1,7 @@
 // WI-153 P3 / DR-111 D6 — soft min-overlap clamp math.
 
 import { describe, expect, it } from "vitest";
-import { clampAxis, clampFrameToPage, clampSharedDelta } from "./page-clamp.js";
+import { clampAxis, clampFrameToPage, clampSharedDelta, rotatedAabb } from "./page-clamp.js";
 
 describe("clampAxis (min-overlap with [0,1])", () => {
   it("leaves a fully on-page position untouched", () => {
@@ -107,5 +107,71 @@ describe("clampSharedDelta", () => {
     const dRight = clampSharedDelta([a, tiny], 2, 0, spec);
     // tiny: upper = 1 - 0.02 - 0.5 = 0.48; a's = 0.85 → tiny binds.
     expect(dRight.dx).toBeCloseTo(0.48);
+  });
+});
+
+// WI-160 — rotated visual AABB (회전 박스 경계 정합).
+
+describe("rotatedAabb", () => {
+  const f = { x: 0.1, y: 0.4, width: 0.2, height: 0.2 };
+
+  it("rotation 0 / unset returns the frame box unchanged", () => {
+    expect(rotatedAabb({ ...f, rotation: 0 }, 16 / 9)).toEqual(f);
+    expect(rotatedAabb(f, 16 / 9)).toEqual(f);
+  });
+
+  it("π (180°) is the identity up to float noise", () => {
+    const r = rotatedAabb({ ...f, rotation: Math.PI }, 16 / 9);
+    expect(r.x).toBeCloseTo(f.x);
+    expect(r.y).toBeCloseTo(f.y);
+    expect(r.width).toBeCloseTo(f.width);
+    expect(r.height).toBeCloseTo(f.height);
+  });
+
+  it("90° swaps the pixel dims — ratio dims scale by the parent aspect", () => {
+    // Parent 1920×1080 (aspect 16/9): 0.2×0.2 ratio = 384×216 px; rotated 90°
+    // the AABB is 216×384 px → ratio 216/1920 = 0.1125 × 384/1080 ≈ 0.3556.
+    const aspect = 1920 / 1080;
+    const r = rotatedAabb({ ...f, rotation: Math.PI / 2 }, aspect);
+    expect(r.width).toBeCloseTo(f.height / aspect); // 0.1125
+    expect(r.height).toBeCloseTo(f.width * aspect); // 0.35556
+    // Center preserved.
+    expect(r.x + r.width / 2).toBeCloseTo(f.x + f.width / 2);
+    expect(r.y + r.height / 2).toBeCloseTo(f.y + f.height / 2);
+  });
+
+  it("45° on a square parent grows a square by √2, center preserved", () => {
+    const r = rotatedAabb({ ...f, rotation: Math.PI / 4 }, 1);
+    expect(r.width).toBeCloseTo(0.2 * Math.SQRT2);
+    expect(r.height).toBeCloseTo(0.2 * Math.SQRT2);
+    expect(r.x + r.width / 2).toBeCloseTo(0.2);
+    expect(r.y + r.height / 2).toBeCloseTo(0.5);
+  });
+
+  it("negative angle gives the same AABB (|cos|/|sin| symmetry)", () => {
+    const pos = rotatedAabb({ ...f, rotation: 0.7 }, 16 / 9);
+    const neg = rotatedAabb({ ...f, rotation: -0.7 }, 16 / 9);
+    expect(neg.x).toBeCloseTo(pos.x);
+    expect(neg.y).toBeCloseTo(pos.y);
+    expect(neg.width).toBeCloseTo(pos.width);
+    expect(neg.height).toBeCloseTo(pos.height);
+  });
+
+  it("non-positive aspect falls back to 1 (no NaN/Infinity)", () => {
+    const r = rotatedAabb({ ...f, rotation: Math.PI / 2 }, 0);
+    expect(r.width).toBeCloseTo(f.height);
+    expect(r.height).toBeCloseTo(f.width);
+  });
+
+  it("feeds clampSharedDelta: a 90°-rotated member constrains by its AABB", () => {
+    // 0.3-wide × 0.1-tall at 90° on a square parent → AABB 0.1×0.3, x shifts
+    // to center-±0.05: aabb.x = 0.5+0.15-0.05 = 0.6.
+    const rot = { x: 0.5, y: 0.5, width: 0.3, height: 0.1, rotation: Math.PI / 2 };
+    const aabb = rotatedAabb(rot, 1);
+    expect(aabb.x).toBeCloseTo(0.6);
+    expect(aabb.width).toBeCloseTo(0.1);
+    const d = clampSharedDelta([aabb], -2, 0, { minX: 0.05, minY: 0.05 });
+    // lower bound = minX - aabbW - aabb.x = 0.05 - 0.1 - 0.6 = -0.65.
+    expect(d.dx).toBeCloseTo(-0.65);
   });
 });
