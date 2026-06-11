@@ -116,18 +116,69 @@ export function emptyDatasetPayload(name = "데이터셋"): DatasetPayload {
   return { name, columns: [], rows: [] };
 }
 
+/** WI-172 — coerce one raw cell to a legal `DatasetCell`. Primitives pass
+ *  through; anything else (object / array / function / undefined) becomes "" so
+ *  a malformed agent payload can never carry non-primitive cells into the chart
+ *  layer (where they would poison the persisted document). */
+function sanitizeCell(raw: unknown): DatasetCell {
+  if (
+    typeof raw === "string" ||
+    typeof raw === "boolean" ||
+    raw === null ||
+    (typeof raw === "number" && Number.isFinite(raw))
+  ) {
+    return raw;
+  }
+  return "";
+}
+
+/** WI-172 — coerce raw rows into an array of plain cell records. A non-array
+ *  `rows` (object / string / number) becomes []; non-object entries (null,
+ *  arrays, primitives) are dropped; each kept row's cells are sanitized. This
+ *  is the row-shape gate for every agent-supplied dataset payload. */
+export function sanitizeDatasetRows(raw: unknown): ReadonlyArray<DatasetRow> {
+  if (!Array.isArray(raw)) return [];
+  const out: DatasetRow[] = [];
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const row: Record<string, DatasetCell> = {};
+    for (const [k, v] of Object.entries(entry as Record<string, unknown>)) {
+      row[k] = sanitizeCell(v);
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/** WI-172 — coerce raw columns into `DatasetColumn[] | string[]` (the two
+ *  shapes `migrateDatasetColumns` accepts). Non-array → []; entries that are
+ *  neither a string nor an object with a string `name` are dropped. */
+function sanitizeColumns(raw: unknown): ReadonlyArray<DatasetColumn | string> {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (c): c is DatasetColumn | string =>
+      typeof c === "string" ||
+      (c !== null && typeof c === "object" && typeof (c as { name?: unknown }).name === "string"),
+  );
+}
+
 /** Normalize a partial payload into a complete one (fills missing fields from
- *  `emptyDatasetPayload`). Used by `weave.dataset.add` so callers can pass
- *  just `{ columns, rows }` or nothing at all. */
+ *  `emptyDatasetPayload`). Used by `weave.dataset.add` / `weave.chart.add` /
+ *  `weave.dataset.update` so callers can pass just `{ columns, rows }` or
+ *  nothing at all. WI-172 — also the SHAPE GATE for agent-supplied payloads:
+ *  rows/columns/cells of an illegal shape are coerced or dropped here, so a
+ *  malformed `weave.chart.add` can never commit a dataset that crashes the
+ *  chart renderer ("Invalid data provider" class). */
 export function normalizeDatasetPayload(partial?: Partial<DatasetPayload>): DatasetPayload {
   const base = emptyDatasetPayload();
   if (partial === undefined) return base;
   // Migrate so a caller passing legacy `columns: string[]` still yields typed
   // columns (DR-036).
+  const rows = sanitizeDatasetRows(partial.rows ?? base.rows);
   return migrateDatasetColumns({
-    name: partial.name ?? base.name,
-    columns: partial.columns ?? base.columns,
-    rows: partial.rows ?? base.rows,
+    name: typeof partial.name === "string" ? partial.name : base.name,
+    columns: sanitizeColumns(partial.columns ?? base.columns) as ReadonlyArray<DatasetColumn>,
+    rows,
   });
 }
 
@@ -409,8 +460,18 @@ export function buildDatasetUnit(id: string, payload: DatasetPayload): AgocraftU
  *  that already has typed columns is returned unchanged (same ref). */
 export function migrateDatasetColumns(payload: DatasetPayload): DatasetPayload {
   const cols = payload.columns as ReadonlyArray<DatasetColumn | string>;
-  if (cols.every((c) => typeof c === "object" && c !== null)) return payload;
-  const columns = cols.map((c) => (typeof c === "string" ? inferredColumn(c, payload.rows) : c));
+  // WI-172 — an object column missing its `type` (agent payloads often send
+  // just `{name}`) gets one inferred from the rows, same as a legacy string.
+  const complete = (c: DatasetColumn | string): boolean =>
+    typeof c === "object" && c !== null && typeof c.type === "string";
+  if (cols.every(complete)) return payload;
+  const columns = cols.map((c) =>
+    typeof c === "string"
+      ? inferredColumn(c, payload.rows)
+      : complete(c)
+        ? c
+        : { ...c, type: inferFieldType(payload.rows, c.name) },
+  );
   return { ...payload, columns };
 }
 

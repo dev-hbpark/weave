@@ -7,7 +7,7 @@
 // bubble/heatmap/candlestick/boxplot), part-to-whole (pie/funnel/gauge), polar
 // (radar), hierarchy (treemap), flow (sankey).
 
-import type { DatasetColumn } from "../../dataset/dataset-store.js";
+import type { DatasetColumn, DatasetRow } from "../../dataset/dataset-store.js";
 import {
   type Channel,
   type ChartEncoding,
@@ -249,12 +249,26 @@ export function chartTypeSpec(type: ChartType): ChartTypeSpec | undefined {
   return CHART_TYPE_REGISTRY[type];
 }
 
+/** WI-172 — central row-shape guard for EVERY builder: a persisted dataset may
+ *  predate the command-boundary normalization (or arrive via an old snapshot),
+ *  so the render path re-asserts the shape it iterates: `rows` must be an array
+ *  and every row a plain record. Null / array / primitive entries are dropped
+ *  rather than crashing the builders (and through them the whole canvas tree). */
+function sanitizeRenderRows(rows: unknown): ReadonlyArray<DatasetRow> {
+  if (!Array.isArray(rows)) return [];
+  return rows.filter(
+    (r): r is DatasetRow => r !== null && typeof r === "object" && !Array.isArray(r),
+  );
+}
+
 /** Build the ECharts option for `input.chartType` via the registry. Falls back
  *  to bar for a type without a builder yet, so the chart still renders. */
 export function buildChartOption(input: ChartRenderInput): EChartsOptionLike {
   const spec = CHART_TYPE_REGISTRY[input.chartType] ?? CHART_TYPE_REGISTRY.bar;
+  // WI-172 — guard the row shape once, ahead of all 14 builders.
+  const safeInput: ChartRenderInput = { ...input, rows: sanitizeRenderRows(input.rows) };
   const option =
-    (spec ?? CHART_TYPE_REGISTRY.bar)?.buildOption(input) ?? cartesianOption("bar", input);
+    (spec ?? CHART_TYPE_REGISTRY.bar)?.buildOption(safeInput) ?? cartesianOption("bar", safeInput);
   // WI-092 — weave owns interaction; ECharts renders statically (no hover
   // emphasis / tooltip / cursor / select-explode). One central strip (Rule 6).
   return withStaticInteraction(option);

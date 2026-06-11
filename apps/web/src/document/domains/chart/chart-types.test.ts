@@ -140,3 +140,52 @@ describe("buildChartOption (registry dispatch)", () => {
     expect((fb.series as ReadonlyArray<{ type: string }>)[0]?.type).toBe("bar");
   });
 });
+
+describe("WI-172 — buildChartOption render-row gate (poisoned agent payloads)", () => {
+  it("rows containing null / array / primitive entries don't throw — bad entries dropped", () => {
+    const rows = [
+      { q: "Q1", a: 10 },
+      null,
+      ["Q2", 20],
+      "Q3",
+      7,
+      { q: "Q4", a: 40 },
+    ] as unknown as ChartRenderInput["rows"];
+    const opt = buildChartOption(input({ rows }));
+    const data = (opt.series as ReadonlyArray<{ data?: unknown[] }>)[0]?.data;
+    expect(Array.isArray(data)).toBe(true);
+    expect(data).toHaveLength(2); // only the two legal rows survive
+  });
+
+  it("non-array rows (object / string / number) don't throw — treated as empty", () => {
+    for (const rows of [{ q: "Q1", a: 1 }, "Q1,10", 42, undefined, null]) {
+      const opt = buildChartOption(input({ rows: rows as unknown as ChartRenderInput["rows"] }));
+      // every builder still returns an option whose series data is an ARRAY —
+      // the shape ECharts' DefaultDataProvider requires ("Invalid data provider"
+      // is thrown for any non-array own-series data).
+      for (const s of opt.series as ReadonlyArray<{ data?: unknown }>) {
+        expect(Array.isArray(s.data)).toBe(true);
+      }
+    }
+  });
+
+  it("series data is an array for EVERY chart type under poisoned rows", () => {
+    const rows = [null, { q: "Q1", a: 1, b: 2 }] as unknown as ChartRenderInput["rows"];
+    for (const type of availableChartTypes()) {
+      const opt = buildChartOption(
+        input({ chartType: type.type, rows, encoding: autoEncode(type.type, COLS) }),
+      );
+      for (const s of (opt.series ?? []) as ReadonlyArray<{ data?: unknown }>) {
+        // structural types (treemap/sankey) carry data/links arrays too
+        if (s.data !== undefined) expect(Array.isArray(s.data)).toBe(true);
+      }
+    }
+  });
+});
+
+// Columns for the every-type poisoned-rows sweep above.
+const COLS: ReadonlyArray<DatasetColumn> = [
+  { name: "q", type: "nominal" },
+  { name: "a", type: "quantitative" },
+  { name: "b", type: "quantitative" },
+];

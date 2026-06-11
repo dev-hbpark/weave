@@ -14,6 +14,7 @@ import {
   normalizeDatasetPayload,
   readDatasetPayload,
   resolveDataset,
+  sanitizeDatasetRows,
 } from "./dataset-store.js";
 
 const SAMPLE: DatasetPayload = {
@@ -58,6 +59,80 @@ describe("dataset-store — payload helpers", () => {
       rows: [],
     });
     expect(normalizeDatasetPayload(SAMPLE)).toEqual(SAMPLE);
+  });
+});
+
+describe("WI-172 — shape gate for agent-supplied payloads", () => {
+  it("sanitizeDatasetRows: non-array rows become []", () => {
+    expect(sanitizeDatasetRows({ a: 1 })).toEqual([]);
+    expect(sanitizeDatasetRows("Q1,120")).toEqual([]);
+    expect(sanitizeDatasetRows(42)).toEqual([]);
+    expect(sanitizeDatasetRows(undefined)).toEqual([]);
+  });
+
+  it("sanitizeDatasetRows: null / array / primitive row entries are dropped", () => {
+    const rows = sanitizeDatasetRows([
+      { 항목: "A", 값: 1 },
+      null,
+      ["Q2", 150],
+      "Q3",
+      7,
+      { 항목: "B", 값: 2 },
+    ]);
+    expect(rows).toEqual([
+      { 항목: "A", 값: 1 },
+      { 항목: "B", 값: 2 },
+    ]);
+  });
+
+  it('sanitizeDatasetRows: non-primitive / non-finite cells become ""', () => {
+    expect(
+      sanitizeDatasetRows([
+        { obj: { nested: true }, arr: [1, 2], fn: () => 0, nan: Number.NaN, inf: Infinity },
+        { s: "ok", n: 1.5, b: false, nul: null },
+      ]),
+    ).toEqual([
+      { obj: "", arr: "", fn: "", nan: "", inf: "" },
+      { s: "ok", n: 1.5, b: false, nul: null },
+    ]);
+  });
+
+  it("normalizeDatasetPayload: malformed rows / columns / name are coerced, not thrown", () => {
+    const out = normalizeDatasetPayload({
+      name: 7 as unknown as string,
+      columns: [
+        null,
+        3,
+        { type: "nominal" },
+        { name: "x" },
+      ] as unknown as DatasetPayload["columns"],
+      rows: { not: "rows" } as unknown as DatasetPayload["rows"],
+    });
+    // bad name → default; nameless/non-object columns dropped; {name}-only kept
+    // with an inferred type; non-array rows → [].
+    expect(out).toEqual({
+      name: "데이터셋",
+      columns: [{ name: "x", type: "nominal" }],
+      rows: [],
+    });
+  });
+
+  it("migrateDatasetColumns: an object column missing `type` gets one inferred", () => {
+    const out = migrateDatasetColumns({
+      name: "x",
+      columns: [
+        { name: "매출" },
+        { name: "분기", type: "nominal" },
+      ] as unknown as DatasetPayload["columns"],
+      rows: [
+        { 분기: "Q1", 매출: 10 },
+        { 분기: "Q2", 매출: 20 },
+      ],
+    });
+    expect(out.columns).toEqual([
+      { name: "매출", type: "quantitative" },
+      { name: "분기", type: "nominal" },
+    ]);
   });
 });
 

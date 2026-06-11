@@ -21,6 +21,7 @@ import { useResolveDataset } from "../dataset/dataset-context.js";
 import type { DatasetPayload } from "../dataset/dataset-store.js";
 import { SelectionVmContext } from "../interactions/selection-context.js";
 import type { AgoItem } from "../types.js";
+import { ChartErrorBoundary } from "./chart/ChartErrorBoundary.js";
 import { useChartElementSelection } from "./chart/chart-element-context.js";
 import { type ChartEncoding, type ChartType, migrateEncoding } from "./chart/chart-model.js";
 import { legendSelection, markSelection } from "./chart/chart-selection.js";
@@ -120,36 +121,41 @@ export function ChartBlock({ item }: ChartBlockProps): JSX.Element {
       className="absolute inset-0"
       style={{ opacity }}
     >
-      <Suspense fallback={<div data-testid="chart-loading" className="absolute inset-0" />}>
-        <EChartView
-          chartItemId={String(item.id)}
-          rows={dataset.rows}
-          encoding={encoding}
-          chartType={a.chartType}
-          palette={a.palette ?? DEFAULT_PALETTE}
-          showAxis={a.showAxis !== false}
-          showLegend={a.showLegend !== false}
-          barWidth={a.barWidth}
-          innerRadius={a.variant?.innerRadius}
-          overrides={a.overrides}
-          onElementClick={(info) => {
-            // DRILL gate: ignore the mark click until the chart is selected (the
-            // first click selects the chart via the bubbled frame hit-test).
-            if (!isChartSelected(selectionVm, String(item.id))) return;
-            // DR-037 — the click→role mapping is a per-family registry (Rule 6),
-            // not an inline chartType check: cartesian mark = datum, radar mark =
-            // the whole polygon (series), etc.
-            select({ chartItemId: String(item.id), ...markSelection(a.chartType, info) });
-          }}
-          onLegendClick={(name) => {
-            if (!isChartSelected(selectionVm, String(item.id))) return;
-            select({ chartItemId: String(item.id), ...legendSelection(a.chartType, name) });
-          }}
-          // WI-092 — clicking the blank plot drops the bar selection (the chart
-          // item stays selected → back to the whole-chart level).
-          onBackgroundClick={() => select(null)}
-        />
-      </Suspense>
+      {/* WI-172 — boundary scopes a throwing chart to THIS item (placeholder)
+          instead of unmounting the whole canvas tree and cascade-failing
+          subsequent agent execs. */}
+      <ChartErrorBoundary chartItemId={String(item.id)} opacity={opacity}>
+        <Suspense fallback={<div data-testid="chart-loading" className="absolute inset-0" />}>
+          <EChartView
+            chartItemId={String(item.id)}
+            rows={dataset.rows}
+            encoding={encoding}
+            chartType={a.chartType}
+            palette={a.palette ?? DEFAULT_PALETTE}
+            showAxis={a.showAxis !== false}
+            showLegend={a.showLegend !== false}
+            barWidth={a.barWidth}
+            innerRadius={a.variant?.innerRadius}
+            overrides={a.overrides}
+            onElementClick={(info) => {
+              // DRILL gate: ignore the mark click until the chart is selected (the
+              // first click selects the chart via the bubbled frame hit-test).
+              if (!isChartSelected(selectionVm, String(item.id))) return;
+              // DR-037 — the click→role mapping is a per-family registry (Rule 6),
+              // not an inline chartType check: cartesian mark = datum, radar mark =
+              // the whole polygon (series), etc.
+              select({ chartItemId: String(item.id), ...markSelection(a.chartType, info) });
+            }}
+            onLegendClick={(name) => {
+              if (!isChartSelected(selectionVm, String(item.id))) return;
+              select({ chartItemId: String(item.id), ...legendSelection(a.chartType, name) });
+            }}
+            // WI-092 — clicking the blank plot drops the bar selection (the chart
+            // item stays selected → back to the whole-chart level).
+            onBackgroundClick={() => select(null)}
+          />
+        </Suspense>
+      </ChartErrorBoundary>
     </div>
   );
 }

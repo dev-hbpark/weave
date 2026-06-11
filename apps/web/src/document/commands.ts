@@ -1719,9 +1719,12 @@ export function buildWeaveCommands(
         return fail("invalid-input", "weave.dataset.update: provide `patch` or `dataset`");
       }
       // `patch` (UI table edits) or `dataset` (declarative, agent: shallow-merge).
+      // WI-172 — normalize the merged result so an agent-sent `dataset` of an
+      // illegal shape (rows non-array / null rows / object cells) is coerced
+      // here instead of landing in the document and crashing the chart layer.
       const after = input.patch
         ? input.patch(before)
-        : ({ ...before, ...(input.dataset ?? {}) } as DatasetPayload);
+        : normalizeDatasetPayload({ ...before, ...(input.dataset ?? {}) } as DatasetPayload);
       // Single `unit.attrs` patch on path ["dataset"] replaces the whole
       // payload atomically — symmetric with weave.behavior.update's
       // path ["behavior"]. Referencing charts re-render off the new snapshot.

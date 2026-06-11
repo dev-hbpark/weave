@@ -241,7 +241,19 @@ export default function EChartView(props: EChartViewProps): JSX.Element {
         vm.inRange.color = vm.inRange.color.map(resolveVar);
       }
       opt.textStyle = { fontFamily: cs.fontFamily, color: cs.color };
-      chart.setOption(opt, true);
+      // WI-172 — ECharts validates lazily inside setOption; a poisoned option
+      // (e.g. "Invalid data provider") thrown from an effect would unmount the
+      // ENTIRE canvas tree and cascade-fail every subsequent agent exec. Catch
+      // it here: clear the instance (blank chart beats a dead editor), log the
+      // failing option so the next report carries the exact shape, and let the
+      // ChartErrorBoundary in ChartBlock remain the backstop for anything else.
+      try {
+        chart.setOption(opt, true);
+      } catch (err) {
+        chart.clear();
+        console.error("[chart] setOption failed — rendering blank", err, opt);
+        return;
+      }
       // New layout (bars/slices moved) → reposition any live drag handle.
       chartGeometryStore.invalidate();
     };

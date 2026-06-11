@@ -1,0 +1,7 @@
+# Forced framework base classes — the ONLY permitted non-Error `extends`
+# (see tools/check_inheritance.sh). One `file:line` regex per line.
+#
+# WI-172 — React error boundaries have NO hook/function equivalent; the
+# framework forces `extends React.Component` (getDerivedStateFromError /
+# componentDidCatch are class-only). ≤ 1 level, no further subclassing.
+apps/web/src/document/domains/chart/ChartErrorBoundary\.tsx:[0-9]+

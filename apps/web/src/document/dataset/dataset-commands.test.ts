@@ -146,6 +146,30 @@ describe("weave.dataset.update", () => {
     expect(resolved?.columns).toEqual(SALES.columns); // untouched fields preserved
   });
 
+  it("WI-172 — declarative `dataset` with malformed rows is normalized, not committed raw", () => {
+    const { ctx } = seeded();
+    const res = cmd("weave.dataset.update").run(ctx, {
+      id: "ds-1",
+      // an agent-style poisoned payload: rows with null / array / primitive
+      // entries and a non-primitive cell — the shape that crashed ECharts
+      // ("Invalid data provider") when committed unnormalized.
+      dataset: {
+        rows: [
+          { quarter: "Q1", revenue: 120 },
+          null,
+          ["Q2", 150],
+          { quarter: "Q3", revenue: { nested: true } },
+        ] as unknown as DatasetPayload["rows"],
+      },
+    });
+    if (!res.ok) throw new Error("expected ok");
+    const after = applyAll(ctx.document, res.patches);
+    expect(resolveDataset(after, "ds-1")?.rows).toEqual([
+      { quarter: "Q1", revenue: 120 },
+      { quarter: "Q3", revenue: "" },
+    ]);
+  });
+
   it("`patch` function form transforms the previous payload", () => {
     const { ctx } = seeded();
     const res = cmd("weave.dataset.update").run(ctx, {

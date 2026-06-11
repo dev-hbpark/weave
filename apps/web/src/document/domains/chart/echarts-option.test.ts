@@ -475,3 +475,20 @@ describe("pie innerRadius (WI-092) — donut", () => {
     );
   });
 });
+
+describe("WI-172 — unknown aggregate name (agent typo)", () => {
+  it("falls back to sum instead of calling undefined()", () => {
+    const opt = buildChartOption(
+      input({
+        rows: [
+          { q: "Q1", a: 10 },
+          { q: "Q1", a: 20 },
+          { q: "Q2", a: 5 },
+        ],
+        // "avg" is not a registered Aggregate (the registry name is "mean")
+        encoding: { category: { field: "q" }, value: [{ field: "a", aggregate: "avg" as never }] },
+      }),
+    );
+    expect(seriesValues(opt)).toEqual([30, 5]); // summed, not crashed
+  });
+});
