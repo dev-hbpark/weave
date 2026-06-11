@@ -35,6 +35,7 @@ import {
 } from "react";
 import { isHistoryReplaying } from "../history-replay-state.js";
 import { useSelection } from "../interactions/selection-context.js";
+import { textEditTrigger } from "../interactions/text-edit-trigger.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import {
   type AgoItem,
@@ -449,6 +450,17 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       document.removeEventListener("keydown", onKey);
     };
   }, [isEditing, isFrameSelected]);
+  // WI-183 — Enter-to-edit: register this surface so the editor-level Enter
+  // hotkey (DesignPage) can enter edit mode by item id, no kind compare.
+  // Same entry path as double-click: select first (keeps the isFrameSelected
+  // gate alive), then mount the Lexical editor (select-all on focus).
+  useEffect(() => {
+    if (!editable || isItemLocked(item)) return undefined;
+    return textEditTrigger.register(selfId, () => {
+      selectFrame(selfId);
+      setIsEditing(true);
+    });
+  }, [editable, item, selfId, selectFrame]);
   // DR-057 — WYSIWYG: the editor surface renders in the item's resolved base
   // typography. Inline toggleables are forced NEUTRAL here so the seeded
   // per-node formats (and Lexical's `font-bold`/`italic`/`underline` theme

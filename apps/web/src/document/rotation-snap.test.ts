@@ -1,5 +1,5 @@
-// WI-074 — rotation snapping: Shift → 10° steps; otherwise snap to the nearest
-// cardinal (0/90/180/270) within threshold.
+// WI-074 — rotation snapping: Shift → 15° steps (WI-183/DR-119, was 10°);
+// otherwise snap to the nearest cardinal (0/90/180/270) within threshold.
 
 import { describe, expect, it } from "vitest";
 import { CARDINAL_SNAP_THRESHOLD_RAD, ROTATION_STEP_RAD, snapRotation } from "./rotation-snap.js";
@@ -30,20 +30,24 @@ describe("snapRotation — cardinal snap (no Shift)", () => {
   });
 });
 
-describe("snapRotation — Shift quantize to 10°", () => {
-  it("rounds to the nearest 10°", () => {
-    expect(toDeg(snapRotation(deg(34), true).rotation)).toBeCloseTo(30, 6);
-    expect(toDeg(snapRotation(deg(36), true).rotation)).toBeCloseTo(40, 6);
-    expect(toDeg(snapRotation(deg(127), true).rotation)).toBeCloseTo(130, 6);
-    expect(ROTATION_STEP_RAD).toBeCloseTo(deg(10), 9);
+describe("snapRotation — Shift quantize to 15°", () => {
+  it("rounds to the nearest 15°", () => {
+    expect(toDeg(snapRotation(deg(50), true).rotation)).toBeCloseTo(45, 6);
+    expect(toDeg(snapRotation(deg(53), true).rotation)).toBeCloseTo(60, 6);
+    expect(toDeg(snapRotation(deg(127), true).rotation)).toBeCloseTo(120, 6);
+    expect(ROTATION_STEP_RAD).toBeCloseTo(deg(15), 9);
   });
 
-  it("reports a cardinal when a 10° step lands on a multiple of 90°", () => {
+  it("lands on the 45° diagonal (the reason for 15° — DR-119)", () => {
+    expect(toDeg(snapRotation(deg(44), true).rotation)).toBeCloseTo(45, 6);
+  });
+
+  it("reports a cardinal when a 15° step lands on a multiple of 90°", () => {
     expect(snapRotation(deg(88), true)).toMatchObject({ cardinalDeg: 90 });
     expect(snapRotation(deg(2), true)).toMatchObject({ cardinalDeg: 0 });
     expect(snapRotation(deg(182), true)).toMatchObject({ cardinalDeg: 180 });
-    // 30° is a 10°-step but NOT a cardinal → no guide.
-    expect(snapRotation(deg(34), true).cardinalDeg).toBeNull();
+    // 30° is a 15°-step but NOT a cardinal → no guide.
+    expect(snapRotation(deg(32), true).cardinalDeg).toBeNull();
   });
 });
 

@@ -2425,6 +2425,16 @@ export function buildWeaveCommands(
     name: "weave.items.duplicate",
     maxNodes: MAX_PASTE_NODES,
   });
+  // WI-183 — Alt-drag duplicate. Same kit, `offset: 0` (the weave.page.
+  // duplicate idiom): the copy must hold the source's exact frame because the
+  // ORIGINAL is the thing the gesture keeps moving — a nudged copy would read
+  // as a ghost jump at the drag threshold. Separate registration (not a flag
+  // on weave.items.duplicate) because the offset is factory-level in the kit.
+  const duplicateItemsInPlace = createDuplicateItemsCommand({
+    name: "weave.items.duplicateInPlace",
+    maxNodes: MAX_PASTE_NODES,
+    offset: 0,
+  });
 
   // WI-155 — page duplicate (WI-153 P2.3 보류분). Same kit clone, two page-
   // specific differences vs weave.item.duplicate:
@@ -2621,6 +2631,8 @@ export function buildWeaveCommands(
     clipboardPaste as Command,
     duplicateItem as Command,
     duplicateItems as Command,
+    // WI-183 — Alt-drag duplicate (offset 0; the original keeps moving).
+    duplicateItemsInPlace as Command,
     // WI-155 — rail per-page duplicate (offset 0 + order insert-after).
     pageDuplicate as Command,
     // WI-020 / WI-043

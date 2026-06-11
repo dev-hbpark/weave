@@ -562,12 +562,14 @@ export function NestedFrame({
         e.stopPropagation();
         onSelect?.(itemId);
       }}
-      // The manual click counter on onClick handles the fit-to-frame
-      // gesture; native dblclick is purely a defensive bubble interceptor
-      // here. Without this stopPropagation, dblclick on a selected frame's
-      // chrome would bubble to FrameStage's outer `onFitAll` and clear
-      // the fit immediately after our counter set it. Outer's onDoubleClick
-      // should fire ONLY on truly empty canvas presses.
+      // Native dblclick is purely a defensive bubble interceptor here
+      // (the fit-to-frame click counter is gone — WI-033 P2). Without this
+      // stopPropagation, dblclick on a frame would bubble to FrameStage's
+      // outer `onFitAll` and zoom the camera out mid-edit. Outer's
+      // onDoubleClick should fire ONLY on truly empty canvas presses.
+      // Double-click "descend into group" needs no handler of its own:
+      // it is two plain clicks, and A1's parent-first heuristic in
+      // `hit.selectTarget` drills to the leaf on the second (WI-183/D-2).
       onDoubleClick={(e: React.MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
       }}
@@ -578,13 +580,6 @@ export function NestedFrame({
         // handles — should leave the frame's selection state alone so the
         // inner element behaves normally. Hand/panning modes suppress
         // selection entirely so the pan tool stays the active gesture.
-        //
-        // The same handler runs a manual two-click detector. Both clicks of
-        // a "double click on a frame" bubble through here even when the
-        // first one mounts a SelectionLayer that catches the second one — a
-        // case the browser's native `dblclick` refuses to fire on because
-        // the targets differ. Two qualifying clicks within ~350ms trigger
-        // the fit-to-frame gesture.
         if (!selectionAllowed) return;
         const t = e.target;
         if (t instanceof HTMLElement) {

@@ -1,4 +1,6 @@
-// WI-074 — rotation snap guide + Shift 10° step on the rotate handle.
+// WI-074 — rotation snap guide + Shift step on the rotate handle
+// (WI-183/DR-119 widened the Shift step 10° → 15° so it lands on the 45°
+// diagonal).
 // Covers the NORMAL frame rotate handle here; the crop straighten handle shares
 // the same snapRotation() core (unit-tested) and its 360° drag is in
 // image-crop.spec.ts. Both publish the `rotation-snap-guide` overlay.
@@ -106,15 +108,18 @@ test("WI-074 — frame rotate snaps to a cardinal (≈90°) and shows the guide"
   await expect(page.getByTestId("rotation-snap-guide")).toHaveCount(0);
 });
 
-test("WI-074 — frame rotate with Shift quantizes to 10° (no cardinal guide)", async ({ page }) => {
+test("WI-183 — frame rotate with Shift quantizes to 15° (lands the 45° diagonal)", async ({
+  page,
+}) => {
   await prepareDesign(page, { flavor: "mixed", title: "rotsnap-shift" });
   const id = await addImage(page);
   await page.locator(`[data-frame-id="${id}"]`).click();
 
-  // ~34° with Shift → 30°. (Without the feature it would be ~34°.)
-  await rotateBy(page, id, deg(34), { shift: true });
+  // ~52° with Shift → 45°. Discriminates 15° steps from the old 10° steps
+  // (which would have produced 50°).
+  await rotateBy(page, id, deg(52), { shift: true });
   const rotation = await readRotation(page, id);
-  expect((Math.abs(rotation) * 180) / Math.PI).toBeCloseTo(30, 0);
+  expect((Math.abs(rotation) * 180) / Math.PI).toBeCloseTo(45, 0);
 });
 
 test("WI-074 — free rotate (no Shift, off-cardinal) does NOT snap or show a guide", async ({

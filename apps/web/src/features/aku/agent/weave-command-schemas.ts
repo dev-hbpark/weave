@@ -589,6 +589,7 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.clipboard.paste": "붙여넣기",
   "weave.item.duplicate": "아이템 복제",
   "weave.items.duplicate": "여러 아이템 복제",
+  "weave.items.duplicateInPlace": "제자리 복제",
   "weave.page.duplicate": "페이지 복제",
   "weave.frame.setLayout": "레이아웃 설정",
   "weave.item.setLayoutChild": "레이아웃 자식 정책",
@@ -1331,6 +1332,19 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       { itemIds: STR_ARR },
       ["itemIds"],
       "Clone several items in ONE undo step. Equivalent to weave.items.lifecycle { op:'duplicate' }.",
+    ),
+  },
+  // WI-183 — offset-0 clone backing the Alt+drag duplicate gesture (the copy
+  // must hold the source position while the original moves). Schema'd because
+  // the free-flavor surface advertises the whole registry, but the agent
+  // should normally prefer weave.items.duplicate — a perfect overlap is
+  // invisible and reads as "nothing happened".
+  "weave.items.duplicateInPlace": {
+    label: label("weave.items.duplicateInPlace"),
+    inputSchema: obj(
+      { itemIds: STR_ARR },
+      ["itemIds"],
+      "Clone items EXACTLY on top of the originals (zero offset) in one undo step. Only for flows that immediately move the original or the copy — otherwise the result is invisible; prefer weave.items.duplicate.",
     ),
   },
 

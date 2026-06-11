@@ -1,11 +1,20 @@
-// WI-034 — frame 안의 빈 영역에서 Alt+drag → 그 frame 의 child 로
-// 새 item 추가. 이전(WI-033 P2 직후)에는 RubberBandLayer 의
-// `emptyRegionAccept` 가 frame 위 drag 를 reject 하고 FrameMoveBinding
-// 이 우선이라, frame 안 add 의 UI path 가 0이었다. WI-034 가
-// (a) acceptTarget 에서 `[data-frame-id]` reject 제거,
-// (b) FrameMoveBinding modifiers 에 `alt: "forbidden"` 추가,
-// (c) adapter 의 hit-test 로 drop 위치의 deepest frame 을
-//     containerId 로 사용 — 의 세 변경으로 path 활성.
+// WI-034 → WI-183 — adding INTO a frame with the Alt rubber-band.
+//
+// WI-034 originally let Alt+drag START inside a frame's interior (frame-move
+// declared `alt: "forbidden"` and yielded). WI-183 supersedes that arm:
+// Alt+drag starting on an ITEM BODY is now the Figma/Keynote DUPLICATE-drag
+// (move-modifiers.ts decorator), and the alt-rubber-band only claims starts
+// on empty space / page background (acceptAltDrawTarget). Drawing into a
+// frame still works because the commit adapter resolves the container from
+// the final rect's CENTER (rubber-band/agocraft-adapter.ts) — the gesture
+// just starts on empty canvas and sweeps into the frame.
+//
+// Covered here:
+//   • Alt+drag from empty space with the rect center inside a parent frame
+//     → new item lands as that parent's CHILD (the WI-034 capability, on
+//     its surviving path).
+//   • Alt+drag starting ON the frame body → duplicate-drag (WI-183): one
+//     copy added at root, no rubber-band popover.
 
 import { expect, type Page, test } from "@playwright/test";
 import { addFrame, clearAllDesigns, prepareDesign } from "./helpers.js";
@@ -47,25 +56,46 @@ async function childCountOf(page: Page, parentId: string): Promise<number> {
   }, parentId);
 }
 
-test("Alt+drag inside a parent frame adds the new item as that parent's child (not root)", async ({
-  page,
-}) => {
-  const parentId = await setupParent(page);
-  // Parent's design rect = (0.1*1920, 0.1*1080) - (0.6*1920, 0.6*1080)
-  // = (192, 108) - (1152, 648). Drag a small box inside that area.
+async function rootChildCount(page: Page): Promise<number> {
+  return await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc?: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    return w.__weaveDoc?.root.children?.length ?? 0;
+  });
+}
+
+async function frameRect(
+  page: Page,
+  id: string,
+): Promise<{ left: number; top: number; width: number; height: number }> {
   const rect = await page.evaluate((pid) => {
-    const el = document.querySelector(`[data-frame-id="${pid}"]`) as HTMLElement | null;
+    const el = document.querySelector(
+      `[data-testid="block-frame"][data-frame-id="${pid}"]`,
+    ) as HTMLElement | null;
     if (el === null) return null;
     const r = el.getBoundingClientRect();
     return { left: r.left, top: r.top, width: r.width, height: r.height };
-  }, parentId);
+  }, id);
   expect(rect).not.toBeNull();
-  if (rect === null) return;
+  return rect as { left: number; top: number; width: number; height: number };
+}
 
-  const startX = rect.left + rect.width * 0.3;
+test("Alt+drag from empty space sweeping into a frame adds the new item as that frame's child", async ({
+  page,
+}) => {
+  const parentId = await setupParent(page);
+  const rect = await frameRect(page, parentId);
+
+  // Start OUTSIDE the parent's left edge (empty canvas — required since
+  // WI-183: an item-body start would duplicate-drag instead). Sweep deep
+  // into the parent so the drawn rect's CENTER lands inside it — the
+  // commit adapter's hit-test point.
+  const startX = rect.left - 40;
   const startY = rect.top + rect.height * 0.3;
   const endX = rect.left + rect.width * 0.6;
-  const endY = rect.top + rect.height * 0.6;
+  const endY = rect.top + rect.height * 0.7;
+  // center x = rect.left + (0.6·w − 40)/2 → inside; center y → inside.
 
   const beforeCount = await childCountOf(page, parentId);
 
@@ -76,11 +106,35 @@ test("Alt+drag inside a parent frame adds the new item as that parent's child (n
   await page.mouse.up();
   await page.keyboard.up("Alt");
 
-  // The RubberBand 's recommendation popover opens on release. Pick the
+  // The RubberBand's recommendation popover opens on release. Pick the
   // first recommendation to commit the add.
   const recommendation = page.locator('[data-testid^="rubber-band-popover-item-"]').first();
   await expect(recommendation).toBeVisible({ timeout: 5_000 });
   await recommendation.click();
 
   await expect.poll(() => childCountOf(page, parentId)).toBe(beforeCount + 1);
+});
+
+test("Alt+drag starting ON a frame body duplicate-drags it (WI-183) — no rubber-band popover", async ({
+  page,
+}) => {
+  const parentId = await setupParent(page);
+  const rect = await frameRect(page, parentId);
+
+  const beforeRoot = await rootChildCount(page);
+
+  // Start on the frame's interior (its body) and drag.
+  await page.keyboard.down("Alt");
+  await page.mouse.move(rect.left + rect.width * 0.3, rect.top + rect.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(rect.left + rect.width * 0.8, rect.top + rect.height * 0.8, {
+    steps: 10,
+  });
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+
+  // Duplicate-in-place fired at the drag threshold → one extra root child.
+  await expect.poll(() => rootChildCount(page)).toBe(beforeRoot + 1);
+  // And the rubber-band popover must NOT have opened (the old WI-034 arm).
+  await expect(page.locator('[data-testid^="rubber-band-popover-item-"]')).toHaveCount(0);
 });

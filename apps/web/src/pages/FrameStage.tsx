@@ -77,6 +77,7 @@ import {
   rotatedAabb,
 } from "../document/page-clamp.js";
 import { scopeDocumentToPages } from "../document/page-scope.js";
+import { computeResizeFrame, type ResizeSourceFrame } from "../document/resize-geometry.js";
 import { snapRotation } from "../document/rotation-snap.js";
 import { adaptWeaveCapabilityToAgocraft } from "../document/rubber-band/agocraft-adapter.js";
 import { RubberBandLayer } from "../document/rubber-band/RubberBandLayer.js";
@@ -88,6 +89,11 @@ import {
   startHandleGesture,
   toHandlePointer,
 } from "../document/selection-chrome/handle-gesture-runner.js";
+import {
+  ensureModifierTracker,
+  liveModifiers,
+} from "../document/selection-chrome/modifier-tracker.js";
+import { withMoveModifiers } from "../document/selection-chrome/move-modifiers.js";
 import { rotationSnapFeedback } from "../document/selection-chrome/rotation-snap-feedback.js";
 import { nn } from "../lib/nn.js";
 import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
@@ -299,6 +305,24 @@ export function FrameStage(props: FrameStageProps) {
     const plane = designPlaneRef.current;
     return plane === null || plane.contains(target);
   }, []);
+  // WI-183 — Alt+drag starting ON an item body is the DUPLICATE-drag gesture
+  // (5-tool consensus), so the draw-a-frame modifier override narrows to
+  // empty space + the page background (the page is a frame, but it IS the
+  // editing surface). Supersedes the WI-034 frame-interior alt-draw arm —
+  // the affordance survives because the rubber-band commit adapter resolves
+  // the container from the final rect's CENTER, so a draw started on empty /
+  // page space and swept over a frame still adds INTO that frame.
+  const acceptAltDrawTarget = useCallback(
+    (target: Element): boolean => {
+      if (!acceptWithinPage(target)) return false;
+      const frameEl = target.closest("[data-frame-id]");
+      if (frameEl === null) return true;
+      const id = frameEl.getAttribute("data-frame-id");
+      const pages = visibleFrameIdsRef.current;
+      return id !== null && pages !== undefined && pages.has(id);
+    },
+    [acceptWithinPage],
+  );
   // WI-033 P2 — `reduceMotion` useMemo removed alongside the drill-in
   // spring animation. The design plane now snaps to base camera
   // synchronously on resize, which already honours the user's
@@ -1110,81 +1134,18 @@ export function FrameStage(props: FrameStageProps) {
       computeResize(orig, dir: ResizeDir, dx, dy, parent) {
         // DR-022 (2026-05-31, supersedes DR-016 corner clause): text item
         // DIAGONAL (corner) resize scales the glyph proportionally to the
-        // box HEIGHT ratio (nh / origHeight); pure edge drags (e/w, n/s)
-        // still change box dimensions only. Edge drag clamps to one-
-        // character min-width using the fontSize meta. Mode-specific handle
-        // exposure is gated upstream (createFrameDefaultViewModel call site)
-        // so this function trusts the dirs it receives.
-        const o = orig as unknown as ItemFrame & {
-          __origFontSize?: number;
-          __designWidth?: number;
-          __origFontSizeSpec?: import("@agocraft/core").FontSizeSpec;
-        };
-        const w = parent.width > 0 ? parent.width : 1;
-        const h = parent.height > 0 ? parent.height : 1;
-        const ddx = dx / w;
-        const ddy = dy / h;
-        let nx = o.x;
-        let ny = o.y;
-        let nw = o.width;
-        let nh = o.height;
-        if (dir.includes("w")) {
-          nx = o.x + ddx;
-          nw = o.width - ddx;
-        }
-        if (dir.includes("e")) nw = o.width + ddx;
-        if (dir.includes("n")) {
-          ny = o.y + ddy;
-          nh = o.height - ddy;
-        }
-        if (dir.includes("s")) nh = o.height + ddy;
-        // Text-specific min-width clamp (one character). Applies to every
-        // direction that changes width — kept after DR-016 because a box
-        // narrower than ~1ch becomes visually unusable.
-        const isText = o.__origFontSize !== undefined;
-        if (isText && (dir.includes("e") || dir.includes("w"))) {
-          const designW = o.__designWidth ?? 1920;
-          const minWidthRatio = ((o.__origFontSize as number) * 0.6) / designW;
-          if (nw < minWidthRatio) {
-            nw = minWidthRatio;
-            if (dir.includes("w")) nx = o.x + o.width - nw;
-          }
-        }
-        // DR-022 — diagonal (corner) drag scales the glyph by the box
-        // HEIGHT ratio. A corner is a two-letter dir (ne/nw/se/sw); pure
-        // edge drags (length 1) never touch fontSize. The new px is mirrored
-        // onto the legacy `fontSize`, and any explicit `fontSizeSpec` has its
-        // `value` scaled by the same factor (px → new px, ratio → new
-        // fraction of the unchanged parent height — both correct since the
-        // factor is unit-agnostic). commitFrame dispatches both in one patch.
-        let fontExtra: {
-          __newFontSize?: number;
-          __newFontSizeSpec?: import("@agocraft/core").FontSizeSpec;
-        } = {};
-        const isCorner = dir.length === 2;
-        if (isText && isCorner && o.height > 0) {
-          const scaleFactor = Math.max(0.01, nh) / o.height;
-          const spec = o.__origFontSizeSpec;
-          fontExtra = {
-            __newFontSize: (o.__origFontSize as number) * scaleFactor,
-            ...(spec !== undefined
-              ? {
-                  __newFontSizeSpec:
-                    spec.kind === "ratio"
-                      ? { kind: "ratio", value: spec.value * scaleFactor }
-                      : { kind: "px", value: spec.value * scaleFactor },
-                }
-              : {}),
-          };
-        }
-        return {
-          ...o,
-          x: nx,
-          y: ny,
-          width: Math.max(0.01, nw),
-          height: Math.max(0.01, nh),
-          ...fontExtra,
-        } as unknown as FrameGeom;
+        // box HEIGHT ratio. WI-183 extracted the geometry into the pure
+        // helper `computeResizeFrame` so the Shift/Alt resize modifiers
+        // (applied by the resize handle sink, which calls the helper with
+        // the modifier flags) share one implementation. This 5-arg
+        // interface method stays modifier-free.
+        return computeResizeFrame(
+          orig as unknown as ResizeSourceFrame,
+          dir,
+          dx,
+          dy,
+          parent,
+        ) as unknown as FrameGeom;
       },
       computeRotate(orig, center, startVec, cursor) {
         const o = orig as unknown as ItemFrame;
@@ -1291,6 +1252,23 @@ export function FrameStage(props: FrameStageProps) {
     }),
     [frameMoveSnapInner],
   );
+  // WI-183 — outermost move-modifier decorator: Shift = axis lock (minor axis
+  // zeroed before the snap engine), Alt at the drag threshold = duplicate the
+  // moving set IN PLACE (offset 0) and keep moving the original. Composed
+  // around the WI-159 page-group wrapper so the duplicate fires before any
+  // delta is computed. Modifier state comes from the window-level tracker
+  // (snapDelta carries no event).
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+  const frameMoveSnapWithModifiers = useMemo<FrameMoveSnap>(() => {
+    ensureModifierTracker();
+    return withMoveModifiers(frameMoveSnap, {
+      modifiers: liveModifiers,
+      duplicateInPlace: (itemIds) => {
+        editorRef.current?.exec("weave.items.duplicateInPlace", { itemIds });
+      },
+    });
+  }, [frameMoveSnap]);
 
   const designCapability = useMemo(() => defaultInsertableRegistry.get("design"), []);
   const designAdaptedCapability = useMemo(
@@ -1332,9 +1310,10 @@ export function FrameStage(props: FrameStageProps) {
               name: "rubber-band:design-root",
             }),
             // WI-153 P4 — page-bounded: no Alt-rubber-band start on the matte
-            // (would create a stray root frame = accidental page). Infinite
-            // canvas → predicate always passes ("draw anywhere", unchanged).
-            acceptTarget: acceptWithinPage,
+            // (would create a stray root frame = accidental page).
+            // WI-183 — further narrowed: item-body starts yield to FrameMove's
+            // Alt-duplicate; only empty space / page background draws.
+            acceptTarget: acceptAltDrawTarget,
           });
     // WI-040 — frame-move excluded outside idle / frame-manipulating so
     // hand/panning, context-menu (LayerPicker open), text-editing, and
@@ -1342,8 +1321,10 @@ export function FrameStage(props: FrameStageProps) {
     const frameMove = frameDragAllowed
       ? createFrameMoveBinding({
           access: frameAccess,
-          // WI-073 — alignment / bounds / equal-spacing snap guides during move.
-          snap: frameMoveSnap,
+          // WI-073 — alignment / bounds / equal-spacing snap guides during
+          // move. WI-183 — wrapped with the move-modifier decorator (Shift
+          // axis lock / Alt drag-duplicate).
+          snap: frameMoveSnapWithModifiers,
           priority: GESTURE_PRIORITY_ELEMENT_BODY,
           moveThreshold: 3,
           // HANDOFF-011 / WI-033 — opt out of the binding's raw
@@ -1358,19 +1339,25 @@ export function FrameStage(props: FrameStageProps) {
           // children fill it. No acceptTarget gate is needed: the climb
           // already guarantees the moved item is movable (the agocraft
           // LayoutEngine owns `canMove`; weave only reads it).
-          // WI-034 — Alt+drag on a frame is reserved for
-          // RubberBandLayer's "add child" gesture; frame-move declines
-          // so the lower-priority alt-rubber-band binding can claim.
-          modifiers: { alt: "forbidden", button: 0 },
+          // WI-183 — Alt+drag on an item body now means DUPLICATE-drag
+          // (the decorator above duplicates in place at the threshold),
+          // so frame-move must accept Alt. This supersedes WI-034's
+          // `alt: "forbidden"` (which yielded the frame interior to the
+          // alt-rubber-band "add child" gesture) — drawing INTO a frame
+          // survives by starting on empty space / page background: the
+          // commit adapter resolves the container from the final rect's
+          // CENTER (rubber-band/agocraft-adapter.ts), not the start point.
+          modifiers: { button: 0 },
         })
       : null;
     return router.register({
       host: outerRef,
       bindings: [
         // Priority order (high → low):
-        //   • Alt rubber-band  (90, MODIFIER_OVERRIDE) — Alt+drag wins
-        //     over every per-element gesture so the user can draw a
-        //     new frame anywhere while holding Alt.
+        //   • Alt rubber-band  (90, MODIFIER_OVERRIDE) — Alt+drag on
+        //     empty space / page background draws a new frame. Item-body
+        //     starts are rejected (WI-183 acceptAltDrawTarget) and fall
+        //     through to frame-move's Alt-duplicate.
         //   • Resize handles   (80, ELEMENT_HANDLE) — most specific,
         //     gated by `data-handle-kind="corner|edge"` + dir.
         //   • Rotate handle    (80, ELEMENT_HANDLE) — gated by
@@ -1482,7 +1469,7 @@ export function FrameStage(props: FrameStageProps) {
             itemId: String(itemId),
             origin,
             sink: {
-              // WI-074 — Shift = 10° steps; otherwise snap to 0/90/180/270 (guide).
+              // WI-074/WI-183 — Shift = 15° steps; otherwise snap to 0/90/180/270 (guide).
               update: (p) => {
                 const ang = Math.atan2(p.clientY - center.y, p.clientX - center.x);
                 const snap = snapRotation(start.rotation + (ang - startAng), p.shiftKey);
@@ -1511,7 +1498,7 @@ export function FrameStage(props: FrameStageProps) {
           itemId: String(itemId),
           origin,
           sink: {
-            // WI-074 — Shift = 10° steps; otherwise snap to 0/90/180/270 (guide).
+            // WI-074/WI-183 — Shift = 15° steps; otherwise snap to 0/90/180/270 (guide).
             update: (p) => {
               const geom = frameAccess.computeRotate(orig, center, startVec, {
                 x: p.clientX,
@@ -1590,16 +1577,20 @@ export function FrameStage(props: FrameStageProps) {
         itemId: String(itemId),
         origin,
         sink: {
+          // WI-183 — resize modifiers read live off the pointer: Shift =
+          // corner aspect lock, Alt = resize from center. Calls the shared
+          // pure helper directly (the FrameAccess interface is 5-arg).
           update: (p) =>
             frameAccess.commitFrame(
               itemId,
-              frameAccess.computeResize(
-                orig,
+              computeResizeFrame(
+                orig as unknown as ResizeSourceFrame,
                 dir,
                 p.clientX - origin.clientX,
                 p.clientY - origin.clientY,
                 parent,
-              ),
+                { aspectLock: p.shiftKey, fromCenter: p.altKey },
+              ) as unknown as FrameGeom,
               sessionId,
             ),
         },
@@ -1673,9 +1664,12 @@ export function FrameStage(props: FrameStageProps) {
   }, [onSelect, selectionAllowedOuter]);
 
   // Double-click on truly empty design-plane space → fit the camera to all
-  // items. Frames stop dblclick propagation (their own click-counter does
-  // fit-to-frame), so this fires only off-frame; the closest() guard is a
-  // belt-and-suspenders check against any future bubbling child.
+  // items. Frames stop dblclick propagation (NestedFrame's defensive
+  // interceptor — the fit-to-frame click counter was removed in WI-033 P2;
+  // double-click on a frame now means "descend", via two plain-click
+  // `hit.selectTarget` passes), so this fires only off-frame; the
+  // closest() guard is a belt-and-suspenders check against any future
+  // bubbling child.
   const handleBackgroundDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!selectionAllowedOuter) return;

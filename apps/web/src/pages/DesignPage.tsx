@@ -140,6 +140,7 @@ import {
 import { ReparentGhostOverlay } from "../document/interactions/ReparentGhostOverlay.js";
 import { RouterProvider } from "../document/interactions/router-context.js";
 import { SelectionChromeProvider } from "../document/interactions/selection-chrome-context.js";
+import { textEditTrigger } from "../document/interactions/text-edit-trigger.js";
 import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
@@ -1721,6 +1722,18 @@ function DesignPageBody() {
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
+      // WI-183 — plain Enter with exactly ONE item selected enters text edit
+      // when that item has a registered text surface (5-tool consensus:
+      // Enter starts editing the selected text). No kind compare here — the
+      // surface registered itself in `textEditTrigger` (Rule 6). A non-text
+      // selection has no registration → Enter falls through untouched.
+      if (!mod && !e.shiftKey && !e.altKey && e.key === "Enter") {
+        const ids = Array.from(selectedIdsRef.current);
+        if (ids.length === 1 && textEditTrigger.trigger(String(ids[0]))) {
+          e.preventDefault();
+        }
+        return;
+      }
       // Cmd/Ctrl + A — context-aware Select All. A frame selected ⇒ that
       // frame's first-level children (drill-in select); a non-frame leaf
       // selected ⇒ its PARENT's children (siblings — WI-180: ⌘A after

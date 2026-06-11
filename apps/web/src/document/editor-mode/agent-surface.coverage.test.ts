@@ -32,6 +32,11 @@ const PAGE_EXCLUDED: ReadonlyArray<string> = [
   // ("슬라이드 추가") also out-competes weave.page.add for "new slide"
   // intents. Page creation has exactly ONE agent path: weave.page.add.
   "weave.preset.insertSlide",
+  // WI-183 — offset-0 clone backing the UI's Alt+drag duplicate gesture. On a
+  // page-bounded surface a perfect-overlap copy is invisible (and a page-id
+  // input would mean two stacked pages); the agent paths stay
+  // weave.items.duplicate (offset) and weave.page.duplicate (rail parity).
+  "weave.items.duplicateInPlace",
 ];
 
 function asAdapters(tools: typeof PAGE_AGENT_SURFACE.tools): ReadonlyArray<AgentToolAdapter> {
