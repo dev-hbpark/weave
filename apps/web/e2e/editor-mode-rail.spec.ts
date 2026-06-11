@@ -68,3 +68,26 @@ test("slide-deck rail is the page lifecycle: add + duplicate, no toggle/eye/non-
   await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
   await expect(page.getByTestId("thumbnail-activate-1")).toHaveAttribute("aria-pressed", "true");
 });
+
+test("rail per-page delete removes a page; the last page keeps no delete action", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "slide-deck" });
+
+  // One seeded page → delete is hidden (a deck keeps ≥ 1 page).
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(1);
+  await page.getByTestId("thumbnail-0").hover();
+  await expect(page.locator('[data-testid^="thumbnail-delete-"]')).toHaveCount(0);
+
+  // Add a second page → both tiles now expose the delete action.
+  await page.getByTestId("thumbnail-add-page").click();
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
+  await page.getByTestId("thumbnail-1").hover();
+  await expect(page.getByTestId("thumbnail-delete-1")).toHaveCount(1);
+
+  // Delete the second page → back to one, and delete is hidden again.
+  await page.getByTestId("thumbnail-delete-1").click();
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(1);
+  await page.getByTestId("thumbnail-0").hover();
+  await expect(page.locator('[data-testid^="thumbnail-delete-"]')).toHaveCount(0);
+});

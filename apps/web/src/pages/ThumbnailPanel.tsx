@@ -32,6 +32,7 @@ import {
   IconFrame,
   IconPlus,
   IconSparkle,
+  IconTrash,
 } from "@weave/design-system";
 import type {
   CSSProperties,
@@ -147,6 +148,11 @@ export interface ThumbnailPanelProps {
    *  footer copy action. The host execs `weave.page.duplicate` (offset-0 clone
    *  + presentationOrder insert-after, one undo) and activates the clone. */
   readonly onDuplicatePage?: ((id: string) => void) | undefined;
+  /** Delete a page (remove the top-level frame). When provided, slide tiles
+   *  render a footer trash action — but only while more than one page remains
+   *  (a deck always keeps ≥ 1 page, so the last tile omits it). The host execs
+   *  `weave.item.remove` and re-resolves the active page off the deleted one. */
+  readonly onDeletePage?: ((id: string) => void) | undefined;
   /** WI-166 / DR-114 §4 — render the non-slide (deck-excluded frames)
    *  section. The host fills this from RailPolicy.nonSlideSection; the panel
    *  itself stays policy-free (same "declarative slot" idea as the optional
@@ -264,6 +270,7 @@ export function ThumbnailPanel({
   onToggleSlide,
   onAddPage,
   onDuplicatePage,
+  onDeletePage,
   showNonSlideSection = true,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
@@ -737,6 +744,33 @@ export function ThumbnailPanel({
                     }
                   >
                     <IconCopy size={13} />
+                  </button>
+                ) : null}
+                {/* Per-page delete. Same footer-action pattern as duplicate.
+                    Hidden on the last remaining page (a deck keeps ≥ 1 page)
+                    and on disabled (gated) tiles. */}
+                {onDeletePage !== undefined && !isDisabled && entries.length > 1 ? (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeletePage(entry.id);
+                    }}
+                    data-testid={`thumbnail-delete-${idx}`}
+                    aria-label="페이지 삭제"
+                    data-tip="페이지 삭제"
+                    className={
+                      "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
+                      // WI-101 — lift above the absolute inset-0 z-0 activation
+                      // button so the click reaches this action.
+                      "relative z-10 " +
+                      "text-[color:var(--text-muted)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 " +
+                      "hover:text-[color:var(--danger,#e5484d)] hover:bg-[color:var(--surface-2)] " +
+                      "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
+                    }
+                  >
+                    <IconTrash size={13} />
                   </button>
                 ) : null}
                 {/* WI-072 — deck-membership toggle. On a slide tile it is

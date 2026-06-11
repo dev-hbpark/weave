@@ -2633,6 +2633,39 @@ function DesignPageBody() {
                                                 }
                                               : undefined
                                           }
+                                          // Per-page delete from the rail. Pick a
+                                          // neighbor BEFORE removing so the active
+                                          // page / selection never strands on the
+                                          // deleted id (resolveActivePage would else
+                                          // snap to page 1). The panel hides the
+                                          // action on the last page, so ≥ 1 remains.
+                                          onDeletePage={
+                                            editorMode.rail.deletePage
+                                              ? (id) => {
+                                                  const order = presentationOrder;
+                                                  const i = order.indexOf(id);
+                                                  const neighbor =
+                                                    i >= 0
+                                                      ? (order[i + 1] ?? order[i - 1])
+                                                      : undefined;
+                                                  const r = editor.exec(
+                                                    "weave.item.remove",
+                                                    { itemId: id },
+                                                  );
+                                                  if (r.ok) {
+                                                    if (selectedFrameId === id) {
+                                                      setSelectedFrameId(neighbor);
+                                                    }
+                                                    if (
+                                                      activePageId === id &&
+                                                      neighbor !== undefined
+                                                    ) {
+                                                      setActivePageId(neighbor);
+                                                    }
+                                                  }
+                                                }
+                                              : undefined
+                                          }
                                         />
                                       </div>,
                                       document.body,

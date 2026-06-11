@@ -205,6 +205,9 @@ export interface RailPolicy {
   readonly addPage: boolean;
   /** WI-155 per-page duplicate footer action. */
   readonly duplicatePage: boolean;
+  /** Per-page delete footer action (rail-side page removal). The panel hides
+   *  it when only one page remains — a deck always keeps ≥ 1 page. */
+  readonly deletePage: boolean;
   /** Rail tile click switches the active page (WI-153 P2). */
   readonly clickActivatesPage: boolean;
 }

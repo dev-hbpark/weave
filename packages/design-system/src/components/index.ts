@@ -165,6 +165,7 @@ export {
   IconShapeTriangle,
   IconSparkle,
   IconText,
+  IconTrash,
   IconUnderline,
   IconUndo,
   IconUngroup,

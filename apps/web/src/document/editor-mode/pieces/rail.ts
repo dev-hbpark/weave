@@ -24,6 +24,7 @@ export const OVERVIEW_RAIL: RailPolicy = {
   focusCycle: true,
   addPage: false,
   duplicatePage: false,
+  deletePage: true,
   clickActivatesPage: false,
 };
 
@@ -36,5 +37,6 @@ export const PAGE_LIFECYCLE_RAIL: RailPolicy = {
   focusCycle: false,
   addPage: true,
   duplicatePage: true,
+  deletePage: true,
   clickActivatesPage: true,
 };

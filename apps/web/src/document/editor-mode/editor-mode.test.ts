@@ -189,6 +189,7 @@ describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior 
         focusCycle: true,
         addPage: false,
         duplicatePage: false,
+        deletePage: true,
         clickActivatesPage: false,
       });
     }
@@ -203,6 +204,7 @@ describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior 
         focusCycle: false,
         addPage: true,
         duplicatePage: true,
+        deletePage: true,
         clickActivatesPage: true,
       });
     }
