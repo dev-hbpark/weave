@@ -746,27 +746,35 @@ export function ThumbnailPanel({
                     <IconCopy size={13} />
                   </button>
                 ) : null}
-                {/* Per-page delete. Same footer-action pattern as duplicate.
-                    Hidden on the last remaining page (a deck keeps ≥ 1 page)
-                    and on disabled (gated) tiles. */}
-                {onDeletePage !== undefined && !isDisabled && entries.length > 1 ? (
+                {/* Per-page delete. Kept subtly visible (not hover-only) so it
+                    is discoverable at a glance — same opacity treatment as the
+                    deck toggle. On the LAST remaining page it renders disabled
+                    (a deck always keeps ≥ 1 page) instead of vanishing, so the
+                    affordance never silently disappears. Gated tiles omit it. */}
+                {onDeletePage !== undefined && !isDisabled ? (
                   <button
                     type="button"
+                    disabled={entries.length <= 1}
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (entries.length <= 1) return;
                       onDeletePage(entry.id);
                     }}
                     data-testid={`thumbnail-delete-${idx}`}
                     aria-label="페이지 삭제"
-                    data-tip="페이지 삭제"
+                    data-tip={
+                      entries.length <= 1 ? "마지막 페이지는 삭제할 수 없습니다" : "페이지 삭제"
+                    }
                     className={
                       "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
                       // WI-101 — lift above the absolute inset-0 z-0 activation
                       // button so the click reaches this action.
                       "relative z-10 " +
-                      "text-[color:var(--text-muted)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 " +
-                      "hover:text-[color:var(--danger,#e5484d)] hover:bg-[color:var(--surface-2)] " +
+                      (entries.length <= 1
+                        ? "text-[color:var(--text-muted)] opacity-30 cursor-not-allowed "
+                        : "text-[color:var(--text-muted)] opacity-60 group-hover:opacity-100 focus-visible:opacity-100 " +
+                          "hover:text-[color:var(--danger,#e5484d)] hover:bg-[color:var(--surface-2)] ") +
                       "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
                     }
                   >
