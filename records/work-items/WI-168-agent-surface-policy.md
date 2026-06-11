@@ -89,3 +89,19 @@
     ② `weave.batch` 내부 op는 byName Map으로 직접 디스패치되어 roundGroup
     입력 가드를 우회 — pre-existing, 본 WI 비-scope. batch 어댑터는 inner
     op 번역(page.add/add 리타겟)은 수행.
+- 2026-06-11 (3차 후속 fix, 사용자 보고): **프레젠테이션 모드 에이전트 편집 시
+  ToolSearch 반복 호출 + 편집 커맨드 전부 실패**. 근본 원인은 2차 수정의 잘못된
+  전제 — "도구 광고 describe는 서버 요청마다 재평가"는 사실이 아니며,
+  small-think `createCommandTools`가 `describe()`를 **connect 시점 1회 동결**
+  ("Read once per build"; 재연결도 같은 MCP 레지스트리 재사용). 위저드 신규
+  디자인은 로컬 핸드오프로 즉시 로드 → connect-on-init(자식 이펙트)이 등록
+  이펙트(부모)보다 같은 커밋에서 먼저 실행 → 빈 도구 집합 동결 → 에이전트는
+  snapshot/capabilities만 가진 채 ToolSearch 루프. 네트워크-로드 디자인은
+  창을 비껴가 flavor 의존처럼 보였으나 실은 로드-타이밍 레이스(프로브: 양
+  flavor 모두 connect 시점 list()=0). 수정: `waitForRegisteredCommands` —
+  getHandle이 connect 전 레지스트리 등록을 유한 대기(50ms 폴/상한 5s) + DEV
+  `[aku connect] tool surface frozen at connect` 진단 영구 추가 + 마운트
+  시점에 항상 count:0을 찍던 `[aku commands]` 진단을 1틱 지연으로 정정.
+  검증: 단위 3건 추가(commands-ready.test.ts) · 1045 green · 게이트 5종 OK ·
+  프로브(mixed 45/slide-deck 46 동결) · slide-deck 라이브 편집 1턴 성공.
+  DR-115 §7.3 정정 + §7.7 신설.

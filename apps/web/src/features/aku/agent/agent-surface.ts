@@ -112,14 +112,17 @@ export function bindAgentSurface(opts: {
     },
     // list() must NOT throw on an unresolved command: connectAgocraftAgent
     // calls deriveCommandSchemas(commands) → list() SYNCHRONOUSLY at connect,
-    // and the eager connect-on-init effect runs BEFORE useWeaveEditor's
+    // and the eager connect-on-init effect can run BEFORE useWeaveEditor's
     // registration effect — the registry is still empty then (probe-proven;
     // throwing here broke every page-bounded connect). Skipping matches the
-    // raw registry's transient-emptiness semantics on free flavors: the
-    // bridge's tool advertisement (`describe`) is a lazy closure re-evaluated
-    // per server request, so the full set appears once registration lands.
-    // Real catalogue drift is owned statically by
-    // editor-mode/agent-surface.coverage.test.ts (exhaustiveness guard).
+    // raw registry's transient-emptiness semantics on free flavors.
+    // CAUTION: the bridge's tool advertisement is NOT lazy — createCommandTools
+    // materializes describe() ONCE at connect ("Read once per build"), so an
+    // empty list() here would be frozen for the connection's whole lifetime.
+    // The connect path therefore WAITS for registration before connecting
+    // (waitForRegisteredCommands in use-aku-agent.ts) — that guard, not this
+    // skip, is what keeps the advertised set complete. Real catalogue drift is
+    // owned statically by editor-mode/agent-surface.coverage.test.ts.
     list: () =>
       [...adaptersByExposed.values()]
         .map((adapter) => resolveExposed(adapter))

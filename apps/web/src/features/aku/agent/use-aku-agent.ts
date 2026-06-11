@@ -191,6 +191,44 @@ function toConnection(state: ConnectionState): AkuConnection {
   return { state, banner: CONNECTION_BANNER[state] };
 }
 
+// ── connect-time tool-surface readiness (WI-168 follow-up) ──────────────────
+// The bridge MATERIALIZES the advertised tool set ONCE at connect:
+// `createCommandTools` (small-think command-bridge.ts) reads `describe()` at
+// build time ("Read once per build"), and `createToolClient` registers that
+// frozen array into the MCP registry reused for the connection's WHOLE
+// lifetime — reconnects re-serve the same registry. So whatever the command
+// registry resolves at the connect instant is the agent's tool set forever.
+//
+// Connect-on-init can fire in the SAME commit as the first mount: a fresh
+// wizard design loads instantly (new-design handoff), so `designLoaded` is
+// already true at mount, and AkuAssistant's (child) effects run BEFORE
+// useWeaveEditor's (parent) registration effect. Connecting in that window
+// freezes an EMPTY tool set — the agent keeps design.snapshot/capabilities
+// but has ZERO edit commands for the session: the headless agent loops
+// ToolSearch hunting for edit tools and every edit "fails" (probe-proven:
+// list() === [] at connect on BOTH flavors when the design loads in the
+// mount commit; network-loaded designs flip designLoaded later and miss the
+// window, which is why the bug looked flavor-dependent).
+/** Poll step — registration lands in the same effect flush, so the first tick
+ *  almost always resolves it. */
+const COMMANDS_READY_POLL_MS = 50;
+/** Upper bound so a command-less host (no commandTargets) still connects —
+ *  it then advertises the empty set exactly as before this guard. */
+const COMMANDS_READY_MAX_WAIT_MS = 5_000;
+
+/** Resolve once the registry resolves at least one command (or the bounded
+ *  wait elapses). Exported for unit tests. */
+export async function waitForRegisteredCommands(
+  commands: { list(): ReadonlyArray<unknown> },
+  opts: { readonly pollMs?: number; readonly maxWaitMs?: number } = {},
+): Promise<void> {
+  const pollMs = opts.pollMs ?? COMMANDS_READY_POLL_MS;
+  const maxWaitMs = opts.maxWaitMs ?? COMMANDS_READY_MAX_WAIT_MS;
+  for (let waited = 0; commands.list().length === 0 && waited < maxWaitMs; waited += pollMs) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
 /** Per-task `[현재 테마]` line: the live editor theme (name + dark/light tone),
  *  read off `<html data-theme>`. The agent uses the tone to keep any LITERAL
  *  colors readable on the active surface; structural color stays in var(--token)
@@ -396,20 +434,26 @@ export function useAkuAgent(deps: {
   // allow-list with wrapped tools on page-bounded flavors.
   const commands = useMemo(() => editor.container.resolve(CommandRegistryToken), [editor]);
   // DEV diagnostic for the "No command registered with name weave.item.add" class
-  // of runtime errors (stale build / registry mismatch). Logs the command set the
-  // agent is actually given at connect time. If `hasItemAdd` is false or `count` is
-  // tiny here while the source registers the command (commands.ts buildWeaveCommands
-  // → registerWeaveCommands), the running bundle is out of sync with source
-  // (rebuild/restart) OR this resolved CommandRegistry is not the instance
-  // registerWeaveCommands populated. Gated behind DEV so production never logs.
+  // of runtime errors (stale build / registry mismatch). If `hasItemAdd` is false
+  // or `count` is tiny here while the source registers the command (commands.ts
+  // buildWeaveCommands → registerWeaveCommands), the running bundle is out of
+  // sync with source (rebuild/restart) OR this resolved CommandRegistry is not
+  // the instance registerWeaveCommands populated. Deferred one tick: this hook's
+  // effects run BEFORE useWeaveEditor's registration effect (child before
+  // parent), so a synchronous read here always logs a misleading count:0 — what
+  // the agent actually gets at connect is logged by "[aku connect]" instead.
+  // Gated behind DEV so production never logs.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    const names = commands.list().map((c) => c.name);
-    console.debug("[aku commands] exposed to agent", {
-      count: names.length,
-      hasItemAdd: commands.has("weave.item.add"),
-      names,
-    });
+    const t = setTimeout(() => {
+      const names = commands.list().map((c) => c.name);
+      console.debug("[aku commands] registered set (post-mount)", {
+        count: names.length,
+        hasItemAdd: commands.has("weave.item.add"),
+        names,
+      });
+    }, 0);
+    return () => clearTimeout(t);
   }, [commands]);
   // WI-060 — group each agent ROUND's tool calls into one undo entry. The bridge
   // drives THIS proxy editor (begin/end an async-spanning transaction group per
@@ -505,43 +549,61 @@ export function useAkuAgent(deps: {
       return Promise.reject(new Error("no-token")); // gated by the UI; defensive
     }
     if (connectingRef.current === null) {
-      const schema = depsRef.current.getDocument().schema as Schema | undefined;
       // connectTimeoutMs + auto-reconnect + heartbeat are owned by the library now
       // (small-think DR-010): no consumer-side Promise.race, and transient drops
       // self-heal — the handle re-dials and re-submits in-flight turns.
-      const connect = connectAgocraftAgent({
-        // The bridge drives the BOUND surface (WI-168): surface.editor resolves
-        // exposed tool names → internal commands (+ mapInput) and forwards to
-        // the round-grouping proxy underneath, so a round's calls still share
-        // one transaction id → one Cmd+Z (WI-060). surface.commands/schemas
-        // control the advertised tool set per flavor (DR-115).
-        editor: surface.editor,
-        commands: surface.commands,
-        getDocument: () => depsRef.current.getDocument(),
-        schemas: surface.schemas,
-        // Curated, weave-accurate capabilities → grounds the agent's (cached)
-        // system prompt in weave's kinds/attrs/coordinate model (WI-054 hardening).
-        capabilities: WEAVE_CAPABILITIES,
-        // Initialization step: transfer weave's stable design-domain expertise ONCE
-        // at connect (the ctl hello). The server caches it as "# weave domain
-        // knowledge", grounding every task in how weave's model works (WI-054+).
-        domain: { name: "weave", text: AKU_ABLATION.weaveDomain ? WEAVE_DOMAIN_KNOWLEDGE : "" },
-        // Opt into the server's pre-generation "which media item types?" question.
-        onClarify: (req) => onClarifyRef.current(req),
-        // The server announces its active config (mode + model/speed knobs) on connect;
-        // surface it in the panel header so the operator sees what's actually running.
-        onServerInfo: (info) => setServerInfo(info),
-        // Live queue view (WI-034): running/queued + this client's positions.
-        onQueueStatus: (s) => setQueueStatus(s),
-        userId: `weave:${designId === "" ? "default" : designId}`,
-        // Stable client identity for the server's grace window — deterministic from the
-        // design id so a reconnect / refresh of THIS design re-presents the same id and the
-        // server replays its in-flight requests (WI-034 P2). Absent for an unsaved design.
-        ...(designId !== "" ? { clientId: `weave-client:${designId}` } : {}),
-        url,
-        token,
-        connectTimeoutMs: CONNECT_TIMEOUT_MS,
-        ...(schema !== undefined ? { schema } : {}),
+      //
+      // NEVER freeze an empty surface: the bridge reads the command list ONCE
+      // at connect (see waitForRegisteredCommands above), so wait for the
+      // registration effect before connecting. Submit-time calls see a
+      // populated registry and pass through on the first check.
+      const connect = waitForRegisteredCommands(surface.commands).then(() => {
+        const schema = depsRef.current.getDocument().schema as Schema | undefined;
+        // DEV diagnostic (WI-168 regression class): log the tool set being
+        // frozen into this connection. A tiny count here while the source
+        // registers ~46 commands means the readiness wait above regressed —
+        // the agent would see (almost) no edit tools until a fresh handle.
+        if (import.meta.env.DEV) {
+          const advertised = surface.commands.list().map((c) => c.name);
+          console.debug("[aku connect] tool surface frozen at connect", {
+            count: advertised.length,
+            names: advertised,
+          });
+        }
+        return connectAgocraftAgent({
+          // The bridge drives the BOUND surface (WI-168): surface.editor resolves
+          // exposed tool names → internal commands (+ mapInput) and forwards to
+          // the round-grouping proxy underneath, so a round's calls still share
+          // one transaction id → one Cmd+Z (WI-060). surface.commands/schemas
+          // control the advertised tool set per flavor (DR-115).
+          editor: surface.editor,
+          commands: surface.commands,
+          getDocument: () => depsRef.current.getDocument(),
+          schemas: surface.schemas,
+          // Curated, weave-accurate capabilities → grounds the agent's (cached)
+          // system prompt in weave's kinds/attrs/coordinate model (WI-054 hardening).
+          capabilities: WEAVE_CAPABILITIES,
+          // Initialization step: transfer weave's stable design-domain expertise ONCE
+          // at connect (the ctl hello). The server caches it as "# weave domain
+          // knowledge", grounding every task in how weave's model works (WI-054+).
+          domain: { name: "weave", text: AKU_ABLATION.weaveDomain ? WEAVE_DOMAIN_KNOWLEDGE : "" },
+          // Opt into the server's pre-generation "which media item types?" question.
+          onClarify: (req) => onClarifyRef.current(req),
+          // The server announces its active config (mode + model/speed knobs) on connect;
+          // surface it in the panel header so the operator sees what's actually running.
+          onServerInfo: (info) => setServerInfo(info),
+          // Live queue view (WI-034): running/queued + this client's positions.
+          onQueueStatus: (s) => setQueueStatus(s),
+          userId: `weave:${designId === "" ? "default" : designId}`,
+          // Stable client identity for the server's grace window — deterministic from the
+          // design id so a reconnect / refresh of THIS design re-presents the same id and the
+          // server replays its in-flight requests (WI-034 P2). Absent for an unsaved design.
+          ...(designId !== "" ? { clientId: `weave-client:${designId}` } : {}),
+          url,
+          token,
+          connectTimeoutMs: CONNECT_TIMEOUT_MS,
+          ...(schema !== undefined ? { schema } : {}),
+        });
       });
       // On ANY first-connect failure clear the cached attempt so the next send
       // reconnects cleanly. On success, subscribe to the connection lifecycle so the

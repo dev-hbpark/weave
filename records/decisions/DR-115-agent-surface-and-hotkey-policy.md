@@ -187,11 +187,12 @@ allow-list가 표면을 소유한다. 신규 커맨드 추가 시 각 flavor 표
    "에이전트 서버에 연결하지 못했어요"로 실패(사용자 보고 → 프로브 재현:
    mixed 연결/slide-deck 실패 → connect-실패 console.error 추가로 원인
    확정). 최종: 뷰는 lazy 해석 + 미등록 항목 스킵(free flavor raw
-   레지스트리의 transient-empty 의미론과 동일; 도구 광고 `describe`는 서버
-   요청마다 재평가되는 클로저라 등록 완료 후 전체 집합이 노출된다). 정적
+   레지스트리의 transient-empty 의미론과 동일). 정적
    판정(중복 exposedName, 스키마 누락)만 bind-시점 loud-fail. 등재-but-
    미등록 드리프트는 `editor-mode/agent-surface.coverage.test.ts`(등록
    커맨드 전수 triage 강제)가 테스트 레벨에서 닫는다.
+   **정정(3차 수정에서 확인)**: 2차 수정 당시 "도구 광고 `describe`는 서버
+   요청마다 재평가되는 클로저"라고 기록했으나 **사실이 아니다** — §7.7 참조.
 4. **`weave.preset.insertSlide`는 pass-through** — §2b는 어댑터 후보로
    적었으나 이 커맨드는 "root에 삽입"이 정답인 페이지-수명주기 커맨드라
    번역할 것이 없다(WI-167 Next의 제외 사례와 동일 판정).
@@ -203,3 +204,21 @@ allow-list가 표면을 소유한다. 신규 커맨드 추가 시 각 flavor 표
    의존이라 이 환경(no-network sandbox)에서 실행 불가. page.add 경로는
    순수 입력 변환 + façade exec 프록시 단위로 완결 검증(28 tests).
    비교가능 e2e 서브셋 13파일은 기준선 정확 복원(40 passed / 3 known-red).
+7. **도구 광고는 connect 시점에 1회 동결된다 (3차 수정, 사용자 보고:
+   "프레젠테이션에서 ToolSearch 반복 + 편집 커맨드 전부 실패")** —
+   small-think `createCommandTools`(command-bridge.ts)는 `describe()`를
+   **빌드 시점에 1회** 읽고("Read once per build") `createToolClient`가 그
+   고정 배열을 MCP 레지스트리에 등록한다. 재연결(bringUp)도 같은 레지스트리를
+   재사용하므로 **connect 순간의 커맨드 목록이 그 연결의 평생 도구 집합**이다.
+   위저드 신규 디자인은 로컬 핸드오프로 즉시 로드 → `designLoaded`가 마운트
+   커밋부터 true → connect-on-init(자식 이펙트)이 등록 이펙트(부모)보다 먼저
+   실행 → **빈 도구 집합이 동결**(snapshot/capabilities만 남음) → 헤드리스
+   에이전트가 ToolSearch를 반복하며 편집 도구를 찾다 실패. 네트워크-로드
+   디자인(주로 기존 mixed)은 `designLoaded`가 늦게 flip되어 창을 비껴가므로
+   flavor 의존처럼 보였으나 실제로는 **로드-타이밍 레이스**(프로브 재현: 양
+   flavor 모두 connect 시점 list() = 0). 수정: `waitForRegisteredCommands`
+   (use-aku-agent.ts) — getHandle이 connect 전 레지스트리 등록을 유한 대기
+   (50ms 폴, 상한 5s; 등록은 같은 이펙트 플러시에서 끝나 첫 틱에 해소).
+   프로브 검증: mixed 45 / slide-deck 46 노출명 동결 + slide-deck 라이브
+   편집 1턴 성공. DEV 진단 `[aku connect] tool surface frozen at connect`
+   영구 유지(동결 집합이 작으면 이 가드의 회귀).
