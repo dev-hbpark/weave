@@ -16,9 +16,16 @@
  * 모드를 `serverInfo.mode` 로 통보한다 — AkuServerInfoChip 이 그대로 보여준다.
  */
 
-/** "server" = hello 에 모드를 싣지 않음(서버 부팅 모드 그대로) — 첫 선택 전 기본값.
- *  나머지 둘은 서버의 실행 모드 2종(DR-057 통합 후)에 대한 요청. */
+/** "server" = hello 에 모드를 싣지 않음(서버 부팅 모드 그대로) — 명시적으로 저장된
+ *  경우에만 동작하는 레거시/탈출구 값. 나머지 둘은 서버의 실행 모드 2종(DR-057
+ *  통합 후)에 대한 요청. 첫 선택 전 기본값은 DEFAULT_AGENT_MODE. */
 export type AkuAgentMode = "server" | "api" | "byo-ssh";
+
+/** 첫 선택 전(저장값 없음/가비지/localStorage 차단) 기본 모드 — 운영자 결정(WI-178):
+ *  현 배포의 일상 모드가 구독 CLI(byo-ssh)이므로 새 브라우저도 그걸 요청한다.
+ *  서버 allowlist 가 거부하면 부팅 모드로 폴백하고 serverInfo.mode 로 통보된다
+ *  (WI-175 승인 불가정 원칙 그대로 — 기본값이 바뀌어도 안전). */
+export const DEFAULT_AGENT_MODE: AkuAgentMode = "byo-ssh";
 
 /** 세그먼트 컨트롤에 노출하는 선택지 — 실행 모드 2종만 ("server" 는 선택-이전 상태). */
 export const AKU_AGENT_MODE_OPTIONS: ReadonlyArray<{
@@ -51,15 +58,16 @@ function isAkuAgentMode(v: unknown): v is AkuAgentMode {
   return typeof v === "string" && MODE_VALUES.includes(v);
 }
 
-/** 저장된 모드 (검증/마이그레이션 통과 시) — 아니면 "server". localStorage 차단 환경도 "server". */
+/** 저장된 모드 (검증/마이그레이션 통과 시) — 아니면 DEFAULT_AGENT_MODE.
+ *  localStorage 차단 환경도 DEFAULT_AGENT_MODE. */
 export function loadAgentMode(): AkuAgentMode {
   try {
     const v = window.localStorage.getItem(MODE_KEY);
     const migrated = v !== null ? MODE_ALIASES[v] : undefined;
     if (migrated !== undefined) return migrated;
-    return isAkuAgentMode(v) ? v : "server";
+    return isAkuAgentMode(v) ? v : DEFAULT_AGENT_MODE;
   } catch {
-    return "server";
+    return DEFAULT_AGENT_MODE;
   }
 }
 

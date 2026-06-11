@@ -3,6 +3,7 @@ import { nn } from "../../../lib/nn.js";
 import {
   AKU_AGENT_MODE_OPTIONS,
   connectModeOptions,
+  DEFAULT_AGENT_MODE,
   loadAgentMode,
   saveAgentMode,
 } from "./agent-mode.js";
@@ -81,11 +82,15 @@ describe("agent-mode persistence", () => {
     expect(loadAgentMode()).toBe("api");
   });
 
-  it("rejects garbage (stale/foreign values must not lock the client into a bad hello)", () => {
+  it("rejects garbage / missing value → DEFAULT_AGENT_MODE (WI-178: byo-ssh)", () => {
+    // The default is byo-ssh — the deployment's everyday mode (subscription CLI).
+    // Server allowlist still gates it: denial falls back to the boot mode and
+    // serverInfo.mode announces the granted mode (WI-175), so this is safe.
+    expect(DEFAULT_AGENT_MODE).toBe("byo-ssh");
     window.localStorage.setItem("weave.aku.agent-mode", "yolo-mode");
-    expect(loadAgentMode()).toBe("server");
+    expect(loadAgentMode()).toBe("byo-ssh");
     window.localStorage.removeItem("weave.aku.agent-mode");
-    expect(loadAgentMode()).toBe("server");
+    expect(loadAgentMode()).toBe("byo-ssh");
   });
 });
 
