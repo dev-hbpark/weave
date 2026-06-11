@@ -3,6 +3,8 @@ import {
   costFromEvent,
   describeCostDetail,
   formatCostLine,
+  formatLimitsLine,
+  formatPercent,
   formatTokens,
   formatUsd,
 } from "./cost-event.js";
@@ -61,6 +63,42 @@ describe("costFromEvent (WI-176)", () => {
   it("a malformed costUsd degrades to tokens-only (does not kill the record)", () => {
     expect(costFromEvent({ ...valid, costUsd: "0.03" })).not.toHaveProperty("costUsd");
   });
+
+  it("carries the subscription windows through (WI-177 — small-think DR-059)", () => {
+    const withLimits = {
+      ...valid,
+      limits: [
+        { window: "five_hour", utilization: 0.23, resetsAt: 1_770_000_000 },
+        { window: "seven_day", utilization: 0.41 },
+      ],
+    };
+    expect(costFromEvent(withLimits)?.limits).toEqual([
+      { window: "five_hour", utilization: 0.23, resetsAt: 1_770_000_000 },
+      { window: "seven_day", utilization: 0.41 },
+    ]);
+  });
+
+  it("drops malformed window ENTRIES individually; empty/absent/garbage limits → absent", () => {
+    const mixed = {
+      ...valid,
+      limits: [
+        { window: "five_hour", utilization: 0.23 },
+        { window: "", utilization: 0.5 }, // empty id
+        { window: "seven_day", utilization: "0.41" }, // non-number
+        { window: "seven_day", utilization: Number.NaN }, // non-finite
+        null,
+      ],
+    };
+    expect(costFromEvent(mixed)?.limits).toEqual([{ window: "five_hour", utilization: 0.23 }]);
+    expect(costFromEvent(valid)).not.toHaveProperty("limits");
+    expect(costFromEvent({ ...valid, limits: [] })).not.toHaveProperty("limits");
+    expect(costFromEvent({ ...valid, limits: "nope" })).not.toHaveProperty("limits");
+  });
+
+  it("a malformed resetsAt degrades to a reset-less window (does not kill the entry)", () => {
+    const e = { ...valid, limits: [{ window: "five_hour", utilization: 0.1, resetsAt: "soon" }] };
+    expect(costFromEvent(e)?.limits).toEqual([{ window: "five_hour", utilization: 0.1 }]);
+  });
 });
 
 describe("cost formatting", () => {
@@ -96,6 +134,53 @@ describe("cost formatting", () => {
         cacheWriteTokens: 0,
       }),
     ).toBe("입력 100 · 출력 200 토큰");
+  });
+
+  it("percent: 0–1 fraction rendered as a rounded %, clamped defensively", () => {
+    expect(formatPercent(0.23)).toBe("23%");
+    expect(formatPercent(0.005)).toBe("1%");
+    expect(formatPercent(0)).toBe("0%");
+    expect(formatPercent(1.7)).toBe("100%"); // defensive clamp
+    expect(formatPercent(-0.1)).toBe("0%");
+  });
+
+  it("limits line: labeled via the window registry, short window first, unknown id verbatim", () => {
+    expect(
+      formatLimitsLine([
+        { window: "seven_day", utilization: 0.41 }, // arrival order reversed on purpose
+        { window: "five_hour", utilization: 0.23 },
+      ]),
+    ).toBe("5시간 23% · 주간 41%");
+    expect(formatLimitsLine([{ window: "lunar_cycle", utilization: 0.5 }])).toBe("lunar_cycle 50%");
+  });
+
+  it("footer appends the subscription windows after the cost (byo-ssh)", () => {
+    expect(
+      formatCostLine({
+        inputTokens: 1200,
+        outputTokens: 3400,
+        cacheReadTokens: 56000,
+        cacheWriteTokens: 800,
+        costUsd: 0.0345,
+        limits: [
+          { window: "five_hour", utilization: 0.23 },
+          { window: "seven_day", utilization: 0.41 },
+        ],
+      }),
+    ).toBe("입력 58k · 출력 3.4k 토큰 · $0.0345 · 5시간 23% · 주간 41%");
+  });
+
+  it("tooltip explains the windows as CURRENT fill (not this task's burn), with reset time", () => {
+    const detail = describeCostDetail({
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      limits: [{ window: "five_hour", utilization: 0.23, resetsAt: 1_770_000_000 }],
+    });
+    expect(detail).toContain("구독 윈도우 5시간 23%");
+    expect(detail).toContain("리셋");
+    expect(detail).toContain("태스크 종료 시점의 전체 사용률");
   });
 
   it("tooltip carries the exact breakdown + the estimate caveat", () => {

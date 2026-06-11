@@ -41,6 +41,20 @@ export interface AkuCostRecord {
   readonly cacheReadTokens: number;
   readonly cacheWriteTokens: number;
   readonly costUsd?: number;
+  /** Subscription rate-limit windows at the END of the task (small-think DR-059 —
+   *  byo-ssh only; api mode bills per token and never reports windows). Snapshot of
+   *  how full each window is NOW (other sessions burn the same windows), not "what
+   *  this task consumed". `utilization` is a 0–1 fraction. */
+  readonly limits?: ReadonlyArray<AkuLimitWindow>;
+}
+
+/** One subscription window snapshot (server passes the SDK's window id through
+ *  verbatim: "five_hour", "seven_day", "seven_day_opus", …). */
+export interface AkuLimitWindow {
+  readonly window: string;
+  readonly utilization: number;
+  /** Unix epoch SECONDS when the window resets, when known. */
+  readonly resetsAt?: number;
 }
 
 export interface AkuAssistantMessage {

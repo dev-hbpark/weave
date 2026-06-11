@@ -8,10 +8,28 @@
  * `unknown` 으로 받아 형태를 검증해 좁힌다 (닫힌 유니온과의 비교 금지, 재-vendor 불필요).
  */
 
-import type { AkuCostRecord } from "../types.js";
+import type { AkuCostRecord, AkuLimitWindow } from "../types.js";
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
+}
+
+/** `limits` 항목 1개를 형태 검증으로 좁힌다 — window 문자열 + 유한 utilization 이
+ *  필수, resetsAt 은 유한수일 때만 동봉. malformed 항목은 개별 탈락 (전체 강등 아님). */
+function limitFromEntry(entry: unknown): AkuLimitWindow | undefined {
+  if (typeof entry !== "object" || entry === null) return undefined;
+  const w = entry as {
+    readonly window?: unknown;
+    readonly utilization?: unknown;
+    readonly resetsAt?: unknown;
+  };
+  if (typeof w.window !== "string" || w.window === "") return undefined;
+  if (!isFiniteNumber(w.utilization)) return undefined;
+  return {
+    window: w.window,
+    utilization: w.utilization,
+    ...(isFiniteNumber(w.resetsAt) ? { resetsAt: w.resetsAt } : {}),
+  };
 }
 
 /** `cost` 이벤트면 AkuCostRecord 로 좁혀 반환, 아니면 undefined (무시). */
@@ -24,6 +42,7 @@ export function costFromEvent(event: unknown): AkuCostRecord | undefined {
     readonly cacheReadTokens?: unknown;
     readonly cacheWriteTokens?: unknown;
     readonly costUsd?: unknown;
+    readonly limits?: unknown;
   };
   if (e.type !== "cost") return undefined;
   if (
@@ -33,12 +52,18 @@ export function costFromEvent(event: unknown): AkuCostRecord | undefined {
     !isFiniteNumber(e.cacheWriteTokens)
   )
     return undefined;
+  // 구독 윈도우 (small-think DR-059, byo-ssh 전용) — malformed costUsd 처럼
+  // 토큰-온리로 강등하되, 배열이면 항목 단위로 검증해 살아남은 것만 싣는다.
+  const limits = Array.isArray(e.limits)
+    ? e.limits.map(limitFromEntry).filter((w): w is AkuLimitWindow => w !== undefined)
+    : [];
   return {
     inputTokens: e.inputTokens,
     outputTokens: e.outputTokens,
     cacheReadTokens: e.cacheReadTokens,
     cacheWriteTokens: e.cacheWriteTokens,
     ...(isFiniteNumber(e.costUsd) ? { costUsd: e.costUsd } : {}),
+    ...(limits.length > 0 ? { limits } : {}),
   };
 }
 
@@ -55,15 +80,69 @@ export function formatUsd(usd: number): string {
   return `$${usd.toFixed(usd < 1 ? 4 : 2)}`;
 }
 
-/** 버블 푸터 한 줄 — 입력은 캐시 읽기/쓰기 포함 총량 (모델에 실제로 들어간 토큰). */
+/** 구독 윈도우 id → 한글 라벨 (Rule 6: 데이터 맵, 미지 id 는 원문 표기). */
+const LIMIT_WINDOW_LABELS: Readonly<Record<string, string>> = {
+  five_hour: "5시간",
+  seven_day: "주간",
+  seven_day_opus: "주간 Opus",
+  seven_day_sonnet: "주간 Sonnet",
+  overage: "초과분",
+};
+
+/** 표시 순서 — 짧은 윈도우 먼저, 미지 id 는 맨 뒤(도착 순 유지). */
+const LIMIT_WINDOW_ORDER: Readonly<Record<string, number>> = {
+  five_hour: 0,
+  seven_day: 1,
+  seven_day_opus: 2,
+  seven_day_sonnet: 3,
+  overage: 4,
+};
+
+function limitLabel(window: string): string {
+  return LIMIT_WINDOW_LABELS[window] ?? window;
+}
+
+function sortedLimits(limits: ReadonlyArray<AkuLimitWindow>): ReadonlyArray<AkuLimitWindow> {
+  return [...limits].sort(
+    (a, b) => (LIMIT_WINDOW_ORDER[a.window] ?? 99) - (LIMIT_WINDOW_ORDER[b.window] ?? 99),
+  );
+}
+
+/** 0–1 fraction → "23%" (표시 방어상 0–100% 로 클램프). */
+export function formatPercent(utilization: number): string {
+  return `${Math.round(Math.min(Math.max(utilization, 0), 1) * 100)}%`;
+}
+
+/** "5시간 23% · 주간 41%" — 푸터에 이어 붙는 구독 윈도우 사용률. */
+export function formatLimitsLine(limits: ReadonlyArray<AkuLimitWindow>): string {
+  return sortedLimits(limits)
+    .map((w) => `${limitLabel(w.window)} ${formatPercent(w.utilization)}`)
+    .join(" · ");
+}
+
+/** 버블 푸터 한 줄 — 입력은 캐시 읽기/쓰기 포함 총량 (모델에 실제로 들어간 토큰);
+ *  byo-ssh 면 구독 윈도우 사용률("5시간 23% · 주간 41%")이 뒤에 붙는다. */
 export function formatCostLine(c: AkuCostRecord): string {
   const input = c.inputTokens + c.cacheReadTokens + c.cacheWriteTokens;
   const parts = [`입력 ${formatTokens(input)}`, `출력 ${formatTokens(c.outputTokens)} 토큰`];
   if (c.costUsd !== undefined) parts.push(formatUsd(c.costUsd));
+  if (c.limits !== undefined && c.limits.length > 0) parts.push(formatLimitsLine(c.limits));
   return parts.join(" · ");
 }
 
-/** 호버 툴팁 — 정확한 원본 수치 분해 (api 모드 달러는 공개 단가 기준 추정치). */
+/** 윈도우 리셋 시각 (epoch 초) → "6/11 21:30" 풍의 짧은 로컬 표기. */
+function formatResetAt(resetsAt: number): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(resetsAt * 1000));
+}
+
+/** 호버 툴팁 — 정확한 원본 수치 분해 (api 모드 달러는 공개 단가 기준 추정치).
+ *  구독 윈도우는 "지금 윈도우가 찬 %"(다른 세션 포함)이지 이 태스크의 소모분이 아니다. */
 export function describeCostDetail(c: AkuCostRecord): string {
   const parts = [
     `입력 ${c.inputTokens.toLocaleString()}`,
@@ -72,5 +151,16 @@ export function describeCostDetail(c: AkuCostRecord): string {
     `출력 ${c.outputTokens.toLocaleString()} 토큰`,
   ];
   if (c.costUsd !== undefined) parts.push(`${formatUsd(c.costUsd)} (api 모드는 추정치)`);
+  if (c.limits !== undefined && c.limits.length > 0) {
+    const windows = sortedLimits(c.limits)
+      .map(
+        (w) =>
+          `${limitLabel(w.window)} ${formatPercent(w.utilization)}${
+            w.resetsAt !== undefined ? ` (${formatResetAt(w.resetsAt)} 리셋)` : ""
+          }`,
+      )
+      .join(" · ");
+    parts.push(`구독 윈도우 ${windows} — 태스크 종료 시점의 전체 사용률`);
+  }
   return parts.join(" · ");
 }
