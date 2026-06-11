@@ -43,6 +43,14 @@ const PAGE_EXCLUDED: ReadonlyArray<string> = [
   // has no single activation target. The agent's page-copy path stays
   // weave.page.duplicate (one page per call, each activating its clone).
   "weave.pages.duplicate",
+  // WI-185 ⑭ — Cmd+G group (wrap siblings in a frame). PAGES are root
+  // siblings, so an agent passing page ids would wrap pages in a root frame
+  // and hijack the deck (the new root frame joins presentationOrder while
+  // the pages vanish from it). mapInput is pure (WI-168 residual limit) and
+  // the command's mixed-parents guard can't tell pages from content, so the
+  // page surface defers this until a doc-aware adapter can refuse page ids.
+  // The UI gesture (Cmd+G) is unaffected — it filters by capability first.
+  "weave.items.group",
 ];
 
 function asAdapters(tools: typeof PAGE_AGENT_SURFACE.tools): ReadonlyArray<AgentToolAdapter> {

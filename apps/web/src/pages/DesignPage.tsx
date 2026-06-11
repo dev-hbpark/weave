@@ -209,6 +209,7 @@ import { useDesignSave } from "./design/hooks/use-design-save.js";
 import { useFrameFocus } from "./design/hooks/use-frame-focus.js";
 import { useHandTool } from "./design/hooks/use-hand-tool.js";
 import { useItemAdd } from "./design/hooks/use-item-add.js";
+import { useOsImagePaste } from "./design/hooks/use-os-image-paste.js";
 import { useSelectionChromeRegistry } from "./design/hooks/use-selection-chrome-registry.js";
 import {
   LINE_CURVE,
@@ -222,6 +223,7 @@ import { DesignHeader } from "./design/view/DesignHeader.js";
 import { PeekCaptureLayer } from "./design/view/PeekCaptureLayer.js";
 import { SelectionToolbarOverlay } from "./design/view/SelectionToolbarOverlay.js";
 import { type FrameMenuContext, FrameStage } from "./FrameStage.js";
+import { cameraFitBox } from "./frame-camera-bridge.js";
 import { ThumbnailPanel } from "./ThumbnailPanel.js";
 
 /** Mounts the single UnifiedTooltip surface and disables it whenever the
@@ -256,6 +258,11 @@ function FrameContextMenu({
   onReparent,
   onClipboard,
   clipboardHasItems,
+  onDuplicate,
+  onGroup,
+  onUngroup,
+  onToggleLock,
+  locked,
   children,
   layers,
   onPickLayer,
@@ -288,6 +295,16 @@ function FrameContextMenu({
   /** WI-041 — disables the Paste / Paste Special rows when the clipboard
    *  store is empty. */
   readonly clipboardHasItems?: boolean;
+  /** WI-185 ⑮ — standard element-menu rows (Figma/office parity).
+   *  Duplicate clones the selection-aware id set (⌘D rhythm-aware). */
+  readonly onDuplicate?: () => void;
+  /** WI-185 ⑮ — present when ≥2 groupable siblings are in play → "그룹". */
+  readonly onGroup?: () => void;
+  /** WI-185 ⑮ — present when the clicked item is a dissolvable frame. */
+  readonly onUngroup?: () => void;
+  /** WI-185 ⑮ — lock/unlock toggle; `locked` picks the row label. */
+  readonly onToggleLock?: () => void;
+  readonly locked?: boolean;
   readonly children: ReactNodeAlias;
   readonly layers?: ReadonlyArray<LayerHit>;
   readonly onPickLayer?: (id: string) => void;
@@ -359,6 +376,14 @@ function FrameContextMenu({
             <ContextMenuSeparator />
           </>
         )}
+        {onDuplicate !== undefined && (
+          <>
+            <ContextMenuItem onSelect={onDuplicate} shortcut="⌘ D" data-testid="ctx-duplicate">
+              복제
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         {onZOrder !== undefined && (
           <>
             <ContextMenuItem
@@ -419,6 +444,26 @@ function FrameContextMenu({
             <ContextMenuSeparator />
           </>
         )}
+        {(onGroup !== undefined || onUngroup !== undefined || onToggleLock !== undefined) && (
+          <>
+            {onGroup !== undefined && (
+              <ContextMenuItem onSelect={onGroup} shortcut="⌘ G" data-testid="ctx-group">
+                그룹
+              </ContextMenuItem>
+            )}
+            {onUngroup !== undefined && (
+              <ContextMenuItem onSelect={onUngroup} shortcut="⌘ ⇧ G" data-testid="ctx-ungroup">
+                그룹 해제
+              </ContextMenuItem>
+            )}
+            {onToggleLock !== undefined && (
+              <ContextMenuItem onSelect={onToggleLock} data-testid="ctx-lock">
+                {locked === true ? "잠금 해제" : "잠금"}
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+          </>
+        )}
         {(onBreakToLine !== undefined || onCloseToShape !== undefined) && (
           <>
             {onBreakToLine !== undefined && (
@@ -441,6 +486,61 @@ function FrameContextMenu({
           data-testid="ctx-delete-frame"
         >
           삭제
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/** WI-185 ⑯ — empty-slide (page/stage) context menu. Pages are fixed
+ *  editing contexts (WI-163), so the element menu's structural verbs
+ *  (delete / z-order / move-to / group) make no sense on them — office
+ *  tools converge on exactly three: Paste · New slide · 배경. Same
+ *  interaction-mode wiring as FrameContextMenu so rubber-band / tooltips
+ *  stand down while open. */
+function PageContextMenu({
+  itemId,
+  pageNoun,
+  onPaste,
+  pasteEnabled,
+  onNewPage,
+  onEditBackground,
+  children,
+}: {
+  readonly itemId: string;
+  /** Flavor's page-unit noun — "슬라이드" (slide-deck) / "페이지" (doc-page). */
+  readonly pageNoun: string;
+  readonly onPaste: () => void;
+  readonly pasteEnabled: boolean;
+  readonly onNewPage: () => void;
+  readonly onEditBackground: () => void;
+  readonly children: ReactNodeAlias;
+}) {
+  const { setMode, restoreIdleFrom } = useInteractionMode();
+  return (
+    <ContextMenu
+      key={itemId}
+      onOpenChange={(open) => {
+        if (open) setMode("context-menu");
+        else restoreIdleFrom("context-menu");
+      }}
+    >
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem
+          onSelect={onPaste}
+          shortcut="⌘ V"
+          disabled={!pasteEnabled}
+          data-testid="page-ctx-paste"
+        >
+          붙여넣기
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={onNewPage} data-testid="page-ctx-new-page">
+          새 {pageNoun}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={onEditBackground} data-testid="page-ctx-background">
+          배경 변경
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -1452,6 +1552,10 @@ function DesignPageBody() {
     },
     resolveContainerSizePx: resolvePasteContainerSizePx,
     resolvePointerInContainer: resolvePastePointer,
+    // WI-185 ⑫ (spec D-5) — page-bounded flavors paste with the office
+    // contract (cross-page = source position); free placement keeps the
+    // cursor/offset model. Policy-fed, no flavor compare.
+    resolvePasteCoordMode: () => editorMode.insertion.pasteCoord,
   });
 
   // WI-089 — design-selection export / import. EXPORT serialises the current
@@ -1554,6 +1658,16 @@ function DesignPageBody() {
     resolveAddContainerRef,
     designWidth: design.width,
     designHeight: design.height,
+  });
+
+  // WI-185 ⑰ — OS-clipboard image paste. Fires only when the INTERNAL
+  // clipboard is empty (the Cmd+V binding's probe skips preventDefault then,
+  // letting the native `paste` event reach this listener). Inserts through
+  // the same add path as the "+" menu so container resolution (InsertionPolicy),
+  // geometry, and post-add selection all match.
+  useOsImagePaste({
+    addImage: (src) => addNewItem("image", undefined, src),
+    onInfo: (message) => showExportImportInfo(message),
   });
 
   // WI-027 Phase D — register host action slots for hover-scope commands.
@@ -1663,6 +1777,19 @@ function DesignPageBody() {
   // a single inverse patch.
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
+  // WI-185 ⑬ — smart duplicate (office Cmd+D rhythm). Remembers the LAST
+  // duplicate gesture {sourceIds, cloneIds} (kit returns clones in input
+  // order, so the arrays index-align). If the NEXT Cmd+D fires while the
+  // selection is exactly those clones, the live source→clone frame delta —
+  // i.e. wherever the user MOVED the copy since — is measured and repeated
+  // via weave.items.duplicateWithDelta, so copy → nudge → Cmd+D Cmd+D lays
+  // out an even series. Any other selection resets to the plain duplicate.
+  // Multi-select moves rigidly (WI-159), so the first resolvable pair
+  // carries the delta for the whole set.
+  const smartDuplicateRef = useRef<{
+    sourceIds: ReadonlyArray<string>;
+    cloneIds: ReadonlyArray<string>;
+  } | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   useEffect(() => {
     return setMultiDeleter(() => {
@@ -1791,15 +1918,81 @@ function DesignPageBody() {
       }
       // Cmd/Ctrl + D — duplicate the selection in place (offset copy) and
       // select the new items. One batch command (clipboard untouched) → a
-      // single undo step removes every copy.
+      // single undo step removes every copy. WI-185 ⑬ — when the selection
+      // is exactly the clones of the PREVIOUS Cmd+D, the source→clone delta
+      // (wherever the user moved the copy) is measured live and repeated
+      // (smartDuplicateRef above), so Cmd+D · move · Cmd+D · Cmd+D lays out
+      // an even series — the office duplicate rhythm.
       if (mod && !e.shiftKey && !e.altKey && (e.key === "d" || e.key === "D")) {
         const ids = Array.from(selectedIdsRef.current);
         if (ids.length === 0) return;
         e.preventDefault();
-        const r = editor.exec<unknown, ReadonlyArray<string>>("weave.items.duplicate", {
-          itemIds: ids,
+        const prev = smartDuplicateRef.current;
+        const doc = docInAgocraftRef.current;
+        let delta: { dx: number; dy: number } | undefined;
+        if (
+          prev !== null &&
+          doc !== undefined &&
+          ids.length === prev.cloneIds.length &&
+          ids.every((id) => prev.cloneIds.includes(id))
+        ) {
+          for (let i = 0; i < prev.sourceIds.length; i += 1) {
+            const sId = prev.sourceIds[i];
+            const cId = prev.cloneIds[i];
+            if (sId === undefined || cId === undefined) continue;
+            const sf = (findItemDeep(doc, sId)?.attrs as { frame?: { x: number; y: number } })
+              ?.frame;
+            const cf = (findItemDeep(doc, cId)?.attrs as { frame?: { x: number; y: number } })
+              ?.frame;
+            if (sf !== undefined && cf !== undefined) {
+              delta = { dx: cf.x - sf.x, dy: cf.y - sf.y };
+              break;
+            }
+          }
+        }
+        const r =
+          delta !== undefined
+            ? editor.exec<unknown, ReadonlyArray<string>>("weave.items.duplicateWithDelta", {
+                itemIds: ids,
+                dx: delta.dx,
+                dy: delta.dy,
+              })
+            : editor.exec<unknown, ReadonlyArray<string>>("weave.items.duplicate", {
+                itemIds: ids,
+              });
+        if (r.ok && r.value.length > 0) {
+          smartDuplicateRef.current = { sourceIds: ids, cloneIds: r.value };
+          selectFrames(r.value);
+        }
+        return;
+      }
+      // WI-185 ⑭ — Cmd/Ctrl + G: wrap the selection in a new frame (group);
+      // Cmd/Ctrl + Shift + G: dissolve the selected frame (ungroup — alias
+      // of Cmd+Backspace below). Handled here for the same focus-target
+      // reason as the rest of this listener. Capability-gated: pages
+      // (stages) are not movable, so they never join a wrap; locked items
+      // stay out too (lock = no structural edits, same rule as delete).
+      if (mod && !e.altKey && (e.key === "g" || e.key === "G")) {
+        if (e.shiftKey) {
+          const selId = selectedFrameIdRef.current;
+          if (selId === undefined) return;
+          e.preventDefault();
+          dissolveFrame(selId);
+          return;
+        }
+        const ids = Array.from(selectedIdsRef.current).filter((id) => {
+          if (!itemCapability(id).movable) return false;
+          const it = findItemDeep(docInAgocraftRef.current, id);
+          return !(it !== undefined && isItemLocked(it));
         });
-        if (r.ok && r.value.length > 0) selectFrames(r.value);
+        if (ids.length === 0) return;
+        e.preventDefault();
+        const r = editor.exec<unknown, string>("weave.items.group", {
+          itemIds: ids,
+          designWidth: designSizeRef.current.width,
+          designHeight: designSizeRef.current.height,
+        });
+        if (r.ok) selectFrames([r.value]);
         return;
       }
       // WI-050 — Cmd/Ctrl + Backspace: delete the selected frame but keep
@@ -1815,6 +2008,36 @@ function DesignPageBody() {
         if (selId === undefined) return;
         e.preventDefault();
         dissolveFrame(selId);
+        return;
+      }
+      // WI-185 ⑱ — Shift+2: zoom the camera to the current selection (Figma
+      // parity). Matched on `e.code` because Shift+2 types "@" on most
+      // layouts — the physical digit key is the binding. Union of the
+      // selected items' absolute boxes through the same cameraFitBox slot
+      // as every other fit (shared FRAME_FIT_FILL breathing room).
+      if (!mod && e.shiftKey && !e.altKey && e.code === "Digit2") {
+        const ids = Array.from(selectedIdsRef.current);
+        if (ids.length === 0) return;
+        const doc = docInAgocraftRef.current;
+        if (doc === undefined) return;
+        const { width: dw, height: dh } = designSizeRef.current;
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        let found = false;
+        for (const id of ids) {
+          const box = absoluteFrameBox(doc, id, dw, dh);
+          if (box === null) continue;
+          minX = Math.min(minX, box.x);
+          minY = Math.min(minY, box.y);
+          maxX = Math.max(maxX, box.x + box.w);
+          maxY = Math.max(maxY, box.y + box.h);
+          found = true;
+        }
+        if (!found) return;
+        e.preventDefault();
+        cameraFitBox({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
         return;
       }
       // Other Cmd/Ctrl combos are owned by the agocraft hotkey registry
@@ -2208,6 +2431,37 @@ function DesignPageBody() {
     children: ReactNodeAlias,
     ctx?: FrameMenuContext,
   ): ReactNodeAlias => {
+    // WI-185 ⑯ — a PAGE (stage role) gets the empty-slide menu, not the
+    // element menu: right-clicking the slide background is a context
+    // gesture (Paste / New slide / 배경), never a structural-edit one.
+    // Free-placement flavors never resolve "stage", so their root frames
+    // keep the element menu unchanged.
+    if (editorMode.roles.roleOf(docInAgocraft, itemId) === "stage") {
+      return (
+        <PageContextMenu
+          itemId={itemId}
+          pageNoun={pageNoun}
+          onPaste={() => dispatchEditorCommand("weave.clipboard.paste", { editor }, commandContext)}
+          pasteEnabled={clipboardCommands.hasItems}
+          onNewPage={() => {
+            // Same transaction as the rail "+" (WI-184 ⑩): the new page
+            // slots right after the right-clicked one and becomes active.
+            const r = editor.exec<unknown, string>("weave.page.add", { afterId: itemId });
+            if (r.ok) {
+              setSelectedFrameId(r.value);
+              if (editorMode.rail.clickActivatesPage) setActivePageId(r.value);
+            }
+          }}
+          onEditBackground={() => {
+            // Selecting the page surfaces the contextual toolbar's frame-
+            // background section (the WI-163 escape-hatch selection path).
+            setSelectedFrameId(itemId);
+          }}
+        >
+          {children}
+        </PageContextMenu>
+      );
+    }
     // WI-039 — selection-aware reparent. The
     // gesture moves either the right-clicked
     // frame OR the multi-selection it belongs
@@ -2231,6 +2485,22 @@ function DesignPageBody() {
     const cvItem = findItemDeep(docInAgocraft, itemId) as SerializedItem | undefined;
     const canBreak = cvItem !== undefined && canBreakShapeToLine(cvItem);
     const canClose = cvItem !== undefined && canCloseLineToShape(cvItem);
+    // WI-185 ⑮ — standard element-menu rows. Group is capability-gated the
+    // same way as the Cmd+G hotkey (pages/stages not movable; locked items
+    // out); Ungroup mirrors Cmd+Shift+G but only for a movable frame so a
+    // page can never be dissolved from the menu. Lock follows the DR-061
+    // QuickActionBar semantics (lock ALL if any is unlocked, one undo).
+    const groupableIds = movedIds.filter((id) => {
+      if (!itemCapability(id).movable) return false;
+      const it = findItemDeep(docInAgocraft, id);
+      return !(it !== undefined && isItemLocked(it));
+    });
+    const canGroup = groupableIds.length >= 2;
+    const canUngroup = cvItem?.kind === "frame" && itemCapability(itemId).movable;
+    const anyUnlocked = movedIds.some((id) => {
+      const it = findItemDeep(docInAgocraft, id);
+      return !(it !== undefined && isItemLocked(it));
+    });
     return (
       <FrameContextMenu
         itemId={itemId}
@@ -2273,6 +2543,38 @@ function DesignPageBody() {
           )
         }
         clipboardHasItems={clipboardCommands.hasItems}
+        onDuplicate={() => {
+          // Same selection-aware set as reparent; seeds the ⌘D rhythm so a
+          // follow-up Cmd+D repeats the menu-made offset (WI-185 ⑬).
+          const r = editor.exec<unknown, ReadonlyArray<string>>("weave.items.duplicate", {
+            itemIds: movedIds,
+          });
+          if (r.ok && r.value.length > 0) {
+            smartDuplicateRef.current = { sourceIds: movedIds, cloneIds: r.value };
+            selectFrames(r.value);
+          }
+        }}
+        {...(canGroup
+          ? {
+              onGroup: () => {
+                const r = editor.exec<unknown, string>("weave.items.group", {
+                  itemIds: groupableIds,
+                  designWidth: design.width,
+                  designHeight: design.height,
+                });
+                if (r.ok) selectFrames([r.value]);
+              },
+            }
+          : {})}
+        {...(canUngroup ? { onUngroup: () => dissolveFrame(itemId) } : {})}
+        onToggleLock={() => {
+          editor.runBatch(() => {
+            for (const id of movedIds) {
+              editor.exec("weave.item.update", { itemId: id, attrs: { locked: anyUnlocked } });
+            }
+          });
+        }}
+        locked={!anyUnlocked}
         {...(ctx !== undefined
           ? {
               layers: ctx.layers,
@@ -2833,6 +3135,39 @@ function DesignPageBody() {
                                                     itemId: id,
                                                     attrs: { skipped },
                                                   });
+                                                }
+                                              : undefined
+                                          }
+                                          // WI-185 ⑯ — tile-menu page lifecycle:
+                                          // "새 페이지" inserts after THIS tile
+                                          // (the "+" button inserts after the
+                                          // ACTIVE page); "배경 변경" selects +
+                                          // activates the page so the contextual
+                                          // toolbar's background section shows.
+                                          onAddPageAfter={
+                                            editorMode.rail.addPage &&
+                                            editorMode.rail.tileContextMenu
+                                              ? (id) => {
+                                                  const r = editor.exec<unknown, string>(
+                                                    "weave.page.add",
+                                                    { afterId: id },
+                                                  );
+                                                  if (r.ok) {
+                                                    setSelectedFrameId(r.value);
+                                                    if (editorMode.rail.clickActivatesPage) {
+                                                      setActivePageId(r.value);
+                                                    }
+                                                  }
+                                                }
+                                              : undefined
+                                          }
+                                          onEditBackground={
+                                            editorMode.rail.tileContextMenu
+                                              ? (id) => {
+                                                  setSelectedFrameId(id);
+                                                  if (editorMode.rail.clickActivatesPage) {
+                                                    setActivePageId(id);
+                                                  }
                                                 }
                                               : undefined
                                           }

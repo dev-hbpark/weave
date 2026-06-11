@@ -320,6 +320,10 @@ const PAGE_PASSTHROUGH_TOOLS: ReadonlyArray<string> = [
   "weave.clipboard.cut",
   "weave.item.duplicate",
   "weave.items.duplicate",
+  // WI-185 ⑬ — explicit-delta clone. Item-level and flavor-neutral: clones
+  // land beside their source INSIDE the page; the ratio delta is the page's
+  // own coordinate space. Useful for rhythmic series on a slide.
+  "weave.items.duplicateWithDelta",
   // weave.page.duplicate is enlisted as an ADAPTER (PAGE_PAGE_DUPLICATE) —
   // same command, plus clone activation (WI-169).
   "weave.frame.setLayout",

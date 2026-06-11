@@ -15,11 +15,12 @@
 
 import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { setClipboardDispatcher } from "../tooltip/editor-hotkeys.js";
+import { setClipboardDispatcher, setClipboardHasItemsProbe } from "../tooltip/editor-hotkeys.js";
 import { mountBroadcastChannelTransport } from "./broadcast-channel-transport.js";
 import { clipboardStore } from "./clipboard-store.js";
 import { type PasteMode, SESSION_ORIGIN } from "./clipboard-types.js";
 import { mountLocalStorageTransport } from "./local-storage-transport.js";
+import { type OfficePasteHint, officePasteHint } from "./paste-coord.js";
 
 export interface UseClipboardCommandsDeps {
   readonly editor: Editor;
@@ -38,6 +39,12 @@ export interface UseClipboardCommandsDeps {
   /** Last known pointer position relative to the container. `undefined`
    *  → keyboard-driven paste path (D5 offset fallback). */
   readonly resolvePointerInContainer: () => { x: number; y: number } | undefined;
+  /** WI-185 ⑫ (spec D-5) — paste coordinate contract from the editor
+   *  mode's InsertionPolicy. `"source-position"` (page-bounded flavors)
+   *  replaces the pointer channel with the office-contract hint: cross-page
+   *  paste preserves the source frame exactly, same-page paste keeps the
+   *  8px stack. Absent / `"cursor"` → the existing pointer behaviour. */
+  readonly resolvePasteCoordMode?: () => "cursor" | "source-position";
   /** Resolve the source container for `cut` — i.e., the parent of
    *  `selectedId`. v1 only supports cutting a top-level child; pass
    *  the container id explicitly so the underlying patch targets the
@@ -85,6 +92,21 @@ function useClipboardHasItems(): boolean {
   );
 }
 
+/** WI-185 ⑫ — resolve what travels down the kit's opaque pointer channel
+ *  for an "everything" paste: the office-contract hint in source-position
+ *  mode (pointer ignored), the live pointer otherwise. */
+function resolvePasteHostHint(
+  resolvePasteCoordMode: UseClipboardCommandsDeps["resolvePasteCoordMode"],
+  resolvePointerInContainer: UseClipboardCommandsDeps["resolvePointerInContainer"],
+  containerId: string | undefined,
+): OfficePasteHint | { x: number; y: number } | undefined {
+  if (resolvePasteCoordMode?.() === "source-position") {
+    const sourceParentId = clipboardStore.peek()?.data.sourceParentId;
+    return officePasteHint(sourceParentId !== undefined && sourceParentId === containerId);
+  }
+  return resolvePointerInContainer();
+}
+
 export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboardCommandsResult {
   const hasItems = useClipboardHasItems();
   const [pasteSpecialOpen, setPasteSpecialOpen] = useState(false);
@@ -101,9 +123,14 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
   useEffect(() => {
     const broadcast = mountBroadcastChannelTransport(SESSION_ORIGIN);
     const localStorage = mountLocalStorageTransport(SESSION_ORIGIN);
+    // WI-185 ⑰ — the plain-paste binding probes the store at keydown time:
+    // EMPTY → it skips preventDefault so the native `paste` event fires and
+    // the OS-clipboard image listener can take over.
+    const probeDispose = setClipboardHasItemsProbe(() => clipboardStore.peek() !== undefined);
     return () => {
       broadcast.dispose();
       localStorage.dispose();
+      probeDispose();
     };
   }, []);
 
@@ -132,11 +159,15 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
         const containerSize = deps.resolveContainerSizePx();
         if (containerSize === null) return;
         const containerId = deps.resolveContainerId();
-        const pointer = deps.resolvePointerInContainer();
+        const hint = resolvePasteHostHint(
+          deps.resolvePasteCoordMode,
+          deps.resolvePointerInContainer,
+          containerId,
+        );
         const result = editor.exec<unknown, ReadonlyArray<string>>("weave.clipboard.paste", {
           containerSizePx: containerSize,
           ...(containerId !== undefined ? { containerId } : {}),
-          ...(pointer !== undefined ? { pointerInContainer: pointer } : {}),
+          ...(hint !== undefined ? { pointerInContainer: hint } : {}),
         });
         if (result.ok) deps.onPasted?.(result.value);
         return;
@@ -158,6 +189,7 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
     deps.resolveContainerId,
     deps.resolveContainerSizePx,
     deps.resolvePointerInContainer,
+    deps.resolvePasteCoordMode,
     deps.resolveSourceContainerId,
     deps.onPasted,
   ]);
@@ -170,11 +202,15 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
         const containerSize = deps.resolveContainerSizePx();
         if (containerSize === null) return;
         const containerId = deps.resolveContainerId();
-        const pointer = deps.resolvePointerInContainer();
+        const hint = resolvePasteHostHint(
+          deps.resolvePasteCoordMode,
+          deps.resolvePointerInContainer,
+          containerId,
+        );
         const result = deps.editor.exec<unknown, ReadonlyArray<string>>("weave.clipboard.paste", {
           containerSizePx: containerSize,
           ...(containerId !== undefined ? { containerId } : {}),
-          ...(pointer !== undefined ? { pointerInContainer: pointer } : {}),
+          ...(hint !== undefined ? { pointerInContainer: hint } : {}),
         });
         if (result.ok) deps.onPasted?.(result.value);
         return;

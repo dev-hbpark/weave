@@ -42,6 +42,46 @@ function generateId(kind: ResourceKind): string {
   return `${kind}-${ts}-${rand}`;
 }
 
+/** WI-185 ⑰ — browser File → data: URL. Shared by MediaSrcDialog's upload
+ *  dropzone and the OS-clipboard image-paste path. */
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** WI-185 ⑰ — cloud-first image ingest, shared by MediaSrcDialog and the
+ *  OS-clipboard paste path. Uploads the data: URL so the design carries the
+ *  canonical cloud URL (never inline base64) on success; on failure falls
+ *  back to the data: URL with addResource's own outbox retry queueing the
+ *  bytes for re-upload. Returns the src to put into `item.attrs.src` plus
+ *  whether the cloud round-trip succeeded (callers surface a warning when
+ *  it didn't). */
+export async function ingestImageDataUrl(
+  dataUrl: string,
+  name: string,
+): Promise<{ readonly src: string; readonly uploaded: boolean }> {
+  try {
+    const m = await import("./cloud-sync.js");
+    const cloud = await m.uploadResourceCloud("image", dataUrl, name);
+    if (cloud !== null) {
+      addResource("image", cloud.src, name, {
+        preuploaded: { id: cloud.id, src: cloud.src },
+      });
+      return { src: cloud.src, uploaded: true };
+    }
+  } catch {
+    // Network threw — same fallback as the explicit-null case below.
+  }
+  // addResource's internal cloud mirror retries and queues the outbox
+  // when it also fails, so the bytes are never lost.
+  addResource("image", dataUrl, name);
+  return { src: dataUrl, uploaded: false };
+}
+
 export interface AddResourceOptions {
   /** When supplied, skips the internal async cloud upload and stores
    *  the pre-uploaded values verbatim. Used by MediaSrcDialog after it

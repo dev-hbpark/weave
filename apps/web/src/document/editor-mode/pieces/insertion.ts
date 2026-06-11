@@ -56,10 +56,15 @@ export function addIntoActivePage(
 export const ROOT_INSERTION: InsertionPolicy = {
   containerFor: insertAtRoot,
   addContainerFor: addIntoSelectedFrame,
+  pasteCoord: "cursor",
 };
 
-/** InsertionPolicy for page-bounded flavors (slide-deck / doc-page). */
+/** InsertionPolicy for page-bounded flavors (slide-deck / doc-page).
+ *  pasteCoord "source-position" (WI-185 ⑫, spec D-5): pages are same-size
+ *  twins, so preserving the source's parent-ratio frame across a
+ *  cross-page paste IS the office "same coordinates" contract. */
 export const ACTIVE_PAGE_INSERTION: InsertionPolicy = {
   containerFor: insertIntoActivePage,
   addContainerFor: addIntoActivePage,
+  pasteCoord: "source-position",
 };

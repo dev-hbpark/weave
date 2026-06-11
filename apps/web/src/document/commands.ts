@@ -88,7 +88,11 @@ import {
   SESSION_ORIGIN,
   STYLE_ATTRIBUTE_KEYS,
 } from "./clipboard/clipboard-types.js";
-import { type PasteCoordInput, resolvePasteFrame } from "./clipboard/paste-coord.js";
+import {
+  isOfficePasteHint,
+  type PasteCoordInput,
+  resolvePasteFrame,
+} from "./clipboard/paste-coord.js";
 import {
   buildDatasetUnit,
   type DatasetPayload,
@@ -2148,6 +2152,99 @@ export function buildWeaveCommands(
     },
   };
 
+  // ─── WI-185 ⑭ — Cmd+G: wrap the selection in a NEW frame ─────────────────
+  //
+  // weave's grouping construct IS the frame (no separate "group" kind), so
+  // "group" = create a frame over the selection's bounding box and reparent
+  // the members into it. Composite via delegate-run + an EVOLVED working doc
+  // (the weave.batch idiom): the wrap frame must exist in the document the
+  // reparent geometry reads (computeReparentFrameRatio resolves the new
+  // parent there), so the create patches are applied to a working copy before
+  // reparentItem runs. Delegating to the real commands buys every guard for
+  // free — id minting + frame normalization (weave.item.add), visual-position
+  // preserving reparent + WI-135 ratio-font re-basing (weave.item.reparent).
+  // One transaction → one Cmd+Z unwraps (children home, frame gone).
+  //
+  // The bbox unions the members' UNROTATED parent-ratio boxes — a rotated
+  // member's visual corners may overhang the wrap frame slightly (frames
+  // don't clip by default, so nothing disappears); matching office tools'
+  // rotated-bbox math is deliberately out of scope here.
+  const groupItems: Command<
+    {
+      readonly itemIds: ReadonlyArray<string>;
+      readonly designWidth?: number;
+      readonly designHeight?: number;
+    },
+    string
+  > = {
+    name: "weave.items.group",
+    run: (ctx, input) => {
+      if (input.itemIds.length === 0) {
+        return fail("empty-input", "weave.items.group: no items given");
+      }
+      // A group wraps SIBLINGS: all members must share one parent. (An
+      // ancestor/descendant pair can never share a parent, so this also
+      // rules out nesting paradoxes.) Validate ALL upfront.
+      let parentId: string | undefined;
+      const frames: ItemFrame[] = [];
+      for (const id of input.itemIds) {
+        const found = findParentAndIndex(ctx.document, id);
+        if (found === undefined) {
+          return fail("item-not-found", `weave.items.group: no item "${id}"`);
+        }
+        const pid = String(found.parent.id);
+        if (parentId === undefined) parentId = pid;
+        else if (pid !== parentId) {
+          return fail(
+            "mixed-parents",
+            "weave.items.group: items must share one parent (group wraps siblings)",
+          );
+        }
+        const frame = (
+          found.parent.children[found.indexInParent]?.attrs as { frame?: ItemFrame } | undefined
+        )?.frame;
+        if (frame === undefined) {
+          return fail("invalid-target", `weave.items.group: "${id}" has no frame`);
+        }
+        frames.push(frame);
+      }
+      const minX = Math.min(...frames.map((f) => f.x));
+      const minY = Math.min(...frames.map((f) => f.y));
+      const maxX = Math.max(...frames.map((f) => f.x + f.width));
+      const maxY = Math.max(...frames.map((f) => f.y + f.height));
+      const groupFrame: ItemFrame = {
+        x: minX,
+        y: minY,
+        // Floor against a degenerate bbox (zero-area lines) — a zero-size
+        // frame would be unselectable (DR-078's concern, applied here).
+        width: Math.max(maxX - minX, 0.01),
+        height: Math.max(maxY - minY, 0.01),
+        rotation: 0,
+      };
+      const created = addItem.run(ctx, {
+        kind: "frame",
+        frame: groupFrame,
+        containerId: nn(parentId), // non-empty itemIds → the loop set it
+      });
+      if (!created.ok) return created;
+      let workingDoc = ctx.document;
+      for (const p of created.patches) {
+        workingDoc = applyChangeToDocument(
+          workingDoc,
+          p as unknown as Parameters<typeof applyChangeToDocument>[1],
+        );
+      }
+      const groupId = String(created.value);
+      const rep = reparentItem.run({ ...ctx, document: workingDoc }, {
+        entries: input.itemIds.map((id) => ({ itemId: id, newParentId: groupId })),
+        ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
+        ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
+      } as never);
+      if (!rep.ok) return rep;
+      return ok(groupId, [...created.patches, ...rep.patches]);
+    },
+  };
+
   // WI-030 — Slide preset batch insert.
   //
   // The preset factory returns a fully populated slide AgocraftItem whose
@@ -2405,12 +2502,20 @@ export function buildWeaveCommands(
         containerSizePx: a.containerSizePx,
         pasteIndex: a.pasteIndex,
       };
-      return a.pointerInContainer !== undefined
+      // WI-185 ⑫ — the kit's `pointerInContainer` is an opaque host channel
+      // (typed `unknown`); page-bounded hosts pass the office-contract
+      // descriptor through it instead of a pointer. Discriminate by shape.
+      const p = a.pointerInContainer;
+      if (isOfficePasteHint(p)) {
+        return resolvePasteFrame({
+          ...base,
+          officeContract: { sameContainer: p.sameContainer },
+        });
+      }
+      return p !== undefined
         ? resolvePasteFrame({
             ...base,
-            pointerInContainer: a.pointerInContainer as NonNullable<
-              PasteCoordInput["pointerInContainer"]
-            >,
+            pointerInContainer: p as NonNullable<PasteCoordInput["pointerInContainer"]>,
           })
         : resolvePasteFrame(base);
     },
@@ -2441,6 +2546,68 @@ export function buildWeaveCommands(
     maxNodes: MAX_PASTE_NODES,
     offset: 0,
   });
+
+  // WI-185 ⑬ — smart duplicate (Cmd+D delta repeat). The kit's duplicate
+  // offset is FACTORY-level (no per-call delta), so the office "duplicate →
+  // move the copy → duplicate again continues the rhythm" gesture needs a
+  // composite: kit clone at `offset: 0` via delegate-`run` (the weave.page.
+  // duplicate idiom), then ONE item.attrs translate patch per clone root.
+  // `before: source.attrs` is exact because an offset-0 clone's attrs ARE the
+  // source's attrs; patches apply sequentially within the transaction, so the
+  // translate lands after the clone's item.create. One transaction → one
+  // Cmd+Z rolls back clone + translate together. `dx`/`dy` are PARENT-RATIO
+  // deltas (the frame's own coordinate space) — the host measures
+  // clone.frame − source.frame in that same space.
+  const duplicateItemsWithDeltaClone = createDuplicateItemsCommand({
+    name: "weave.items.duplicateWithDelta",
+    maxNodes: MAX_PASTE_NODES,
+    offset: 0,
+  });
+  const duplicateItemsWithDelta: Command<
+    { readonly itemIds: ReadonlyArray<string>; readonly dx: number; readonly dy: number },
+    ReadonlyArray<string>
+  > = {
+    name: "weave.items.duplicateWithDelta",
+    run: (ctx, input) => {
+      if (input.itemIds.length === 0) {
+        return fail("empty-input", "weave.items.duplicateWithDelta: no items given");
+      }
+      if (!Number.isFinite(input.dx) || !Number.isFinite(input.dy)) {
+        return fail("invalid-input", "weave.items.duplicateWithDelta: dx/dy must be finite");
+      }
+      // Validate ALL upfront (the kit silently skips missing ids, which would
+      // desync the source→clone index alignment below — same guard as
+      // weave.pages.duplicate).
+      const sources: AgocraftItem[] = [];
+      for (const id of input.itemIds) {
+        const source = findItemDeep(ctx.document, id);
+        if (source === undefined) {
+          return fail("item-not-found", `weave.items.duplicateWithDelta: no item "${id}"`);
+        }
+        sources.push(source);
+      }
+      const r = duplicateItemsWithDeltaClone.run(ctx, { itemIds: input.itemIds });
+      if (!r.ok) return r;
+      const translatePatches: Patch[] = [];
+      r.value.forEach((cloneId, i) => {
+        const source = sources[i];
+        if (cloneId === undefined || source === undefined) return;
+        const attrs = source.attrs as unknown as Readonly<Record<string, unknown>>;
+        const frame = (attrs as { frame?: AgocraftItemFrame }).frame;
+        if (frame === undefined) return; // frameless item — clone lands in place
+        translatePatches.push({
+          type: "item.attrs",
+          itemId: makeItemId(cloneId),
+          before: source.attrs,
+          after: {
+            ...attrs,
+            frame: { ...frame, x: frame.x + input.dx, y: frame.y + input.dy },
+          } as unknown as typeof source.attrs,
+        });
+      });
+      return ok(r.value, [...r.patches, ...translatePatches]);
+    },
+  };
 
   // WI-155 — page duplicate (WI-153 P2.3 보류분). Same kit clone, two page-
   // specific differences vs weave.item.duplicate:
@@ -2756,6 +2923,8 @@ export function buildWeaveCommands(
     breakShapeToLine as Command,
     closeLineToShape as Command,
     removeFrameKeepingChildren as Command,
+    // WI-185 ⑭ — Cmd+G wrap-selection-in-frame (group).
+    groupItems as Command,
     addBehavior as Command,
     removeBehavior as Command,
     insertPresetSlide as Command,
@@ -2766,6 +2935,8 @@ export function buildWeaveCommands(
     duplicateItems as Command,
     // WI-183 — Alt-drag duplicate (offset 0; the original keeps moving).
     duplicateItemsInPlace as Command,
+    // WI-185 ⑬ — smart duplicate (clone + explicit ratio delta, one undo).
+    duplicateItemsWithDelta as Command,
     // WI-155 — rail per-page duplicate (offset 0 + order insert-after).
     pageDuplicate as Command,
     // WI-184 ⑨ — rail multi-select SET duplicate (one transaction).

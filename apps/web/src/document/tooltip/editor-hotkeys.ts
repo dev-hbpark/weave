@@ -248,6 +248,22 @@ export function setClipboardDispatcher(fn: (verb: ClipboardVerb) => void): () =>
   };
 }
 
+/** WI-185 ⑰ — internal-store probe for the plain-paste binding. When the
+ *  store is EMPTY, the Cmd+V binding skips its manual preventDefault and
+ *  internal dispatch entirely, so the browser fires a real `paste` event
+ *  and the host's OS-clipboard image listener (use-os-image-paste) can take
+ *  over. When the store has items the internal paste wins, exactly as
+ *  before — a residual: an internal copy shadows OS-clipboard images for
+ *  the session (resolving recency would need writing a weave marker into
+ *  the OS clipboard on copy; see WI-185 record). */
+let clipboardHasItemsProbe: (() => boolean) | undefined;
+export function setClipboardHasItemsProbe(fn: () => boolean): () => void {
+  clipboardHasItemsProbe = fn;
+  return () => {
+    if (clipboardHasItemsProbe === fn) clipboardHasItemsProbe = undefined;
+  };
+}
+
 /** EDITOR_COMMANDS entries combine the user-facing metadata (used by
  *  tooltips / buttons / palette) with the runtime action (used by the
  *  hotkey registry). The metadata is the same shape consumers see via
@@ -1187,6 +1203,13 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
           action: (ctx) => {
             // WI-074 — while an image crop is open, the inline editor owns input.
             if (isTextEditingTarget(ctx.event.target) || isCroppingNow()) return;
+            // WI-185 ⑰ — plain paste with an EMPTY internal store falls
+            // through to the native `paste` event (preventDefault here
+            // would suppress that event), where the OS-clipboard image
+            // listener picks it up. Internal items keep priority.
+            if (cmd.id === "weave.clipboard.paste" && clipboardHasItemsProbe?.() !== true) {
+              return;
+            }
             // Clipboard bindings opted out of auto-preventDefault — replicate it
             // for the non-text (canvas) path so the browser default stays suppressed.
             if (isClipboard) ctx.event.raw.preventDefault();

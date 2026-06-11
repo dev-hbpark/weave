@@ -24,8 +24,13 @@ import {
   TextField,
 } from "@weave/design-system";
 import { type ChangeEvent, type DragEvent, useEffect, useRef, useState } from "react";
-import { uploadResourceCloud } from "../cloud-sync.js";
-import { addResource, listResources, type MediaResource } from "../resource-storage.js";
+import {
+  addResource,
+  fileToDataUrl,
+  ingestImageDataUrl,
+  listResources,
+  type MediaResource,
+} from "../resource-storage.js";
 
 export interface MediaSrcDialogProps {
   readonly open: boolean;
@@ -43,15 +48,6 @@ const URL_PATTERN = /^(https?:|data:|blob:|\/|\.\/)/i;
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024; // 6 MB — data-URL upper bound.
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200 MB — blob can stream.
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
-    reader.readAsDataURL(file);
-  });
-}
 
 export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
   const { open, kind, initialSrc, initialAlt, onConfirm, onCancel } = props;
@@ -138,20 +134,16 @@ export function MediaSrcDialog(props: MediaSrcDialogProps): JSX.Element {
     if (kind === "image") {
       setUploading(true);
       try {
-        const cloud = await uploadResourceCloud(kind, localSrc, file.name);
-        if (cloud === null) {
+        // WI-185 ⑰ — shared cloud-first ingest (also used by OS-clipboard
+        // paste): success → canonical cloud URL; failure → data: URL with
+        // the outbox queueing re-upload once the server is reachable.
+        const r = await ingestImageDataUrl(localSrc, file.name);
+        if (r.uploaded) {
+          setValue(r.src);
+        } else {
           setUploadWarning(
             "서버 업로드에 실패했어요. 로컬에 보관했다가 연결되면 자동으로 업로드할게요.",
           );
-          // addResource queues the bytes in the IndexedDB outbox when its
-          // own cloud mirror also fails; flushResourceOutbox re-uploads them
-          // once the server is reachable again.
-          addResource(kind, localSrc, file.name);
-        } else {
-          setValue(cloud.src);
-          addResource(kind, cloud.src, file.name, {
-            preuploaded: { id: cloud.id, src: cloud.src },
-          });
         }
       } finally {
         setUploading(false);

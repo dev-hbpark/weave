@@ -2793,3 +2793,256 @@ describe("weave.page.duplicate (WI-155)", () => {
     });
   });
 });
+
+// ─── WI-185 ⑬ — weave.items.duplicateWithDelta (smart duplicate) ──────────
+//
+// Kit clone at `offset: 0` (delegate-run) + one item.attrs translate patch
+// per clone root, all in ONE transaction → one Cmd+Z removes clone+translate
+// together. `before: source.attrs` is exact because an offset-0 clone's attrs
+// ARE the source's; patches apply sequentially, so the translate lands after
+// the clone's item.create.
+describe("weave.items.duplicateWithDelta (WI-185 ⑬)", () => {
+  const FRAME_A = { x: 0.1, y: 0.2, width: 0.2, height: 0.1, rotation: 0 } as const;
+  const FRAME_B = { x: 0.5, y: 0.6, width: 0.1, height: 0.1, rotation: 0 } as const;
+
+  function makeDeltaCtx(): CommandContext {
+    const shapeA = {
+      id: "shape-a",
+      kind: "shape",
+      attrs: { frame: FRAME_A, shape: "rectangle", subAttrs: { shape: "rectangle" } },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const shapeB = {
+      id: "shape-b",
+      kind: "shape",
+      attrs: { frame: FRAME_B, shape: "rectangle", subAttrs: { shape: "rectangle" } },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const weave: WeaveDocument = {
+      id: "doc-delta",
+      title: "Delta",
+      items: [shapeA, shapeB],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    const idGen = createUuidV7Generator(defaultClock, defaultRandom);
+    return {
+      document: toAgocraftDocument(weave),
+      resolve: ((token: Token<unknown>) =>
+        token === IdGeneratorToken ? idGen : null) as CommandContext["resolve"],
+      skipRelations: false,
+    };
+  }
+
+  function deltaCmd() {
+    const c = buildWeaveCommands(spyTargets()).find(
+      (x) => x.name === "weave.items.duplicateWithDelta",
+    );
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+
+  it("clones at offset 0 then translates each clone by (dx, dy) — N creates + N item.attrs in ONE transaction", () => {
+    const result = deltaCmd().run(makeDeltaCtx(), {
+      itemIds: ["shape-a", "shape-b"],
+      dx: 0.25,
+      dy: -0.05,
+    });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    const cloneIds = result.value as ReadonlyArray<string>;
+    expect(cloneIds).toHaveLength(2);
+    const creates = result.patches.filter((p) => p.type === "item.create");
+    const translates = result.patches.filter((p) => p.type === "item.attrs");
+    expect(creates).toHaveLength(2);
+    expect(translates).toHaveLength(2);
+    // offset 0: the staged clone holds the source's exact frame…
+    const c0 = creates[0];
+    if (c0 === undefined || c0.type !== "item.create") throw new Error("unreachable");
+    expect((c0.item.attrs as { frame: unknown }).frame).toEqual(FRAME_A);
+    // …and the translate patch targets the CLONE (not the source) with the
+    // source attrs as `before` (offset-0 clone attrs === source attrs).
+    const t0 = translates[0];
+    if (t0 === undefined || t0.type !== "item.attrs") throw new Error("unreachable");
+    expect(String(t0.itemId)).toBe(cloneIds[0]);
+    expect((t0.before as { frame: unknown }).frame).toEqual(FRAME_A);
+    expect((t0.after as { frame: { x: number; y: number } }).frame).toEqual({
+      ...FRAME_A,
+      x: FRAME_A.x + 0.25,
+      y: FRAME_A.y - 0.05,
+    });
+    const t1 = translates[1];
+    if (t1 === undefined || t1.type !== "item.attrs") throw new Error("unreachable");
+    expect(String(t1.itemId)).toBe(cloneIds[1]);
+    expect((t1.after as { frame: { x: number; y: number } }).frame).toEqual({
+      ...FRAME_B,
+      x: FRAME_B.x + 0.25,
+      y: FRAME_B.y - 0.05,
+    });
+  });
+
+  it("the patch sequence APPLIES: the translate finds the clone created earlier in the same transaction", () => {
+    const ctx = makeDeltaCtx();
+    const result = deltaCmd().run(ctx, { itemIds: ["shape-a"], dx: 0.3, dy: 0.1 });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    let doc = ctx.document;
+    for (const p of result.patches) {
+      doc = applyChangeToDocument(doc, p as Parameters<typeof applyChangeToDocument>[1]);
+    }
+    const cloneId = nn((result.value as ReadonlyArray<string>)[0]);
+    const clone = doc.root.children.find((c) => String(c.id) === cloneId);
+    expect(clone).toBeDefined();
+    expect((clone?.attrs as { frame: { x: number; y: number } }).frame.x).toBeCloseTo(0.4);
+    expect((clone?.attrs as { frame: { x: number; y: number } }).frame.y).toBeCloseTo(0.3);
+    // the source is untouched.
+    const source = doc.root.children.find((c) => String(c.id) === "shape-a");
+    expect((source?.attrs as { frame: unknown }).frame).toEqual(FRAME_A);
+  });
+
+  it("validates upfront: unknown id fails the WHOLE call, empty input and non-finite deltas refuse", () => {
+    const notFound = deltaCmd().run(makeDeltaCtx(), {
+      itemIds: ["shape-a", "nope"],
+      dx: 0.1,
+      dy: 0.1,
+    });
+    expect(notFound.ok).toBe(false);
+    if (!notFound.ok) expect(notFound.error.code).toBe("item-not-found");
+    const empty = deltaCmd().run(makeDeltaCtx(), { itemIds: [], dx: 0.1, dy: 0.1 });
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.error.code).toBe("empty-input");
+    const nan = deltaCmd().run(makeDeltaCtx(), { itemIds: ["shape-a"], dx: Number.NaN, dy: 0 });
+    expect(nan.ok).toBe(false);
+    if (!nan.ok) expect(nan.error.code).toBe("invalid-input");
+  });
+});
+
+// ─── WI-185 ⑭ — weave.items.group (Cmd+G wrap-in-frame) ───────────────────
+//
+// weave's grouping construct IS the frame: group = create a frame over the
+// selection's bbox + reparent the members into it, one transaction. The
+// composite delegates to weave.item.add and weave.item.reparent against an
+// EVOLVED working doc (the weave.batch idiom), so the reparent geometry can
+// resolve the just-created wrap frame.
+describe("weave.items.group (WI-185 ⑭)", () => {
+  const FRAME_A = { x: 0.1, y: 0.2, width: 0.2, height: 0.1, rotation: 0 } as const;
+  const FRAME_B = { x: 0.5, y: 0.6, width: 0.1, height: 0.1, rotation: 0 } as const;
+
+  function makeGroupCtx(): CommandContext {
+    const shapeA = {
+      id: "shape-a",
+      kind: "shape",
+      attrs: { frame: FRAME_A, shape: "rectangle", subAttrs: { shape: "rectangle" } },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const shapeB = {
+      id: "shape-b",
+      kind: "shape",
+      attrs: { frame: FRAME_B, shape: "rectangle", subAttrs: { shape: "rectangle" } },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    // A nested child for the mixed-parents guard.
+    const holder = {
+      id: "holder",
+      kind: "frame",
+      attrs: { frame: { x: 0.7, y: 0.1, width: 0.2, height: 0.2, rotation: 0 } },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const weave: WeaveDocument = {
+      id: "doc-group",
+      title: "Group",
+      items: [shapeA, shapeB, holder],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    const idGen = createUuidV7Generator(defaultClock, defaultRandom);
+    const doc = toAgocraftDocument(weave);
+    // Tuck a child under `holder` so "shape-a + nested" is a cross-parent set.
+    const nested = {
+      id: makeItemId("nested-1"),
+      kind: "shape",
+      attrs: { frame: { x: 0.1, y: 0.1, width: 0.5, height: 0.5, rotation: 0 } },
+      units: [],
+      children: [],
+      meta: { schemaVersion: 3, createdAt: META_DATE, updatedAt: META_DATE },
+    };
+    const docWithNested = addChild(doc, nested as unknown as AgocraftItem, "holder");
+    return {
+      document: docWithNested,
+      resolve: ((token: Token<unknown>) =>
+        token === IdGeneratorToken ? idGen : null) as CommandContext["resolve"],
+      skipRelations: false,
+    };
+  }
+
+  function groupCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.items.group");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+
+  it("wraps siblings in a NEW frame sized to their bbox and reparents them in — one transaction, visual position preserved", () => {
+    const ctx = makeGroupCtx();
+    const result = groupCmd().run(ctx, {
+      itemIds: ["shape-a", "shape-b"],
+      designWidth: 800,
+      designHeight: 600,
+    });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    const groupId = result.value as string;
+    // First patch creates the wrap frame at the members' bounding box.
+    const create = result.patches.find((p) => p.type === "item.create");
+    if (create === undefined || create.type !== "item.create")
+      throw new Error("expected an item.create");
+    expect(String(create.item.id)).toBe(groupId);
+    expect(create.item.kind).toBe("frame");
+    const gFrame = (create.item.attrs as { frame: ItemFrameLike }).frame;
+    expect(gFrame.x).toBeCloseTo(0.1);
+    expect(gFrame.y).toBeCloseTo(0.2);
+    expect(gFrame.width).toBeCloseTo(0.5);
+    expect(gFrame.height).toBeCloseTo(0.5);
+    // Apply the whole transaction and check the resulting tree + geometry.
+    let doc = ctx.document;
+    for (const p of result.patches) {
+      doc = applyChangeToDocument(doc, p as Parameters<typeof applyChangeToDocument>[1]);
+    }
+    const group = doc.root.children.find((c) => String(c.id) === groupId);
+    expect(group).toBeDefined();
+    // Membership, not order — fresh-group z-order is not part of this contract.
+    const byId = new Map((group?.children ?? []).map((c) => [String(c.id), c]));
+    expect([...byId.keys()].sort()).toEqual(["shape-a", "shape-b"]);
+    // Visual position preserved: child ratio × group box = original box.
+    const aFrame = (byId.get("shape-a")?.attrs as { frame: ItemFrameLike }).frame;
+    expect(aFrame.x).toBeCloseTo(0); // (0.1 − 0.1) / 0.5
+    expect(aFrame.y).toBeCloseTo(0);
+    expect(aFrame.width).toBeCloseTo(0.4); // 0.2 / 0.5
+    expect(aFrame.height).toBeCloseTo(0.2);
+    const bFrame = (byId.get("shape-b")?.attrs as { frame: ItemFrameLike }).frame;
+    expect(bFrame.x).toBeCloseTo(0.8); // (0.5 − 0.1) / 0.5
+    expect(bFrame.y).toBeCloseTo(0.8);
+    // The originals left the root.
+    const rootIds = doc.root.children.map((c) => String(c.id));
+    expect(rootIds).not.toContain("shape-a");
+    expect(rootIds).not.toContain("shape-b");
+  });
+
+  it("refuses a cross-parent set (`mixed-parents`) — a group wraps siblings", () => {
+    const result = groupCmd().run(makeGroupCtx(), { itemIds: ["shape-a", "nested-1"] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("mixed-parents");
+  });
+
+  it("validates upfront: unknown id and empty input refuse", () => {
+    const notFound = groupCmd().run(makeGroupCtx(), { itemIds: ["shape-a", "nope"] });
+    expect(notFound.ok).toBe(false);
+    if (!notFound.ok) expect(notFound.error.code).toBe("item-not-found");
+    const empty = groupCmd().run(makeGroupCtx(), { itemIds: [] });
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.error.code).toBe("empty-input");
+  });
+});
+
+type ItemFrameLike = { x: number; y: number; width: number; height: number };

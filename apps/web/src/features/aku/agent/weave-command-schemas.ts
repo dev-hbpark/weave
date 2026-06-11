@@ -590,6 +590,8 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.item.duplicate": "아이템 복제",
   "weave.items.duplicate": "여러 아이템 복제",
   "weave.items.duplicateInPlace": "제자리 복제",
+  "weave.items.duplicateWithDelta": "간격 반복 복제",
+  "weave.items.group": "그룹 (프레임으로 묶기)",
   "weave.page.duplicate": "페이지 복제",
   "weave.pages.duplicate": "여러 페이지 복제",
   "weave.frame.setLayout": "레이아웃 설정",
@@ -1369,6 +1371,29 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       { itemIds: STR_ARR },
       ["itemIds"],
       "Clone items EXACTLY on top of the originals (zero offset) in one undo step. Only for flows that immediately move the original or the copy — otherwise the result is invisible; prefer weave.items.duplicate.",
+    ),
+  },
+  // WI-185 ⑭ — Cmd+G group. weave's grouping construct IS the frame; this
+  // wraps siblings in a new frame sized to their bounding box. Ungroup =
+  // weave.frame.removeKeepingChildren on the wrap frame.
+  "weave.items.group": {
+    label: label("weave.items.group"),
+    inputSchema: obj(
+      { itemIds: STR_ARR },
+      ["itemIds"],
+      "GROUP: wrap items (which must share one parent) in a NEW frame sized to their bounding box, in one undo step. Returns the new frame's id. Ungroup with weave.frame.removeKeepingChildren on that frame. Prefer this over manually creating a frame and reparenting.",
+    ),
+  },
+  // WI-185 ⑬ — smart-duplicate backing command (Cmd+D delta repeat). The UI
+  // measures the user's "duplicate → move the copy" delta and repeats it; the
+  // agent expresses an explicit step instead. dx/dy are PARENT-RATIO deltas
+  // (0..1 of the container box), not pixels.
+  "weave.items.duplicateWithDelta": {
+    label: label("weave.items.duplicateWithDelta"),
+    inputSchema: obj(
+      { itemIds: STR_ARR, dx: NUM, dy: NUM },
+      ["itemIds", "dx", "dy"],
+      "Clone items and offset each clone by an explicit delta (dx/dy in PARENT-RATIO units, 0..1 of the container) in one undo step. Use to lay out a rhythmic series (e.g. dx:0.1, dy:0 for a horizontal row of copies); for a plain copy prefer weave.items.duplicate.",
     ),
   },
 

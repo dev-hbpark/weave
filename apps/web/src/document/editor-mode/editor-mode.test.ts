@@ -177,6 +177,15 @@ describe("InsertionPolicy (P2-c)", () => {
       expect(editorModeFor(f).insertion.containerFor(doc, undefined)).toBeUndefined();
     }
   });
+
+  it("pasteCoord (WI-185 ⑫): free placement = cursor, page-bounded = source-position", () => {
+    for (const f of ["mixed", "canvas-board"] as const) {
+      expect(editorModeFor(f).insertion.pasteCoord).toBe("cursor");
+    }
+    for (const f of ["slide-deck", "doc-page"] as const) {
+      expect(editorModeFor(f).insertion.pasteCoord).toBe("source-position");
+    }
+  });
 });
 
 describe("InsertionPolicy.addContainerFor (WI-180 — selection-aware explicit add)", () => {

@@ -35,8 +35,42 @@ export interface PasteCoordInput {
   /** Number of consecutive paste presses where the same payload has been
    *  pasted at the same target container. Each increment shifts the
    *  resulting frame by `PASTE_OFFSET_PX` so duplicate stacks fan out
-   *  diagonally instead of stacking exactly on top. */
+   *  diagonally instead of stacking exactly on top.
+   *  NOTE: the clipboard kit increments BEFORE resolving, so the first
+   *  paste after a copy arrives with `pasteIndex === 1`. */
   readonly pasteIndex: number;
+  /** WI-185 ⑫ (spec D-5) — office paste-coordinate contract, used by
+   *  page-bounded flavors (`InsertionPolicy.pasteCoord ===
+   *  "source-position"`). When present the pointer is ignored:
+   *  - `sameContainer: false` (cross-page): the FIRST paste preserves the
+   *    source frame exactly (position identity across slides); repeats
+   *    stack by 8px so they stay distinguishable.
+   *  - `sameContainer: true`: identical to the keyboard fallback — never
+   *    land exactly on top of the source. */
+  readonly officeContract?: { readonly sameContainer: boolean };
+}
+
+/** WI-185 ⑫ — host→resolver hint for the office contract, smuggled through
+ *  the clipboard kit's opaque `pointerInContainer` channel (the kit types it
+ *  `unknown` and passes it verbatim). The host builds it via
+ *  `officePasteHint`; the command-side resolver discriminates by shape via
+ *  `isOfficePasteHint` before falling back to the pointer interpretation. */
+export interface OfficePasteHint {
+  readonly office: true;
+  readonly sameContainer: boolean;
+}
+
+export function officePasteHint(sameContainer: boolean): OfficePasteHint {
+  return { office: true, sameContainer };
+}
+
+export function isOfficePasteHint(value: unknown): value is OfficePasteHint {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { office?: unknown }).office === true &&
+    typeof (value as { sameContainer?: unknown }).sameContainer === "boolean"
+  );
 }
 
 /**
@@ -48,7 +82,7 @@ export interface PasteCoordInput {
  *   inside the container (no negative widths, no NaN).
  */
 export function resolvePasteFrame(input: PasteCoordInput): ItemFrame {
-  const { sourceFrame, pointerInContainer, containerSizePx, pasteIndex } = input;
+  const { sourceFrame, pointerInContainer, containerSizePx, pasteIndex, officeContract } = input;
   const W = Math.max(containerSizePx.width, 1);
   const H = Math.max(containerSizePx.height, 1);
 
@@ -58,7 +92,17 @@ export function resolvePasteFrame(input: PasteCoordInput): ItemFrame {
   let xRatio: number;
   let yRatio: number;
 
-  if (pointerInContainer !== undefined) {
+  if (officeContract !== undefined) {
+    // WI-185 ⑫ — office contract (page-bounded flavors). Cross-page: the
+    // first paste (kit index 1) lands at the source's exact ratio frame;
+    // each repeat adds one 8px step. Same-page: at least one step so the
+    // copy never hides under the source (the existing keyboard contract).
+    const steps = officeContract.sameContainer
+      ? Math.max(pasteIndex, 1)
+      : Math.max(pasteIndex - 1, 0);
+    xRatio = sourceFrame.x + (PASTE_OFFSET_PX * steps) / W;
+    yRatio = sourceFrame.y + (PASTE_OFFSET_PX * steps) / H;
+  } else if (pointerInContainer !== undefined) {
     // Centre the pasted frame at the pointer.
     const centreX = pointerInContainer.x / W;
     const centreY = pointerInContainer.y / H;

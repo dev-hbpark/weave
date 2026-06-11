@@ -194,6 +194,14 @@ export interface InsertionPolicy {
     activePageId: string | undefined,
     selectedId: string | undefined,
   ): string | undefined;
+  /** WI-185 ⑫ (spec D-5) — paste coordinate contract.
+   *  `"cursor"` (Figma model, free placement): pointer-centred when a
+   *  pointer is known, else source + 8px stack.
+   *  `"source-position"` (office model, page-bounded): cross-page paste
+   *  preserves the source's exact frame (position identity is the
+   *  page-furniture workflow); same-page paste keeps the 8px stack so
+   *  copies never land invisibly on top of the source. */
+  readonly pasteCoord: "cursor" | "source-position";
 }
 
 /** DR-114 §4 — how the bottom rail is composed. The ThumbnailPanel does NOT

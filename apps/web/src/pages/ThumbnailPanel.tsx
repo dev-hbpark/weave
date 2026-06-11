@@ -29,6 +29,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
   EditableText,
   type EditableTextHandle,
@@ -56,6 +57,7 @@ import {
   reorderSet,
 } from "../document/presentation-order.js";
 import type { Design, DocFlavor } from "../document/types.js";
+import { nn } from "../lib/nn.js";
 
 interface Entry {
   readonly id: string;
@@ -199,6 +201,12 @@ export interface ThumbnailPanelProps {
    *  (`presentationStepIds`). Deliberately distinct from the WI-072
    *  deck-membership toggle (`presentable: false` removes the tile). */
   readonly onToggleSkip?: ((id: string, skipped: boolean) => void) | undefined;
+  /** WI-185 ⑯ — "새 페이지" from the tile menu: insert a blank page right
+   *  AFTER this tile (the rail "+" inserts after the ACTIVE page instead). */
+  readonly onAddPageAfter?: ((id: string) => void) | undefined;
+  /** WI-185 ⑯ — "배경 변경": the host selects/activates the page so the
+   *  contextual toolbar's frame-background section surfaces. */
+  readonly onEditBackground?: ((id: string) => void) | undefined;
 }
 
 /** WI-184 ⑨ — stable empty set so collapsing the multi-select doesn't churn
@@ -321,6 +329,8 @@ export function ThumbnailPanel({
   onDeletePages,
   onRenamePage,
   onToggleSkip,
+  onAddPageAfter,
+  onEditBackground,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
   useParams<{ id: string }>();
@@ -573,12 +583,17 @@ export function ThumbnailPanel({
           // act on the SET, and a drag moves the whole set.
           const isMultiSelected = multiSelected.size > 1 && multiSelected.has(entry.id);
           const accentVar = DOMAIN_ACCENT_VAR[entry.kind] ?? "var(--accent)";
-          // WI-184 ⑪ — right-click affordances (rename / skip-in-show). The
-          // presence of either callback turns the tile into a context-menu
-          // trigger; disabled (dim/iso-gated) tiles stay menu-free, matching
-          // every other interaction gate on them.
+          // WI-184 ⑪ / WI-185 ⑯ — right-click affordances (new / duplicate /
+          // delete / rename / skip-in-show / background). The presence of any
+          // callback turns the tile into a context-menu trigger; disabled
+          // (dim/iso-gated) tiles stay menu-free, matching every other
+          // interaction gate on them.
           const hasTileMenu =
-            !isDisabled && (onRenamePage !== undefined || onToggleSkip !== undefined);
+            !isDisabled &&
+            (onRenamePage !== undefined ||
+              onToggleSkip !== undefined ||
+              onAddPageAfter !== undefined ||
+              onEditBackground !== undefined);
           const isRenaming = renamingId === entry.id;
           const tile = (
             // AUDIT-003 V2 — the tile previously combined role="option"
@@ -1088,6 +1103,66 @@ export function ThumbnailPanel({
                   if (renamingId !== null) e.preventDefault();
                 }}
               >
+                {/* WI-185 ⑯ — page-lifecycle rows (the spec-§1e consensus
+                    menu: New·Duplicate·Delete·Skip·배경). Duplicate/Delete
+                    act on the multi-selected SET when the tile is part of
+                    one — identical semantics to the hover buttons. */}
+                {onAddPageAfter !== undefined ? (
+                  <ContextMenuItem
+                    data-testid={`thumbnail-menu-new-${idx}`}
+                    onSelect={() => onAddPageAfter(entry.id)}
+                  >
+                    새 페이지
+                  </ContextMenuItem>
+                ) : null}
+                {onDuplicatePage !== undefined ? (
+                  <ContextMenuItem
+                    data-testid={`thumbnail-menu-duplicate-${idx}`}
+                    onSelect={() => {
+                      if (isMultiSelected && onDuplicatePages !== undefined) {
+                        onDuplicatePages(selectedSetIds);
+                        return;
+                      }
+                      onDuplicatePage(entry.id);
+                    }}
+                  >
+                    {isMultiSelected && onDuplicatePages !== undefined
+                      ? `선택한 ${selectedSetIds.length}개 복제`
+                      : "복제"}
+                  </ContextMenuItem>
+                ) : null}
+                {onDeletePage !== undefined
+                  ? (() => {
+                      const actsOnSet = isMultiSelected && onDeletePages !== undefined;
+                      // ≥ 1 page invariant — same guard as the hover delete.
+                      const wouldEmpty = actsOnSet
+                        ? selectedSetIds.length >= entries.length
+                        : entries.length <= 1;
+                      return (
+                        <ContextMenuItem
+                          data-testid={`thumbnail-menu-delete-${idx}`}
+                          variant="danger"
+                          disabled={wouldEmpty}
+                          onSelect={() => {
+                            if (wouldEmpty) return;
+                            if (actsOnSet) {
+                              nn(onDeletePages)(selectedSetIds);
+                              return;
+                            }
+                            onDeletePage(entry.id);
+                          }}
+                        >
+                          {actsOnSet ? `선택한 ${selectedSetIds.length}개 삭제` : "삭제"}
+                        </ContextMenuItem>
+                      );
+                    })()
+                  : null}
+                {(onAddPageAfter !== undefined ||
+                  onDuplicatePage !== undefined ||
+                  onDeletePage !== undefined) &&
+                (onRenamePage !== undefined || onToggleSkip !== undefined) ? (
+                  <ContextMenuSeparator />
+                ) : null}
                 {onRenamePage !== undefined ? (
                   <ContextMenuItem
                     data-testid={`thumbnail-menu-rename-${idx}`}
@@ -1103,6 +1178,17 @@ export function ThumbnailPanel({
                   >
                     {entry.skipped ? "프레젠테이션에 포함" : "프레젠테이션에서 건너뛰기"}
                   </ContextMenuItem>
+                ) : null}
+                {onEditBackground !== undefined ? (
+                  <>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      data-testid={`thumbnail-menu-background-${idx}`}
+                      onSelect={() => onEditBackground(entry.id)}
+                    >
+                      배경 변경
+                    </ContextMenuItem>
+                  </>
                 ) : null}
               </ContextMenuContent>
             </ContextMenu>

@@ -124,7 +124,7 @@ vendored 패키지 측이면 agocraft 작업 + 재vendor 절차 필요.*
 10. "+" 추가 삽입 위치 = 현재 슬라이드 뒤 (확인 후 정정)
 11. 레일 우클릭에 Skip(presentationOrder 제외) + rename 추가
 
-### Batch 3 — 좌표 계약·그룹·메뉴
+### Batch 3 — 좌표 계약·그룹·메뉴 — **DONE (WI-185 / DR-121)**
 12. paste 좌표 D-5 (모드-가변 — 정책 조각)
 13. smart duplicate (Cmd+D 델타 반복)
 14. Cmd+G = 선택을 frame 으로 랩 / Cmd+Shift+G = dissolve 별칭
