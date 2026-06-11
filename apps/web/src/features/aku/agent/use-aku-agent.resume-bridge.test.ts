@@ -19,11 +19,17 @@ describe("useAkuAgent reconnect continuation bridge (WI-171)", () => {
   const src = stripComments(akuAgentSource);
 
   it("re-arms WI-151 adoption when a transport-failed run may resume server-side", () => {
-    // The catch path computes `mayResume` from the LAST queue view's own jobs
-    // and only then disengages — a first-dial failure (no own job) must not
-    // re-arm, or a finished run's tail could be falsely adopted.
-    expect(src).toMatch(/mayResume = \(queueStatusRef\.current\?\.jobs \?\? \[\]\)\.some/);
-    expect(src).toMatch(/if \(mayResume\) engagedRef\.current = false;/);
+    // WI-173 — the re-arm is UNCONDITIONAL: gating it on the stale queue view
+    // (`if (mayResume)`) left `engaged` stuck whenever a terminal state wiped
+    // the view while the server still grace-held the run — the replay then
+    // edited with dim/roaming off. `mayResume` survives only as the message
+    // picker. False adoption stays impossible without an own job: pure
+    // decideResume adopts only when the queue actually lists one (and a
+    // first-dial failure / Stop never produces one).
+    expect(src).toMatch(
+      /mayResume = \(queueStatusRef\.current\?\.jobs \?\? \[\]\)\.some[\s\S]{0,200}?engagedRef\.current = false;/,
+    );
+    expect(src).not.toMatch(/if \(mayResume\) engagedRef\.current/);
   });
 
   it("invalidates the queue view on TERMINAL connection states (error/closed)", () => {

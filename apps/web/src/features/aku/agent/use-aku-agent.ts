@@ -1013,7 +1013,14 @@ export function useAkuAgent(deps: {
         // enqueued) → the own-job count is or becomes 0 → adoption no-ops or
         // releases, so dim never sticks.
         const mayResume = (queueStatusRef.current?.jobs ?? []).some((j) => j.own);
-        if (mayResume) engagedRef.current = false;
+        // WI-173 — re-arm UNCONDITIONALLY (mayResume only picks the message).
+        // Gating the re-arm on the stale queue view was fragile: a terminal
+        // connection state wipes the view (→ mayResume false) right when the
+        // server may still be grace-holding this run — engaged then stayed
+        // true and the replayed own job could never be adopted (dim/roaming
+        // stayed off while the agent edited). Clearing is safe when no replay
+        // follows: the own-job count is or becomes 0, so adoption no-ops.
+        engagedRef.current = false;
         patchLastAssistant((prev) => ({
           ...prev,
           text: mayResume
