@@ -106,6 +106,7 @@ import {
   isDomainItem,
 } from "../document/agocraft-mirror.js";
 import { clipboardStore } from "../document/clipboard/clipboard-store.js";
+import { osMarkerRoutingActive } from "../document/clipboard/os-clipboard-marker.js";
 import { useClipboardCommands } from "../document/clipboard/use-clipboard-commands.js";
 import { pushDesignPatchesCloud } from "../document/cloud-sync.js";
 import {
@@ -1118,6 +1119,11 @@ function DesignPageBody() {
     // localStorage transport delivered the source tab's payload.
     (window as unknown as { __weaveClipboardPeek?: () => unknown }).__weaveClipboardPeek = () =>
       clipboardStore.peek();
+    // WI-187 — marker-health shim for the cross-tab e2e: lets tab B assert
+    // that tab A's successful marker write activated recency routing here.
+    (
+      window as unknown as { __weaveMarkerRoutingActive?: () => boolean }
+    ).__weaveMarkerRoutingActive = () => osMarkerRoutingActive();
     // WI-028 sync diagnostics — only expose when the sync subsystem is
     // actually mounted (gated by `SYNC_ENABLED` at top of file). When
     // the feature is paused, `sync` is undefined and the e2e harness

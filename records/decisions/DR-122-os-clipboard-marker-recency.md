@@ -46,7 +46,8 @@ preventDefault 판단에 쓸 수 없음 — 기각 사유.)
 - copy 직후 즉시 Cmd+V(쓰기 promise 미해결) → `unknown` → 레거시 내부
   paste — copy-직후-paste의 올바른 결과와 일치 (경합 무해).
 - 크로스탭 수신 탭은 `unknown` → 레거시 (내부 paste 결과 동일; recency
-  해소만 미적용 — WI-186 §잔여).
+  해소만 미적용 — WI-186 §잔여). → **완료: WI-187 / DR-123** (건강도
+  BroadcastChannel 전파 — 이제 모든 탭에서 활성).
 
 ## 결정 4 — e2e 환경: Playwright 전역 `permissions: ["clipboard-read","clipboard-write"]`
 
@@ -67,6 +68,8 @@ preventDefault 판단에 쓸 수 없음 — 기각 사유.)
 - **실데이터 HTML 직렬화(Figma 방식, ClipboardItem text/html)**: 외부
   앱에 마커 텍스트가 보이는 트레이드오프까지 해소하지만 직렬화/보안
   표면이 큼 — 후속 후보로 보류 (WI-186 §잔여).
+  → **채택됨: WI-188 / DR-124** (사전 실증 프로브로 보안/직렬화 우려
+  해소 — data-* 보존, inert DOMParser, 공유 validator).
 
 ## 부수 정리 (같은 변경)
 

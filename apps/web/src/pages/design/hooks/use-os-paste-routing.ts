@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import { clipboardStore } from "../../../document/clipboard/clipboard-store.js";
-import { clipboardEventHasOsMarker } from "../../../document/clipboard/os-clipboard-marker.js";
+import {
+  clipboardEventHasOsMarker,
+  extractOsClipboardPayload,
+} from "../../../document/clipboard/os-clipboard-marker.js";
 import { isCroppingNow } from "../../../document/interactions/cropping-state.js";
 import { fileToDataUrl, ingestImageDataUrl } from "../../../document/resource-storage.js";
 import { dispatchClipboardVerb } from "../../../document/tooltip/editor-hotkeys.js";
@@ -62,10 +65,22 @@ export function useOsPasteRouting({ addImage, onInfo }: UseOsPasteRoutingParams)
       // Text surfaces keep their native paste behavior.
       if (isTextEditingTarget(e.target)) return;
 
-      // ① WI-186 — weave marker → the newest copy is the internal one.
+      // ① WI-186 — weave marker → the newest copy is a weave copy.
       if (clipboardEventHasOsMarker(e)) {
         if (isCroppingNow()) return;
         e.preventDefault();
+        // WI-188 — the HTML stamp embeds the serialized payload, making the
+        // OS clipboard a third transport: when it is NEWER than (or fills in
+        // for) the local store — fresh tab, missed broadcast — adopt it
+        // before dispatching. Marker-only stamps (oversize payload) skip
+        // this and paste whatever the store holds, as before.
+        const osPayload = extractOsClipboardPayload(e);
+        if (osPayload !== undefined) {
+          const local = clipboardStore.peek();
+          if (local === undefined || local.timestamp < osPayload.timestamp) {
+            clipboardStore.write(osPayload);
+          }
+        }
         dispatchClipboardVerb("paste");
         return;
       }

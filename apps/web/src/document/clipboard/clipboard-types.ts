@@ -84,6 +84,28 @@ export type ItemsClipboardPayload = ClipboardPayload<ItemsPayloadData>;
  *  understand. Callers narrow on `kind` before reading `data`. */
 export type KnownClipboardPayload = ItemsClipboardPayload;
 
+/** Schema versions this build understands — payloads with any other
+ *  version are dropped silently (RISK-008 R4). Shared by every transport
+ *  validator below. */
+const SUPPORTED_SCHEMA_VERSIONS = new Set<number>([1]);
+
+/**
+ * Envelope validation for a payload arriving from OUTSIDE the in-memory
+ * store — BroadcastChannel message, localStorage storage-event JSON, or the
+ * OS-clipboard HTML stamp (WI-188). One validator for all three transports
+ * so version-skew handling can't drift between them.
+ */
+export function isValidIncomingClipboardPayload(data: unknown): data is KnownClipboardPayload {
+  if (data === null || typeof data !== "object") return false;
+  const p = data as ClipboardPayload<unknown>;
+  if (typeof p.schemaVersion !== "number") return false;
+  if (!SUPPORTED_SCHEMA_VERSIONS.has(p.schemaVersion)) return false;
+  if (typeof p.origin !== "string") return false;
+  if (typeof p.timestamp !== "number") return false;
+  if (typeof p.kind !== "string") return false;
+  return p.kind === "weave/items.v1";
+}
+
 /** Total node count for a serialised subtree — root + every descendant.
  *  Linear DFS; pure. Used by the MAX_PASTE_NODES gate at copy time. */
 export function countSubtreeNodes(item: SerializedItem): number {

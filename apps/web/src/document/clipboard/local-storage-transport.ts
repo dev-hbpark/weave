@@ -20,10 +20,9 @@
 
 import { nn } from "../../lib/nn.js";
 import { clipboardStore } from "./clipboard-store.js";
-import type { ClipboardPayload, KnownClipboardPayload } from "./clipboard-types.js";
+import { isValidIncomingClipboardPayload } from "./clipboard-types.js";
 
 const STORAGE_KEY = "weave.clipboard.v1";
-const SUPPORTED_SCHEMA_VERSIONS = new Set<number>([1]);
 
 interface LocalStorageTransportControls {
   readonly isActive: boolean;
@@ -34,16 +33,6 @@ function detectStorage(): Storage | undefined {
   if (typeof globalThis === "undefined") return undefined;
   const w = globalThis as { localStorage?: Storage };
   return w.localStorage;
-}
-
-function isValidIncoming(data: unknown): data is KnownClipboardPayload {
-  if (data === null || typeof data !== "object") return false;
-  const p = data as ClipboardPayload<unknown>;
-  if (typeof p.schemaVersion !== "number") return false;
-  if (!SUPPORTED_SCHEMA_VERSIONS.has(p.schemaVersion)) return false;
-  if (typeof p.origin !== "string") return false;
-  if (typeof p.kind !== "string") return false;
-  return p.kind === "weave/items.v1";
 }
 
 export function mountLocalStorageTransport(sessionOrigin: string): LocalStorageTransportControls {
@@ -79,7 +68,7 @@ export function mountLocalStorageTransport(sessionOrigin: string): LocalStorageT
     } catch {
       return;
     }
-    if (!isValidIncoming(parsed)) return;
+    if (!isValidIncomingClipboardPayload(parsed)) return;
     if (parsed.origin === sessionOrigin) return; // self-receive
     clipboardStore.write(parsed);
   };

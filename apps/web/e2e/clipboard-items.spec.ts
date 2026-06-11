@@ -158,6 +158,11 @@ test("Single Cmd+Z reverses a paste atomically (one undo, the pasted item is gon
 test("Cmd+V with an empty clipboard is a no-op", async ({ page }) => {
   await setupShape(page);
   const beforeCount = await rootChildCount(page);
+  // WI-188 — the OS clipboard is a third transport now: a weave HTML stamp
+  // left there by an earlier test (or a previous session) would LEGITIMATELY
+  // paste. Neutralize it so this spec keeps pinning its actual contract:
+  // no payload anywhere → no-op.
+  await page.evaluate(() => navigator.clipboard.writeText("unrelated text").catch(() => {}));
   // No prior copy — paste must silently fail without growing the doc.
   await page.keyboard.press("ControlOrMeta+V");
   // Give any potential async path a chance to settle.

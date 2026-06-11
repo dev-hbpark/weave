@@ -20,7 +20,7 @@ import { mountBroadcastChannelTransport } from "./broadcast-channel-transport.js
 import { clipboardStore } from "./clipboard-store.js";
 import { type PasteMode, SESSION_ORIGIN } from "./clipboard-types.js";
 import { mountLocalStorageTransport } from "./local-storage-transport.js";
-import { writeOsClipboardMarker } from "./os-clipboard-marker.js";
+import { mountMarkerHealthTransport, writeOsClipboardMarker } from "./os-clipboard-marker.js";
 import { type OfficePasteHint, officePasteHint } from "./paste-coord.js";
 
 export interface UseClipboardCommandsDeps {
@@ -124,6 +124,9 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
   useEffect(() => {
     const broadcast = mountBroadcastChannelTransport(SESSION_ORIGIN);
     const localStorage = mountLocalStorageTransport(SESSION_ORIGIN);
+    // WI-187 — marker-health transport: a peer tab's successful marker write
+    // activates recency routing here too (the OS clipboard is shared).
+    const markerHealthDispose = mountMarkerHealthTransport();
     // WI-185 ⑰ — the plain-paste binding probes the store at keydown time:
     // EMPTY → it skips preventDefault so the native `paste` event fires and
     // the OS-clipboard image listener can take over.
@@ -131,6 +134,7 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
     return () => {
       broadcast.dispose();
       localStorage.dispose();
+      markerHealthDispose();
       probeDispose();
     };
   }, []);
@@ -146,7 +150,9 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
         const result = editor.exec("weave.clipboard.copy", { itemIds });
         // WI-186 — stamp the OS clipboard so paste-time routing can tell
         // the weave copy is the NEWEST copy (recency oracle, DR-122).
-        if (result.ok) writeOsClipboardMarker();
+        // WI-188 — the stamp carries the serialized payload the command just
+        // wrote to the store, so a fresh tab can paste from the OS clipboard.
+        if (result.ok) writeOsClipboardMarker(clipboardStore.peek());
         return;
       }
       if (verb === "cut") {
@@ -157,7 +163,7 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
           itemIds,
           ...(containerId !== undefined ? { containerId } : {}),
         });
-        if (result.ok) writeOsClipboardMarker();
+        if (result.ok) writeOsClipboardMarker(clipboardStore.peek());
         return;
       }
       if (verb === "paste") {

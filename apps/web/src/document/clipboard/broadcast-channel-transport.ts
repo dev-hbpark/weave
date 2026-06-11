@@ -20,10 +20,9 @@
 //     event so we can spot version-skew traffic during canary releases.
 
 import { clipboardStore } from "./clipboard-store.js";
-import type { ClipboardPayload, KnownClipboardPayload } from "./clipboard-types.js";
+import { isValidIncomingClipboardPayload } from "./clipboard-types.js";
 
 const CHANNEL_NAME = "weave.clipboard.v1";
-const SUPPORTED_SCHEMA_VERSIONS = new Set<number>([1]);
 
 interface BroadcastChannelLike {
   postMessage(message: unknown): void;
@@ -45,17 +44,6 @@ function detectBroadcastChannel(): typeof BroadcastChannel | undefined {
   if (typeof globalThis === "undefined") return undefined;
   const ctor = (globalThis as { BroadcastChannel?: typeof BroadcastChannel }).BroadcastChannel;
   return ctor;
-}
-
-function isValidIncoming(data: unknown): data is KnownClipboardPayload {
-  if (data === null || typeof data !== "object") return false;
-  const p = data as ClipboardPayload<unknown>;
-  if (typeof p.schemaVersion !== "number") return false;
-  if (!SUPPORTED_SCHEMA_VERSIONS.has(p.schemaVersion)) return false;
-  if (typeof p.origin !== "string") return false;
-  if (typeof p.timestamp !== "number") return false;
-  if (typeof p.kind !== "string") return false;
-  return p.kind === "weave/items.v1";
 }
 
 /**
@@ -83,7 +71,7 @@ export function mountBroadcastChannelTransport(
   }
 
   const handleMessage = (event: { data: unknown }): void => {
-    if (!isValidIncoming(event.data)) return;
+    if (!isValidIncomingClipboardPayload(event.data)) return;
     if (event.data.origin === sessionOrigin) return; // self-receive
     clipboardStore.write(event.data);
   };

@@ -70,9 +70,12 @@ copy 1회 후에는 사용자가 나중에 복사한 OS 스크린샷이 영원�
 
 ## 잔여
 
-- 마커 건강도는 탭-로컬: 크로스탭 transports로 페이로드만 받은 탭은
+- ~~마커 건강도는 탭-로컬: 크로스탭 transports로 페이로드만 받은 탭은
   레거시 라우팅 유지 (내부 paste 결과는 동일 — recency 해소만 그 탭에서
-  직접 copy해야 활성화). 필요해지면 transports에 건강도 신호 동반.
-- 외부 앱에 weave copy 후 붙여넣으면 `weave:clipboard:v1` 텍스트가
+  직접 copy해야 활성화). 필요해지면 transports에 건강도 신호 동반.~~
+  → **완료: WI-187 / DR-123** (전용 BroadcastChannel 건강도 전파).
+- ~~외부 앱에 weave copy 후 붙여넣으면 `weave:clipboard:v1` 텍스트가
   보이는 트레이드오프 (DR-122 §대안 비교) — 실데이터 HTML 클립보드
-  직렬화(Figma 방식)는 후속 후보.
+  직렬화(Figma 방식)는 후속 후보.~~
+  → **완료: WI-188 / DR-124** (text/html 스탬프 + 임베디드 페이로드 —
+  OS 클립보드가 제3의 transport로 승격).
