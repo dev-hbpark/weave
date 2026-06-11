@@ -620,9 +620,17 @@ export function useAkuAgent(deps: {
         (h) => {
           handleRef.current = h;
           setConnection(toConnection(h.state));
-          offStateRef.current = h.onStateChange((detail) =>
-            setConnection(toConnection(detail.state)),
-          );
+          offStateRef.current = h.onStateChange((detail) => {
+            setConnection(toConnection(detail.state));
+            // WI-171 — a TERMINAL state invalidates the last queue view: without
+            // a link there is no live queue, and a stale own-job entry must not
+            // keep an adopted (resumed) dim+roaming lit forever. "reconnecting"
+            // is NOT terminal — the stale view is exactly what lets adoption
+            // bridge a momentary drop until the reconnect push refreshes it.
+            if (detail.state === "error" || detail.state === "closed") {
+              setQueueStatus(null);
+            }
+          });
           return h;
         },
         (err) => {
@@ -995,9 +1003,22 @@ export function useAkuAgent(deps: {
       } catch (err) {
         if (genRef.current !== gen) return;
         const detail = err instanceof Error ? err.message : String(err);
+        // WI-171 — a transport-failed local run may still be ALIVE server-side:
+        // the grace registry holds it and re-runs it on reconnect (WI-034 /
+        // DR-029, continuation-marked since small-think WI-037). If the last
+        // queue view listed our own job, re-arm the WI-151 adoption path: the
+        // resume effect then adopts as soon as `status` flips to idle below
+        // (the stale view bridges the gap until the reconnect push), re-lighting
+        // dim + roaming for the replayed run. No replay (grace expired / never
+        // enqueued) → the own-job count is or becomes 0 → adoption no-ops or
+        // releases, so dim never sticks.
+        const mayResume = (queueStatusRef.current?.jobs ?? []).some((j) => j.own);
+        if (mayResume) engagedRef.current = false;
         patchLastAssistant((prev) => ({
           ...prev,
-          text: `에이전트 서버에 연결하지 못했어요. (${detail})`,
+          text: mayResume
+            ? "연결이 잠시 끊겼어요. 재연결되면 중단된 작업을 이어서 진행해요 — 진행이 없으면 다시 시도해 주세요."
+            : `에이전트 서버에 연결하지 못했어요. (${detail})`,
           error: true,
         }));
       } finally {
