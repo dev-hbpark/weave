@@ -6,7 +6,7 @@ import {
 import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useState } from "react";
 import type { DomainKind, ItemFrame } from "../../../document";
-import { absoluteFrameBox, findItemDeep } from "../../../document/agocraft-mirror.js";
+import { absoluteFrameBox } from "../../../document/agocraft-mirror.js";
 import { layoutChildFromTextAutoResize } from "../../../document/domains/derive-text-auto-resize.js";
 import { type ItemAdderKind, setItemAdder } from "../../../document/tooltip/editor-hotkeys.js";
 import { cameraFitBox } from "../../frame-camera-bridge.js";
@@ -42,13 +42,14 @@ export interface UseItemAddParams {
   readonly setSelectedFrameIdRef: React.MutableRefObject<((id: string | null) => void) | null>;
   /** Geometry computer mirror (orchestrator-owned). */
   readonly addGeometryRef: React.MutableRefObject<AddGeometryFn>;
-  /** WI-153 P3 (DR-111 D5) — fallback container when nothing (or a non-frame)
-   *  is selected. Page-bounded formats mirror the ACTIVE PAGE id here so adds
-   *  land in the page, not the design root; free placement mirrors undefined
-   *  (→ root, unchanged). Policy comes from the editor mode's InsertionPolicy
-   *  (WI-166) — resolved by the orchestrator, never by a flavor compare here
-   *  (Rule 6). */
-  readonly defaultAddContainerIdRef: React.MutableRefObject<string | undefined>;
+  /** WI-153 P3 / WI-180 — selection-aware add-container resolver
+   *  (InsertionPolicy.addContainerFor, reading the live selection).
+   *  `undefined` = design root. Free placement resolves a selected frame
+   *  (add lands inside it); page-bounded formats resolve the ACTIVE PAGE
+   *  regardless of selection (sub-page frames are groups). Policy comes
+   *  from the editor mode (WI-166) — resolved by the orchestrator, never
+   *  by a flavor compare here (Rule 6). */
+  readonly resolveAddContainerRef: React.MutableRefObject<() => string | undefined>;
   readonly designWidth: number;
   readonly designHeight: number;
 }
@@ -78,7 +79,7 @@ export function useItemAdd({
   selectedFrameIdRef,
   setSelectedFrameIdRef,
   addGeometryRef,
-  defaultAddContainerIdRef,
+  resolveAddContainerRef,
   designWidth,
   designHeight,
 }: UseItemAddParams): UseItemAdd {
@@ -129,16 +130,16 @@ export function useItemAdd({
       if (kind === "image" && altOverride !== undefined && altOverride.trim().length > 0) {
         attrsOverride.alt = altOverride.trim();
       }
-      // Container rule: add INTO the selected item only when it is a frame.
-      // A selected non-frame item routes the add to the format's default
-      // container — root on infinite canvas; the ACTIVE PAGE on page-bounded
-      // formats (WI-153 P3, DR-111 D5). Nothing selected → same default.
+      // Container rule (WI-180): the editor mode's InsertionPolicy resolves
+      // the container from the live selection — free placement adds INTO a
+      // selected frame; page-bounded formats add to the ACTIVE PAGE even
+      // with a (group-)frame selected. No flavor compare here (Rule 6).
       const rootId = String(document.root.id);
       const sel = selectedFrameIdRef.current;
-      const selItem = sel !== undefined ? findItemDeep(document, sel) : undefined;
-      const selIsFrame = selItem?.kind === "frame";
-      const containerId =
-        selIsFrame && sel !== undefined ? sel : (defaultAddContainerIdRef.current ?? rootId);
+      const containerId = resolveAddContainerRef.current() ?? rootId;
+      // The policy resolved the SELECTED frame as the container → the add is
+      // frame-scoped (frame-centred geometry zoom below).
+      const intoSelectedFrame = sel !== undefined && containerId === sel;
       // Geometry: root → viewport-centred; frame → frame-centred.
       const geo = addGeometryRef.current(containerId, kind === "text");
       if (geo !== null) {
@@ -168,7 +169,7 @@ export function useItemAdd({
         const chartRes = editor.exec<unknown, string>("weave.chart.add", { containerId, frame });
         if (!chartRes.ok) return;
         setSelectedFrameIdRef.current?.(chartRes.value);
-        if (selIsFrame) {
+        if (intoSelectedFrame) {
           const box = absoluteFrameBox(document, containerId, designWidth, designHeight);
           if (box !== null) cameraFitBox(box);
         }
@@ -182,8 +183,8 @@ export function useItemAdd({
       });
       if (!result.ok) return;
       setSelectedFrameIdRef.current?.(result.value);
-      // Added into a frame → bring that frame full-screen.
-      if (selIsFrame) {
+      // Added into a selected frame → bring that frame full-screen.
+      if (intoSelectedFrame) {
         const box = absoluteFrameBox(document, containerId, designWidth, designHeight);
         if (box !== null) cameraFitBox(box);
       }
@@ -196,7 +197,7 @@ export function useItemAdd({
       selectedFrameIdRef,
       setSelectedFrameIdRef,
       addGeometryRef,
-      defaultAddContainerIdRef,
+      resolveAddContainerRef,
     ],
   );
 
@@ -230,11 +231,9 @@ export function useItemAdd({
       if (doc === undefined) return;
       const rootId = String(doc.root.id);
       const sel = selectedFrameIdRef.current;
-      const selItem = sel !== undefined ? findItemDeep(doc, sel) : undefined;
-      const selIsFrame = selItem?.kind === "frame";
-      // WI-153 P3 — same default-container rule as addNewItem above.
-      const containerId =
-        selIsFrame && sel !== undefined ? sel : (defaultAddContainerIdRef.current ?? rootId);
+      // WI-153 P3 / WI-180 — same policy-resolved container as addNewItem.
+      const containerId = resolveAddContainerRef.current() ?? rootId;
+      const intoSelectedFrame = sel !== undefined && containerId === sel;
       let frame = spec.frame;
       const attrsOverride: Record<string, unknown> = {};
       const geo = addGeometryRef.current(containerId, spec.kind === "text");
@@ -260,7 +259,7 @@ export function useItemAdd({
         ...(Object.keys(attrsOverride).length > 0 ? { attrsOverride } : {}),
       });
       if (result.ok) setSelectedFrameIdRef.current?.(result.value);
-      if (selIsFrame) {
+      if (intoSelectedFrame) {
         const box = absoluteFrameBox(doc, containerId, designWidth, designHeight);
         if (box !== null) cameraFitBox(box);
       }
@@ -273,7 +272,7 @@ export function useItemAdd({
     selectedFrameIdRef,
     setSelectedFrameIdRef,
     addGeometryRef,
-    defaultAddContainerIdRef,
+    resolveAddContainerRef,
   ]);
 
   // WI-030 — Slide preset picker open state. The Add menu's "슬라이드" item opens

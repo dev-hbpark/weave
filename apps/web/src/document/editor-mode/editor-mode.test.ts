@@ -179,6 +179,41 @@ describe("InsertionPolicy (P2-c)", () => {
   });
 });
 
+describe("InsertionPolicy.addContainerFor (WI-180 — selection-aware explicit add)", () => {
+  // page-1 holds a group frame and a text leaf; the group holds a leaf.
+  const doc = makeDoc([
+    makeItem("page-1", "frame", [
+      makeItem("group-1", "frame", [makeItem("deep-text", "text")]),
+      makeItem("text-1", "text"),
+    ]),
+  ]);
+
+  it("infinite flavors: a selected frame captures the add; anything else → root", () => {
+    for (const f of ["mixed", "canvas-board"] as const) {
+      const { insertion } = editorModeFor(f);
+      expect(insertion.addContainerFor(doc, undefined, "group-1")).toBe("group-1");
+      expect(insertion.addContainerFor(doc, undefined, "page-1")).toBe("page-1");
+      // Non-frame selection / no selection / stale id → design root.
+      expect(insertion.addContainerFor(doc, undefined, "text-1")).toBeUndefined();
+      expect(insertion.addContainerFor(doc, undefined, undefined)).toBeUndefined();
+      expect(insertion.addContainerFor(doc, undefined, "gone")).toBeUndefined();
+    }
+  });
+
+  it("page-bounded flavors: the ACTIVE PAGE always — sub-page frames are groups", () => {
+    for (const f of ["slide-deck", "doc-page"] as const) {
+      const { insertion } = editorModeFor(f);
+      // Even with a (group-)frame or leaf selected, the add lands on the page.
+      expect(insertion.addContainerFor(doc, "page-1", "group-1")).toBe("page-1");
+      expect(insertion.addContainerFor(doc, "page-1", "text-1")).toBe("page-1");
+      expect(insertion.addContainerFor(doc, "page-1", "deep-text")).toBe("page-1");
+      expect(insertion.addContainerFor(doc, "page-1", undefined)).toBe("page-1");
+      // Empty deck edge — no active page → root fallback, same as containerFor.
+      expect(insertion.addContainerFor(doc, undefined, "group-1")).toBeUndefined();
+    }
+  });
+});
+
 describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior changes)", () => {
   it("infinite flavors: overview rail — sections/toggle/focus, NO page lifecycle (change ①: mixed loses '+')", () => {
     for (const f of ["mixed", "canvas-board"] as const) {

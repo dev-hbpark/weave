@@ -1342,19 +1342,24 @@ function DesignPageBody() {
     );
   }, [hoverContext]);
 
-  // WI-072 — paste target container: paste INTO the selected frame, or (for a
-  // selected non-frame item) into THAT item's parent so the clone lands beside
-  // it in the same frame. Nothing selected / parent is root → undefined (root).
+  // WI-072 — paste target container: a selected NON-frame item routes the
+  // paste to THAT item's parent so the clone lands beside it (parent is
+  // root → undefined; mode-independent). A selected frame / no selection
+  // resolves through the mode's InsertionPolicy.addContainerFor (WI-180):
+  // free placement pastes INTO the selected frame (or the root), page-bounded
+  // flavors paste onto the ACTIVE PAGE — never the design root, where the
+  // item would land invisibly outside the page-scoped view.
   // Shared by resolveContainerId + resolveContainerSizePx so both agree.
   const pasteTargetContainerId = (): string | undefined => {
-    if (selectedFrameId === undefined) return undefined;
-    const sel = findItemDeep(docInAgocraft, selectedFrameId);
-    if (sel === undefined) return undefined;
-    if (sel.kind === "frame") return selectedFrameId;
-    const parent = findParentAndIndex(docInAgocraft, selectedFrameId);
-    if (parent === undefined) return undefined;
-    const pid = String(parent.parent.id);
-    return pid === String(docInAgocraft.root.id) ? undefined : pid;
+    const sel =
+      selectedFrameId !== undefined ? findItemDeep(docInAgocraft, selectedFrameId) : undefined;
+    if (sel !== undefined && sel.kind !== "frame") {
+      const parent = findParentAndIndex(docInAgocraft, String(sel.id));
+      if (parent === undefined) return undefined;
+      const pid = String(parent.parent.id);
+      return pid === String(docInAgocraft.root.id) ? undefined : pid;
+    }
+    return editorMode.insertion.addContainerFor(docInAgocraft, activePageId, selectedFrameId);
   };
 
   // WI-072 — paste/import destination container: into the selected frame (or
@@ -1519,6 +1524,15 @@ function DesignPageBody() {
     });
   }, [selectFrame, itemCapability]);
 
+  // WI-180 — selection-aware add container (InsertionPolicy.addContainerFor).
+  // Free placement: a selected frame captures the explicit add; page-bounded:
+  // the ACTIVE PAGE always (sub-page frames are groups, not editing
+  // surfaces). Ref-mirrored resolver so useItemAdd's stable closures read
+  // the live policy + selection at click/hotkey time.
+  const resolveAddContainerRef = useRef<() => string | undefined>(() => undefined);
+  resolveAddContainerRef.current = () =>
+    editorMode.insertion.addContainerFor(docInAgocraft, activePageId, selectedFrameIdRef.current);
+
   // DR-027 / WI-071 Phase 2 — WI-020 item-add cluster ("+" add menu + R/T/L/F
   // tool-hotkey adder + slide-preset dialog state) extracted to a cooperating
   // hook. Called here (after selectedFrameIdRef exists) and injected the
@@ -1531,7 +1545,7 @@ function DesignPageBody() {
     selectedFrameIdRef,
     setSelectedFrameIdRef,
     addGeometryRef,
-    defaultAddContainerIdRef,
+    resolveAddContainerRef,
     designWidth: design.width,
     designHeight: design.height,
   });
@@ -1707,15 +1721,29 @@ function DesignPageBody() {
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
-      // Cmd/Ctrl + A — context-aware Select All. No frame selected ⇒ the
-      // design's first-level children; a frame selected ⇒ that frame's
-      // first-level children (drill-in select). A leaf with no children
-      // is a no-op (keeps the current selection).
+      // Cmd/Ctrl + A — context-aware Select All. A frame selected ⇒ that
+      // frame's first-level children (drill-in select); a non-frame leaf
+      // selected ⇒ its PARENT's children (siblings — WI-180: ⌘A after
+      // clicking an item selects everything at that level instead of
+      // no-op'ing); nothing selected ⇒ the mode's base editing container
+      // (design root on infinite canvas, the ACTIVE PAGE on page-bounded
+      // flavors — the visible slide is the implicit context, hidden
+      // sibling pages never join). The base comes from the injected
+      // InsertionPolicy via defaultAddContainerIdRef — no flavor compare
+      // here (Rule 6 / DR-114 §6-G4).
       if (mod && !e.shiftKey && !e.altKey && (e.key === "a" || e.key === "A")) {
         const doc = docInAgocraftRef.current;
         if (doc === undefined) return;
+        const baseId = defaultAddContainerIdRef.current;
+        const base = baseId !== undefined ? (findItemDeep(doc, baseId) ?? doc.root) : doc.root;
         const selId = selectedFrameIdRef.current;
-        const container = selId !== undefined ? (findItemDeep(doc, selId) ?? doc.root) : doc.root;
+        const selItem = selId !== undefined ? findItemDeep(doc, selId) : undefined;
+        const container =
+          selItem === undefined
+            ? base
+            : selItem.kind === "frame"
+              ? selItem
+              : (findParentAndIndex(doc, String(selItem.id))?.parent ?? base);
         const childIds = container.children.filter(isDomainItem).map((c) => String(c.id));
         if (childIds.length === 0) return;
         e.preventDefault();

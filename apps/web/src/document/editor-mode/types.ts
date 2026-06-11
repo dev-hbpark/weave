@@ -182,6 +182,18 @@ export interface InsertionPolicy {
    *  `undefined` = design root. Page-bounded flavors return the active
    *  page (root is page chrome there, not an editing surface). */
   containerFor(doc: AgocraftDocument, activePageId: string | undefined): string | undefined;
+  /** WI-180 — container for an EXPLICIT user add (the "+" add menu, the
+   *  R/T/L/F tool hotkeys) and the frame-arm of paste, given the current
+   *  selection. Absorbs the consumers' `selIsFrame ? sel : default`
+   *  branch: free placement treats a selected frame as an editing surface
+   *  (the add lands INSIDE it); page-bounded flavors treat sub-page frames
+   *  as GROUPS — an explicit add lands on the ACTIVE PAGE no matter what
+   *  is selected (Canva model). `undefined` = design root. */
+  addContainerFor(
+    doc: AgocraftDocument,
+    activePageId: string | undefined,
+    selectedId: string | undefined,
+  ): string | undefined;
 }
 
 /** DR-114 §4 — how the bottom rail is composed. The ThumbnailPanel does NOT
