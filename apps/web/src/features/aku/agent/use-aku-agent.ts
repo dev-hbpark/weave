@@ -53,6 +53,12 @@ import type {
 } from "../types.js";
 import { stampContainerGuard } from "./agent-container-guard.js";
 import { stampMinSizeGuard } from "./agent-min-size-guard.js";
+import {
+  type AkuAgentMode,
+  connectModeOptions,
+  loadAgentMode,
+  saveAgentMode,
+} from "./agent-mode.js";
 import { decideResume } from "./agent-resume.js";
 import { bindAgentSurface } from "./agent-surface.js";
 import { fixAgentTextBox } from "./agent-text-resize.js";
@@ -134,6 +140,11 @@ export interface UseAkuAgent {
   /** Forget the saved token → returns the panel to the token-setup gate.
    *  Use when a wrong token was entered (connection keeps failing). */
   resetToken(): void;
+  /** Execution-mode REQUEST (WI-175). "server" = no request (boot default). The
+   *  server grants only allowlisted modes — the GRANTED mode is serverInfo.mode. */
+  readonly agentMode: AkuAgentMode;
+  /** Change the mode request → drops the link and reconnects with a fresh hello. */
+  setAgentMode(mode: AkuAgentMode): void;
 }
 
 /** Dev-default URL. Production must inject a real URL (the deployed weave is an
@@ -344,6 +355,14 @@ export function useAkuAgent(deps: {
     () => tokenProp ?? envStr("VITE_AKU_AGENT_TOKEN") ?? loadToken(),
   );
   const hasToken = token !== null && token !== "";
+  // Execution-mode request (WI-175). Like `token`, it is part of the hello, so it
+  // is hook-owned reactive state (NOT AkuSettings — that is read non-reactively at
+  // submit time) and lives in `getHandle`'s dependency list: changing it drops the
+  // link and reconnects with a fresh hello. The BYO key is NOT user input — it is
+  // pre-configured in weave's .env (operator decision) and sent only while the
+  // byo-apikey mode is selected. Secret: never logged, never returned from here.
+  const [agentMode, setAgentModeState] = useState<AkuAgentMode>(() => loadAgentMode());
+  const apiKey = envStr("VITE_AKU_API_KEY") ?? null;
 
   // DEV diagnostics for "token setup keeps showing despite a saved token". Reveals
   // whether the value is actually under TOKEN_KEY on THIS origin (key/origin mismatch,
@@ -701,6 +720,11 @@ export function useAkuAgent(deps: {
           ...(designId !== "" ? { clientId: `weave-client:${designId}` } : {}),
           url,
           token,
+          // WI-175 — per-connection execution-mode request (+ BYO key when that
+          // mode asks for it). The server grants only allowlisted modes and
+          // announces the ACTUAL mode in serverInfo.mode (chip in the header) —
+          // never assume the request was honored.
+          ...connectModeOptions(agentMode, apiKey),
           connectTimeoutMs: CONNECT_TIMEOUT_MS,
           ...(schema !== undefined ? { schema } : {}),
         });
@@ -737,7 +761,7 @@ export function useAkuAgent(deps: {
       );
     }
     return connectingRef.current;
-  }, [editor, surface, designId, url, token]);
+  }, [editor, surface, designId, url, token, agentMode, apiKey]);
 
   // Connect-on-init (WI-034 4b): once the SAVED design has loaded and a token is present, open
   // the link eagerly (instead of lazily on first submit) so a browser refresh reconnects within
@@ -1293,6 +1317,19 @@ export function useAkuAgent(deps: {
     setTokenState(null);
   }, [dropLink]);
 
+  // WI-175 — mode/key changes follow the setToken pattern: persist, drop the
+  // live link, set state → the connect-on-init effect re-dials with a fresh
+  // hello carrying the new request. No-op (no reconnect churn) when unchanged.
+  const setAgentMode = useCallback(
+    (next: AkuAgentMode): void => {
+      if (next === agentMode) return;
+      saveAgentMode(next);
+      dropLink();
+      setAgentModeState(next);
+    },
+    [agentMode, dropLink],
+  );
+
   return {
     messages,
     status,
@@ -1313,5 +1350,7 @@ export function useAkuAgent(deps: {
     hasToken,
     setToken,
     resetToken,
+    agentMode,
+    setAgentMode,
   };
 }

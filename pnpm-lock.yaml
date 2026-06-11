@@ -5,8 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.5.tgz
-  '@agocraft/agent-client': file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611152500.tgz
+  '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.6.tgz
+  '@agocraft/agent-client': file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611161000.tgz
   '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz
   '@agocraft/domain-block-doc': file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260602053511.tgz
   '@agocraft/domain-canvas-design': file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260602053511.tgz
@@ -41,8 +41,8 @@ importers:
   apps/web:
     dependencies:
       '@agocraft/agent-client':
-        specifier: file:vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611152500.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611152500.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.25.76)
+        specifier: file:vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611161000.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611161000.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.25.76)
       '@agocraft/core':
         specifier: file:vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz
         version: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz(typescript@5.9.3)
@@ -240,9 +240,9 @@ importers:
 
 packages:
 
-  '@agocraft/agent-client@file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611152500.tgz':
-    resolution: {integrity: sha512-UjUXZ+iHyHZi/gE/irsSWvMaFrcmpIX8IoHmAHs2CvnPZ/enEsftIvLU6gZnclqUvcQTvS19wagMvIYDHnaUaA==, tarball: file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611152500.tgz}
-    version: 1.0.0-rc.20260611152500
+  '@agocraft/agent-client@file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611161000.tgz':
+    resolution: {integrity: sha512-ldFjeZXGK6F7H0oE4a/3l7fa7k4Gh1mXDHnIga0bEqwhPdKRj4XM2Jw0T9sYYiK48fj/eSQlsAilbCgqQiGjmw==, tarball: file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611161000.tgz}
+    version: 1.0.0-rc.20260611161000
 
   '@agocraft/core@file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz':
     resolution: {integrity: sha512-lbabe9UUEQ/InPQVvv5TJul+1F/w9wB2iGIM/uIGi3tH0pEaUuTFyYdUeTaCD1L4Cc5WmKd5konMklZ6qCttog==, tarball: file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz}
@@ -1592,9 +1592,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.5.tgz':
-    resolution: {integrity: sha512-1OS6QAiF59S30K8LOmMFQqOK26XPs2HeG+PIns2MzI2Upy9iQprUSah+kDOIjKJ+46RAeQfZqE9Jl0NB/yz8ag==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.5.tgz}
-    version: 0.1.5
+  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.6.tgz':
+    resolution: {integrity: sha512-wTTMaBEdOLef4uNpQlx077MraJFdwvpzXnHuh1QDzukcWZ0zxvhy1p6iYHZRg5hYeWiwCb6CVUWqtZbrakmawg==, tarball: file:apps/web/vendor/small-think/small-think-client-0.1.6.tgz}
+    version: 0.1.6
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
@@ -3494,11 +3494,11 @@ packages:
 
 snapshots:
 
-  '@agocraft/agent-client@file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611152500.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.25.76)':
+  '@agocraft/agent-client@file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611161000.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz(typescript@5.9.3)
       '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)
-      '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.5.tgz(typescript@5.9.3)(zod@3.25.76)
+      '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.6.tgz(typescript@5.9.3)(zod@3.25.76)
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - react
@@ -4759,7 +4759,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.60.4':
     optional: true
 
-  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.5.tgz(typescript@5.9.3)(zod@3.25.76)':
+  '@small-think/client@file:apps/web/vendor/small-think/small-think-client-0.1.6.tgz(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
       valibot: 1.4.0(typescript@5.9.3)

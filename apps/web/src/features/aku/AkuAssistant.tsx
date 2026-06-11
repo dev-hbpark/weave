@@ -118,6 +118,8 @@ export function AkuAssistant({
     hasToken,
     setToken,
     resetToken,
+    agentMode,
+    setAgentMode,
   } = useAkuAgent({
     editor,
     getDocument: () => docRef.current,
@@ -329,6 +331,8 @@ export function AkuAssistant({
           hasToken={hasToken}
           onSetToken={setToken}
           onResetToken={resetToken}
+          agentMode={agentMode}
+          onSetAgentMode={setAgentMode}
         />
       ) : null}
     </>,

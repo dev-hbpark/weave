@@ -14,6 +14,7 @@ import { AkuServerInfoChip } from "./AkuServerInfoChip.js";
 import { AkuSettingsMenu } from "./AkuSettingsMenu.js";
 import { AkuThemeSuggestion } from "./AkuThemeSuggestion.js";
 import { AkuTokenSetup } from "./AkuTokenSetup.js";
+import type { AkuAgentMode } from "./agent/agent-mode.js";
 import type { AkuSettings, SetAkuSetting } from "./agent/aku-settings.js";
 import type { IntentPlan, Operation } from "./agent/intent/types.js";
 import { ClarifyPicker } from "./ClarifyPicker.js";
@@ -54,6 +55,8 @@ export function AkuPanel({
   hasToken,
   onSetToken,
   onResetToken,
+  agentMode,
+  onSetAgentMode,
 }: {
   readonly geometry: AkuGeometry;
   readonly onMoveStart: (e: ReactPointerEvent) => void;
@@ -102,6 +105,9 @@ export function AkuPanel({
   readonly onSetToken: (token: string) => void;
   /** Forget the saved token → back to the setup gate (escape a wrong token). */
   readonly onResetToken: () => void;
+  /** Execution-mode request (WI-175) — gear-menu segmented control. */
+  readonly agentMode: AkuAgentMode;
+  readonly onSetAgentMode: (mode: AkuAgentMode) => void;
 }): JSX.Element {
   // Auto-scroll the transcript to the bottom whenever a new message arrives or
   // the streaming reply grows, so the latest content is always in view. Tracking
@@ -146,6 +152,8 @@ export function AkuPanel({
             canClear={messages.length > 0}
             onResetToken={onResetToken}
             hasToken={hasToken}
+            agentMode={agentMode}
+            onSetAgentMode={onSetAgentMode}
           />
           <IconButton aria-label="아쿠 닫기" variant="ghost" size="sm" onClick={onClose}>
             <IconClose size={16} />
