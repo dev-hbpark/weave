@@ -83,7 +83,6 @@ import {
   type DomainKind,
   effectivePresentationOrder,
   FLAVOR_REGISTRY,
-  FULL_FRAME,
   firstChildOf,
   InteractionModeProvider,
   type ItemFrame,
@@ -1063,6 +1062,12 @@ function DesignPageBody() {
     () => editorMode.view.visibleFrames(docInAgocraft, activePageId),
     [editorMode, docInAgocraft, activePageId],
   );
+  // WI-184 ⑧ — ref-mirrored so the stable window-keydown closure below reads
+  // the live deck order / active page without re-registering per change.
+  const presentationOrderRef = useRef(presentationOrder);
+  presentationOrderRef.current = presentationOrder;
+  const activePageIdRef = useRef(activePageId);
+  activePageIdRef.current = activePageId;
   const itemCapability = useCallback((id: string): ItemCapabilities => {
     const { roles } = editorModeRef.current;
     const doc = docInAgocraftRef.current;
@@ -1722,6 +1727,27 @@ function DesignPageBody() {
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
+      // WI-184 ⑧ — PageUp/PageDown = previous/next slide, from canvas focus
+      // too (office 3/5 consensus: the slide is the working unit). Gated on
+      // the live active page — free placement has none (undefined), so the
+      // keys fall through untouched (no flavor compare; the degenerate case
+      // IS the gate). Mirrors a rail tile click exactly: select + activate
+      // through the same clickActivatesPage policy gate.
+      if (!mod && !e.altKey && (e.key === "PageUp" || e.key === "PageDown")) {
+        const cur = activePageIdRef.current;
+        if (cur === undefined) return;
+        const order = presentationOrderRef.current;
+        const i = order.indexOf(cur);
+        if (i < 0) return;
+        // Even at the deck edges the key means "slide nav" here — consume it
+        // so the browser never scrolls the page chrome.
+        e.preventDefault();
+        const next = order[e.key === "PageDown" ? i + 1 : i - 1];
+        if (next === undefined) return; // clamp at the ends (office behavior, no wrap)
+        setSelectedFrameId(next);
+        if (editorModeRef.current.rail.clickActivatesPage) setActivePageId(next);
+        return;
+      }
       // WI-183 — plain Enter with exactly ONE item selected enters text edit
       // when that item has a registered text surface (5-tool consensus:
       // Enter starts editing the selected text). No kind compare here — the
@@ -1919,7 +1945,18 @@ function DesignPageBody() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editor, selectFrames, selectFrame, dissolveFrame, applyCrop, itemCapability]);
+  }, [
+    editor,
+    selectFrames,
+    selectFrame,
+    dissolveFrame,
+    applyCrop,
+    itemCapability,
+    // WI-184 ⑧ — both stable (useState setter / useCallback); listed for lint
+    // correctness, not expected to re-register.
+    setSelectedFrameId,
+    setActivePageId,
+  ]);
   // Multi-selection align / distribute — single slot dispatched by the
   // 8 `multi.align-*` / `multi.distribute-*` commands. Steps:
   //   1. Read the live selected ids + doc through refs (selection /
@@ -2635,14 +2672,15 @@ function DesignPageBody() {
                                           onAddPage={
                                             editorMode.rail.addPage
                                               ? () => {
-                                                  // WI-153 P2 — add a blank page (top-level
-                                                  // frame) and make it the active page.
+                                                  // WI-153 P2 — add a blank page and make it
+                                                  // the active page. WI-184 ⑩ — the command
+                                                  // stamps kind/frame (FULL_FRAME lock) and
+                                                  // slots the page right AFTER the current
+                                                  // one in presentationOrder (5/5-tool
+                                                  // consensus), one transaction.
                                                   const r = editor.exec<unknown, string>(
-                                                    "weave.item.add",
-                                                    {
-                                                      kind: "frame",
-                                                      frame: FULL_FRAME,
-                                                    },
+                                                    "weave.page.add",
+                                                    { afterId: activePageId },
                                                   );
                                                   if (r.ok) {
                                                     setSelectedFrameId(r.value);
@@ -2689,10 +2727,9 @@ function DesignPageBody() {
                                                     i >= 0
                                                       ? (order[i + 1] ?? order[i - 1])
                                                       : undefined;
-                                                  const r = editor.exec(
-                                                    "weave.item.remove",
-                                                    { itemId: id },
-                                                  );
+                                                  const r = editor.exec("weave.item.remove", {
+                                                    itemId: id,
+                                                  });
                                                   if (r.ok) {
                                                     if (selectedFrameId === id) {
                                                       setSelectedFrameId(neighbor);
@@ -2704,6 +2741,98 @@ function DesignPageBody() {
                                                       setActivePageId(neighbor);
                                                     }
                                                   }
+                                                }
+                                              : undefined
+                                          }
+                                          // WI-184 ⑨ — rail multi-select (Shift 범위 /
+                                          // Cmd 토글) + set ops. Page-lifecycle rails
+                                          // only; the panel stays policy-free.
+                                          multiSelect={editorMode.rail.multiSelect}
+                                          // Set duplicate: ONE transaction (each clone
+                                          // slots right after its source); the LAST
+                                          // clone becomes active (mirrors the single
+                                          // duplicate's activate-the-clone).
+                                          onDuplicatePages={
+                                            editorMode.rail.duplicatePage
+                                              ? (ids) => {
+                                                  const r = editor.exec<
+                                                    unknown,
+                                                    ReadonlyArray<string>
+                                                  >("weave.pages.duplicate", {
+                                                    itemIds: ids,
+                                                  });
+                                                  if (r.ok) {
+                                                    const last = r.value[r.value.length - 1];
+                                                    if (last !== undefined) {
+                                                      setSelectedFrameId(last);
+                                                      setActivePageId(last);
+                                                    }
+                                                  }
+                                                }
+                                              : undefined
+                                          }
+                                          // Set delete: one weave.items.remove batch
+                                          // (one undo). Neighbor pick = the first
+                                          // surviving page at/after the first deleted
+                                          // slot, else the last survivor — so the
+                                          // active page never strands on a removed id.
+                                          onDeletePages={
+                                            editorMode.rail.deletePage
+                                              ? (ids) => {
+                                                  const order = presentationOrder;
+                                                  const dead = new Set(ids);
+                                                  const firstDeadIdx = order.findIndex((pid) =>
+                                                    dead.has(pid),
+                                                  );
+                                                  const survivors = order.filter(
+                                                    (pid) => !dead.has(pid),
+                                                  );
+                                                  const neighbor =
+                                                    order.find(
+                                                      (pid, i) =>
+                                                        !dead.has(pid) && i > firstDeadIdx,
+                                                    ) ?? survivors[survivors.length - 1];
+                                                  const r = editor.exec("weave.items.remove", {
+                                                    itemIds: [...ids],
+                                                  });
+                                                  if (r.ok) {
+                                                    if (
+                                                      selectedFrameId !== undefined &&
+                                                      dead.has(selectedFrameId)
+                                                    ) {
+                                                      setSelectedFrameId(neighbor);
+                                                    }
+                                                    if (
+                                                      activePageId !== undefined &&
+                                                      dead.has(activePageId) &&
+                                                      neighbor !== undefined
+                                                    ) {
+                                                      setActivePageId(neighbor);
+                                                    }
+                                                  }
+                                                }
+                                              : undefined
+                                          }
+                                          // WI-184 ⑪ — right-click rename / skip-in-
+                                          // show. Both ride weave.item.update (attrs
+                                          // merge), so each is one undoable patch.
+                                          onRenamePage={
+                                            editorMode.rail.tileContextMenu
+                                              ? (id, title) => {
+                                                  editor.exec("weave.item.update", {
+                                                    itemId: id,
+                                                    attrs: { title },
+                                                  });
+                                                }
+                                              : undefined
+                                          }
+                                          onToggleSkip={
+                                            editorMode.rail.tileContextMenu
+                                              ? (id, skipped) => {
+                                                  editor.exec("weave.item.update", {
+                                                    itemId: id,
+                                                    attrs: { skipped },
+                                                  });
                                                 }
                                               : undefined
                                           }

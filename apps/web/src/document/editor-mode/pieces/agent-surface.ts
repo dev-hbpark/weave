@@ -18,7 +18,6 @@
 
 import type { AgentCommandSpec } from "@agocraft/agent-client";
 import { clampFrameToPage } from "../../page-clamp.js";
-import { FULL_FRAME } from "../../types.js";
 import type { AgentHostContext, AgentSurfacePolicy, AgentToolAdapter } from "../types.js";
 
 /** Free placement (mixed / canvas-board): the full registered command set,
@@ -137,25 +136,26 @@ const PAGE_ITEM_ADD: AgentToolAdapter = {
   mapInput: intoActivePageClamped,
 };
 
-/** weave.page.add — the wrapped page-creation tool. Internally a root-level
- *  full-size frame add (rail-"+" parity: DesignPage onAddPage execs the same
- *  shape AND activates the new page — `activatesPage` carries the second
- *  half), but the agent never needs to learn that equivalence — the tool
- *  NAME carries the model (DR-115 §2b). WI-169: `frame` is NOT agent-
- *  addressable — page-bounded formats stack every page as FULL_FRAME at the
- *  same coordinates (page-scope.ts premise); a non-standard page box breaks
- *  the matte/fit/stacking model (the "mixed-style page at an offset" defect). */
+/** weave.page.add — the page-creation tool. WI-184 ⑩ promoted it from an
+ *  agent-surface alias over weave.item.add to a REAL command (rail-"+"
+ *  parity is now structural: both paths exec the same command, which stamps
+ *  the WI-169 FULL_FRAME page-box lock itself and slots the new page right
+ *  AFTER the current one in presentationOrder, one transaction).
+ *  `activatesPage` still carries the second half (clone becomes the current
+ *  page). `afterId` is stamped from the host's active page — not agent-
+ *  addressable (the agent's model is "new slide after the current one",
+ *  same as every rail user's). */
 const PAGE_PAGE_ADD: AgentToolAdapter = {
   exposedName: "weave.page.add",
-  command: "weave.item.add",
+  command: "weave.page.add",
   activatesPage: true,
   schema: (base) => {
-    const b = requireBase("weave.item.add", base);
+    const b = requireBase("weave.page.add", base);
     const baseProps = b.inputSchema["properties"];
     const props: Record<string, unknown> = {};
     if (isRecord(baseProps)) {
       // Argument shapes stay the base's by reference (no hand-copied drift);
-      // kind/containerId/frame are stamped by mapInput and not agent-addressable.
+      // afterId is stamped by mapInput and not agent-addressable.
       for (const key of ["attrsOverride", "units"]) {
         if (baseProps[key] !== undefined) props[key] = baseProps[key];
       }
@@ -167,18 +167,13 @@ const PAGE_PAGE_ADD: AgentToolAdapter = {
         properties: props,
         required: [],
         description:
-          "ADD a NEW page (slide) to the design. The page is always created at full design size and immediately becomes the CURRENT page — content added right after (weave.item.add with containerId omitted) lands on it. Optional attrsOverride/units style the page background in the same call. This is the ONLY way to create a page on this design.",
+          "ADD a NEW page (slide) to the design, right after the current page. The page is always created at full design size and immediately becomes the CURRENT page — content added right after (weave.item.add with containerId omitted) lands on it. Optional attrsOverride/units style the page background in the same call. This is the ONLY way to create a page on this design.",
       },
     };
   },
   mapInput: (input, host) => {
     const base = isRecord(input) ? input : {};
-    return {
-      ...base,
-      kind: "frame",
-      containerId: host.rootId,
-      frame: FULL_FRAME,
-    };
+    return { ...base, afterId: host.activeContainerId };
   },
 };
 

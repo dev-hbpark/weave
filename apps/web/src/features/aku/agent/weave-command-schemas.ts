@@ -591,6 +591,7 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.items.duplicate": "여러 아이템 복제",
   "weave.items.duplicateInPlace": "제자리 복제",
   "weave.page.duplicate": "페이지 복제",
+  "weave.pages.duplicate": "여러 페이지 복제",
   "weave.frame.setLayout": "레이아웃 설정",
   "weave.item.setLayoutChild": "레이아웃 자식 정책",
   "weave.item.swapGridCells": "그리드 셀 교환",
@@ -1138,6 +1139,29 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       { itemId: STR },
       ["itemId"],
       "Duplicate a PAGE (a slide frame) in place: deep-clones the frame with its content, keeps the exact same position/size (no offset), and slots the copy right after the source in the deck order. Use this — not weave.item.duplicate — when copying a slide/page.",
+    ),
+  },
+  // WI-184 ⑨ — SET duplicate (rail multi-select parity). Each clone slots
+  // right after its own source in the deck order; the whole set is one undo.
+  "weave.pages.duplicate": {
+    label: label("weave.pages.duplicate"),
+    inputSchema: obj(
+      { itemIds: STR_ARR },
+      ["itemIds"],
+      "Duplicate SEVERAL pages (slide frames) at once, in one undo step: each deep-cloned copy lands exactly on its source (no offset) and slots right after that source in the deck order. Use this — not N weave.page.duplicate calls — when copying multiple slides.",
+    ),
+  },
+  // WI-184 ⑩ — page add as a real command (was a page-surface alias over
+  // weave.item.add). Creates a full-size root frame and slots it right after
+  // `afterId` in the deck order (omitted → deck end), one undo step. The
+  // page-bounded agent surface wraps this with afterId stamped from the
+  // active page (not agent-addressable there).
+  "weave.page.add": {
+    label: label("weave.page.add"),
+    inputSchema: obj(
+      { afterId: STR, attrsOverride: ATTRS, units: CREATION_UNITS },
+      [],
+      "ADD a NEW page (slide): a full-design-size top-level frame, inserted right AFTER the page `afterId` in the deck order (omit afterId → appended at the end). Optional attrsOverride/units style the page background in the same call. Use this — not weave.item.add with kind:'frame' — when creating a slide/page.",
     ),
   },
   "weave.design.reorderChildren": {

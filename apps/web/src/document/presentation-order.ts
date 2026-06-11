@@ -65,6 +65,32 @@ export function collectNonSlideFrameIds(root: AgocraftItem): string[] {
   return out;
 }
 
+/** WI-184 ⑪ — per-frame "Skip Slide" (PPT Hide Slide). A skipped frame STAYS
+ *  in the deck/rail (badge + dimmed tile) but is excluded from present-mode
+ *  stepping. Deliberately a separate attr from `presentable` — `presentable:
+ *  false` removes the frame from the deck entirely (and from a slide-deck
+ *  rail, which has no non-slide section), while `skipped: true` keeps it a
+ *  fully editable deck member that the show just walks past. */
+export function isSkippedFrame(item: AgocraftItem): boolean {
+  return (item.attrs as { skipped?: boolean }).skipped === true;
+}
+
+/** WI-184 ⑪ — the present-mode step list: the effective deck order minus
+ *  skipped frames. Renderers that show the DECK (thumbnail rail) keep using
+ *  `effectivePresentationOrder`; only the SHOW steps through this. */
+export function presentationStepIds(design: Design): ReadonlyArray<string> {
+  const skipped = new Set<string>();
+  function walk(item: AgocraftItem): void {
+    for (const c of item.children) {
+      if (isSkippedFrame(c)) skipped.add(String(c.id));
+      walk(c);
+    }
+  }
+  walk(design.document.root);
+  if (skipped.size === 0) return effectivePresentationOrder(design);
+  return effectivePresentationOrder(design).filter((id) => !skipped.has(id));
+}
+
 /** Reconcile a saved order against what's actually in the tree. Stale ids
  *  drop out; missing ids land at the end in document order. Pure. */
 export function reconcilePresentationOrder(
@@ -83,6 +109,29 @@ export function reconcilePresentationOrder(
 export function effectivePresentationOrder(design: Design): ReadonlyArray<string> {
   const present = collectPresentationIds(design.document.root);
   return reconcilePresentationOrder(design.presentationOrder, present);
+}
+
+/** WI-184 ⑨ — move a SET of entries as one contiguous block to the drop
+ *  position (rail multi-select drag). The block keeps the members' relative
+ *  deck order (NOT click order); `from`/`to` are indices in the ORIGINAL
+ *  order — `from` is the tile the drag started on, `to` the drop target.
+ *  Mirrors `reorder`'s splice semantics: dragging right (from < to) lands
+ *  the block AFTER the target tile, dragging left lands it BEFORE. Dropping
+ *  onto a member of the moved set (incl. from === to) is a no-op. Pure. */
+export function reorderSet(
+  order: ReadonlyArray<string>,
+  moved: ReadonlySet<string>,
+  from: number,
+  to: number,
+): ReadonlyArray<string> {
+  const anchor = order[to];
+  if (anchor === undefined || moved.has(anchor)) return order;
+  if (from < 0 || from >= order.length) return order;
+  const block = order.filter((id) => moved.has(id));
+  if (block.length === 0) return order;
+  const rest = order.filter((id) => !moved.has(id));
+  const at = rest.indexOf(anchor) + (from < to ? 1 : 0);
+  return [...rest.slice(0, at), ...block, ...rest.slice(at)];
 }
 
 /** Move the entry at `from` to `to`. Bounds-checked; out-of-range returns the

@@ -226,6 +226,8 @@ describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior 
         duplicatePage: false,
         deletePage: true,
         clickActivatesPage: false,
+        multiSelect: false,
+        tileContextMenu: false,
       });
     }
   });
@@ -241,6 +243,10 @@ describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior 
         duplicatePage: true,
         deletePage: true,
         clickActivatesPage: true,
+        // WI-184 ⑨ — rail multi-select is a page-lifecycle affordance.
+        multiSelect: true,
+        // WI-184 ⑪ — right-click rename / skip-in-show, same ownership.
+        tileContextMenu: true,
       });
     }
   });

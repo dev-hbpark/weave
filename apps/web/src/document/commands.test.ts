@@ -2661,4 +2661,135 @@ describe("weave.page.duplicate (WI-155)", () => {
     if (create === undefined || create.type !== "item.create") throw new Error("unreachable");
     expect((create.item.attrs as { presentable?: boolean }).presentable).toBe(false);
   });
+
+  // ─── WI-184 ⑨ — weave.pages.duplicate (rail multi-select SET copy) ──────
+  //
+  // One kit batch clone (offset 0) + ONE order patch interleaving each clone
+  // right after its own source — one transaction → one Cmd+Z for the set.
+  // Not a host loop over weave.page.duplicate (that would be N undo steps).
+  describe("weave.pages.duplicate (WI-184 ⑨)", () => {
+    function pagesCmd() {
+      const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.pages.duplicate");
+      if (c === undefined) throw new Error("command not found");
+      return c;
+    }
+
+    it("clones a SET in one transaction; each clone slots right after its own source", () => {
+      const ctx = makePagesCtx();
+      const result = pagesCmd().run(ctx, { itemIds: ["page-1", "page-2"] });
+      if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+      expect(result.value).toHaveLength(2);
+      const [c1, c2] = result.value as ReadonlyArray<string>;
+      // 2 creates + 1 order patch — the WHOLE set is one undo step.
+      expect(result.patches).toHaveLength(3);
+      expect(result.patches.filter((p) => p.type === "item.create")).toHaveLength(2);
+      const attrs = result.patches[2];
+      if (attrs === undefined || attrs.type !== "document.attrs")
+        throw new Error("expected document.attrs last");
+      expect((attrs.after as { presentationOrder: unknown }).presentationOrder).toEqual([
+        "page-1",
+        c1,
+        "page-2",
+        c2,
+      ]);
+    });
+
+    it("offset 0 — every clone's frame is identical to its source (page-box lock)", () => {
+      const result = pagesCmd().run(makePagesCtx(), { itemIds: ["page-1", "page-2"] });
+      if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+      for (const p of result.patches) {
+        if (p.type !== "item.create") continue;
+        expect((p.item.attrs as { frame: unknown }).frame).toEqual(FULL_FRAME);
+      }
+    });
+
+    it("validates the WHOLE set upfront: one non-frame fails the call (`not-a-page`), one unknown id fails (`item-not-found`), empty input fails (`empty-input`)", () => {
+      const notAPage = pagesCmd().run(makePagesCtx(), { itemIds: ["page-1", "rect-page-1"] });
+      expect(notAPage.ok).toBe(false);
+      if (!notAPage.ok) expect(notAPage.error.code).toBe("not-a-page");
+      const notFound = pagesCmd().run(makePagesCtx(), { itemIds: ["page-1", "nope"] });
+      expect(notFound.ok).toBe(false);
+      if (!notFound.ok) expect(notFound.error.code).toBe("item-not-found");
+      const empty = pagesCmd().run(makePagesCtx(), { itemIds: [] });
+      expect(empty.ok).toBe(false);
+      if (!empty.ok) expect(empty.error.code).toBe("empty-input");
+    });
+
+    it("skips the order patch when NO source is a deck member (presentable:false set)", () => {
+      const result = pagesCmd().run(makePagesCtx(), { itemIds: ["group-1"] });
+      if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+      expect(result.patches).toHaveLength(1);
+      expect(result.patches[0]?.type).toBe("item.create");
+    });
+  });
+
+  // ─── WI-184 ⑩ — weave.page.add (insert-after-current page creation) ─────
+  //
+  // Promoted from an agent-surface alias over weave.item.add: the REAL command
+  // stamps kind/container/frame (WI-169 FULL_FRAME lock) and splices the new
+  // page into `presentationOrder` right after `afterId`, one transaction —
+  // 5/5-tool consensus puts a new slide after the current one, not at the end.
+  describe("weave.page.add (WI-184 ⑩)", () => {
+    function pageAddCmd() {
+      const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.page.add");
+      if (c === undefined) throw new Error("command not found");
+      return c;
+    }
+
+    it("creates a FULL_FRAME root frame and inserts it right after `afterId` in presentationOrder, in ONE transaction", () => {
+      const ctx = makePagesCtx();
+      const rootId = String(ctx.document.root.id);
+      const result = pageAddCmd().run(ctx, { afterId: "page-1" });
+      if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+      expect(result.patches).toHaveLength(2);
+      const [create, attrs] = result.patches;
+      if (create === undefined || create.type !== "item.create")
+        throw new Error("expected item.create first");
+      expect(String(create.parentId)).toBe(rootId);
+      expect(create.item.kind).toBe("frame");
+      // WI-169 page-box lock: every page is FULL_FRAME at the same coords.
+      expect((create.item.attrs as { frame: unknown }).frame).toEqual(FULL_FRAME);
+      if (attrs === undefined || attrs.type !== "document.attrs")
+        throw new Error("expected document.attrs second");
+      expect((attrs.after as { presentationOrder: unknown }).presentationOrder).toEqual([
+        "page-1",
+        result.value,
+        "page-2",
+      ]);
+    });
+
+    it("omitted/unknown afterId → appended at the deck end (legacy + empty-deck degenerate case)", () => {
+      const result = pageAddCmd().run(makePagesCtx(), {});
+      if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+      const attrs = result.patches[1];
+      if (attrs === undefined || attrs.type !== "document.attrs")
+        throw new Error("expected document.attrs second");
+      expect((attrs.after as { presentationOrder: unknown }).presentationOrder).toEqual([
+        "page-1",
+        "page-2",
+        result.value,
+      ]);
+      const unknownAfter = pageAddCmd().run(makePagesCtx(), { afterId: "nope" });
+      if (!unknownAfter.ok) throw new Error("expected ok");
+      const attrs2 = unknownAfter.patches[1];
+      if (attrs2 === undefined || attrs2.type !== "document.attrs")
+        throw new Error("expected document.attrs second");
+      expect((attrs2.after as { presentationOrder: unknown }).presentationOrder).toEqual([
+        "page-1",
+        "page-2",
+        unknownAfter.value,
+      ]);
+    });
+
+    it("forwards attrsOverride onto the created page (background styling in the same call)", () => {
+      const result = pageAddCmd().run(makePagesCtx(), {
+        afterId: "page-2",
+        attrsOverride: { title: "새 페이지" },
+      });
+      if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+      const create = result.patches[0];
+      if (create === undefined || create.type !== "item.create") throw new Error("unreachable");
+      expect((create.item.attrs as { title?: string }).title).toBe("새 페이지");
+    });
+  });
 });

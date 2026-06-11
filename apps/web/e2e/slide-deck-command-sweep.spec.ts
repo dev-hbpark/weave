@@ -85,9 +85,7 @@ async function slideWithShape(page: Page, title: string) {
   return { pageId, itemId };
 }
 
-test("slide-deck Backspace deletes the item; Cmd+Z restores it into the page", async ({
-  page,
-}) => {
+test("slide-deck Backspace deletes the item; Cmd+Z restores it into the page", async ({ page }) => {
   const { pageId, itemId } = await slideWithShape(page, "Sweep-Delete");
   await setSelection(page, [itemId]);
 

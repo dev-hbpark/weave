@@ -37,6 +37,12 @@ const PAGE_EXCLUDED: ReadonlyArray<string> = [
   // input would mean two stacked pages); the agent paths stay
   // weave.items.duplicate (offset) and weave.page.duplicate (rail parity).
   "weave.items.duplicateInPlace",
+  // WI-184 ⑨ — rail multi-select SET duplicate. The page surface's
+  // page-creation adapters ride the activatesPage rail-parity channel
+  // (WI-169), which needs exactly ONE new page id to activate; a set return
+  // has no single activation target. The agent's page-copy path stays
+  // weave.page.duplicate (one page per call, each activating its clone).
+  "weave.pages.duplicate",
 ];
 
 function asAdapters(tools: typeof PAGE_AGENT_SURFACE.tools): ReadonlyArray<AgentToolAdapter> {
@@ -76,9 +82,9 @@ describe("page-bounded agent surface coverage (WI-168 / DR-115)", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("weave.page.add is the wrapped page-creation tool over weave.item.add", () => {
+  it("weave.page.add wraps the real page-add command (WI-184 ⑩ — was an alias over weave.item.add)", () => {
     const pageAdd = tools.find((t) => t.exposedName === "weave.page.add");
-    expect(pageAdd?.command).toBe("weave.item.add");
+    expect(pageAdd?.command).toBe("weave.page.add");
   });
 
   it("every tool resolves a schema against the catalogue (the façade's loud-fail holds)", () => {

@@ -118,7 +118,13 @@ import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
 import { CROP_OFFSET_UNIT_KIND } from "./transform-crop-offset.js";
 import { FLIP_ALLOWED_KINDS, FLIP_UNIT_KIND } from "./transform-flip.js";
-import type { DomainKind, InteractionBehavior, ItemFrame, Item as WeaveItem } from "./types.js";
+import {
+  type DomainKind,
+  FULL_FRAME,
+  type InteractionBehavior,
+  type ItemFrame,
+  type Item as WeaveItem,
+} from "./types.js";
 
 /** Slice of useDocument's callback surface used by the *direct* commands
  *  (add / remove / reset). In-place commands no longer call into this.
@@ -2494,6 +2500,133 @@ export function buildWeaveCommands(
     },
   };
 
+  // WI-184 ⑨ — SET duplicate for rail multi-select. One kit batch clone
+  // (offset 0, same page semantics as weave.page.duplicate) + ONE order patch
+  // interleaving each clone right after its source — one transaction → one
+  // Cmd+Z rolls the whole set back. Not a host-side loop over
+  // weave.page.duplicate: that would be N transactions → N undo steps for one
+  // user gesture, breaking the History contract.
+  const pagesDuplicateClone = createDuplicateItemsCommand({
+    name: "weave.pages.duplicate",
+    maxNodes: MAX_PASTE_NODES,
+    offset: 0,
+  });
+  const pagesDuplicate: Command<
+    { readonly itemIds: ReadonlyArray<string> },
+    ReadonlyArray<string>
+  > = {
+    name: "weave.pages.duplicate",
+    run: (ctx, input) => {
+      if (input.itemIds.length === 0) {
+        return fail("empty-input", "weave.pages.duplicate: no pages given");
+      }
+      // Page semantics guarded by the command, not the caller: only frames
+      // are pages. Validate ALL upfront (the kit silently skips missing ids,
+      // which would desync the source→clone index alignment below).
+      for (const id of input.itemIds) {
+        const source = findItemDeep(ctx.document, id);
+        if (source === undefined) {
+          return fail("item-not-found", `weave.pages.duplicate: no item "${id}"`);
+        }
+        if (!FRAME_KINDS.has(source.kind)) {
+          return fail(
+            "not-a-page",
+            `weave.pages.duplicate: "${id}" is a ${source.kind}, not a frame`,
+          );
+        }
+      }
+      const r = pagesDuplicateClone.run(ctx, { itemIds: input.itemIds });
+      if (!r.ok) return r;
+      // Kit returns clone ids in input order (all sources validated present).
+      const cloneBySource = new Map<string, string>();
+      input.itemIds.forEach((id, i) => {
+        const clone = r.value[i];
+        if (clone !== undefined) cloneBySource.set(id, clone);
+      });
+      const before = (ctx.document.attrs ?? {}) as Readonly<Record<string, unknown>>;
+      const saved = Array.isArray(before.presentationOrder)
+        ? (before.presentationOrder as ReadonlyArray<string>)
+        : [];
+      const effective = reconcilePresentationOrder(
+        saved,
+        collectPresentationIds(ctx.document.root),
+      );
+      // One pass: every deck page keeps its slot; a duplicated page gets its
+      // clone spliced right behind it. Sources outside the deck
+      // (presentable:false) are absent from `effective` — their clones
+      // inherit the flag and stay out too (same rule as weave.page.duplicate).
+      const order = effective.flatMap((pid) => {
+        const clone = cloneBySource.get(pid);
+        return clone !== undefined ? [pid, clone] : [pid];
+      });
+      if (order.length === effective.length) return r; // no source in the deck
+      const orderPatch: Patch = {
+        type: "document.attrs",
+        before,
+        after: { ...before, presentationOrder: order },
+      };
+      return ok(r.value, [...r.patches, orderPatch]);
+    },
+  };
+
+  // WI-184 ⑩ — page add as a REAL command (was an agent-surface alias over
+  // weave.item.add + a raw item.add at the rail-"+" call site). Two reasons:
+  //   1. Insert position: 5/5-tool consensus puts a new slide right AFTER the
+  //      current one, not at the deck end. The order splice must ride the SAME
+  //      transaction as the create (one Cmd+Z) — only a command can compose
+  //      patches, so the call sites can't fix this themselves.
+  //   2. WI-169 FULL_FRAME lock: the command stamps kind/container/frame, so
+  //      every page-creation path (rail "+", agent tool) shares the page-box
+  //      invariant structurally instead of each call site re-stating it.
+  // Composite via delegate-`run` (the weave.page.duplicate idiom above).
+  // `afterId` omitted/unknown → append at the deck end (legacy behavior, and
+  // the degenerate empty-deck case).
+  const pageAdd: Command<
+    {
+      readonly afterId?: string;
+      readonly attrsOverride?: Readonly<Record<string, unknown>>;
+      readonly units?: ReadonlyArray<{
+        readonly kind: string;
+        readonly attrs?: Readonly<Record<string, unknown>>;
+      }>;
+    },
+    string
+  > = {
+    name: "weave.page.add",
+    run: (ctx, input) => {
+      const r = addItem.run(ctx, {
+        kind: "frame",
+        // Root container — pages are root-level frames (WI-169).
+        frame: FULL_FRAME,
+        // exactOptionalPropertyTypes — spread the optionals only when present.
+        ...(input.attrsOverride !== undefined ? { attrsOverride: input.attrsOverride } : {}),
+        ...(input.units !== undefined ? { units: input.units } : {}),
+      });
+      if (!r.ok) return r;
+      const before = (ctx.document.attrs ?? {}) as Readonly<Record<string, unknown>>;
+      const saved = Array.isArray(before.presentationOrder)
+        ? (before.presentationOrder as ReadonlyArray<string>)
+        : [];
+      // ctx.document predates the create (patches apply later), so the new id
+      // is spliced in by hand — same shape as weave.page.duplicate above.
+      const effective = reconcilePresentationOrder(
+        saved,
+        collectPresentationIds(ctx.document.root),
+      );
+      const at = input.afterId === undefined ? -1 : effective.indexOf(input.afterId);
+      const order =
+        at >= 0
+          ? [...effective.slice(0, at + 1), r.value, ...effective.slice(at + 1)]
+          : [...effective, r.value];
+      const orderPatch: Patch = {
+        type: "document.attrs",
+        before,
+        after: { ...before, presentationOrder: order },
+      };
+      return ok(r.value, [...r.patches, orderPatch]);
+    },
+  };
+
   // WI-064 — the ONE multi-selection LIFECYCLE command. Absorbs the former
   // weave.items.remove + weave.items.duplicate behind a single `op`, so the
   // agent's multi surface is exactly two verbs (items.update = edit, this =
@@ -2635,6 +2768,10 @@ export function buildWeaveCommands(
     duplicateItemsInPlace as Command,
     // WI-155 — rail per-page duplicate (offset 0 + order insert-after).
     pageDuplicate as Command,
+    // WI-184 ⑨ — rail multi-select SET duplicate (one transaction).
+    pagesDuplicate as Command,
+    // WI-184 ⑩ — page add with insert-after-current (rail "+" / agent parity).
+    pageAdd as Command,
     // WI-020 / WI-043
     setFrameLayout as Command,
     setItemLayoutChild as Command,

@@ -26,6 +26,8 @@ export const OVERVIEW_RAIL: RailPolicy = {
   duplicatePage: false,
   deletePage: true,
   clickActivatesPage: false,
+  multiSelect: false,
+  tileContextMenu: false,
 };
 
 /** Rail for page-bounded flavors (slide-deck / doc-page): the page
@@ -39,4 +41,8 @@ export const PAGE_LIFECYCLE_RAIL: RailPolicy = {
   duplicatePage: true,
   deletePage: true,
   clickActivatesPage: true,
+  // WI-184 ⑨ — Shift/Cmd rail multi-select + set duplicate/delete/reorder.
+  multiSelect: true,
+  // WI-184 ⑪ — right-click rename / skip-in-show (page-lifecycle affordances).
+  tileContextMenu: true,
 };

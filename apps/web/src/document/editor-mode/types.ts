@@ -222,6 +222,16 @@ export interface RailPolicy {
   readonly deletePage: boolean;
   /** Rail tile click switches the active page (WI-153 P2). */
   readonly clickActivatesPage: boolean;
+  /** WI-184 ⑨ — Shift(범위) / Cmd(토글) multi-select on rail tiles, enabling
+   *  set duplicate / delete / drag-reorder. A page-lifecycle affordance:
+   *  meaningless on the overview rail, where tiles curate the deck rather
+   *  than own page lifecycle. */
+  readonly multiSelect: boolean;
+  /** WI-184 ⑪ — per-tile right-click context menu (rename / skip-in-show).
+   *  Page-lifecycle affordances: rename writes `attrs.title`, skip writes
+   *  `attrs.skipped` (PPT Hide Slide — stays in the deck, excluded from the
+   *  show's step list). */
+  readonly tileContextMenu: boolean;
 }
 
 /** Modifier intent of a frame click — Figma's selection model: plain click

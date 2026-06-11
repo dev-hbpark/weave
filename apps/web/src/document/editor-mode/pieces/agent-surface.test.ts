@@ -5,7 +5,6 @@
 
 import type { AgentCommandSpec } from "@agocraft/agent-client";
 import { describe, expect, it } from "vitest";
-import { FULL_FRAME } from "../../types.js";
 import type { AgentHostContext, AgentToolAdapter } from "../types.js";
 import {
   intoActivePage,
@@ -140,34 +139,29 @@ describe("intoActivePageClamped (WI-169 — add-time soft clamp)", () => {
 describe("weave.page.add adapter", () => {
   const pageAdd = adapterFor("weave.page.add");
 
-  it("stamps the rail-'+' shape: kind frame, root container, FULL_FRAME", () => {
-    expect(pageAdd.mapInput?.({}, HOST)).toEqual({
-      kind: "frame",
-      containerId: "root-1",
-      frame: FULL_FRAME,
-    });
+  it("WI-184 ⑩ — wraps the REAL weave.page.add command (FULL_FRAME lock + order insert live in the command, not here)", () => {
+    expect(pageAdd.command).toBe("weave.page.add");
   });
 
-  it("WI-169 — a frame override is IGNORED: every page is FULL_FRAME (stacking model)", () => {
-    const frame = { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 };
-    expect(pageAdd.mapInput?.({ frame, attrsOverride: { name: "p" } }, HOST)).toEqual({
-      kind: "frame",
-      containerId: "root-1",
-      frame: FULL_FRAME,
+  it("stamps afterId from the active page — the new slide lands right after the current one", () => {
+    expect(pageAdd.mapInput?.({}, HOST)).toEqual({ afterId: "page-1" });
+    expect(pageAdd.mapInput?.({ attrsOverride: { name: "p" } }, HOST)).toEqual({
+      afterId: "page-1",
       attrsOverride: { name: "p" },
     });
   });
 
-  it("agent cannot override kind/containerId (stamped after the spread)", () => {
-    const out = pageAdd.mapInput?.({ kind: "text", containerId: "page-1" }, HOST) as Record<
-      string,
-      unknown
-    >;
-    expect(out["kind"]).toBe("frame");
-    expect(out["containerId"]).toBe("root-1");
+  it("agent cannot override afterId (stamped after the spread)", () => {
+    const out = pageAdd.mapInput?.({ afterId: "page-2" }, HOST) as Record<string, unknown>;
+    expect(out["afterId"]).toBe("page-1");
   });
 
-  it("schema drops kind/containerId/frame and keeps attrsOverride/units by reference (WI-169: frame not agent-addressable)", () => {
+  it("degenerate host (no active page) → afterId undefined (command appends at the deck end)", () => {
+    const out = pageAdd.mapInput?.({}, NO_PAGE) as Record<string, unknown>;
+    expect(out["afterId"]).toBeUndefined();
+  });
+
+  it("schema drops afterId and keeps attrsOverride/units by reference (insert position is not agent-addressable)", () => {
     const spec = pageAdd.schema?.(ITEM_ADD_BASE);
     const props = (spec?.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
     expect(Object.keys(props).sort()).toEqual(["attrsOverride", "units"]);
@@ -219,7 +213,7 @@ describe("weave.item.reparent adapter", () => {
 describe("weave.batch adapter (inner-op translation)", () => {
   const batch = adapterFor("weave.batch");
 
-  it("rewrites weave.page.add ops to the internal command and retargets inner adds", () => {
+  it("stamps weave.page.add ops' afterId and retargets inner adds", () => {
     expect(
       batch.mapInput?.(
         {
@@ -233,10 +227,7 @@ describe("weave.batch adapter (inner-op translation)", () => {
       ),
     ).toEqual({
       ops: [
-        {
-          command: "weave.item.add",
-          input: { kind: "frame", containerId: "root-1", frame: FULL_FRAME },
-        },
+        { command: "weave.page.add", input: { afterId: "page-1" } },
         { command: "weave.item.add", input: { kind: "text", containerId: "page-1" } },
         { command: "weave.item.update", input: { itemId: "x" } },
       ],

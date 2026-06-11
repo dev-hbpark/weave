@@ -10,11 +10,11 @@ import {
   collectNonSlideFrameIds,
   type DocFlavor,
   type EntranceAnimationBehavior,
-  effectivePresentationOrder,
   FRAME_KINDS,
   type HoverEffectBehavior,
   type ItemFrame,
   type PresentContext,
+  presentationStepIds,
   useDesign,
 } from "../document";
 import { findItemDeep, findTrailDeep, isDomainItem } from "../document/agocraft-mirror.js";
@@ -202,7 +202,9 @@ export function PresentPage() {
   // the ItemFrame of each Item along the trail (root → … → entry). The
   // entry's center + 1/max-size becomes the camera's position + scale.
   const cameraTargets = useMemo(() => {
-    const ids = effectivePresentationOrder(design);
+    // WI-184 ⑪ — the show walks past skipped frames (PPT Hide Slide): they
+    // stay in the deck/rail but never become a camera step.
+    const ids = presentationStepIds(design);
     const out: {
       item: AgoItem;
       behavior: CameraTargetBehavior;
@@ -484,7 +486,7 @@ export function PresentPage() {
 
   // WI-072 — frames the user opted OUT of the deck (`presentable: false`).
   // Excluding a frame from the slide deck removes it from the *navigation
-  // step list* (`cameraTargets` / `effectivePresentationOrder` already skip
+  // step list* (`cameraTargets` / `presentationStepIds` already skip
   // it, so it is never a slide page) — it is NOT a visibility toggle. Such a
   // frame must still render on the presentation screen as visual content.
   //

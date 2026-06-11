@@ -34,8 +34,11 @@ export {
   collectPresentationIds,
   effectivePresentationOrder,
   FRAME_KINDS,
+  isSkippedFrame,
+  presentationStepIds,
   reconcilePresentationOrder,
   reorder,
+  reorderSet,
 } from "./presentation-order.js";
 export { createDefaultItem, tileFrame } from "./seed.js";
 export {

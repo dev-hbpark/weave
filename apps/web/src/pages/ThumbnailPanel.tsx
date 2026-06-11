@@ -26,6 +26,12 @@
 
 import type { Item as AgocraftItem } from "@agocraft/core";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  EditableText,
+  type EditableTextHandle,
   IconCopy,
   IconDiamond,
   IconDocLines,
@@ -40,11 +46,14 @@ import type {
   MouseEvent as ReactMouseEvent,
   ReactNode,
 } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   collectNonSlideFrameIds,
   effectivePresentationOrder,
+  isSkippedFrame,
   reorder,
+  reorderSet,
 } from "../document/presentation-order.js";
 import type { Design, DocFlavor } from "../document/types.js";
 
@@ -53,6 +62,9 @@ interface Entry {
   readonly title: string;
   readonly kind: string;
   readonly isRoot: boolean;
+  /** WI-184 ⑪ — `attrs.skipped` (PPT Hide Slide): stays in the deck, the
+   *  show steps past it. The tile dims + strikes its number. */
+  readonly skipped: boolean;
 }
 
 const FRAME_KIND_FALLBACK: DocFlavor = "mixed";
@@ -78,7 +90,7 @@ function flavorIconForKind(kind: string): DocFlavor {
 
 function findEntry(root: AgocraftItem, targetId: string, designTitle: string): Entry | undefined {
   if (String(root.id) === targetId) {
-    return { id: targetId, title: designTitle, kind: "weave-doc", isRoot: true };
+    return { id: targetId, title: designTitle, kind: "weave-doc", isRoot: true, skipped: false };
   }
   function walk(item: AgocraftItem): AgocraftItem | undefined {
     for (const c of item.children) {
@@ -101,6 +113,7 @@ function findEntry(root: AgocraftItem, targetId: string, designTitle: string): E
     title: attrs.title ?? attrs.heading ?? attrs.caption ?? attrs.summary ?? "Untitled",
     kind: found.kind,
     isRoot: false,
+    skipped: isSkippedFrame(found),
   };
 }
 
@@ -140,9 +153,10 @@ export interface ThumbnailPanelProps {
    *  from the slide deck (it moves to the non-slide section); `true` re-adds it.
    *  The host dispatches `weave.item.update` setting `attrs.presentable`. */
   readonly onToggleSlide?: ((id: string, presentable: boolean) => void) | undefined;
-  /** WI-153 P2 — add a new blank page (a top-level frame) at the end of the deck.
-   *  When provided, a trailing "+" tile renders in the rail. The host adds the frame
-   *  + makes it the active page. */
+  /** WI-153 P2 — add a new blank page (a top-level frame). When provided, a
+   *  trailing "+" tile renders in the rail. WI-184 ⑩ — the host execs
+   *  `weave.page.add`, which inserts the page right AFTER the current one
+   *  (deck-end only when nothing is active) + makes it the active page. */
   readonly onAddPage?: (() => void) | undefined;
   /** WI-155 — duplicate a page in place. When provided, slide tiles render a
    *  footer copy action. The host execs `weave.page.duplicate` (offset-0 clone
@@ -159,7 +173,37 @@ export interface ThumbnailPanelProps {
    *  callbacks above, but the section has no callback to elide). Default
    *  true (free-placement behavior). */
   readonly showNonSlideSection?: boolean | undefined;
+  /** WI-184 ⑨ — enable rail multi-select: Shift+click = range from the last
+   *  plain-clicked tile, Cmd/Ctrl+click = toggle membership. A >1 set turns
+   *  the footer duplicate/delete into SET operations and a drag of any set
+   *  member moves the whole set as a contiguous block. The host fills this
+   *  from RailPolicy.multiSelect. Default false. */
+  readonly multiSelect?: boolean | undefined;
+  /** WI-184 ⑨ — duplicate a SET of pages in one undo step. The host execs
+   *  `weave.pages.duplicate` (each clone slots right after its source) and
+   *  activates the last clone. Falls back to onDuplicatePage when absent. */
+  readonly onDuplicatePages?: ((ids: ReadonlyArray<string>) => void) | undefined;
+  /** WI-184 ⑨ — delete a SET of pages in one undo step. The panel never
+   *  offers a set delete that would empty the deck (≥ 1 page invariant, same
+   *  rule as the single delete's last-page guard). The host execs
+   *  `weave.items.remove` and re-resolves the active page off the set. */
+  readonly onDeletePages?: ((ids: ReadonlyArray<string>) => void) | undefined;
+  /** WI-184 ⑪ — rename a page from the tile's right-click menu. The host
+   *  execs `weave.item.update` writing `attrs.title`. Providing this (or
+   *  onToggleSkip) turns the tile into a context-menu trigger; the host fills
+   *  both from RailPolicy.tileContextMenu. */
+  readonly onRenamePage?: ((id: string, title: string) => void) | undefined;
+  /** WI-184 ⑪ — toggle "skip in show" (PPT Hide Slide). The host execs
+   *  `weave.item.update` writing `attrs.skipped`. A skipped page stays a
+   *  fully editable deck member; only present-mode stepping walks past it
+   *  (`presentationStepIds`). Deliberately distinct from the WI-072
+   *  deck-membership toggle (`presentable: false` removes the tile). */
+  readonly onToggleSkip?: ((id: string, skipped: boolean) => void) | undefined;
 }
+
+/** WI-184 ⑨ — stable empty set so collapsing the multi-select doesn't churn
+ *  state identity on every plain click. */
+const NO_MULTI: ReadonlySet<string> = new Set();
 
 /** WI-072 — small "deck membership" glyph (stacked rectangles). Active = the
  *  frame IS a slide (click removes it); inactive = it is a group (click adds). */
@@ -272,9 +316,36 @@ export function ThumbnailPanel({
   onDuplicatePage,
   onDeletePage,
   showNonSlideSection = true,
+  multiSelect = false,
+  onDuplicatePages,
+  onDeletePages,
+  onRenamePage,
+  onToggleSkip,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
   useParams<{ id: string }>();
+
+  // WI-184 ⑨ — rail multi-select. Panel-local ephemeral UI state (the host
+  // owns the ACTIVE page; this set only feeds the panel's own set ops). The
+  // anchor is the last plain/Cmd-clicked tile — Shift+click ranges from it.
+  // Stale ids (deleted pages) are harmless: every read intersects with the
+  // live entries.
+  const [multiSelected, setMultiSelected] = useState<ReadonlySet<string>>(NO_MULTI);
+  const [anchorId, setAnchorId] = useState<string | null>(null);
+
+  // WI-184 ⑪ — inline rename, entered via the tile's right-click menu. Only
+  // one tile renames at a time, so a single handle ref suffices; the effect
+  // places the caret at the end once the EditableText has mounted.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const renameRef = useRef<EditableTextHandle | null>(null);
+  useEffect(() => {
+    if (renamingId === null) return;
+    // Deferred one tick: rename mode is entered from a Radix context-menu
+    // item, and the closing menu restores focus to its trigger in its own
+    // cleanup — focusEnd must land after that restore, not before.
+    const t = window.setTimeout(() => renameRef.current?.focusEnd(), 0);
+    return () => window.clearTimeout(t);
+  }, [renamingId]);
 
   const order = effectivePresentationOrder(design);
   const entries = order
@@ -293,7 +364,49 @@ export function ThumbnailPanel({
   if (entries.length === 0 && nonSlideEntries.length === 0) return null;
 
   const handleTileActivate = (entry: Entry) => {
+    // WI-184 ⑨ — plain activation (click / arrow walk) collapses any
+    // multi-select and re-anchors the range gesture on this tile.
+    if (multiSelected !== NO_MULTI) setMultiSelected(NO_MULTI);
+    setAnchorId(entry.id);
     onSelect?.(entry.id);
+  };
+
+  // WI-184 ⑨ — the set the footer actions / drag operate on, in DECK order
+  // (not click order) so "duplicate set" interleaves clones predictably.
+  const selectedSetIds = entries.filter((en) => multiSelected.has(en.id)).map((en) => en.id);
+
+  // WI-184 ⑨ — modifier-aware tile click. Shift = range from the anchor
+  // (PPT filmstrip), Cmd/Ctrl = toggle membership (a toggled-ON tile becomes
+  // the active page; toggling OFF leaves the active page alone). An empty
+  // set seeds itself from the active page so the first Cmd+click reads as
+  // "current + this". Plain click falls through to single activation.
+  const handleTileClick = (entry: Entry, idx: number, e: ReactMouseEvent<HTMLButtonElement>) => {
+    if (multiSelect && e.shiftKey) {
+      const base = anchorId ?? selectedId;
+      const anchorIdx =
+        base !== undefined && base !== null ? entries.findIndex((en) => en.id === base) : -1;
+      if (anchorIdx >= 0) {
+        const [a, b] = anchorIdx <= idx ? [anchorIdx, idx] : [idx, anchorIdx];
+        setMultiSelected(new Set(entries.slice(a, b + 1).map((en) => en.id)));
+        onSelect?.(entry.id);
+        return;
+      }
+      // No anchor to range from — fall through to plain activation.
+    } else if (multiSelect && (e.metaKey || e.ctrlKey)) {
+      const next = new Set(
+        multiSelected.size > 0 ? multiSelected : selectedId !== undefined ? [selectedId] : [],
+      );
+      if (next.has(entry.id)) {
+        next.delete(entry.id);
+      } else {
+        next.add(entry.id);
+        onSelect?.(entry.id);
+      }
+      setAnchorId(entry.id);
+      setMultiSelected(next);
+      return;
+    }
+    handleTileActivate(entry);
   };
 
   const handleToggleClick = (entry: Entry, e: ReactMouseEvent<HTMLButtonElement>) => {
@@ -304,6 +417,41 @@ export function ThumbnailPanel({
     onSelect?.(entry.id);
     if (onCycleFocus === undefined) return;
     onCycleFocus(entry.id, { skipToIsolate: e.shiftKey });
+  };
+
+  // WI-184 ⑦ — rail focus model. Arrow keys on a tile's activation button
+  // step the ACTIVE slide (filmstrip semantics: moving rail focus IS changing
+  // the current slide — SLIDE_DECK_INTERACTION_SPEC §1e "포커스 규칙"). The
+  // spec names ↑/↓; this rail is horizontal, so ←/→ are bound as the natural
+  // pair too. Clamped at the deck ends (no wrap), disabled tiles (canvas
+  // dim/iso gate) are stepped over, and DOM focus follows the activated tile
+  // so repeated presses keep walking. stopPropagation keeps the canvas's
+  // window keydown (arrow = nudge selection) out of the rail's arrow
+  // semantics — rail focus means arrows move slides, never canvas items.
+  const handleTileArrowKey = (idx: number, e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const dir =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (dir === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let next = idx + dir;
+    let target = entries[next];
+    while (target !== undefined && (disabledFrameIds?.has(target.id) ?? false)) {
+      next += dir;
+      target = entries[next];
+    }
+    if (target === undefined) return; // clamp at the deck ends (no wrap)
+    handleTileActivate(target);
+    const panel = e.currentTarget.closest("[data-testid='thumbnail-panel']");
+    const btn = panel?.querySelector<HTMLButtonElement>(
+      `[data-testid="thumbnail-activate-${next}"]`,
+    );
+    btn?.focus();
+    btn?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   };
 
   const handleToggleKey = (entry: Entry, e: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -421,8 +569,18 @@ export function ThumbnailPanel({
           // are now disabled too. Focused tiles are never in the set
           // (the host enforces) so they always stay interactive.
           const isDisabled = disabledFrameIds?.has(entry.id) ?? false;
+          // WI-184 ⑨ — tile is part of a >1 multi-select set: footer actions
+          // act on the SET, and a drag moves the whole set.
+          const isMultiSelected = multiSelected.size > 1 && multiSelected.has(entry.id);
           const accentVar = DOMAIN_ACCENT_VAR[entry.kind] ?? "var(--accent)";
-          return (
+          // WI-184 ⑪ — right-click affordances (rename / skip-in-show). The
+          // presence of either callback turns the tile into a context-menu
+          // trigger; disabled (dim/iso-gated) tiles stay menu-free, matching
+          // every other interaction gate on them.
+          const hasTileMenu =
+            !isDisabled && (onRenamePage !== undefined || onToggleSkip !== undefined);
+          const isRenaming = renamingId === entry.id;
+          const tile = (
             // AUDIT-003 V2 — the tile previously combined role="option"
             // (interactive WAI-ARIA role) with an inner `<button>` for the
             // focus-toggle, which axe-core flags as nested-interactive.
@@ -436,9 +594,11 @@ export function ThumbnailPanel({
             <div
               key={entry.id}
               role="group"
-              aria-label={`Tile ${idx + 1}: ${entry.title}`}
+              aria-label={`Tile ${idx + 1}: ${entry.title}${entry.skipped ? " (건너뜀)" : ""}`}
               aria-disabled={isDisabled || undefined}
-              draggable={!isDisabled}
+              // WI-184 ⑪ — dragging is suspended while renaming so a text
+              // drag-select inside the contenteditable never starts a tile drag.
+              draggable={!isDisabled && !isRenaming}
               data-thumbnail-id={entry.id}
               // WI-039 — also expose the frame id so the reparent drag
               // controller's `document.elementFromPoint` hit-test picks
@@ -460,6 +620,8 @@ export function ThumbnailPanel({
               data-testid={`thumbnail-${idx}`}
               data-tile-stage={tileStage}
               data-disabled={isDisabled || undefined}
+              data-multiselected={isMultiSelected || undefined}
+              data-skipped={entry.skipped || undefined}
               onDragStart={(e) => {
                 if (isDisabled) {
                   e.preventDefault();
@@ -480,7 +642,22 @@ export function ThumbnailPanel({
                 const raw = e.dataTransfer.getData(DRAG_MIME);
                 const from = Number(raw);
                 if (!Number.isInteger(from)) return;
-                setPresentationOrder(reorder(order, from, idx));
+                // WI-184 ⑨ — dragging a member of the multi-select set moves
+                // the whole set as one contiguous block (deck order kept);
+                // any other drag stays the single-tile reorder. The set is
+                // read from panel state, so the drag payload format is
+                // unchanged (still just the source index).
+                const draggedId = order[from];
+                const dragsSet =
+                  multiSelect &&
+                  draggedId !== undefined &&
+                  multiSelected.size > 1 &&
+                  multiSelected.has(draggedId);
+                setPresentationOrder(
+                  dragsSet
+                    ? reorderSet(order, multiSelected, from, idx)
+                    : reorder(order, from, idx),
+                );
               }}
               // AUDIT-003 V2 — tile activation (click + keyboard) is now
               // delegated to a full-coverage inner `<button>` so the
@@ -538,7 +715,10 @@ export function ThumbnailPanel({
                   ? "border-[color:var(--accent)] [box-shadow:0_0_10px_0_var(--accent),0_0_3px_0_var(--accent)] "
                   : tileStage === 1
                     ? "border-[color:var(--accent-strong)] "
-                    : isSelected
+                    : // WI-184 ⑨ — set members share the active page's accent
+                      // border (the active one keeps its preview inset ring +
+                      // aria-current as the distinguishing cue).
+                      isSelected || isMultiSelected
                       ? "border-[color:var(--accent)] "
                       : "border-[color:var(--surface-1-border)] ") +
                 // Disabled tiles — frame's canvas interaction is gated,
@@ -562,7 +742,7 @@ export function ThumbnailPanel({
                   "--tile-tint":
                     tileStage > 0
                       ? "var(--accent-soft)"
-                      : isSelected
+                      : isSelected || isMultiSelected
                         ? "var(--surface-2)"
                         : "var(--surface-1)",
                   background: "linear-gradient(var(--tile-tint), var(--tile-tint)), var(--bg-page)",
@@ -588,9 +768,9 @@ export function ThumbnailPanel({
                 disabled={isDisabled}
                 tabIndex={isDisabled ? -1 : 0}
                 data-testid={`thumbnail-activate-${idx}`}
-                onClick={() => {
+                onClick={(e) => {
                   if (isDisabled) return;
-                  handleTileActivate(entry);
+                  handleTileClick(entry, idx, e); // WI-184 ⑨ — modifier-aware
                 }}
                 onDoubleClick={() => {
                   if (isDisabled) return;
@@ -601,7 +781,9 @@ export function ThumbnailPanel({
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     handleTileActivate(entry);
+                    return;
                   }
+                  handleTileArrowKey(idx, e); // WI-184 ⑦
                 }}
                 className={
                   "absolute inset-0 z-0 rounded-[var(--radius-md)] " +
@@ -621,7 +803,12 @@ export function ThumbnailPanel({
                 // button and would swallow the click → only the footer
                 // selected). The focus-toggle button below re-enables itself
                 // with `pointer-events-auto`.
-                className="relative flex-1 overflow-hidden rounded-[var(--radius-sm)] border border-[color:var(--surface-2-border)] flex items-center justify-center pointer-events-none"
+                className={
+                  "relative flex-1 overflow-hidden rounded-[var(--radius-sm)] border border-[color:var(--surface-2-border)] flex items-center justify-center pointer-events-none" +
+                  // WI-184 ⑪ — skipped slide: dimmed preview (PPT Hide Slide cue;
+                  // the struck-through number below is the second half).
+                  (entry.skipped ? " opacity-40" : "")
+                }
                 style={{
                   background: design.background ?? "var(--surface-2)",
                   boxShadow:
@@ -700,7 +887,11 @@ export function ThumbnailPanel({
                     the title's baseline aligned across tiles. */}
               <div className="flex items-baseline gap-1.5 px-0.5">
                 <span
-                  className="font-mono text-[10px] font-semibold tracking-wide w-[18px] shrink-0"
+                  className={
+                    "font-mono text-[10px] font-semibold tracking-wide w-[18px] shrink-0" +
+                    // WI-184 ⑪ — PPT Hide Slide cue: struck-through number.
+                    (entry.skipped ? " line-through opacity-60" : "")
+                  }
                   style={{
                     color: tileStage >= 1 ? "var(--accent-strong)" : "var(--text-muted)",
                     fontVariantNumeric: "tabular-nums",
@@ -708,31 +899,67 @@ export function ThumbnailPanel({
                 >
                   {String(idx + 1).padStart(2, "0")}
                 </span>
-                <span
-                  className={
-                    "text-[12px] leading-tight truncate flex-1 " +
-                    (tileStage >= 1 || isSelected
-                      ? "text-[color:var(--text-strong)] font-medium"
-                      : "text-[color:var(--text-default)]")
-                  }
-                >
-                  {entry.title}
-                </span>
+                {isRenaming ? (
+                  // WI-184 ⑪ — inline rename (right-click → 이름 바꾸기).
+                  // EditableText commits on blur AND Enter; Esc reverts the
+                  // DOM text first so its commit() no-ops — exiting rename
+                  // mode rides onBlur either way. `relative z-10` lifts the
+                  // field above the inset-0 activation button (WI-101 rule).
+                  <EditableText
+                    ref={renameRef}
+                    value={entry.title}
+                    ariaLabel="페이지 이름 바꾸기"
+                    data-testid={`thumbnail-rename-${idx}`}
+                    onCommit={(next) => {
+                      if (next.length > 0 && next !== entry.title) {
+                        onRenamePage?.(entry.id, next);
+                      }
+                    }}
+                    onEnterCommit={() => setRenamingId(null)}
+                    onBlur={() => setRenamingId(null)}
+                    className="relative z-10 text-[12px] leading-tight flex-1 min-w-0 text-[color:var(--text-strong)]"
+                  />
+                ) : (
+                  <span
+                    className={
+                      "text-[12px] leading-tight truncate flex-1 " +
+                      (tileStage >= 1 || isSelected
+                        ? "text-[color:var(--text-strong)] font-medium"
+                        : "text-[color:var(--text-default)]")
+                    }
+                  >
+                    {entry.title}
+                  </span>
+                )}
                 {/* WI-155 — per-page duplicate. Same footer-action pattern as
                     the deck toggle below (relative z-10 above the inset-0
                     activation button; hover-brightened). Disabled tiles omit
-                    it — a gated frame ignores structural edits. */}
+                    it — a gated frame ignores structural edits.
+                    WI-184 ⑨ — on a multi-selected tile the action covers the
+                    whole SET (one undo via weave.pages.duplicate). */}
                 {onDuplicatePage !== undefined && !isDisabled ? (
                   <button
                     type="button"
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (isMultiSelected && onDuplicatePages !== undefined) {
+                        onDuplicatePages(selectedSetIds);
+                        return;
+                      }
                       onDuplicatePage(entry.id);
                     }}
                     data-testid={`thumbnail-duplicate-${idx}`}
-                    aria-label="페이지 복제"
-                    data-tip="페이지 복제"
+                    aria-label={
+                      isMultiSelected && onDuplicatePages !== undefined
+                        ? `선택한 ${selectedSetIds.length}개 페이지 복제`
+                        : "페이지 복제"
+                    }
+                    data-tip={
+                      isMultiSelected && onDuplicatePages !== undefined
+                        ? `선택한 ${selectedSetIds.length}개 페이지 복제`
+                        : "페이지 복제"
+                    }
                     className={
                       "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
                       // WI-101 — lift above the absolute inset-0 z-0 activation
@@ -750,37 +977,62 @@ export function ThumbnailPanel({
                     is discoverable at a glance — same opacity treatment as the
                     deck toggle. On the LAST remaining page it renders disabled
                     (a deck always keeps ≥ 1 page) instead of vanishing, so the
-                    affordance never silently disappears. Gated tiles omit it. */}
-                {onDeletePage !== undefined && !isDisabled ? (
-                  <button
-                    type="button"
-                    disabled={entries.length <= 1}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (entries.length <= 1) return;
-                      onDeletePage(entry.id);
-                    }}
-                    data-testid={`thumbnail-delete-${idx}`}
-                    aria-label="페이지 삭제"
-                    data-tip={
-                      entries.length <= 1 ? "마지막 페이지는 삭제할 수 없습니다" : "페이지 삭제"
-                    }
-                    className={
-                      "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
-                      // WI-101 — lift above the absolute inset-0 z-0 activation
-                      // button so the click reaches this action.
-                      "relative z-10 " +
-                      (entries.length <= 1
-                        ? "text-[color:var(--text-muted)] opacity-30 cursor-not-allowed "
-                        : "text-[color:var(--text-muted)] opacity-60 group-hover:opacity-100 focus-visible:opacity-100 " +
-                          "hover:text-[color:var(--danger,#e5484d)] hover:bg-[color:var(--surface-2)] ") +
-                      "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
-                    }
-                  >
-                    <IconTrash size={13} />
-                  </button>
-                ) : null}
+                    affordance never silently disappears. Gated tiles omit it.
+                    WI-184 ⑨ — on a multi-selected tile the action deletes the
+                    whole SET; a set covering every page disables it (the same
+                    ≥ 1 invariant as the single delete's last-page guard). */}
+                {onDeletePage !== undefined && !isDisabled
+                  ? (() => {
+                      const actsOnSet = isMultiSelected && onDeletePages !== undefined;
+                      const wouldEmpty = actsOnSet
+                        ? selectedSetIds.length >= entries.length
+                        : entries.length <= 1;
+                      return (
+                        <button
+                          type="button"
+                          disabled={wouldEmpty}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (wouldEmpty) return;
+                            if (actsOnSet) {
+                              onDeletePages(selectedSetIds);
+                              return;
+                            }
+                            onDeletePage(entry.id);
+                          }}
+                          data-testid={`thumbnail-delete-${idx}`}
+                          aria-label={
+                            actsOnSet
+                              ? `선택한 ${selectedSetIds.length}개 페이지 삭제`
+                              : "페이지 삭제"
+                          }
+                          data-tip={
+                            wouldEmpty
+                              ? actsOnSet
+                                ? "덱의 모든 페이지를 삭제할 수 없습니다"
+                                : "마지막 페이지는 삭제할 수 없습니다"
+                              : actsOnSet
+                                ? `선택한 ${selectedSetIds.length}개 페이지 삭제`
+                                : "페이지 삭제"
+                          }
+                          className={
+                            "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius-sm)] " +
+                            // WI-101 — lift above the absolute inset-0 z-0 activation
+                            // button so the click reaches this action.
+                            "relative z-10 " +
+                            (wouldEmpty
+                              ? "text-[color:var(--text-muted)] opacity-30 cursor-not-allowed "
+                              : "text-[color:var(--text-muted)] opacity-60 group-hover:opacity-100 focus-visible:opacity-100 " +
+                                "hover:text-[color:var(--danger,#e5484d)] hover:bg-[color:var(--surface-2)] ") +
+                            "focus-visible:outline-none focus-visible:[box-shadow:var(--focus-ring)]"
+                          }
+                        >
+                          <IconTrash size={13} />
+                        </button>
+                      );
+                    })()
+                  : null}
                 {/* WI-072 — deck-membership toggle. On a slide tile it is
                     ACTIVE; clicking removes the frame from the deck (it drops to
                     the non-slide section). Hover-revealed to keep the footer
@@ -816,8 +1068,48 @@ export function ThumbnailPanel({
               </div>
             </div>
           );
+          if (!hasTileMenu) return tile;
+          // WI-184 ⑪ — right-click menu. Radix Root renders no DOM, so the
+          // scroller's flex layout still sees the tile div as its child (the
+          // Trigger merges onto the tile via asChild). The tile's key rides
+          // along on the Root.
+          return (
+            <ContextMenu key={entry.id}>
+              <ContextMenuTrigger asChild>{tile}</ContextMenuTrigger>
+              <ContextMenuContent
+                data-testid={`thumbnail-menu-${idx}`}
+                // Radix restores focus to the trigger when the menu closes —
+                // AFTER the exit animation, i.e. after our focusEnd() has put
+                // the caret in the rename field. That restore would blur the
+                // field and onBlur would exit rename mode instantly. Suppress
+                // it only when rename was just entered; other dismissals keep
+                // the default restore.
+                onCloseAutoFocus={(e) => {
+                  if (renamingId !== null) e.preventDefault();
+                }}
+              >
+                {onRenamePage !== undefined ? (
+                  <ContextMenuItem
+                    data-testid={`thumbnail-menu-rename-${idx}`}
+                    onSelect={() => setRenamingId(entry.id)}
+                  >
+                    이름 바꾸기
+                  </ContextMenuItem>
+                ) : null}
+                {onToggleSkip !== undefined ? (
+                  <ContextMenuItem
+                    data-testid={`thumbnail-menu-skip-${idx}`}
+                    onSelect={() => onToggleSkip(entry.id, !entry.skipped)}
+                  >
+                    {entry.skipped ? "프레젠테이션에 포함" : "프레젠테이션에서 건너뛰기"}
+                  </ContextMenuItem>
+                ) : null}
+              </ContextMenuContent>
+            </ContextMenu>
+          );
         })}
-        {/* WI-153 P2 — add a blank page at the end of the deck (Canva-style "+"). */}
+        {/* WI-153 P2 — add a blank page (Canva-style "+"). WI-184 ⑩: lands
+            right after the current page, not at the deck end. */}
         {onAddPage !== undefined ? (
           <button
             type="button"
