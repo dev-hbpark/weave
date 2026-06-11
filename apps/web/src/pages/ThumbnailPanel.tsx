@@ -193,7 +193,7 @@ export interface ThumbnailPanelProps {
   /** WI-184 ⑪ — rename a page from the tile's right-click menu. The host
    *  execs `weave.item.update` writing `attrs.title`. Providing this (or
    *  onToggleSkip) turns the tile into a context-menu trigger; the host fills
-   *  both from RailPolicy.tileContextMenu. */
+   *  each menu callback per row from RailPolicy.tileMenuRows (WI-189). */
   readonly onRenamePage?: ((id: string, title: string) => void) | undefined;
   /** WI-184 ⑪ — toggle "skip in show" (PPT Hide Slide). The host execs
    *  `weave.item.update` writing `attrs.skipped`. A skipped page stays a
@@ -587,9 +587,12 @@ export function ThumbnailPanel({
           // delete / rename / skip-in-show / background). The presence of any
           // callback turns the tile into a context-menu trigger; disabled
           // (dim/iso-gated) tiles stay menu-free, matching every other
-          // interaction gate on them.
+          // interaction gate on them. WI-189 — the root tile (whole-design
+          // entry on the overview rail) is also menu-free: its title is the
+          // design title, not `attrs.title`, and it is not a show step.
           const hasTileMenu =
             !isDisabled &&
+            !entry.isRoot &&
             (onRenamePage !== undefined ||
               onToggleSkip !== undefined ||
               onAddPageAfter !== undefined ||

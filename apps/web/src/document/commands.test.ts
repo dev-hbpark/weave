@@ -205,6 +205,30 @@ describe("buildWeaveCommands — direct (Phase 2)", () => {
     expect(String(patch.item.id)).toBe("child-1");
   });
 
+  // WI-189 — undo-order regression. The kit records each removal `position`
+  // against the PRE-mutation doc and history replays the inverses in reverse
+  // patch order, so same-parent siblings removed in ascending index order
+  // restored SWAPPED. The weave decorator sorts ids descending by
+  // index-in-parent; this pins the emitted patch order (caught end-to-end by
+  // the mixed rail set-delete e2e).
+  it("weave.items.remove emits same-parent removals in descending position order (WI-189)", () => {
+    const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.items.remove");
+    if (cmd === undefined) throw new Error("command not found");
+    // slide-1 sits at index 0, canvas-1 at index 1 — pass them ASCENDING.
+    const result = cmd.run(makeCtx(), { itemIds: ["slide-1", "canvas-1"] });
+    if (!result.ok) throw new Error("unexpected fail");
+    expect(result.patches).toHaveLength(2);
+    const [first, second] = result.patches;
+    if (first?.type !== "item.remove" || second?.type !== "item.remove")
+      throw new Error("expected item.remove patches");
+    // Descending: the higher-index sibling's removal is recorded first, so
+    // the reversed inverse replay re-inserts ascending (0 then 1).
+    expect(String(first.item.id)).toBe("canvas-1");
+    expect(first.position).toBe(1);
+    expect(String(second.item.id)).toBe("slide-1");
+    expect(second.position).toBe(0);
+  });
+
   it("weave.item.remove ignores a wrong containerId hint and still derives the right parent", () => {
     const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.remove");
     if (cmd === undefined) throw new Error("command not found");

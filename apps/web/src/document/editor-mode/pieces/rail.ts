@@ -26,8 +26,16 @@ export const OVERVIEW_RAIL: RailPolicy = {
   duplicatePage: false,
   deletePage: true,
   clickActivatesPage: false,
-  multiSelect: false,
-  tileContextMenu: false,
+  // WI-189 — deck curation is set-shaped: Shift/Cmd multi-select enables
+  // batch delete + batch drag-reorder. Set duplicate stays hidden via the
+  // independent `duplicatePage: false` gate above.
+  multiSelect: true,
+  // WI-189 — frame-attrs rows only: rename (`attrs.title`) and skip-in-show
+  // (`attrs.skipped` — `presentationStepIds` filters it in every flavor, so
+  // without this row a doc skip-marked under slide-deck had no unskip
+  // affordance here). Page-lifecycle rows (newPageAfter / editBackground)
+  // are meaningless on an overview rail.
+  tileMenuRows: new Set(["rename", "skipInShow"]),
 };
 
 /** Rail for page-bounded flavors (slide-deck / doc-page): the page
@@ -43,6 +51,6 @@ export const PAGE_LIFECYCLE_RAIL: RailPolicy = {
   clickActivatesPage: true,
   // WI-184 ⑨ — Shift/Cmd rail multi-select + set duplicate/delete/reorder.
   multiSelect: true,
-  // WI-184 ⑪ — right-click rename / skip-in-show (page-lifecycle affordances).
-  tileContextMenu: true,
+  // WI-184 ⑪ / WI-189 — full menu: frame-attrs rows + page-lifecycle rows.
+  tileMenuRows: new Set(["rename", "skipInShow", "newPageAfter", "editBackground"]),
 };

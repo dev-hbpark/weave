@@ -3051,9 +3051,9 @@ function DesignPageBody() {
                                                 }
                                               : undefined
                                           }
-                                          // WI-184 ⑨ — rail multi-select (Shift 범위 /
-                                          // Cmd 토글) + set ops. Page-lifecycle rails
-                                          // only; the panel stays policy-free.
+                                          // WI-184 ⑨ / WI-189 — rail multi-select
+                                          // (Shift 범위 / Cmd 토글) + set ops, every
+                                          // flavor; the panel stays policy-free.
                                           multiSelect={editorMode.rail.multiSelect}
                                           // Set duplicate: ONE transaction (each clone
                                           // slots right after its source); the LAST
@@ -3120,11 +3120,12 @@ function DesignPageBody() {
                                                 }
                                               : undefined
                                           }
-                                          // WI-184 ⑪ — right-click rename / skip-in-
-                                          // show. Both ride weave.item.update (attrs
-                                          // merge), so each is one undoable patch.
+                                          // WI-184 ⑪ / WI-189 — right-click rename /
+                                          // skip-in-show, gated per row by the policy's
+                                          // tileMenuRows set. Both ride weave.item.update
+                                          // (attrs merge), so each is one undoable patch.
                                           onRenamePage={
-                                            editorMode.rail.tileContextMenu
+                                            editorMode.rail.tileMenuRows.has("rename")
                                               ? (id, title) => {
                                                   editor.exec("weave.item.update", {
                                                     itemId: id,
@@ -3134,7 +3135,7 @@ function DesignPageBody() {
                                               : undefined
                                           }
                                           onToggleSkip={
-                                            editorMode.rail.tileContextMenu
+                                            editorMode.rail.tileMenuRows.has("skipInShow")
                                               ? (id, skipped) => {
                                                   editor.exec("weave.item.update", {
                                                     itemId: id,
@@ -3151,7 +3152,7 @@ function DesignPageBody() {
                                           // toolbar's background section shows.
                                           onAddPageAfter={
                                             editorMode.rail.addPage &&
-                                            editorMode.rail.tileContextMenu
+                                            editorMode.rail.tileMenuRows.has("newPageAfter")
                                               ? (id) => {
                                                   const r = editor.exec<unknown, string>(
                                                     "weave.page.add",
@@ -3167,7 +3168,7 @@ function DesignPageBody() {
                                               : undefined
                                           }
                                           onEditBackground={
-                                            editorMode.rail.tileContextMenu
+                                            editorMode.rail.tileMenuRows.has("editBackground")
                                               ? (id) => {
                                                   setSelectedFrameId(id);
                                                   if (editorMode.rail.clickActivatesPage) {

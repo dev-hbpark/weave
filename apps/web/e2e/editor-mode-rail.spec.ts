@@ -90,3 +90,99 @@ test("rail per-page delete: visible always, disabled on the last page, removes a
   await expect(page.locator("[data-thumbnail-id]")).toHaveCount(1);
   await expect(page.getByTestId("thumbnail-delete-0")).toBeDisabled();
 });
+
+// ── WI-189 — the overview rail gains the SET-SHAPED curation affordances ──
+// (multi-select + the frame-attrs tile-menu rows), while the page-lifecycle
+// rows stay slide-deck-only. The policy tables are unit-tested; these pin
+// the rendered rail.
+
+/** data-frame-id of every deck tile, in rail order. */
+async function railFrameIds(page: import("@playwright/test").Page): Promise<string[]> {
+  return page
+    .locator("[data-thumbnail-id]")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-frame-id") ?? ""));
+}
+
+test("WI-189 mixed rail multi-select: Shift range / Cmd toggle, set delete — set duplicate stays hidden", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed" });
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(4);
+  const before = await railFrameIds(page);
+
+  // Shift+click ranges from the plain-clicked anchor: tiles 0..1 selected.
+  await page.getByTestId("thumbnail-activate-0").click();
+  await page.getByTestId("thumbnail-activate-1").click({ modifiers: ["Shift"] });
+  await expect(page.locator("[data-multiselected]")).toHaveCount(2);
+
+  // Cmd+click toggles membership without disturbing the rest of the set.
+  await page.getByTestId("thumbnail-activate-2").click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.locator("[data-multiselected]")).toHaveCount(3);
+  await page.getByTestId("thumbnail-activate-2").click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.locator("[data-multiselected]")).toHaveCount(2);
+
+  // duplicatePage stays false in mixed: NO duplicate affordance appears even
+  // with a live multi-select set (the gates are independent — WI-189/DR-125).
+  await expect(page.locator('[data-testid^="thumbnail-duplicate-"]')).toHaveCount(0);
+
+  // SET delete from a member's footer action: both frames go in one batch…
+  await page.getByTestId("thumbnail-delete-0").click();
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
+  expect(await railFrameIds(page)).toEqual([before[2], before[3]]);
+  // …and ONE Cmd+Z restores the whole set (one transaction).
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(4);
+  expect(await railFrameIds(page)).toEqual(before);
+});
+
+test("WI-189 mixed tile menu: rename + skip-in-show rows only — no page-lifecycle rows", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed" });
+  await addFrame(page, "slide");
+  await addFrame(page, "slide");
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2);
+
+  // The frame-attrs rows render; the page-lifecycle rows do NOT (mixed's
+  // tileMenuRows = {rename, skipInShow} — newPageAfter / editBackground are
+  // meaningless on an overview rail).
+  await page.getByTestId("thumbnail-1").click({ button: "right" });
+  await expect(page.getByTestId("thumbnail-menu-rename-1")).toBeVisible();
+  await expect(page.getByTestId("thumbnail-menu-skip-1")).toBeVisible();
+  await expect(page.getByTestId("thumbnail-menu-new-1")).toHaveCount(0);
+  await expect(page.getByTestId("thumbnail-menu-background-1")).toHaveCount(0);
+  await expect(page.getByTestId("thumbnail-menu-duplicate-1")).toHaveCount(0);
+
+  // ── Rename: same inline EditableText commit + one-undo contract as ⑪.
+  await page.getByTestId("thumbnail-menu-rename-1").click();
+  const rename = page.getByTestId("thumbnail-rename-1");
+  await expect(rename).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("발표 표지");
+  await page.keyboard.press("Enter");
+  await expect(rename).toHaveCount(0);
+  await expect(page.getByTestId("thumbnail-1")).toContainText("발표 표지");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.getByTestId("thumbnail-1")).not.toContainText("발표 표지");
+
+  // ── Skip: this is the orphaned-`attrs.skipped` fix — a frame skip-marked
+  // under slide-deck stays excluded from the show in EVERY flavor
+  // (presentationStepIds filters flavor-independently), so the overview rail
+  // must offer the unskip affordance too.
+  await page.getByTestId("thumbnail-1").click({ button: "right" });
+  await page.getByTestId("thumbnail-menu-skip-1").click();
+  await expect(page.getByTestId("thumbnail-1")).toHaveAttribute("data-skipped", "true");
+  await expect(page.locator("[data-thumbnail-id]")).toHaveCount(2); // still in the deck
+
+  // The menu offers the inverse action; toggling restores the frame.
+  // (600ms = step past the DR-017 ADR-D 500ms history merge window.)
+  await page.waitForTimeout(600);
+  await page.getByTestId("thumbnail-1").click({ button: "right" });
+  await expect(page.getByTestId("thumbnail-menu-skip-1")).toContainText("프레젠테이션에 포함");
+  await page.getByTestId("thumbnail-menu-skip-1").click();
+  await expect(page.getByTestId("thumbnail-1")).not.toHaveAttribute("data-skipped", "true");
+});

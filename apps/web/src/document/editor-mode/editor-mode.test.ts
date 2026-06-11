@@ -235,8 +235,11 @@ describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior 
         duplicatePage: false,
         deletePage: true,
         clickActivatesPage: false,
-        multiSelect: false,
-        tileContextMenu: false,
+        // WI-189 — deck curation is set-shaped; set duplicate stays hidden
+        // via the independent duplicatePage gate.
+        multiSelect: true,
+        // WI-189 — frame-attrs rows only; no page-lifecycle rows.
+        tileMenuRows: new Set(["rename", "skipInShow"]),
       });
     }
   });
@@ -252,10 +255,10 @@ describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior 
         duplicatePage: true,
         deletePage: true,
         clickActivatesPage: true,
-        // WI-184 ⑨ — rail multi-select is a page-lifecycle affordance.
+        // WI-184 ⑨ — rail multi-select (set duplicate/delete/reorder).
         multiSelect: true,
-        // WI-184 ⑪ — right-click rename / skip-in-show, same ownership.
-        tileContextMenu: true,
+        // WI-184 ⑪ / WI-189 — full menu: frame-attrs + page-lifecycle rows.
+        tileMenuRows: new Set(["rename", "skipInShow", "newPageAfter", "editBackground"]),
       });
     }
   });

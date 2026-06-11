@@ -949,7 +949,25 @@ export function buildWeaveCommands(
   // Every selected item removed in ONE transaction so a single Cmd+Z restores
   // them all; each removal patch targets the item's OWN parent (resolved from
   // the pre-mutation doc) so items across different parents delete correctly.
-  const removeItems = createRemoveItemsCommand("weave.items.remove");
+  const removeItemsKit = createRemoveItemsCommand("weave.items.remove");
+  // WI-189 — order decorator over the kit command. The kit records each
+  // removal's `position` against the PRE-mutation doc; undo replays the
+  // inverses in reverse patch order, so two same-parent siblings removed in
+  // ASCENDING index order restore swapped (caught by the mixed rail
+  // set-delete e2e; pre-existing for every multi-delete since WI-184).
+  // Sorting ids DESCENDING by index-in-parent makes the reversed replay
+  // insert ascending — original sibling order restores exactly. Forward
+  // removal is id-based, so the order change has no forward effect.
+  // Upstream kit fix handed off to agocraft (HANDOFF — see WI-189).
+  const removeItems: typeof removeItemsKit = {
+    name: removeItemsKit.name,
+    run: (ctx, input) => {
+      const indexOf = (id: string) =>
+        findParentAndIndex(ctx.document, makeItemId(id))?.indexInParent ?? -1;
+      const sorted = [...input.itemIds].sort((a, b) => indexOf(b) - indexOf(a));
+      return removeItemsKit.run(ctx, { ...input, itemIds: sorted });
+    },
+  };
   // WI-156 / DR-112 — the sole snapshot-boundary command (see
   // SNAPSHOT_BOUNDARY_COMMANDS). It clears the whole doc via the one allowed
   // host hook and emits NO patch by design; a delta sink reads it as "drop the

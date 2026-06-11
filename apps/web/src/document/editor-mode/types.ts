@@ -204,6 +204,15 @@ export interface InsertionPolicy {
   readonly pasteCoord: "cursor" | "source-position";
 }
 
+/** WI-189 — the tile right-click menu's row vocabulary. A declarative row
+ *  set (not one boolean) because the menu mixes PAGE-LIFECYCLE rows
+ *  (newPageAfter / editBackground — meaningless on an overview rail) with
+ *  FRAME-ATTRS rows (rename / skipInShow — `attrs.title` / `attrs.skipped`
+ *  are flavor-independent and the overview rail wants them too). Closed
+ *  list: a new row is a new literal here + its callback slot on the panel,
+ *  decided by every composed mode file (§6-G1). */
+export type TileMenuRow = "rename" | "skipInShow" | "newPageAfter" | "editBackground";
+
 /** DR-114 §4 — how the bottom rail is composed. The ThumbnailPanel does NOT
  *  know this policy: the DesignPage call site reads it and fills/empties the
  *  panel's existing optional props (the "no prop → no render" slots are
@@ -231,15 +240,19 @@ export interface RailPolicy {
   /** Rail tile click switches the active page (WI-153 P2). */
   readonly clickActivatesPage: boolean;
   /** WI-184 ⑨ — Shift(범위) / Cmd(토글) multi-select on rail tiles, enabling
-   *  set duplicate / delete / drag-reorder. A page-lifecycle affordance:
-   *  meaningless on the overview rail, where tiles curate the deck rather
-   *  than own page lifecycle. */
+   *  set delete / drag-reorder (set duplicate rides the independent
+   *  `duplicatePage` gate). WI-189 widened this beyond page lifecycle: the
+   *  overview rail curates the deck, and curation is inherently set-shaped
+   *  (batch remove-from-deck, batch reorder). */
   readonly multiSelect: boolean;
-  /** WI-184 ⑪ — per-tile right-click context menu (rename / skip-in-show).
-   *  Page-lifecycle affordances: rename writes `attrs.title`, skip writes
-   *  `attrs.skipped` (PPT Hide Slide — stays in the deck, excluded from the
-   *  show's step list). */
-  readonly tileContextMenu: boolean;
+  /** WI-184 ⑪ / WI-189 — which rows the per-tile right-click menu offers.
+   *  Row-composed (not one boolean) because the menu mixes page-lifecycle
+   *  rows (`newPageAfter` / `editBackground`) with frame-attrs rows
+   *  (`rename` → `attrs.title`, `skipInShow` → `attrs.skipped` — PPT Hide
+   *  Slide; both flavor-independent, and `presentationStepIds` filters
+   *  `skipped` in every flavor, so the overview rail needs the unskip
+   *  affordance too). Empty set → no menu. */
+  readonly tileMenuRows: ReadonlySet<TileMenuRow>;
 }
 
 /** Modifier intent of a frame click — Figma's selection model: plain click
