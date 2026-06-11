@@ -197,6 +197,19 @@ describe("cost formatting", () => {
     expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33 }])).toBe("5시간 33%");
   });
 
+  it("delta passes measured decimals through verbatim — no display-layer precision loss", () => {
+    expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33, taskDelta: 0.005 }])).toBe(
+      "5시간 33%(+0.5%)",
+    );
+    expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33, taskDelta: 0.0025 }])).toBe(
+      "5시간 33%(+0.25%)",
+    );
+    // a measured 0 means "below the source resolution", not "consumed nothing"
+    expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33, taskDelta: 0 }])).toBe(
+      "5시간 33%(+<1%)",
+    );
+  });
+
   it("tooltip explains the delta as the solo-run increase; absent delta gets the why-not note", () => {
     const withDelta = describeCostDetail({
       inputTokens: 1,

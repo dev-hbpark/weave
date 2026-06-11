@@ -118,13 +118,17 @@ export function formatPercent(utilization: number): string {
   return `${Math.round(Math.min(Math.max(utilization, 0), 1) * 100)}%`;
 }
 
-/** 이 태스크의 증가분(taskDelta 0–1) → "(+3%)"; 1% 해상도 아래는 "(+<1%)".
- *  부재 시 빈 문자열 — 부재는 "귀속 불가"(동시 실행/윈도우 리셋)이지 0이 아니므로
- *  아무것도 표기하지 않는다 (no fake data). */
+/** 이 태스크의 증가분(taskDelta 0–1) → "(+3%)". 측정값이 가진 소수점은 그대로
+ *  통과("(+0.5%)") — 표시층에서 정밀도를 깎지 않는다(최대 2자리, 후행 0 제거).
+ *  현재 API 헤더의 원천 해상도는 1%(소수 2자리 fraction)라 실측은 정수 %지만,
+ *  헤더가 정밀해지면 자동으로 살아난다. 측정 0 은 "원천 해상도 아래"라는 뜻이라
+ *  "(+<1%)" — 0.99% 소모여도 헤더는 0 을 주므로 "+0%" 단정이 오히려 fake data.
+ *  부재 시 빈 문자열 — 부재는 "귀속 불가"(동시 실행/윈도우 리셋)이지 0이 아니다. */
 export function formatDeltaSuffix(taskDelta: number | undefined): string {
   if (taskDelta === undefined) return "";
-  const pct = Math.round(Math.min(Math.max(taskDelta, 0), 1) * 100);
-  return pct === 0 ? "(+<1%)" : `(+${pct}%)`;
+  const pct = Math.min(Math.max(taskDelta, 0), 1) * 100;
+  const s = String(Math.round(pct * 100) / 100);
+  return s === "0" ? "(+<1%)" : `(+${s}%)`;
 }
 
 /** "5시간 23%(+3%) · 주간 41%(+<1%)" — 푸터에 이어 붙는 구독 윈도우 사용률.
