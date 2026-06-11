@@ -337,12 +337,14 @@ const PAGE_PASSTHROUGH_TOOLS: ReadonlyArray<string> = [
 
 /** Page-editing prompt fragment — short by design: the wrapped tools carry
  *  the model (containerId semantics live in the schemas, page creation in the
- *  weave.page.add tool name), so the prompt only anchors the LIVE state. */
+ *  weave.page.add tool name), so the prompt only anchors the LIVE state plus
+ *  the one judgment rule the schemas can't express (WI-170): a request that
+ *  does not explicitly target EXISTING content defaults to a NEW page. */
 export function pagePromptFragment(host: AgentHostContext): string {
   if (host.activeContainerId === undefined) {
     return "\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집합니다. 아직 활성 페이지가 없으니 먼저 weave.page.add 로 페이지를 만든 뒤 그 안에 콘텐츠를 넣으세요. 페이지를 추가하면 그 페이지가 곧바로 현재 페이지가 됩니다.";
   }
-  return `\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집 중이며 현재 활성 페이지 frame id는 ${host.activeContainerId} 입니다. containerId 를 생략하면 현재 페이지에 들어갑니다. 새 페이지(슬라이드)는 weave.page.add 로만 추가하세요 — 추가하면 그 페이지가 곧바로 현재 페이지가 됩니다. 슬라이드를 frame 으로 나란히 배치하지 마세요(페이지 좌표는 0..1, 밖은 클립되어 보이지 않습니다).`;
+  return `\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집 중이며 현재 활성 페이지 frame id는 ${host.activeContainerId} 입니다. containerId 를 생략하면 현재 페이지에 들어갑니다. 새 페이지(슬라이드)는 weave.page.add 로만 추가하세요 — 추가하면 그 페이지가 곧바로 현재 페이지가 됩니다. 슬라이드를 frame 으로 나란히 배치하지 마세요(페이지 좌표는 0..1, 밖은 클립되어 보이지 않습니다). 기본 판단 규칙: 요청이 기존 아이템·페이지의 수정/변경/삭제를 명시하거나 현재 페이지를 직접 가리키지 않는 한, 새 콘텐츠·디자인 요청은 새 페이지에서 작업합니다 — 스냅샷 기준 활성 페이지가 비어 있으면 그 페이지를 그대로 쓰고, 이미 콘텐츠가 있으면 weave.page.add 로 새 페이지를 만든 뒤 그 안에서 작업하세요. 기존 페이지의 콘텐츠 위에 겹쳐 추가하지 마세요.`;
 }
 
 /** Page-bounded (slide-deck / doc-page): closed allow-list — every registered

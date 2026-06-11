@@ -285,4 +285,18 @@ describe("pagePromptFragment", () => {
   it("degenerate host (empty deck) still routes to weave.page.add", () => {
     expect(pagePromptFragment(NO_PAGE)).toContain("weave.page.add");
   });
+
+  it("WI-170: carries the default-new-page judgment rule on the active branch", () => {
+    const line = pagePromptFragment(HOST);
+    expect(line).toContain("기본 판단 규칙");
+    // New-content requests not targeting existing items default to a NEW page…
+    expect(line).toContain("새 페이지");
+    // …with the empty-active-page escape (use it as-is) and the no-overlap clause.
+    expect(line).toContain("비어 있으면");
+    expect(line).toContain("겹쳐 추가하지 마세요");
+  });
+
+  it("WI-170: the empty-deck branch stays rule-free (page.add is already the only path)", () => {
+    expect(pagePromptFragment(NO_PAGE)).not.toContain("기본 판단 규칙");
+  });
 });
