@@ -33,8 +33,8 @@
   },
   "pnpm": {
     "overrides": {
-      "@small-think/client": "file:apps/web/vendor/small-think/small-think-client-0.1.4.tgz",
-      "@agocraft/agent-client": "file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260609010000.tgz",
+      "@small-think/client": "file:apps/web/vendor/small-think/small-think-client-0.1.5.tgz",
+      "@agocraft/agent-client": "file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611152500.tgz",
       "@agocraft/core": "file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz",
       "@agocraft/domain-block-doc": "file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260602053511.tgz",
       "@agocraft/domain-canvas-design": "file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260602053511.tgz",

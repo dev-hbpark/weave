@@ -14,7 +14,7 @@
     "e2e:install": "playwright install chromium"
   },
   "dependencies": {
-    "@agocraft/agent-client": "file:vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260609010000.tgz",
+    "@agocraft/agent-client": "file:vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611152500.tgz",
     "@agocraft/core": "file:vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz",
     "@agocraft/domain-block-doc": "file:vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260602053511.tgz",
     "@agocraft/domain-canvas-design": "file:vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260602053511.tgz",

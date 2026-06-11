@@ -25,6 +25,8 @@ import {
   type QueueStatus,
   reduceAgentState,
   type ServerInfo,
+  type TaskEvent,
+  type TaskResponse,
   type ToolClientHandle,
 } from "@agocraft/agent-client";
 import type { Document as AgocraftDocument, Schema } from "@agocraft/core";
@@ -43,6 +45,7 @@ import type {
   AkuAssistantMessage,
   AkuConnection,
   AkuDraft,
+  AkuEditRecord,
   AkuHistoryController,
   AkuImage,
   AkuMessage,
@@ -58,6 +61,12 @@ import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./d
 import { classifyIntent, intentFromOperation } from "./intent/classifier.js";
 import { composeIntentTask } from "./intent/compose-intent-task.js";
 import { ALL_OPERATIONS, type IntentPlan, type Operation } from "./intent/types.js";
+import {
+  finalizeOrphanResponse,
+  mergeOrphanEdits,
+  planAdoptedBubble,
+  shouldHandleOrphanFrame,
+} from "./orphan-turn.js";
 import { makeRoundGroupingEditor } from "./round-grouping-editor.js";
 import {
   WEAVE_CAPABILITIES,
@@ -433,6 +442,18 @@ export function useAkuAgent(deps: {
   // Latest queueStatus mirror so stop()/effects read it without re-creating callbacks.
   const queueStatusRef = useRef<QueueStatus | null>(null);
   queueStatusRef.current = queueStatus;
+  // WI-174 — chat-panel reattach to a grace-replayed (adopted) run. The replayed
+  // run's frames arrive with NO local pending (the refresh wiped the map), so the
+  // client surfaces them via the orphan hooks (small-think WI-041 → agocraft
+  // WI-038). State: the run-state fold for the orphan stream, the adopted
+  // bubble's pre-drop chips (replay chips append AFTER them), and the handler
+  // refs the connect options close over (stable across reconnects; the impls
+  // are re-assigned per render below, after patchLastAssistant exists).
+  const orphanRunStateRef = useRef<AgentRunState>(INITIAL_AGENT_STATE);
+  // null = no adopted bubble attached; set on adopt / first orphan frame.
+  const orphanBaseEditsRef = useRef<ReadonlyArray<AkuEditRecord> | null>(null);
+  const onOrphanEventRef = useRef<(id: string, event: TaskEvent) => void>(() => {});
+  const onOrphanResponseRef = useRef<(response: TaskResponse) => void>(() => {});
 
   // The REGISTERED command set (single registry — Rule 4). What the agent is
   // shown is the bound surface's view of this (WI-168 / DR-115): "all" on
@@ -550,6 +571,72 @@ export function useAkuAgent(deps: {
     };
   }, []);
 
+  /** Replace the trailing assistant message (the in-flight turn's bubble). */
+  const patchLastAssistant = useCallback(
+    (patch: (prev: AkuAssistantMessage) => AkuAssistantMessage): void => {
+      const cur = messagesRef.current;
+      const last = cur[cur.length - 1];
+      if (last === undefined || last.role !== "assistant") return;
+      commit([...cur.slice(0, -1), patch(last)]);
+    },
+    [commit],
+  );
+
+  // WI-174 — attach the chat bubble to the adopted (grace-replayed) run: revive
+  // the trailing assistant bubble (the persisted transcript ends with the
+  // interrupted turn's bubble) or append a fresh one. Idempotent per adopted
+  // run; the base-edits capture keeps the pre-drop chips ahead of the replay's.
+  const attachAdoptedBubble = useCallback((): void => {
+    if (orphanBaseEditsRef.current !== null) return; // already attached this run
+    const cur = messagesRef.current;
+    const plan = planAdoptedBubble(cur[cur.length - 1], Date.now());
+    orphanBaseEditsRef.current = plan.bubble.edits ?? [];
+    commit(plan.mode === "revive" ? [...cur.slice(0, -1), plan.bubble] : [...cur, plan.bubble]);
+  }, [commit]);
+
+  // WI-174 — orphan frame handlers. Assigned per render (like depsRef) so the
+  // connect options — which close over the REFS once at connect — keep routing
+  // to fresh closures. Gate: shouldHandleOrphanFrame drops late frames of a
+  // locally-cancelled run (WI-039's surviving ok frame); a fresh page session
+  // accepts frames even BEFORE the queue push adopts (replay can outrun it).
+  onOrphanEventRef.current = (id: string, event: TaskEvent): void => {
+    if (!shouldHandleOrphanFrame({ engaged: engagedRef.current, resumed: resumedRef.current }))
+      return;
+    if (import.meta.env.DEV) console.debug("[aku orphan event]", id, event.type, event);
+    attachAdoptedBubble();
+    orphanRunStateRef.current = reduceAgentState(orphanRunStateRef.current, event);
+    // Mirror runTurn's onEvent merge: prose appends, then caption + chips.
+    if (event.type === "message") {
+      patchLastAssistant((prev) => ({
+        ...prev,
+        text: prev.text === "" ? event.text : `${prev.text}\n\n${event.text}`,
+      }));
+    }
+    const st = orphanRunStateRef.current;
+    const activity = activityFor(st);
+    patchLastAssistant((prev) => ({
+      ...prev,
+      ...(activity !== undefined ? { activity } : {}),
+      edits: mergeOrphanEdits(orphanBaseEditsRef.current ?? [], st.activeTools, chipLabel),
+    }));
+  };
+  onOrphanResponseRef.current = (response: TaskResponse): void => {
+    if (!shouldHandleOrphanFrame({ engaged: engagedRef.current, resumed: resumedRef.current }))
+      return;
+    if (import.meta.env.DEV)
+      console.debug("[aku orphan result]", {
+        ok: response.ok,
+        error: response.error,
+        finalText: response.finalText,
+      });
+    // Events may have streamed to the dead link before reconnect completed —
+    // still surface the final result on a (possibly fresh) bubble.
+    attachAdoptedBubble();
+    patchLastAssistant((prev) => finalizeOrphanResponse(prev, response));
+    orphanRunStateRef.current = INITIAL_AGENT_STATE;
+    orphanBaseEditsRef.current = null; // detach — a later adopt re-attaches fresh
+  };
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: deliberate dependency array — omitted values are refs/stable handles or an intentional re-run trigger (see hook body); auto-expanding changes the effect's semantics
   const getHandle = useCallback((): Promise<ToolClientHandle> => {
     if (handleRef.current !== null) return Promise.resolve(handleRef.current);
@@ -602,6 +689,11 @@ export function useAkuAgent(deps: {
           onServerInfo: (info) => setServerInfo(info),
           // Live queue view (WI-034): running/queued + this client's positions.
           onQueueStatus: (s) => setQueueStatus(s),
+          // WI-174 — frames of a grace-replayed run (no local pending) route back
+          // into the transcript. Closing over the REFS keeps the wiring fresh
+          // across reconnects without re-creating this connect closure.
+          onOrphanEvent: (id, event) => onOrphanEventRef.current(id, event),
+          onOrphanResponse: (response) => onOrphanResponseRef.current(response),
           userId: `weave:${designId === "" ? "default" : designId}`,
           // Stable client identity for the server's grace window — deterministic from the
           // design id so a reconnect / refresh of THIS design re-presents the same id and the
@@ -684,22 +776,25 @@ export function useAkuAgent(deps: {
     if (action === "adopt") {
       resumedRef.current = true;
       setStatus("streaming");
+      // WI-174 — re-attach the chat bubble to the adopted run (idempotent; an
+      // orphan frame that outran this queue push already attached it).
+      attachAdoptedBubble();
     } else if (action === "release") {
       resumedRef.current = false;
       setStatus("idle");
+      // WI-174 — the adopted run left the queue. Drop any lingering caption
+      // (the orphan response usually finalized already — this is the fallback
+      // when the run was cancelled / grace-expired without a final frame) and
+      // reset the orphan fold so a later adopt starts fresh.
+      patchLastAssistant((prev) => {
+        if (prev.activity === undefined) return prev;
+        const { activity: _activity, ...rest } = prev;
+        return rest;
+      });
+      orphanRunStateRef.current = INITIAL_AGENT_STATE;
+      orphanBaseEditsRef.current = null;
     }
-  }, [queueStatus, status]);
-
-  /** Replace the trailing assistant message (the in-flight turn's bubble). */
-  const patchLastAssistant = useCallback(
-    (patch: (prev: AkuAssistantMessage) => AkuAssistantMessage): void => {
-      const cur = messagesRef.current;
-      const last = cur[cur.length - 1];
-      if (last === undefined || last.role !== "assistant") return;
-      commit([...cur.slice(0, -1), patch(last)]);
-    },
-    [commit],
-  );
+  }, [queueStatus, status, attachAdoptedBubble, patchLastAssistant]);
 
   // Upload attached images to weave's resource store so the agent can reference
   // the resulting URLs in attrs.src (asset use, not just vision). Returns the
@@ -1084,6 +1179,10 @@ export function useAkuAgent(deps: {
     // clears the just-cancelled job from queueStatus).
     resumedRef.current = false;
     engagedRef.current = true;
+    // WI-174 — drop the orphan fold: subsequent frames of the cancelled run are
+    // gated off by shouldHandleOrphanFrame (engaged && !resumed) anyway.
+    orphanRunStateRef.current = INITIAL_AGENT_STATE;
+    orphanBaseEditsRef.current = null;
     // Close any open round group so the aborted run's edits don't keep
     // absorbing later transactions.
     roundGroupRef.current.close();
@@ -1146,6 +1245,9 @@ export function useAkuAgent(deps: {
     // WI-151 — explicit user action: drop any adopted run + disable re-adoption.
     resumedRef.current = false;
     engagedRef.current = true;
+    // WI-174 — the transcript (incl. any adopted bubble) is being wiped.
+    orphanRunStateRef.current = INITIAL_AGENT_STATE;
+    orphanBaseEditsRef.current = null;
     clearConversation(designId);
     commit([]);
     setStatus("idle");
