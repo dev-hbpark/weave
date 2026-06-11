@@ -22,13 +22,18 @@ function limitFromEntry(entry: unknown): AkuLimitWindow | undefined {
     readonly window?: unknown;
     readonly utilization?: unknown;
     readonly resetsAt?: unknown;
+    readonly taskDelta?: unknown;
   };
   if (typeof w.window !== "string" || w.window === "") return undefined;
   if (!isFiniteNumber(w.utilization)) return undefined;
+  // taskDelta (small-think WI-047): 이 태스크의 소모분 0–1. malformed(비유한/음수)는
+  // 필드만 강등 — 누적 % 표시는 유지된다 (resetsAt 과 동일한 필드-단위 방어).
+  const taskDelta = isFiniteNumber(w.taskDelta) && w.taskDelta >= 0 ? w.taskDelta : undefined;
   return {
     window: w.window,
     utilization: w.utilization,
     ...(isFiniteNumber(w.resetsAt) ? { resetsAt: w.resetsAt } : {}),
+    ...(taskDelta !== undefined ? { taskDelta } : {}),
   };
 }
 
@@ -113,10 +118,23 @@ export function formatPercent(utilization: number): string {
   return `${Math.round(Math.min(Math.max(utilization, 0), 1) * 100)}%`;
 }
 
-/** "5시간 23% · 주간 41%" — 푸터에 이어 붙는 구독 윈도우 사용률. */
+/** 이 태스크의 증가분(taskDelta 0–1) → "(+3%)"; 1% 해상도 아래는 "(+<1%)".
+ *  부재 시 빈 문자열 — 부재는 "귀속 불가"(동시 실행/윈도우 리셋)이지 0이 아니므로
+ *  아무것도 표기하지 않는다 (no fake data). */
+export function formatDeltaSuffix(taskDelta: number | undefined): string {
+  if (taskDelta === undefined) return "";
+  const pct = Math.round(Math.min(Math.max(taskDelta, 0), 1) * 100);
+  return pct === 0 ? "(+<1%)" : `(+${pct}%)`;
+}
+
+/** "5시간 23%(+3%) · 주간 41%(+<1%)" — 푸터에 이어 붙는 구독 윈도우 사용률.
+ *  괄호의 증가분은 이 태스크가 단독 실행됐을 때만 서버가 보내준다 (WI-047). */
 export function formatLimitsLine(limits: ReadonlyArray<AkuLimitWindow>): string {
   return sortedLimits(limits)
-    .map((w) => `${limitLabel(w.window)} ${formatPercent(w.utilization)}`)
+    .map(
+      (w) =>
+        `${limitLabel(w.window)} ${formatPercent(w.utilization)}${formatDeltaSuffix(w.taskDelta)}`,
+    )
     .join(" · ");
 }
 
@@ -155,12 +173,19 @@ export function describeCostDetail(c: AkuCostRecord): string {
     const windows = sortedLimits(c.limits)
       .map(
         (w) =>
-          `${limitLabel(w.window)} ${formatPercent(w.utilization)}${
+          `${limitLabel(w.window)} ${formatPercent(w.utilization)}${formatDeltaSuffix(w.taskDelta)}${
             w.resetsAt !== undefined ? ` (${formatResetAt(w.resetsAt)} 리셋)` : ""
           }`,
       )
       .join(" · ");
-    parts.push(`구독 윈도우 ${windows} — 태스크 종료 시점의 전체 사용률`);
+    const hasDelta = c.limits.some((w) => w.taskDelta !== undefined);
+    parts.push(
+      `구독 윈도우 ${windows} — 태스크 종료 시점의 전체 사용률${
+        hasDelta
+          ? ", (+%)는 이 태스크 단독 실행 구간의 증가분"
+          : " (동시 태스크 실행 등으로 이 태스크만의 증가분은 분리 불가)"
+      }`,
+    );
   }
   return parts.join(" · ");
 }

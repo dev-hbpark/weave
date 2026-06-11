@@ -99,6 +99,22 @@ describe("costFromEvent (WI-176)", () => {
     const e = { ...valid, limits: [{ window: "five_hour", utilization: 0.1, resetsAt: "soon" }] };
     expect(costFromEvent(e)?.limits).toEqual([{ window: "five_hour", utilization: 0.1 }]);
   });
+
+  it("carries taskDelta through (WI-179 — small-think WI-047); malformed/negative degrades the field only", () => {
+    const e = {
+      ...valid,
+      limits: [
+        { window: "five_hour", utilization: 0.33, taskDelta: 0.03 },
+        { window: "seven_day", utilization: 0.41, taskDelta: "0.03" }, // non-number
+        { window: "overage", utilization: 0.1, taskDelta: -0.2 }, // negative
+      ],
+    };
+    expect(costFromEvent(e)?.limits).toEqual([
+      { window: "five_hour", utilization: 0.33, taskDelta: 0.03 },
+      { window: "seven_day", utilization: 0.41 },
+      { window: "overage", utilization: 0.1 },
+    ]);
+  });
 });
 
 describe("cost formatting", () => {
@@ -168,6 +184,37 @@ describe("cost formatting", () => {
         ],
       }),
     ).toBe("입력 58k · 출력 3.4k 토큰 · $0.0345 · 5시간 23% · 주간 41%");
+  });
+
+  it("limits line appends this task's delta when attributed (WI-179): solo run = (+N%), sub-1% = (+<1%)", () => {
+    expect(
+      formatLimitsLine([
+        { window: "five_hour", utilization: 0.33, taskDelta: 0.03 },
+        { window: "seven_day", utilization: 0.41, taskDelta: 0 },
+      ]),
+    ).toBe("5시간 33%(+3%) · 주간 41%(+<1%)");
+    // absent taskDelta (overlapped run / window reset) → no suffix, NOT "+0%"
+    expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33 }])).toBe("5시간 33%");
+  });
+
+  it("tooltip explains the delta as the solo-run increase; absent delta gets the why-not note", () => {
+    const withDelta = describeCostDetail({
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      limits: [{ window: "five_hour", utilization: 0.33, taskDelta: 0.03 }],
+    });
+    expect(withDelta).toContain("5시간 33%(+3%)");
+    expect(withDelta).toContain("단독 실행 구간의 증가분");
+    const withoutDelta = describeCostDetail({
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      limits: [{ window: "five_hour", utilization: 0.33 }],
+    });
+    expect(withoutDelta).toContain("증가분은 분리 불가");
   });
 
   it("tooltip explains the windows as CURRENT fill (not this task's burn), with reset time", () => {

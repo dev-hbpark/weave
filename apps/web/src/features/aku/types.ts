@@ -55,6 +55,10 @@ export interface AkuLimitWindow {
   readonly utilization: number;
   /** Unix epoch SECONDS when the window resets, when known. */
   readonly resetsAt?: number;
+  /** 이 태스크가 소모한 윈도우 비율 0–1 (small-think WI-047). 서버가 깨끗하게
+   *  귀속할 수 있을 때만 존재 — 단독 실행 + 윈도우 무(無)리셋. 동시 태스크가
+   *  돌았으면 부재(계정 전체 수치라 섞임). 부재 ≠ 0. */
+  readonly taskDelta?: number;
 }
 
 export interface AkuAssistantMessage {
