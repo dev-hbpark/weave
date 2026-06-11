@@ -18,6 +18,7 @@ import {
 } from "@weave/design-system";
 import { lazy, Suspense, useState } from "react";
 import { AkuMascot } from "./AkuMascot.js";
+import { describeCostDetail, formatCostLine } from "./agent/cost-event.js";
 import { withOperation } from "./agent/intent/classifier.js";
 import {
   ALL_OPERATIONS,
@@ -201,6 +202,7 @@ function MessageBubble({
   const errored = message.role === "assistant" ? message.error === true : false;
   const edits = !isUser && message.role === "assistant" ? message.edits : undefined;
   const activity = !isUser && message.role === "assistant" ? message.activity : undefined;
+  const cost = !isUser && message.role === "assistant" ? message.cost : undefined;
   const canUndoTurn =
     !isUser &&
     message.role === "assistant" &&
@@ -293,6 +295,19 @@ function MessageBubble({
                   <IconUndo size={12} />이 변경 되돌리기
                 </button>
               ) : null}
+            </div>
+          ) : null}
+
+          {/* per-task token/dollar footer (WI-176) — arrives once via the server's
+              `cost` event right before the turn settles; hover shows the exact
+              breakdown (cache reads/writes; api-mode dollars are an estimate). */}
+          {cost !== undefined ? (
+            <div
+              className="mt-1.5 text-[10px] text-[color:var(--text-soft)] tabular-nums"
+              data-aku-cost
+              title={describeCostDetail(cost)}
+            >
+              {formatCostLine(cost)}
             </div>
           ) : null}
         </div>

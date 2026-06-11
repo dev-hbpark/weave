@@ -29,6 +29,20 @@ export interface AkuUserMessage {
   readonly at?: number;
 }
 
+/** Per-task token/cost total the server streams right before the turn settles
+ *  (small-think DR-058 `cost` event — exactly one per task, covering EVERY model
+ *  turn of the build + review pipeline). `costUsd` is an estimate in api mode
+ *  (public list prices) and SDK-authoritative in byo-ssh; absent when the model
+ *  family is unknown to the server's pricing table (tokens-only, no guessed
+ *  dollars). Durable — survives persistence (a turn's cost doesn't expire). */
+export interface AkuCostRecord {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheWriteTokens: number;
+  readonly costUsd?: number;
+}
+
 export interface AkuAssistantMessage {
   readonly role: "assistant";
   readonly text: string;
@@ -51,6 +65,9 @@ export interface AkuAssistantMessage {
   /** The editing intent routed for this turn (WI-148). Set when intent routing is
    *  active (intentSource !== "off"); drives the correctable intent chip. */
   readonly intent?: IntentPlan;
+  /** The turn's total token/dollar usage (WI-176) — set when the server streams
+   *  its per-task `cost` event; renders as a footer line under the bubble. */
+  readonly cost?: AkuCostRecord;
 }
 
 export type AkuMessage = AkuUserMessage | AkuAssistantMessage;

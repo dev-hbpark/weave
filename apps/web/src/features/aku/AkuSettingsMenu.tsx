@@ -219,8 +219,9 @@ export function AkuSettingsMenu({
                   })}
                 </div>
                 <div className="mt-1 text-[10.5px] text-[color:var(--text-overlay-soft)] leading-snug">
-                  키·자격은 서버에 미리 설정되어 있습니다. 허용목록에 없는 모드는 거부되고 기본
-                  모드로 실행됩니다 — 실제 적용 모드는 상단 칩에 표시됩니다.
+                  API=설정된 키(VITE_AKU_API_KEY)가 있으면 그 키, 없으면 서버 공유 키 · SSH=서버의
+                  구독 CLI. 허용목록에 없는 모드는 거부되고 기본 모드로 실행됩니다 — 실제 적용
+                  모드는 상단 칩에 표시됩니다.
                 </div>
               </div>
             </div>

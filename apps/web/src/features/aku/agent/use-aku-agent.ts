@@ -63,6 +63,7 @@ import { decideResume } from "./agent-resume.js";
 import { bindAgentSurface } from "./agent-surface.js";
 import { fixAgentTextBox } from "./agent-text-resize.js";
 import { type AkuSettings, DEFAULT_AKU_SETTINGS, jitteredTemperature } from "./aku-settings.js";
+import { costFromEvent } from "./cost-event.js";
 import { autoStyleDirective, composeStyleTask, resolveStyleSelection } from "./design-styles.js";
 import { classifyIntent, intentFromOperation } from "./intent/classifier.js";
 import { composeIntentTask } from "./intent/compose-intent-task.js";
@@ -355,12 +356,14 @@ export function useAkuAgent(deps: {
     () => tokenProp ?? envStr("VITE_AKU_AGENT_TOKEN") ?? loadToken(),
   );
   const hasToken = token !== null && token !== "";
-  // Execution-mode request (WI-175). Like `token`, it is part of the hello, so it
-  // is hook-owned reactive state (NOT AkuSettings — that is read non-reactively at
-  // submit time) and lives in `getHandle`'s dependency list: changing it drops the
-  // link and reconnects with a fresh hello. The BYO key is NOT user input — it is
-  // pre-configured in weave's .env (operator decision) and sent only while the
-  // byo-apikey mode is selected. Secret: never logged, never returned from here.
+  // Execution-mode request (WI-175 → WI-176). Like `token`, it is part of the
+  // hello, so it is hook-owned reactive state (NOT AkuSettings — that is read
+  // non-reactively at submit time) and lives in `getHandle`'s dependency list:
+  // changing it drops the link and reconnects with a fresh hello. The key is NOT
+  // user input — it is pre-configured in weave's .env (operator decision) and
+  // sent only while the api mode is selected (DR-057: hello key wins per-
+  // connection, else the server's shared key). Secret: never logged, never
+  // returned from here.
   const [agentMode, setAgentModeState] = useState<AkuAgentMode>(() => loadAgentMode());
   const apiKey = envStr("VITE_AKU_API_KEY") ?? null;
 
@@ -630,6 +633,11 @@ export function useAkuAgent(deps: {
         ...prev,
         text: prev.text === "" ? event.text : `${prev.text}\n\n${event.text}`,
       }));
+    }
+    // 재입양된 런에도 태스크 비용은 도착한다 (WI-176) — 동일하게 푸터로 싣는다.
+    const orphanCost = costFromEvent(event);
+    if (orphanCost !== undefined) {
+      patchLastAssistant((prev) => ({ ...prev, cost: orphanCost }));
     }
     const st = orphanRunStateRef.current;
     const activity = activityFor(st);
@@ -1046,6 +1054,13 @@ export function useAkuAgent(deps: {
                   intent: intentFromOperation(op as Operation, text, { hasSelection }),
                 }));
               }
+            }
+            // 태스크 전체 토큰/비용 (WI-176 / small-think DR-058) — 서버가 ok 응답
+            // 직전에 1회 스트림. 벤더링된 유니온이 모르는 타입이라 unknown 으로
+            // 좁힌다 (cost-event.ts); 버블 푸터로 렌더된다.
+            const cost = costFromEvent(event);
+            if (cost !== undefined) {
+              patchLastAssistant((prev) => ({ ...prev, cost }));
             }
             const activity = activityFor(runState);
             patchLastAssistant((prev) => ({

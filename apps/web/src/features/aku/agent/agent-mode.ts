@@ -1,33 +1,36 @@
 /**
- * Aku 에이전트 실행-모드 선택 (WI-175 — small-think WI-042 / agocraft WI-039 다운스트림).
+ * Aku 에이전트 실행-모드 선택 (WI-175 → WI-176 — small-think WI-042/WI-043 다운스트림).
  *
  * 서버는 부팅 모드(SMALL_THINK_AGENT_MODE) 외에 hello.mode 로 연결별 모드 요청을
  * 받는다(승인은 서버의 SMALL_THINK_ALLOWED_MODES allowlist). 이 모듈은 그 요청을
  * 만드는 클라이언트 쪽 순수 절반: 모드 영속화 + connect 옵션 변환.
  *
- * 키는 UI 입력이 아니라 **미리 설정**한다 (운영자 결정, WI-175):
- * - `api` / `byo-ssh`: 키·자격은 전부 서버 쪽 env — 클라이언트는 모드만 요청.
- * - `byo-apikey`: 프로토콜상 키가 hello 에 실려야 한다(서버 폴백 없음 —
- *   server-agent-session.ts resolveProvider). weave `.env` 의 `VITE_AKU_API_KEY`
- *   로 주입하며, 이 모드일 때만 hello 에 포함된다(최소 노출, RISK-004).
- *   키 원문은 로그·React props 로 노출하지 않는다.
+ * small-think DR-057 이 byo-apikey 를 api 로 통합했다 — 실행 모드는 이제 2종:
+ * - `api`: hello 에 apiKey 가 실리면 그 키(연결별, keySource:"client"), 없으면
+ *   서버 공유 키(keySource:"server"). weave 는 `.env` 의 `VITE_AKU_API_KEY` 가
+ *   설정돼 있을 때만 키를 싣는다 — env 설정 자체가 운영자의 opt-in 이다.
+ *   키 원문은 로그·React props 로 노출하지 않는다 (RISK-004).
+ * - `byo-ssh`: 자격은 전부 서버 쪽(구독 CLI) — 클라이언트는 모드만 요청.
  *
  * 승인 여부는 가정하지 않는다: 서버가 거부하면 부팅 모드로 폴백하고 실제 적용
  * 모드를 `serverInfo.mode` 로 통보한다 — AkuServerInfoChip 이 그대로 보여준다.
  */
 
 /** "server" = hello 에 모드를 싣지 않음(서버 부팅 모드 그대로) — 첫 선택 전 기본값.
- *  나머지 셋은 서버의 실행 모드 3종(DR-013)에 대한 요청. */
-export type AkuAgentMode = "server" | "api" | "byo-apikey" | "byo-ssh";
+ *  나머지 둘은 서버의 실행 모드 2종(DR-057 통합 후)에 대한 요청. */
+export type AkuAgentMode = "server" | "api" | "byo-ssh";
 
-/** 세그먼트 컨트롤에 노출하는 선택지 — 실행 모드 3종만 ("server" 는 선택-이전 상태). */
+/** 세그먼트 컨트롤에 노출하는 선택지 — 실행 모드 2종만 ("server" 는 선택-이전 상태). */
 export const AKU_AGENT_MODE_OPTIONS: ReadonlyArray<{
   readonly value: AkuAgentMode;
   readonly label: string;
   readonly hint: string;
 }> = [
-  { value: "api", label: "API", hint: "서버 공유 키로 실행" },
-  { value: "byo-apikey", label: "BYO 키", hint: "weave에 설정된 키(VITE_AKU_API_KEY)로 실행" },
+  {
+    value: "api",
+    label: "API",
+    hint: "API 키로 실행 — weave에 설정된 키(VITE_AKU_API_KEY)가 있으면 그 키, 없으면 서버 공유 키",
+  },
   { value: "byo-ssh", label: "SSH", hint: "서버의 구독 CLI(ssh)로 실행" },
 ];
 
@@ -38,14 +41,22 @@ const MODE_VALUES: ReadonlyArray<string> = [
   ...AKU_AGENT_MODE_OPTIONS.map((o) => o.value),
 ];
 
+/** 과거 저장값 → 현행 모드 마이그레이션 (Rule 6: 데이터, if-체인 금지).
+ *  DR-057 이 byo-apikey 를 api 로 흡수 — 저장돼 있던 선택은 api 로 승계된다. */
+const MODE_ALIASES: Readonly<Record<string, AkuAgentMode>> = {
+  "byo-apikey": "api",
+};
+
 function isAkuAgentMode(v: unknown): v is AkuAgentMode {
   return typeof v === "string" && MODE_VALUES.includes(v);
 }
 
-/** 저장된 모드 (검증 통과 시) — 아니면 "server". localStorage 차단 환경도 "server". */
+/** 저장된 모드 (검증/마이그레이션 통과 시) — 아니면 "server". localStorage 차단 환경도 "server". */
 export function loadAgentMode(): AkuAgentMode {
   try {
     const v = window.localStorage.getItem(MODE_KEY);
+    const migrated = v !== null ? MODE_ALIASES[v] : undefined;
+    if (migrated !== undefined) return migrated;
     return isAkuAgentMode(v) ? v : "server";
   } catch {
     return "server";
@@ -69,14 +80,15 @@ export interface ModeConnectOptions {
 /**
  * 모드별 연결-옵션 어댑터 (Rule 6: 레지스트리, switch/if-체인 금지).
  * - "server": 빈 객체 (hello 에 mode 없음 → 서버 부팅 모드, 기존 동작 100%).
- * - "api" / "byo-ssh": mode 만 — 키·자격은 서버 쪽에 있다.
- * - "byo-apikey": mode + (있을 때만) apiKey — 키 노출의 단일 결정 지점.
+ * - "api": mode + (설정돼 있을 때만) apiKey — 키 노출의 단일 결정 지점.
+ *   키가 실리면 서버는 그 키를 연결별로 사용(DR-057 keySource:"client"),
+ *   없으면 서버 공유 키로 동작한다.
+ * - "byo-ssh": mode 만 — 자격은 서버 쪽(구독 CLI)에 있다.
  */
 const MODE_CONNECT_OPTIONS: Record<AkuAgentMode, (apiKey: string | null) => ModeConnectOptions> = {
   server: () => ({}),
-  api: () => ({ mode: "api" }),
-  "byo-apikey": (apiKey) => ({
-    mode: "byo-apikey",
+  api: (apiKey) => ({
+    mode: "api",
     ...(apiKey !== null && apiKey !== "" ? { apiKey } : {}),
   }),
   "byo-ssh": () => ({ mode: "byo-ssh" }),

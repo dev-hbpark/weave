@@ -14,33 +14,33 @@ import akuAgentSource from "./use-aku-agent.ts?raw";
 // getHandle, which a renderHook cannot reach without mocking the whole agocraft
 // client — so, per the WI-171/174 precedent, it is pinned as source-fitness.
 
-describe("connectModeOptions (WI-175)", () => {
+describe("connectModeOptions (WI-175 → WI-176, DR-057 merge)", () => {
   it('"server" sends NOTHING — the boot default stays untouched', () => {
     expect(connectModeOptions("server", null)).toEqual({});
     // Even with a configured key: no mode request → no key exposure.
     expect(connectModeOptions("server", "sk-ant-x")).toEqual({});
   });
 
-  it('"api" / "byo-ssh" request the mode but never carry the key (server-side creds)', () => {
-    expect(connectModeOptions("api", "sk-ant-x")).toEqual({ mode: "api" });
-    expect(connectModeOptions("byo-ssh", "sk-ant-x")).toEqual({ mode: "byo-ssh" });
+  it('"api" carries the key when configured — and ONLY this mode does (least exposure)', () => {
+    expect(connectModeOptions("api", "sk-ant-x")).toEqual({ mode: "api", apiKey: "sk-ant-x" });
+    // Key not configured → mode only; the server falls back to its shared key
+    // (DR-057 keySource:"server").
+    expect(connectModeOptions("api", null)).toEqual({ mode: "api" });
+    expect(connectModeOptions("api", "")).toEqual({ mode: "api" });
   });
 
-  it('"byo-apikey" carries the key — and ONLY this mode does (least exposure)', () => {
-    expect(connectModeOptions("byo-apikey", "sk-ant-x")).toEqual({
-      mode: "byo-apikey",
-      apiKey: "sk-ant-x",
-    });
-    // Key not configured → still request the mode (the server answers with an
-    // auth error per task, which is the honest signal that the env is missing).
-    expect(connectModeOptions("byo-apikey", null)).toEqual({ mode: "byo-apikey" });
-    expect(connectModeOptions("byo-apikey", "")).toEqual({ mode: "byo-apikey" });
+  it('"byo-ssh" requests the mode but never carries the key (server-side creds)', () => {
+    expect(connectModeOptions("byo-ssh", "sk-ant-x")).toEqual({ mode: "byo-ssh" });
   });
 
   it("every visible option maps to a real mode request (registry coverage)", () => {
     for (const opt of AKU_AGENT_MODE_OPTIONS) {
       expect(connectModeOptions(opt.value, null).mode).toBe(opt.value);
     }
+  });
+
+  it("the segments are exactly API / SSH — byo-apikey merged away (DR-057)", () => {
+    expect(AKU_AGENT_MODE_OPTIONS.map((o) => o.value)).toEqual(["api", "byo-ssh"]);
   });
 });
 
@@ -68,10 +68,17 @@ describe("agent-mode persistence", () => {
   });
 
   it("round-trips a selection through localStorage", () => {
-    saveAgentMode("byo-apikey");
-    expect(loadAgentMode()).toBe("byo-apikey");
+    saveAgentMode("api");
+    expect(loadAgentMode()).toBe("api");
+    saveAgentMode("byo-ssh");
+    expect(loadAgentMode()).toBe("byo-ssh");
     saveAgentMode("server");
     expect(loadAgentMode()).toBe("server");
+  });
+
+  it('migrates a stored "byo-apikey" to "api" (DR-057 merged the modes)', () => {
+    window.localStorage.setItem("weave.aku.agent-mode", "byo-apikey");
+    expect(loadAgentMode()).toBe("api");
   });
 
   it("rejects garbage (stale/foreign values must not lock the client into a bad hello)", () => {
