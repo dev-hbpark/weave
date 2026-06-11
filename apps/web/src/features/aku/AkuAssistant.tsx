@@ -45,6 +45,7 @@ export function AkuAssistant({
   defaultAddContainerId,
   agentSurface,
   onFramesAdded,
+  onPageActivate,
   onZoomToFrame,
 }: {
   readonly editor: Editor;
@@ -65,6 +66,10 @@ export function AkuAssistant({
   readonly agentSurface: AgentSurfacePolicy;
   /** WI-065 — fit the camera after the agent adds top-level frame(s). */
   readonly onFramesAdded?: (() => void) | undefined;
+  /** WI-169 — synchronous page activation when the agent CREATES a page
+   *  (weave.page.add / weave.page.duplicate ok). Rail-"+" parity: the host
+   *  selects + activates the new page so the agent's next edits land on it. */
+  readonly onPageActivate?: ((id: string) => void) | undefined;
   /** WI-125 — center+fit a frame by id (DesignPage's zoom-to-frame). Used to fit
    *  the camera to each NEW slide the agent creates, at its creation moment. */
   readonly onZoomToFrame?: ((frameId: string) => void) | undefined;
@@ -124,6 +129,7 @@ export function AkuAssistant({
     designLoaded,
     settings,
     ...(onFramesAdded !== undefined ? { onFramesAdded } : {}),
+    ...(onPageActivate !== undefined ? { onPageActivate } : {}),
   });
   const { geometry, beginMove, beginResize } = useAkuGeometry();
 

@@ -305,6 +305,12 @@ export function useAkuAgent(deps: {
    *  editor.exec and never trigger the UI's add-time fit, so without this an
    *  agent-built deck stays at the base ~100% view instead of the shared 70%). */
   readonly onFramesAdded?: () => void;
+  /** WI-169 — called synchronously when an `activatesPage` surface tool execs
+   *  ok (value = the new page's id). The host performs the SAME activation the
+   *  rail "+" does (select + setActivePageId), so the agent's next
+   *  omitted-containerId add lands on the page it just created instead of the
+   *  old active page. Page-bounded flavors only. */
+  readonly onPageActivate?: (id: string) => void;
   /** User-toggleable behavior flags (gear panel). Optional → defaults applied. */
   readonly settings?: AkuSettings;
   readonly url?: string;
@@ -504,6 +510,8 @@ export function useAkuAgent(deps: {
           rootId: String(depsRef.current.getDocument().root.id),
           activeContainerId: depsRef.current.getDefaultAddContainerId?.(),
         }),
+        // WI-169 — volatile callback, read per fire via depsRef (deps-guard).
+        onPageActivate: (id: string) => depsRef.current.onPageActivate?.(id),
       }),
     [agentSurface, roundGroup, commands],
   );

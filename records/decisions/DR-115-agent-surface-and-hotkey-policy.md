@@ -222,3 +222,40 @@ allow-list가 표면을 소유한다. 신규 커맨드 추가 시 각 flavor 표
    프로브 검증: mixed 45 / slide-deck 46 노출명 동결 + slide-deck 라이브
    편집 1턴 성공. DEV 진단 `[aku connect] tool surface frozen at connect`
    영구 유지(동결 집합이 작으면 이 가드의 회귀).
+
+## 8. WI-169 정책 확장 (4차 — 에이전트 페이지 생성·배치, 레일 패리티)
+
+사용자 보고(슬라이드 추가가 믹스드처럼 오프셋 배치 + 이전 페이지가 옆에 보임 +
+편집이 회색 매트에서 불가시)로 표면 정책에 4개 구조 결함이 확인되어 확장:
+
+1. **`activatesPage` 채널 (신규 어댑터 필드 + façade 주입 콜백)** —
+   페이지-생성 도구(`weave.page.add`, `weave.page.duplicate`)는 ok 결과
+   (신규 페이지 id)에 **exec 시점 동기**로 호스트의 `onPageActivate(id)`를
+   발화한다. pieces는 선언만(순수 유지), 해석은 façade(surfaceExec), 수행은
+   DesignPage(`setSelectedFrameId` + `clickActivatesPage` 게이트의
+   `setActivePageId` — 레일 "+"와 동일 쌍). 기존 WI-153 P4 활성화
+   (handleAgentZoomToFrame)는 changeStream 200ms 디바운스 뒤라, 에이전트의
+   직후 containerId-생략 add가 옛 페이지로 흐르는 레이스가 있었다 — 두 채널은
+   공존(생성=동기, 편집-중 카메라=디바운스).
+2. **page.add의 `frame` 비주소화** — 스키마에서 frame 제거 + mapInput이
+   FULL_FRAME 무조건 스탬프. 페이지 스택 전제(page-scope.ts: 모든 페이지 =
+   동일 좌표 FULL_FRAME)를 에이전트가 깰 수 없다.
+3. **`weave.preset.insertSlide` 제외 (§7.4 번복)** — §7.4는 "번역할 게 없는
+   pass-through"로 판정했으나, 프리셋 슬라이드 루트는 **믹스드-캔버스 박스**
+   ({0.3,0.3,0.4×0.4} root 직속)이고 라벨("슬라이드 추가")이 "새 슬라이드"
+   의도에서 page.add를 이긴다 — 페이지-바운드에서는 오프셋 "페이지"를 만드는
+   결함 경로. coverage test `PAGE_EXCLUDED`에 사유와 함께 등재. 페이지 생성
+   경로는 weave.page.add 단일.
+4. **add-time soft clamp (`intoActivePageClamped`)** — item.add/chart.add가
+   활성 페이지 타깃 + 절대 frame일 때 `clampFrameToPage`(D6 재사용)로 x/y만
+   당겨 `AGENT_ADD_MIN_OVERLAP = 0.05`(드래그 D6의 48px/720–1280px와 동일
+   차수의 순수-비율 미러)를 보장. 페이지가 가장자리에서 클립(D5)되는데 셀렉션
+   크롬은 body-portal이라 안 클립 → "회색 매트에서 아쿠가 돌아다님"의 정확한
+   메커니즘이었고, 완전-오프-페이지 착지를 표현 불가능하게 만든다. 내부
+   컨테이너 타깃은 비클램프(순수 mapInput은 내부 지오메트리를 모름).
+
+수용 잔여: (a) `weave.batch` 내부 page.add는 활성화 채널 밖(façade는 배치
+결과만 봄) — 스키마가 "페이지 추가는 별도 호출" 가이드 유지. (b) 활성화 →
+React 재렌더 → `getDefaultAddContainerId` 갱신은 다음 툴콜(서버 왕복) 전
+플러시 전제(왕복 ≫ 프레임). 라이브 프로브 1턴 검증: page.add(FULL_FRAME) →
+동기 활성화(신규 페이지만 렌더) → 파란 사각형이 신규 페이지 0.3,0.3에 착지.

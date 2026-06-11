@@ -1227,6 +1227,22 @@ function DesignPageBody() {
     [editorMode, presentationOrder, setActivePageId, handleZoomToFrame],
   );
 
+  // WI-169 — synchronous activation when the AGENT creates a page
+  // (weave.page.add / weave.page.duplicate ok). Rail-"+" parity: same
+  // select + activate pair as onAddPage, same clickActivatesPage gate.
+  // Without this the agent's next omitted-containerId add races the 200ms
+  // debounced camera path and lands on the OLD active page (invisible —
+  // non-active pages don't render).
+  const handleAgentPageActivate = useCallback(
+    (id: string) => {
+      setSelectedFrameId(id);
+      if (editorMode.rail.clickActivatesPage) {
+        setActivePageId(id);
+      }
+    },
+    [editorMode, setSelectedFrameId, setActivePageId],
+  );
+
   // WI-033 P2 dead-code cleanup — `enteredFrameStack` consumer +
   // `setEnteredFrameId` callback removed. Phase 12 drill-in mode is
   // deprecated (DR-017); the vm slot itself stays on agocraft until
@@ -2649,6 +2665,11 @@ function DesignPageBody() {
                                     // WI-065 — after the agent adds slide(s), fit the deck
                                     // at the shared 70% (agent edits skip the UI add-fit).
                                     onFramesAdded={handleFitAll}
+                                    // WI-169 — synchronous activation of a page the agent
+                                    // CREATES (page.add/duplicate ok): rail-"+" parity, so
+                                    // the agent's next add lands on its new page instead of
+                                    // racing the debounced camera path onto the old one.
+                                    onPageActivate={handleAgentPageActivate}
                                     // WI-125 — fit the camera to each NEW slide the agent
                                     // creates, at its creation moment. WI-153 P4 — the
                                     // agent wrapper also switches the active page on

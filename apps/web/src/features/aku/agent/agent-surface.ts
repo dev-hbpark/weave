@@ -54,8 +54,14 @@ export function bindAgentSurface(opts: {
   readonly baseSchemas: Readonly<Record<string, AgentCommandSpec>>;
   /** Live host values for mapInput — read per exec, never captured. */
   readonly getHost: () => AgentHostContext;
+  /** WI-169 — host-side page activation, fired synchronously when an
+   *  `activatesPage` adapter execs ok (the value is the new page's id). The
+   *  host wires the SAME state updates the rail "+" performs, so agent page
+   *  creation and rail page creation cannot drift. Optional: free-placement
+   *  flavors never bind it. */
+  readonly onPageActivate?: (id: string) => void;
 }): BoundAgentSurface {
-  const { policy, editor, commands, baseSchemas, getHost } = opts;
+  const { policy, editor, commands, baseSchemas, getHost, onPageActivate } = opts;
 
   // "all" = the identity triple: byte-identical to the pre-DR-115 wiring, so
   // free-placement flavors (mixed / canvas-board) cannot regress.
@@ -150,7 +156,20 @@ export function bindAgentSurface(opts: {
         mapped = input; // translation must never turn a valid call into a crash
       }
     }
-    return (editor.exec as ExecFn)(adapter.command, mapped, execOpts);
+    const result = (editor.exec as ExecFn)(adapter.command, mapped, execOpts);
+    // WI-169 — page-creating tools activate the new page SYNCHRONOUSLY at
+    // exec (rail-"+" parity). The debounced camera path (useAkuFrameCamera →
+    // handleAgentZoomToFrame) is 200ms behind the changeStream — too late for
+    // the agent's NEXT omitted-containerId add, which would land on the OLD
+    // active page. CommandResult is synchronous, so the ok/value check here
+    // never races the exec itself.
+    if (adapter.activatesPage === true && onPageActivate !== undefined) {
+      const r = result as { ok?: boolean; value?: unknown };
+      if (r !== null && typeof r === "object" && r.ok === true && typeof r.value === "string") {
+        onPageActivate(r.value);
+      }
+    }
+    return result;
   };
 
   const surfaceEditor = new Proxy(editor, {

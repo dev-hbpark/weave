@@ -349,6 +349,13 @@ export interface AgentToolAdapter {
    *  base spec (undefined when the catalogue has none). */
   readonly schema?: (base: AgentCommandSpec | undefined) => AgentCommandSpec;
   readonly mapInput?: (input: unknown, host: AgentHostContext) => unknown;
+  /** WI-169 — a PAGE-CREATING tool: an ok exec result (the new page's id)
+   *  makes that page the ACTIVE page, synchronously at exec (rail-"+"
+   *  parity). Declarative — the façade interprets it through an injected
+   *  host callback; pieces stay pure. Without this the agent builds into a
+   *  page that never renders (activePageOnly) and the next omitted-container
+   *  add races the debounced WI-153 P4 zoom-activation onto the OLD page. */
+  readonly activatesPage?: boolean;
 }
 
 /** WI-168 / DR-115 — the flavor-fit agent command surface. The internal

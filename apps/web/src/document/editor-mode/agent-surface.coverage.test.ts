@@ -25,7 +25,14 @@ const REGISTERED = buildWeaveCommands(noopTargets, defaultPresetRegistry()).map(
 
 /** Registered commands DELIBERATELY not exposed on the page-bounded surface.
  *  Adding a name here is the explicit triage decision — with a reason. */
-const PAGE_EXCLUDED: ReadonlyArray<string> = [];
+const PAGE_EXCLUDED: ReadonlyArray<string> = [
+  // WI-169 — preset slide roots are MIXED-CANVAS boxes ({x:0.3, y:0.3,
+  // 0.4×0.4} at the design root): on a page-bounded format that lands a
+  // "page" at an offset, breaking the FULL_FRAME stacking model. Its label
+  // ("슬라이드 추가") also out-competes weave.page.add for "new slide"
+  // intents. Page creation has exactly ONE agent path: weave.page.add.
+  "weave.preset.insertSlide",
+];
 
 function asAdapters(tools: typeof PAGE_AGENT_SURFACE.tools): ReadonlyArray<AgentToolAdapter> {
   if (tools === "all") throw new Error("expected an explicit allow-list");

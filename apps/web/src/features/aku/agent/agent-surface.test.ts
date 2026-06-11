@@ -226,6 +226,72 @@ describe("bindAgentSurface (WI-168 / DR-115)", () => {
     expect(calls).toEqual([{ name: "weave.a", input: { x: 1 } }]);
   });
 
+  it("onPageActivate fires SYNCHRONOUSLY on an ok activatesPage exec (the new page's id)", () => {
+    const { editor } = makeEditor(); // exec returns { ok: true, value: <name> }
+    const activated: string[] = [];
+    const bound = bindAgentSurface({
+      policy: {
+        tools: [
+          { exposedName: "weave.page.add", command: "weave.a", activatesPage: true },
+          { exposedName: "weave.b", command: "weave.b" },
+        ],
+      },
+      editor,
+      commands: makeRegistry(["weave.a", "weave.b"]),
+      baseSchemas: { ...SCHEMAS, "weave.page.add": SCHEMAS["weave.a"] as AgentCommandSpec },
+      getHost: () => HOST,
+      onPageActivate: (id) => activated.push(id),
+    });
+    const exec = (bound.editor as unknown as { exec(n: string, i: unknown): unknown }).exec;
+    exec("weave.page.add", {});
+    expect(activated).toEqual(["weave.a"]); // fake exec echoes the internal name as value
+    // Non-activating tools never fire it.
+    exec("weave.b", {});
+    expect(activated).toEqual(["weave.a"]);
+  });
+
+  it("onPageActivate does NOT fire on a failed exec or a non-string value", () => {
+    const activated: string[] = [];
+    const editor = {
+      exec: (name: string) =>
+        name === "weave.a" ? { ok: false, error: { code: "x" } } : { ok: true, value: 42 },
+    } as unknown as Editor;
+    const bound = bindAgentSurface({
+      policy: {
+        tools: [
+          { exposedName: "weave.a", command: "weave.a", activatesPage: true },
+          { exposedName: "weave.b", command: "weave.b", activatesPage: true },
+        ],
+      },
+      editor,
+      commands: makeRegistry(["weave.a", "weave.b"]),
+      baseSchemas: SCHEMAS,
+      getHost: () => HOST,
+      onPageActivate: (id) => activated.push(id),
+    });
+    const exec = (bound.editor as unknown as { exec(n: string, i: unknown): unknown }).exec;
+    exec("weave.a", {}); // ok: false
+    exec("weave.b", {}); // value not a string
+    expect(activated).toEqual([]);
+  });
+
+  it("a missing onPageActivate is safe — activatesPage execs still return normally", () => {
+    const { editor, calls } = makeEditor();
+    const bound = bindAgentSurface({
+      policy: { tools: [{ exposedName: "weave.a", command: "weave.a", activatesPage: true }] },
+      editor,
+      commands: makeRegistry(["weave.a"]),
+      baseSchemas: SCHEMAS,
+      getHost: () => HOST,
+    });
+    const result = (bound.editor as unknown as { exec(n: string, i: unknown): unknown }).exec(
+      "weave.a",
+      {},
+    );
+    expect((result as { ok: boolean }).ok).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
   it("non-exec editor members pass through the proxy", () => {
     const calls: unknown[] = [];
     const editor = {

@@ -7,7 +7,12 @@ import type { AgentCommandSpec } from "@agocraft/agent-client";
 import { describe, expect, it } from "vitest";
 import { FULL_FRAME } from "../../types.js";
 import type { AgentHostContext, AgentToolAdapter } from "../types.js";
-import { intoActivePage, PAGE_AGENT_SURFACE, pagePromptFragment } from "./agent-surface.js";
+import {
+  intoActivePage,
+  intoActivePageClamped,
+  PAGE_AGENT_SURFACE,
+  pagePromptFragment,
+} from "./agent-surface.js";
 
 const HOST: AgentHostContext = { rootId: "root-1", activeContainerId: "page-1" };
 const NO_PAGE: AgentHostContext = { rootId: "root-1", activeContainerId: undefined };
@@ -77,6 +82,61 @@ describe("intoActivePage (WI-168)", () => {
   });
 });
 
+describe("intoActivePageClamped (WI-169 — add-time soft clamp)", () => {
+  it("pulls an off-page frame back to the min-overlap band (clip-invisible add is unrepresentable)", () => {
+    const out = intoActivePageClamped(
+      { kind: "shape", frame: { x: 1.2, y: -2, width: 0.4, height: 0.3, rotation: 0 } },
+      HOST,
+    ) as { containerId: string; frame: { x: number; y: number; width: number } };
+    expect(out.containerId).toBe("page-1");
+    // clampAxis: [m - size, 1 - m] with m = 0.05 → x ∈ [-0.35, 0.95], y ∈ [-0.25, 0.95]
+    expect(out.frame.x).toBeCloseTo(0.95);
+    expect(out.frame.y).toBeCloseTo(-0.25);
+    expect(out.frame.width).toBe(0.4); // size untouched — position-only clamp (D6 parity)
+  });
+
+  it("an in-band frame passes through by reference (no needless copy)", () => {
+    const retargeted = intoActivePageClamped(
+      { kind: "shape", frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 } },
+      HOST,
+    );
+    expect(retargeted).toEqual({
+      kind: "shape",
+      containerId: "page-1",
+      frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 },
+    });
+  });
+
+  it("a frameless add (auto-layout container path) is only retargeted", () => {
+    expect(intoActivePageClamped({ kind: "text" }, HOST)).toEqual({
+      kind: "text",
+      containerId: "page-1",
+    });
+  });
+
+  it("an explicit non-active container is left alone — inner-frame geometry is unknown to a pure mapInput", () => {
+    const input = {
+      kind: "shape",
+      containerId: "inner-frame",
+      frame: { x: 5, y: 5, width: 0.4, height: 0.4, rotation: 0 },
+    };
+    expect(intoActivePageClamped(input, HOST)).toBe(input);
+  });
+
+  it("malformed frame numbers pass through unclamped (command validation owns them)", () => {
+    const out = intoActivePageClamped(
+      { kind: "shape", frame: { x: Number.NaN, y: 0, width: 0.4, height: 0.4 } },
+      HOST,
+    ) as { frame: { x: number } };
+    expect(Number.isNaN(out.frame.x)).toBe(true);
+  });
+
+  it("degenerate host → unchanged", () => {
+    const input = { kind: "shape", frame: { x: 5, y: 5, width: 0.4, height: 0.4 } };
+    expect(intoActivePageClamped(input, NO_PAGE)).toBe(input);
+  });
+});
+
 describe("weave.page.add adapter", () => {
   const pageAdd = adapterFor("weave.page.add");
 
@@ -88,12 +148,12 @@ describe("weave.page.add adapter", () => {
     });
   });
 
-  it("keeps a deliberate non-standard frame and styling passthroughs", () => {
-    const frame = { x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0 };
+  it("WI-169 — a frame override is IGNORED: every page is FULL_FRAME (stacking model)", () => {
+    const frame = { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotation: 0 };
     expect(pageAdd.mapInput?.({ frame, attrsOverride: { name: "p" } }, HOST)).toEqual({
       kind: "frame",
       containerId: "root-1",
-      frame,
+      frame: FULL_FRAME,
       attrsOverride: { name: "p" },
     });
   });
@@ -107,11 +167,15 @@ describe("weave.page.add adapter", () => {
     expect(out["containerId"]).toBe("root-1");
   });
 
-  it("schema drops kind/containerId and keeps frame/attrsOverride/units by reference", () => {
+  it("schema drops kind/containerId/frame and keeps attrsOverride/units by reference (WI-169: frame not agent-addressable)", () => {
     const spec = pageAdd.schema?.(ITEM_ADD_BASE);
     const props = (spec?.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
-    expect(Object.keys(props).sort()).toEqual(["attrsOverride", "frame", "units"]);
+    expect(Object.keys(props).sort()).toEqual(["attrsOverride", "units"]);
     expect((spec?.inputSchema as { required?: unknown }).required).toEqual([]);
+  });
+
+  it("activates the page it creates (rail-'+' parity — the façade fires onPageActivate)", () => {
+    expect(pageAdd.activatesPage).toBe(true);
   });
 
   it("schema loud-fails without a base spec (catalogue drift)", () => {
@@ -182,6 +246,30 @@ describe("weave.batch adapter (inner-op translation)", () => {
   it("no adapted ops → input unchanged (same reference)", () => {
     const input = { ops: [{ command: "weave.item.remove", input: { itemId: "x" } }] };
     expect(batch.mapInput?.(input, HOST)).toBe(input);
+  });
+});
+
+describe("weave.page.duplicate adapter (WI-169)", () => {
+  const pageDuplicate = adapterFor("weave.page.duplicate");
+
+  it("wraps the internal command 1:1 and activates the clone (rail onDuplicatePage parity)", () => {
+    expect(pageDuplicate.command).toBe("weave.page.duplicate");
+    expect(pageDuplicate.activatesPage).toBe(true);
+    expect(pageDuplicate.mapInput).toBeUndefined();
+  });
+});
+
+describe("page-surface composition (WI-169)", () => {
+  const tools = PAGE_AGENT_SURFACE.tools;
+  if (tools === "all") throw new Error("PAGE surface must be an explicit allow-list");
+  const exposed = tools.map((t) => (typeof t === "string" ? t : t.exposedName));
+
+  it("weave.preset.insertSlide is NOT exposed — page creation has one path (weave.page.add)", () => {
+    expect(exposed).not.toContain("weave.preset.insertSlide");
+  });
+
+  it("weave.page.duplicate stays exposed (moved from pass-through to adapter)", () => {
+    expect(exposed).toContain("weave.page.duplicate");
   });
 });
 

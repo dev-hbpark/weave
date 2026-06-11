@@ -17,6 +17,7 @@
 // base in — layering stays document ← features).
 
 import type { AgentCommandSpec } from "@agocraft/agent-client";
+import { clampFrameToPage } from "../../page-clamp.js";
 import { FULL_FRAME } from "../../types.js";
 import type { AgentHostContext, AgentSurfacePolicy, AgentToolAdapter } from "../types.js";
 
@@ -41,6 +42,54 @@ export function intoActivePage(input: unknown, host: AgentHostContext): unknown 
   const containerId = input["containerId"];
   if (containerId !== undefined && containerId !== host.rootId) return input;
   return { ...input, containerId: host.activeContainerId };
+}
+
+/** WI-169 — add-time soft min-overlap, as a parent-ratio constant. The drag
+ *  clamp (D6) derives ~48 design px from the live page DOM rect; mapInput is
+ *  pure (no DOM), so the agent add uses a fixed ratio of the same order
+ *  (48px on a 720–1280px page ≈ 0.04–0.07). Bleed stays allowed — only a
+ *  fully-off-page (clip-invisible, chrome-only) landing is unrepresentable. */
+const AGENT_ADD_MIN_OVERLAP = 0.05;
+
+/** `intoActivePage` + the D6 soft clamp at ADD time (WI-169): when the add
+ *  lands on the ACTIVE PAGE and carries an absolute frame, clamp x/y so at
+ *  least `AGENT_ADD_MIN_OVERLAP` of the item stays inside the page box —
+ *  the page clips at its edge (DR-111 D5), so an off-page add is invisible
+ *  content under visible (body-portal'd) selection chrome: the "Aku editing
+ *  in the gray matte" failure mode. Frames INSIDE other containers are left
+ *  alone (their geometry is unknown to a pure mapInput). */
+export function intoActivePageClamped(input: unknown, host: AgentHostContext): unknown {
+  const retargeted = intoActivePage(input, host);
+  if (
+    host.activeContainerId === undefined || // degenerate host — no page box to clamp against
+    !isRecord(retargeted) ||
+    retargeted["containerId"] !== host.activeContainerId
+  ) {
+    return retargeted;
+  }
+  const frame = retargeted["frame"];
+  if (
+    !isRecord(frame) ||
+    typeof frame["x"] !== "number" ||
+    typeof frame["y"] !== "number" ||
+    typeof frame["width"] !== "number" ||
+    typeof frame["height"] !== "number" ||
+    !Number.isFinite(frame["x"]) ||
+    !Number.isFinite(frame["y"])
+  ) {
+    return retargeted;
+  }
+  const clamped = clampFrameToPage(
+    {
+      x: frame["x"],
+      y: frame["y"],
+      width: frame["width"],
+      height: frame["height"],
+    },
+    { minX: AGENT_ADD_MIN_OVERLAP, minY: AGENT_ADD_MIN_OVERLAP },
+  );
+  if (clamped.x === frame["x"] && clamped.y === frame["y"]) return retargeted;
+  return { ...retargeted, frame: { ...frame, x: clamped.x, y: clamped.y } };
 }
 
 // ── schema overlay helpers (pure) ───────────────────────────────────────────
@@ -83,26 +132,31 @@ const PAGE_ITEM_ADD: AgentToolAdapter = {
   schema: (base) =>
     withDescription(
       requireBase("weave.item.add", base),
-      "ADD a new item (frame / text / image / video / shape / line / qr / embed) into the CURRENT PAGE or a container frame inside it. Omit containerId → the current page; pass containerId only to target a specific frame INSIDE the page. This tool never creates pages — to add a NEW page/slide use weave.page.add. For a chart use weave.chart.add. Pass frame for the 0..1 box, attrsOverride for per-kind content/style, and units to style it (fill/shadow/…) in the SAME call. CHECK THE TARGET CONTAINER'S LAYOUT FIRST (read it from the snapshot): if the container is ABSOLUTE (no auto-layout) you MUST pass a frame with width>0 AND height>0 — an absolute parent does NOT auto-position its children, so a missing/zero frame lands the item at zero size = invisible & uneditable. If the container has an AUTO-LAYOUT (flex/grid), OMIT the frame — the layout positions and sizes the child; do not fight it with an absolute frame. Do not assume a container is grid; verify.",
+      "ADD a new item (frame / text / image / video / shape / line / qr / embed) into the CURRENT PAGE or a container frame inside it. Omit containerId → the current page; pass containerId only to target a specific frame INSIDE the page. This tool never creates pages — to add a NEW page/slide use weave.page.add; NEVER lay slides out side-by-side as frames (frame coords are 0..1 RELATIVE TO THE PAGE and anything outside is CLIPPED at the page edge — invisible). For a chart use weave.chart.add. Pass frame for the 0..1 box, attrsOverride for per-kind content/style, and units to style it (fill/shadow/…) in the SAME call. CHECK THE TARGET CONTAINER'S LAYOUT FIRST (read it from the snapshot): if the container is ABSOLUTE (no auto-layout) you MUST pass a frame with width>0 AND height>0 — an absolute parent does NOT auto-position its children, so a missing/zero frame lands the item at zero size = invisible & uneditable. If the container has an AUTO-LAYOUT (flex/grid), OMIT the frame — the layout positions and sizes the child; do not fight it with an absolute frame. Do not assume a container is grid; verify.",
     ),
-  mapInput: intoActivePage,
+  mapInput: intoActivePageClamped,
 };
 
 /** weave.page.add — the wrapped page-creation tool. Internally a root-level
  *  full-size frame add (rail-"+" parity: DesignPage onAddPage execs the same
- *  shape), but the agent never needs to learn that equivalence — the tool
- *  NAME carries the model (DR-115 §2b). */
+ *  shape AND activates the new page — `activatesPage` carries the second
+ *  half), but the agent never needs to learn that equivalence — the tool
+ *  NAME carries the model (DR-115 §2b). WI-169: `frame` is NOT agent-
+ *  addressable — page-bounded formats stack every page as FULL_FRAME at the
+ *  same coordinates (page-scope.ts premise); a non-standard page box breaks
+ *  the matte/fit/stacking model (the "mixed-style page at an offset" defect). */
 const PAGE_PAGE_ADD: AgentToolAdapter = {
   exposedName: "weave.page.add",
   command: "weave.item.add",
+  activatesPage: true,
   schema: (base) => {
     const b = requireBase("weave.item.add", base);
     const baseProps = b.inputSchema["properties"];
     const props: Record<string, unknown> = {};
     if (isRecord(baseProps)) {
       // Argument shapes stay the base's by reference (no hand-copied drift);
-      // kind/containerId are stamped by mapInput and not agent-addressable.
-      for (const key of ["frame", "attrsOverride", "units"]) {
+      // kind/containerId/frame are stamped by mapInput and not agent-addressable.
+      for (const key of ["attrsOverride", "units"]) {
         if (baseProps[key] !== undefined) props[key] = baseProps[key];
       }
     }
@@ -113,7 +167,7 @@ const PAGE_PAGE_ADD: AgentToolAdapter = {
         properties: props,
         required: [],
         description:
-          "ADD a NEW page (slide) to the design. The page is created at full design size — omit frame unless you deliberately want a non-standard page box. Optional attrsOverride/units style the page background in the same call. New content then goes INTO the page via weave.item.add. This is the ONLY way to create a page on this design.",
+          "ADD a NEW page (slide) to the design. The page is always created at full design size and immediately becomes the CURRENT page — content added right after (weave.item.add with containerId omitted) lands on it. Optional attrsOverride/units style the page background in the same call. This is the ONLY way to create a page on this design.",
       },
     };
   },
@@ -123,7 +177,7 @@ const PAGE_PAGE_ADD: AgentToolAdapter = {
       ...base,
       kind: "frame",
       containerId: host.rootId,
-      frame: base["frame"] ?? FULL_FRAME,
+      frame: FULL_FRAME,
     };
   },
 };
@@ -134,7 +188,16 @@ const PAGE_CHART_ADD: AgentToolAdapter = {
   exposedName: "weave.chart.add",
   command: "weave.chart.add",
   schema: (base) => withPageContainerNote(requireBase("weave.chart.add", base)),
-  mapInput: intoActivePage,
+  mapInput: intoActivePageClamped,
+};
+
+/** weave.page.duplicate — pass-through command, but the clone becomes the
+ *  ACTIVE page (rail parity: DesignPage onDuplicatePage selects + activates
+ *  the clone). WI-169. */
+const PAGE_PAGE_DUPLICATE: AgentToolAdapter = {
+  exposedName: "weave.page.duplicate",
+  command: "weave.page.duplicate",
+  activatesPage: true,
 };
 
 /** weave.clipboard.paste — a paste with no/root target lands on the current
@@ -253,12 +316,17 @@ const PAGE_PASSTHROUGH_TOOLS: ReadonlyArray<string> = [
   "weave.dataset.add",
   "weave.dataset.update",
   "weave.dataset.remove",
-  "weave.preset.insertSlide",
+  // weave.preset.insertSlide is EXCLUDED (WI-169): preset roots are
+  // mixed-canvas boxes ({x:0.3, y:0.3, 0.4×0.4} at the design root) — on a
+  // page-bounded format that lands a "page" at an offset, breaking the
+  // FULL_FRAME stacking model. Its label ("슬라이드 추가") also out-competes
+  // weave.page.add for "new slide" intents. Page creation has ONE path here.
   "weave.clipboard.copy",
   "weave.clipboard.cut",
   "weave.item.duplicate",
   "weave.items.duplicate",
-  "weave.page.duplicate",
+  // weave.page.duplicate is enlisted as an ADAPTER (PAGE_PAGE_DUPLICATE) —
+  // same command, plus clone activation (WI-169).
   "weave.frame.setLayout",
   "weave.item.setLayoutChild",
   "weave.item.swapGridCells",
@@ -272,9 +340,9 @@ const PAGE_PASSTHROUGH_TOOLS: ReadonlyArray<string> = [
  *  weave.page.add tool name), so the prompt only anchors the LIVE state. */
 export function pagePromptFragment(host: AgentHostContext): string {
   if (host.activeContainerId === undefined) {
-    return "\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집합니다. 아직 활성 페이지가 없으니 먼저 weave.page.add 로 페이지를 만든 뒤 그 안에 콘텐츠를 넣으세요.";
+    return "\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집합니다. 아직 활성 페이지가 없으니 먼저 weave.page.add 로 페이지를 만든 뒤 그 안에 콘텐츠를 넣으세요. 페이지를 추가하면 그 페이지가 곧바로 현재 페이지가 됩니다.";
   }
-  return `\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집 중이며 현재 활성 페이지 frame id는 ${host.activeContainerId} 입니다. containerId 를 생략하면 현재 페이지에 들어갑니다. 새 페이지(슬라이드)는 weave.page.add 로 추가하세요.`;
+  return `\n\n[페이지 편집] 이 디자인은 페이지(슬라이드) 단위로 편집 중이며 현재 활성 페이지 frame id는 ${host.activeContainerId} 입니다. containerId 를 생략하면 현재 페이지에 들어갑니다. 새 페이지(슬라이드)는 weave.page.add 로만 추가하세요 — 추가하면 그 페이지가 곧바로 현재 페이지가 됩니다. 슬라이드를 frame 으로 나란히 배치하지 마세요(페이지 좌표는 0..1, 밖은 클립되어 보이지 않습니다).`;
 }
 
 /** Page-bounded (slide-deck / doc-page): closed allow-list — every registered
@@ -288,6 +356,7 @@ export const PAGE_AGENT_SURFACE: AgentSurfacePolicy = {
     ...PAGE_PASSTHROUGH_TOOLS,
     PAGE_ITEM_ADD,
     PAGE_PAGE_ADD,
+    PAGE_PAGE_DUPLICATE,
     PAGE_CHART_ADD,
     PAGE_PASTE,
     PAGE_REPARENT,
