@@ -177,13 +177,21 @@ allow-list가 표면을 소유한다. 신규 커맨드 추가 시 각 flavor 표
    열거식이면 신규 커맨드마다 mixed/canvas-board 등재가 추가 의무가 되는데,
    그 flavor들의 결정은 "전부 노출"(DR-064 유효 유지)이므로 의도를 그대로
    타입에 둔다.
-3. **등록 검증 시점: bind가 아니라 `list()`** — bind는 첫 렌더 useMemo에서
-   실행되고 커맨드 등록은 useWeaveEditor 이펙트(마운트 후)다. bind-시점
-   "unregistered command" loud-fail은 page-bounded flavor 전체를 블랭크
-   마운트시켰다(e2e 서브셋이 검출 → 수정). 정적 판정(중복 exposedName,
-   스키마 누락)만 bind-시점, 등록 검증은 connect-시점인 `list()`에서
-   loud-fail. 정적 드리프트는 `editor-mode/agent-surface.coverage.test.ts`
-   (등록 커맨드 전수 triage 강제)가 테스트 레벨에서 닫는다.
+3. **미등록 커맨드는 런타임 loud-fail 지점이 없다 (2차 수정으로 확정)** —
+   bind는 첫 렌더 useMemo, 커맨드 등록은 useWeaveEditor 이펙트(마운트 후).
+   bind-시점 "unregistered command" loud-fail은 page-bounded flavor 전체를
+   블랭크 마운트시켰다(e2e 서브셋이 검출). 1차 수정으로 `list()`(connect
+   시점) loud-fail로 옮겼으나 **connect-on-init(eager) 이펙트 역시 등록
+   이펙트보다 먼저 실행**되고 `connectAgocraftAgent`가 connect 동기 경로에서
+   `deriveCommandSchemas → list()`를 호출 → page-bounded connect 전체가
+   "에이전트 서버에 연결하지 못했어요"로 실패(사용자 보고 → 프로브 재현:
+   mixed 연결/slide-deck 실패 → connect-실패 console.error 추가로 원인
+   확정). 최종: 뷰는 lazy 해석 + 미등록 항목 스킵(free flavor raw
+   레지스트리의 transient-empty 의미론과 동일; 도구 광고 `describe`는 서버
+   요청마다 재평가되는 클로저라 등록 완료 후 전체 집합이 노출된다). 정적
+   판정(중복 exposedName, 스키마 누락)만 bind-시점 loud-fail. 등재-but-
+   미등록 드리프트는 `editor-mode/agent-surface.coverage.test.ts`(등록
+   커맨드 전수 triage 강제)가 테스트 레벨에서 닫는다.
 4. **`weave.preset.insertSlide`는 pass-through** — §2b는 어댑터 후보로
    적었으나 이 커맨드는 "root에 삽입"이 정답인 페이지-수명주기 커맨드라
    번역할 것이 없다(WI-167 Next의 제외 사례와 동일 판정).

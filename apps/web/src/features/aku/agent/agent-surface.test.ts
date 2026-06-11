@@ -115,19 +115,22 @@ describe("bindAgentSurface (WI-168 / DR-115)", () => {
     expect(() => bind({ tools: ["weave.a", "weave.a"] })).toThrow(/duplicate/);
   });
 
-  it("an unregistered command loud-fails at list() time, NOT bind time", () => {
-    // bind runs on first render BEFORE useWeaveEditor registers the command
-    // set — throwing there blanked every page-bounded mount (the WI-168 e2e
-    // regression). list() runs at connect time, after registration.
+  it("an unregistered command never throws — bind, list(), get(), has() all tolerate it", () => {
+    // bind runs on first render AND connect (deriveCommandSchemas → list())
+    // runs in the eager connect-on-init effect — BOTH before useWeaveEditor's
+    // registration effect populates the registry. Throwing at bind blanked
+    // every page-bounded mount; throwing at list() broke every page-bounded
+    // connect. The view resolves lazily and skips what is not registered yet;
+    // enlisted-but-never-registered drift is the coverage test's job.
     const { editor } = makeEditor();
     const bound = bindAgentSurface({
-      policy: { tools: ["weave.missing"] },
+      policy: { tools: ["weave.a", "weave.missing"] },
       editor,
       commands: makeRegistry(["weave.a"]),
       baseSchemas: { ...SCHEMAS, "weave.missing": SCHEMAS["weave.a"] as AgentCommandSpec },
       getHost: () => HOST,
     });
-    expect(() => bound.commands.list()).toThrow(/unregistered command/);
+    expect(bound.commands.list().map((c) => c.name)).toEqual(["weave.a"]);
     expect(bound.commands.has("weave.missing")).toBe(false);
     expect(bound.commands.get("weave.missing")).toBeUndefined();
   });

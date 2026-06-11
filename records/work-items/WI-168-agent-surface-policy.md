@@ -71,6 +71,18 @@
   - 검증: tsc clean · vitest 102파일/1042 green · 구조 게이트 5종 OK ·
     e2e 비교 서브셋 13파일 = 기준선 정확 복원(40 passed / 3 known-red:
     frame-handles:32, mode-gate-hardening:110, thumbnail-panel:216).
+- 2026-06-11 (후속 fix, 사용자 보고): **프레젠테이션(page-bounded) 모드에서
+  "에이전트 서버에 연결하지 못했어요" 배너** — P3에서 옮긴 `list()` loud-fail이
+  원인. connect-on-init(eager) 이펙트가 useWeaveEditor 등록 이펙트보다 먼저
+  실행되고 `connectAgocraftAgent`가 connect 동기 경로에서
+  `deriveCommandSchemas → commands.list()`를 호출 → 빈 레지스트리에서 throw →
+  connect 거부(조용히 삼켜짐). 프로브로 재현(mixed 연결·slide-deck 실패) 후
+  connect-실패 console.error를 추가해 원인 확정. 수정: `list()`는 미등록 항목
+  스킵(lazy resolve) — 도구 광고 `describe`는 서버 요청마다 재평가되는
+  클로저라 등록 완료 후 전체 집합 노출, 드리프트는 coverage test 소유.
+  connect-실패 console.error는 영구 유지(이번처럼 로컬 throw가 기본 배너
+  뒤로 숨는 클래스의 진단 통로). 프로브로 양 flavor `byo-ssh · sonnet-4-6`
+  연결 확인. DR-115 §7.3 갱신.
   - 잔여 리스크(수용): ① mapInput은 순수 입력 변환이라
     `frame.removeKeepingChildren`을 활성 페이지 자체에 적용하는 호출은
     막지 못함(문서 구조를 모름 — PAGE_AGENT_SURFACE doc comment에 기록).

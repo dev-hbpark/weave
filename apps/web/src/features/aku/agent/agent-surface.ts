@@ -13,16 +13,18 @@
 //     container / min-size) sits BELOW this one, so guards see the FINAL
 //     containerId. An unexposed name fails closed without executing.
 //
-// Misconfiguration loud-fails at the EARLIEST moment it is statically
-// decidable (retargetCommandSchemas precedent: loud-fail on missing keys):
+// Misconfiguration loud-fails ONLY where it is statically decidable:
 //   • duplicate exposedName / missing schema → at bind time (both resolve
 //     against static inputs — the policy and the catalogue).
-//   • unregistered command → at `list()` time, NOT bind time. bind runs in a
-//     useMemo on FIRST render, before useWeaveEditor's effect has registered
-//     the command set (the registry starts empty — see the [aku commands]
-//     debug effect); the bridge only calls list() at connect time, after
-//     registration completes. Validating registration at bind time crashed
-//     every page-bounded mount (the WI-168 e2e regression).
+//   • an UNREGISTERED command is NOT a runtime loud-fail anywhere: both bind
+//     (first-render useMemo) and connect (eager connect-on-init effect) run
+//     BEFORE useWeaveEditor's registration effect populates the registry —
+//     bind-time validation blanked every page-bounded mount, list()-time
+//     validation broke every page-bounded connect (deriveCommandSchemas calls
+//     list() synchronously inside connectAgocraftAgent). The view resolves
+//     lazily and skips what is not registered YET; enlisted-but-never-
+//     registered drift is enforced statically by
+//     editor-mode/agent-surface.coverage.test.ts.
 
 import type { AgentCommandSpec } from "@agocraft/agent-client";
 import type { Command, CommandRegistry } from "@agocraft/core";
@@ -108,18 +110,20 @@ export function bindAgentSurface(opts: {
       const adapter = adaptersByExposed.get(name);
       return adapter !== undefined && commands.has(adapter.command);
     },
-    // list() is the bridge's tool advertisement — by connect time registration
-    // is complete, so a hole here is real catalogue drift: scream.
+    // list() must NOT throw on an unresolved command: connectAgocraftAgent
+    // calls deriveCommandSchemas(commands) → list() SYNCHRONOUSLY at connect,
+    // and the eager connect-on-init effect runs BEFORE useWeaveEditor's
+    // registration effect — the registry is still empty then (probe-proven;
+    // throwing here broke every page-bounded connect). Skipping matches the
+    // raw registry's transient-emptiness semantics on free flavors: the
+    // bridge's tool advertisement (`describe`) is a lazy closure re-evaluated
+    // per server request, so the full set appears once registration lands.
+    // Real catalogue drift is owned statically by
+    // editor-mode/agent-surface.coverage.test.ts (exhaustiveness guard).
     list: () =>
-      [...adaptersByExposed.values()].map((adapter) => {
-        const command = resolveExposed(adapter);
-        if (command === undefined) {
-          throw new Error(
-            `agent-surface: tool "${adapter.exposedName}" wraps unregistered command "${adapter.command}"`,
-          );
-        }
-        return command;
-      }),
+      [...adaptersByExposed.values()]
+        .map((adapter) => resolveExposed(adapter))
+        .filter((command): command is Command => command !== undefined),
   };
 
   const surfaceExec: ExecFn = (commandName, input, execOpts) => {

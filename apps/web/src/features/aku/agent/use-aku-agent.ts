@@ -558,6 +558,10 @@ export function useAkuAgent(deps: {
         (err) => {
           connectingRef.current = null;
           setConnection(toConnection("error"));
+          // The eager connect-on-init path swallows this rejection (by design —
+          // the next submit retries), which makes LOCAL throws (e.g. a surface
+          // misconfiguration) invisible. Always leave the cause in the console.
+          console.error("[aku] connect failed:", err);
           throw err;
         },
       );
