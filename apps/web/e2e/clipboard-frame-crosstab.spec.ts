@@ -111,6 +111,17 @@ test("Frame with 5 children deep-copies: paste produces a new id for every desce
   // Copy the parent frame.
   await select(page, parentId);
   await page.keyboard.press("ControlOrMeta+C");
+  // WI-072 / WI-180 (DR-118) — in free placement, a selected FRAME is an
+  // explicit paste destination: keeping the source selected would nest the
+  // clone INSIDE it. Clear the selection so the paste resolves to the design
+  // root — this spec pins the deep-copy id-freshness contract, not the
+  // destination policy (editor-mode-add-container.spec.ts owns that).
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveVm?: { itemSelection: { clear: () => void } };
+    };
+    w.__weaveVm?.itemSelection.clear();
+  });
   await page.keyboard.press("ControlOrMeta+V");
 
   // A new root sibling has appeared.

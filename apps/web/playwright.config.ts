@@ -23,6 +23,14 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
+    // WI-186 — headless Chromium only synthesizes a native `paste` event from
+    // a synthetic Cmd+V when clipboard-read is granted. Real user input always
+    // fires it (the platform contract every canvas app's paste relies on), so
+    // granting here makes the e2e environment match reality — without it the
+    // marker-routing path (keydown yields → native paste routes) is dead in
+    // e2e and the clipboard specs pass or fail on the marker write's async
+    // resolution racing the next keypress.
+    permissions: ["clipboard-read", "clipboard-write"],
   },
   projects: [
     {

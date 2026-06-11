@@ -51,18 +51,6 @@ async function readLocked(page: Page, id: string): Promise<boolean> {
   }, id);
 }
 
-/** True multi-selection — helpers' setSelection falls back to repeated
- *  `set()` (last-wins single) when `addMany` is absent; the vm's real
- *  multi API is `setMany` (same call multi-toolbar.spec.ts uses). */
-async function setMultiSelection(page: Page, ids: ReadonlyArray<string>): Promise<void> {
-  await page.evaluate((targets) => {
-    const w = window as unknown as {
-      __weaveVm?: { itemSelection: { setMany: (xs: Iterable<unknown>) => void } };
-    };
-    w.__weaveVm?.itemSelection.setMany(targets);
-  }, ids);
-}
-
 /** Current single-selection item id, or "" when not a single selection. */
 async function readSingleSelection(page: Page): Promise<string> {
   return page.evaluate(() => {
@@ -153,7 +141,7 @@ test("⑭ Cmd+G wraps the selection in a frame; Cmd+Shift+G dissolves; both undo
   const [a, b] = await rootChildIds(page);
   const rootBefore = await readParentInfo(page, a!);
 
-  await setMultiSelection(page, [a!, b!]);
+  await setSelection(page, [a!, b!]);
   await page.keyboard.press("ControlOrMeta+g");
   // Both items share a NEW parent frame (not the design root).
   await expect
@@ -200,7 +188,7 @@ test("⑮ element right-click menu: duplicate / group / ungroup / lock rows", as
     page.locator(`[data-testid="frame-stage"] [data-frame-id="${id}"]`).first();
 
   // ── Group: multi-select both, right-click a member → "그룹".
-  await setMultiSelection(page, [a!, b!]);
+  await setSelection(page, [a!, b!]);
   await stageFrame(a!).click({ button: "right" });
   await expect(page.getByTestId("ctx-group")).toBeVisible();
   await page.getByTestId("ctx-group").click();

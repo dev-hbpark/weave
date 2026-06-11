@@ -196,6 +196,10 @@ test("Cmd+V pastes and selects the pasted item", async ({ page }) => {
   await setSingle(page, original);
 
   await page.keyboard.press("ControlOrMeta+C");
+  // WI-072 / WI-180 (DR-118) — a selected FRAME is an explicit paste
+  // destination in free placement; clear so the paste lands at the root
+  // (this spec pins paste auto-select, not the destination policy).
+  await clearSelection(page);
   await page.keyboard.press("ControlOrMeta+V");
 
   await expect.poll(async () => (await rootChildIds(page)).length).toBe(2);
@@ -225,6 +229,9 @@ test("Cmd+C/Cmd+V copies and pastes ALL items in a multi-selection", async ({ pa
   expect((await selectedIds(page)).length).toBe(2);
 
   await page.keyboard.press("ControlOrMeta+C");
+  // WI-072 / WI-180 (DR-118) — a frame-anchored selection routes the paste
+  // INTO that frame; clear so both clones land at the root.
+  await clearSelection(page);
   await page.keyboard.press("ControlOrMeta+V");
 
   // Both items were pasted → 4 total (not 3, which was the single-copy bug).

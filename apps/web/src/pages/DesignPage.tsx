@@ -209,7 +209,7 @@ import { useDesignSave } from "./design/hooks/use-design-save.js";
 import { useFrameFocus } from "./design/hooks/use-frame-focus.js";
 import { useHandTool } from "./design/hooks/use-hand-tool.js";
 import { useItemAdd } from "./design/hooks/use-item-add.js";
-import { useOsImagePaste } from "./design/hooks/use-os-image-paste.js";
+import { useOsPasteRouting } from "./design/hooks/use-os-paste-routing.js";
 import { useSelectionChromeRegistry } from "./design/hooks/use-selection-chrome-registry.js";
 import {
   LINE_CURVE,
@@ -1660,12 +1660,11 @@ function DesignPageBody() {
     designHeight: design.height,
   });
 
-  // WI-185 ⑰ — OS-clipboard image paste. Fires only when the INTERNAL
-  // clipboard is empty (the Cmd+V binding's probe skips preventDefault then,
-  // letting the native `paste` event reach this listener). Inserts through
-  // the same add path as the "+" menu so container resolution (InsertionPolicy),
-  // geometry, and post-add selection all match.
-  useOsImagePaste({
+  // WI-185 ⑰ + WI-186 — native paste router: weave marker → internal paste,
+  // OS image without marker → ingest (recency contract, DR-122). Image
+  // inserts go through the same add path as the "+" menu so container
+  // resolution (InsertionPolicy), geometry, and post-add selection all match.
+  useOsPasteRouting({
     addImage: (src) => addNewItem("image", undefined, src),
     onInfo: (message) => showExportImportInfo(message),
   });

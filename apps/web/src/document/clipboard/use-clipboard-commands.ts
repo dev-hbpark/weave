@@ -20,6 +20,7 @@ import { mountBroadcastChannelTransport } from "./broadcast-channel-transport.js
 import { clipboardStore } from "./clipboard-store.js";
 import { type PasteMode, SESSION_ORIGIN } from "./clipboard-types.js";
 import { mountLocalStorageTransport } from "./local-storage-transport.js";
+import { writeOsClipboardMarker } from "./os-clipboard-marker.js";
 import { type OfficePasteHint, officePasteHint } from "./paste-coord.js";
 
 export interface UseClipboardCommandsDeps {
@@ -142,17 +143,21 @@ export function useClipboardCommands(deps: UseClipboardCommandsDeps): UseClipboa
         // Copy every selected item (multi-select), in selection order.
         const itemIds = deps.resolveTargetIds();
         if (itemIds.length === 0) return;
-        editor.exec("weave.clipboard.copy", { itemIds });
+        const result = editor.exec("weave.clipboard.copy", { itemIds });
+        // WI-186 — stamp the OS clipboard so paste-time routing can tell
+        // the weave copy is the NEWEST copy (recency oracle, DR-122).
+        if (result.ok) writeOsClipboardMarker();
         return;
       }
       if (verb === "cut") {
         const itemIds = deps.resolveTargetIds();
         if (itemIds.length === 0) return;
         const containerId = deps.resolveSourceContainerId();
-        editor.exec("weave.clipboard.cut", {
+        const result = editor.exec("weave.clipboard.cut", {
           itemIds,
           ...(containerId !== undefined ? { containerId } : {}),
         });
+        if (result.ok) writeOsClipboardMarker();
         return;
       }
       if (verb === "paste") {

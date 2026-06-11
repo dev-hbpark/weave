@@ -31,6 +31,7 @@ import { createHotkeyRegistry } from "@agocraft/input/hotkey";
 import type { AITooltipHotkeyTable } from "@weave/design-system";
 import { useEffect, useMemo, useRef } from "react";
 import { nn } from "../../lib/nn.js";
+import { osMarkerRoutingActive } from "../clipboard/os-clipboard-marker.js";
 import { KNOWN_DOMAIN_KINDS } from "../domain-kinds.js";
 import { croppingState, isCroppingNow } from "../interactions/cropping-state.js";
 
@@ -248,14 +249,22 @@ export function setClipboardDispatcher(fn: (verb: ClipboardVerb) => void): () =>
   };
 }
 
-/** WI-185 ⑰ — internal-store probe for the plain-paste binding. When the
- *  store is EMPTY, the Cmd+V binding skips its manual preventDefault and
- *  internal dispatch entirely, so the browser fires a real `paste` event
- *  and the host's OS-clipboard image listener (use-os-image-paste) can take
- *  over. When the store has items the internal paste wins, exactly as
- *  before — a residual: an internal copy shadows OS-clipboard images for
- *  the session (resolving recency would need writing a weave marker into
- *  the OS clipboard on copy; see WI-185 record). */
+/** WI-186 — direct clipboard-verb dispatch for the native `paste` event
+ *  router (`use-os-paste-routing`). Same host slot the hotkey actions fire
+ *  through; a no-op until the host registers its dispatcher. */
+export function dispatchClipboardVerb(verb: ClipboardVerb): void {
+  clipboardDispatcher?.(verb);
+}
+
+/** WI-185 ⑰ — internal-store probe for the plain-paste binding's LEGACY
+ *  routing (marker write never succeeded — see `os-clipboard-marker.ts`).
+ *  When the store is EMPTY, the Cmd+V binding skips its manual
+ *  preventDefault and internal dispatch entirely, so the browser fires a
+ *  real `paste` event and the host's paste router (use-os-paste-routing)
+ *  can ingest an OS-clipboard image. When the store has items the internal
+ *  paste wins at keydown — the WI-185 residual (an internal copy shadows
+ *  OS images for the session), now resolved by WI-186's marker routing
+ *  whenever the marker write works. */
 let clipboardHasItemsProbe: (() => boolean) | undefined;
 export function setClipboardHasItemsProbe(fn: () => boolean): () => void {
   clipboardHasItemsProbe = fn;
@@ -1203,12 +1212,17 @@ export function useEditorHotkeys(editor: Editor): AITooltipHotkeyTable {
           action: (ctx) => {
             // WI-074 — while an image crop is open, the inline editor owns input.
             if (isTextEditingTarget(ctx.event.target) || isCroppingNow()) return;
-            // WI-185 ⑰ — plain paste with an EMPTY internal store falls
-            // through to the native `paste` event (preventDefault here
-            // would suppress that event), where the OS-clipboard image
-            // listener picks it up. Internal items keep priority.
-            if (cmd.id === "weave.clipboard.paste" && clipboardHasItemsProbe?.() !== true) {
-              return;
+            // WI-185 ⑰ / WI-186 — plain paste routes through the NATIVE
+            // `paste` event whenever marker routing is active (a weave copy
+            // successfully stamped the OS clipboard): yield here — no
+            // preventDefault — and the window router (use-os-paste-routing)
+            // picks internal vs OS by marker presence. Marker never written
+            // or write failed → legacy probe routing: an EMPTY store falls
+            // through to the native event (OS image path), a non-empty one
+            // pastes internal at keydown, exactly as before WI-186.
+            if (cmd.id === "weave.clipboard.paste") {
+              if (osMarkerRoutingActive()) return;
+              if (clipboardHasItemsProbe?.() !== true) return;
             }
             // Clipboard bindings opted out of auto-preventDefault — replicate it
             // for the non-text (canvas) path so the browser default stays suppressed.

@@ -302,14 +302,17 @@ export async function execReparent(
   }, entries);
 }
 
-/** WI-039 — set the editor's item selection to the given ids. Mirrors
- *  the multi-toolbar / multi-marquee helpers. */
+/** WI-039 / WI-186 — set the editor's item selection to the given ids.
+ *  Single id → `set` (kind:"single" state, what `readSingleSelection`-style
+ *  assertions expect); 2+ ids → `setMany` (the real multi-select API — the
+ *  old `addMany` probe hit a nonexistent method and fell back to repeated
+ *  `set()`, silently collapsing to last-wins single selection). */
 export async function setSelection(page: Page, ids: ReadonlyArray<string>): Promise<void> {
   await page.evaluate((targets) => {
     type Vm = {
       itemSelection: {
         set: (x: unknown) => void;
-        addMany?: (xs: ReadonlyArray<unknown>) => void;
+        setMany: (xs: Iterable<unknown>) => void;
         clear: () => void;
       };
     };
@@ -321,10 +324,6 @@ export async function setSelection(page: Page, ids: ReadonlyArray<string>): Prom
       vm.itemSelection.set(targets[0]);
       return;
     }
-    if (typeof vm.itemSelection.addMany === "function") {
-      vm.itemSelection.addMany(targets);
-      return;
-    }
-    for (const id of targets) vm.itemSelection.set(id);
+    vm.itemSelection.setMany(targets);
   }, ids);
 }
