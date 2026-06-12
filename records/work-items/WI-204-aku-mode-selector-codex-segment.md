@@ -43,8 +43,15 @@
   워크트리 베이스라인(678f019)에서 동일 spec(text-item V-Align/textOverflow ·
   theme-overlay-chrome:45 · toolbar-overflow:21 등) 동일 실패 재현 — 본 변경과
   무관한 선재 환경 조건으로 판정(WI-153 "전체 스위트 green은 기준선 아님").
-- 라이브 패리티(서버 codex-ssh 승인 + 실제 태스크)는 운영 박스에 codex 설치 후
-  (small-think WI-052 § 후속 Oracle runbook) 별도 확인.
+- **라이브 패리티 PASS (2026-06-13, 로컬 agent-server + 실제 codex
+  app-server):** 세그먼트 3종 노출(["API","SSH","Codex"]) → Codex 선택 →
+  재연결 후 serverInfo 칩 `codex-ssh`(modeSource:client) → 실제 태스크에서
+  `weave.item.add` 2건 ok → `end_turn` → 토큰-only 비용 푸터
+  "입력 170k · 출력 578 토큰 · Session 6% · 주간 23%(+<1%)" (costUsd 없음,
+  윈도우 % + taskDelta 정상). 첫 시도에서 MCP 도구 호출 전수 실패
+  ("user rejected MCP tool call") — 원인은 codex의 MCP 승인 elicitation
+  게이트로, small-think 측에서 수정(WI-052/DR-066 §5 증보; weave 코드 무관).
+  운영 박스(Oracle) codex 온보딩 runbook은 여전히 별도 후속.
 
 ## 동반 수정 (선재 lint 적자 — 별도 커밋)
 
