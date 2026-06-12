@@ -278,7 +278,10 @@ function LayoutLine({
         margin: 0,
         cursor: vertical ? "col-resize" : "row-resize",
         touchAction: "none",
-        zIndex: 49,
+        // WI-196 — selection-chrome layer (z 40, same as the SelectionLayer
+        // resize/rotate handles + rubber-band), so contextual menus (z 50) and
+        // the Aku panel (z 48) draw ABOVE these inner-element layout handles.
+        zIndex: 40,
       }}
     />,
     document.body,

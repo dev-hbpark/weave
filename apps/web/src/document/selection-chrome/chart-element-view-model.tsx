@@ -370,7 +370,10 @@ function HandleButton({
         cursor: CURSOR_BY_AXIS[anchor.axis],
         padding: 0,
         touchAction: "none",
-        zIndex: 50,
+        // WI-196 — selection-chrome layer: sit at the SAME z as the SelectionLayer
+        // resize/rotate handles + rubber-band (z 40), so contextual menus (z 50)
+        // and the Aku panel (z 48) draw ABOVE these inner-element handles.
+        zIndex: 40,
         // Hidden chart-level handles: invisible + click-through until revealed.
         opacity: visible ? 1 : 0,
         pointerEvents: visible ? "auto" : "none",
@@ -509,7 +512,9 @@ function BoundOutline({ bounds }: { readonly bounds: ChartElementBounds }): JSX.
         borderRadius: 3,
         boxSizing: "border-box",
         pointerEvents: "none",
-        zIndex: 49,
+        // WI-196 — just below this mark's handles (z 40); both within the
+        // selection-chrome band, under contextual menus / the Aku panel.
+        zIndex: 39,
       }}
     />,
     document.body,

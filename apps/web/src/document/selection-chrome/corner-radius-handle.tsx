@@ -246,7 +246,10 @@ function Grip({ corner, itemId, kind, editor, geom, radii, split }: GripProps): 
         cursor: "pointer",
         padding: 0,
         touchAction: "none",
-        zIndex: 50,
+        // WI-196 — selection-chrome layer (z 40, same as the SelectionLayer
+        // resize/rotate handles + rubber-band), so contextual menus (z 50) and
+        // the Aku panel (z 48) draw ABOVE this inner-element handle.
+        zIndex: 40,
       }}
     />,
     document.body,
