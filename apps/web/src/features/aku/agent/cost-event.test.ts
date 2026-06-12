@@ -118,10 +118,12 @@ describe("costFromEvent (WI-176)", () => {
 });
 
 describe("cost formatting", () => {
-  it("compacts token counts (k-suffix at 1000, trailing .0 trimmed)", () => {
+  it("compacts token counts (k at 1000, m at 1000000, trailing .0 trimmed)", () => {
     expect(formatTokens(999)).toBe("999");
     expect(formatTokens(1234)).toBe("1.2k");
     expect(formatTokens(12000)).toBe("12k");
+    expect(formatTokens(4150487)).toBe("4.2m");
+    expect(formatTokens(2000000)).toBe("2m");
   });
 
   it("USD: 4 decimals under $1 (estimate precision), 2 above", () => {
@@ -129,7 +131,7 @@ describe("cost formatting", () => {
     expect(formatUsd(2.345)).toBe("$2.35");
   });
 
-  it("footer line folds cache reads/writes into INPUT (what actually entered the model)", () => {
+  it("footer line folds cache reads/writes into INPUT but breaks out the cache-read mass (WI-211)", () => {
     expect(
       formatCostLine({
         inputTokens: 1200,
@@ -138,7 +140,7 @@ describe("cost formatting", () => {
         cacheWriteTokens: 800,
         costUsd: 0.0345,
       }),
-    ).toBe("입력 58k · 출력 3.4k 토큰 · $0.0345");
+    ).toBe("입력 58k (캐시 56k) · 출력 3.4k 토큰 · $0.0345");
   });
 
   it("footer omits the dollar part when costUsd is absent (tokens-only servers)", () => {
@@ -183,7 +185,7 @@ describe("cost formatting", () => {
           { window: "seven_day", utilization: 0.41 },
         ],
       }),
-    ).toBe("입력 58k · 출력 3.4k 토큰 · $0.0345 · Session 23% · 주간 41%");
+    ).toBe("입력 58k (캐시 56k) · 출력 3.4k 토큰 · $0.0345 · Session 23% · 주간 41%");
   });
 
   it("subscription mode (ssh) shows 구독 instead of the dollar estimate, keeping the windows", () => {
@@ -202,7 +204,7 @@ describe("cost formatting", () => {
           { window: "seven_day", utilization: 0.41 },
         ],
       }),
-    ).toBe("입력 58k · 출력 3.4k 토큰 · 구독 · Session 23% · 주간 41%");
+    ).toBe("입력 58k (캐시 56k) · 출력 3.4k 토큰 · 구독 · Session 23% · 주간 41%");
   });
 
   it("subscription mode without windows still shows 구독 (never the dollar)", () => {

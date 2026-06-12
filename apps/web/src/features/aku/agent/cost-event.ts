@@ -72,12 +72,13 @@ export function costFromEvent(event: unknown): AkuCostRecord | undefined {
   };
 }
 
-/** 1234 → "1.2k", 12000 → "12k", 999 → "999" — 푸터용 압축 토큰 수. */
+/** 1234 → "1.2k", 12000 → "12k", 4150487 → "4.2m", 999 → "999" — 푸터용 압축 토큰 수.
+ *  m 단위는 실측 필요(byo-ssh 캐시 재독이 태스크당 수백만 토큰 — "4150.5k"는 못 읽는다). */
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
-  const k = n / 1000;
-  const s = k.toFixed(1);
-  return `${s.endsWith(".0") ? s.slice(0, -2) : s}k`;
+  const isM = n >= 1_000_000;
+  const s = (n / (isM ? 1_000_000 : 1000)).toFixed(1);
+  return `${s.endsWith(".0") ? s.slice(0, -2) : s}${isM ? "m" : "k"}`;
 }
 
 /** $1 미만은 소수 4자리(추정 비용의 유효 자릿수), 이상은 2자리. */
@@ -143,13 +144,20 @@ export function formatLimitsLine(limits: ReadonlyArray<AkuLimitWindow>): string 
 }
 
 /** 버블 푸터 한 줄 — 입력은 캐시 읽기/쓰기 포함 총량 (모델에 실제로 들어간 토큰).
+ *  캐시 재독분(cacheRead)이 있으면 "(캐시 Nk)"로 분리 표기한다(WI-211) — 입력 토큰의
+ *  대부분이 10% 단가의 캐시 재독이라, 합산만 보여주면 모델·모드 간 토큰 격차가 실비용
+ *  격차로 오해된다(small-think DR-071의 발단). 정확 분해(읽기/쓰기 구분)는 호버 툴팁.
  *  구독 모드(byo-ssh/codex-ssh, `subscription:true`)면 예상비용($)을 숨기고 "구독"으로
  *  표기한다 — 구독제는 토큰당 과금이 아니므로 추정 달러는 오해를 부른다. 실 사용량은
  *  뒤에 붙는 구독 윈도우("Session 23% · 주간 41%", 증가분)로 본다. api 모드는 종전대로
  *  실제 추정 달러를 표시. */
 export function formatCostLine(c: AkuCostRecord): string {
   const input = c.inputTokens + c.cacheReadTokens + c.cacheWriteTokens;
-  const parts = [`입력 ${formatTokens(input)}`, `출력 ${formatTokens(c.outputTokens)} 토큰`];
+  const cacheSuffix = c.cacheReadTokens > 0 ? ` (캐시 ${formatTokens(c.cacheReadTokens)})` : "";
+  const parts = [
+    `입력 ${formatTokens(input)}${cacheSuffix}`,
+    `출력 ${formatTokens(c.outputTokens)} 토큰`,
+  ];
   if (c.subscription === true) parts.push("구독");
   else if (c.costUsd !== undefined) parts.push(formatUsd(c.costUsd));
   if (c.limits !== undefined && c.limits.length > 0) parts.push(formatLimitsLine(c.limits));
