@@ -10,3 +10,5 @@ coverage
 test-results
 playwright-report
 .last-run.json
+# one-off captures for the Confluence service manual (WI-191) — regenerable
+manual-shots
