@@ -24,6 +24,7 @@ import type {
   Item as AgocraftItem,
   BuiltinItemFrame as AgocraftItemFrame,
   Unit as AgocraftUnit,
+  AutoGridSpec,
   LayoutSpec,
 } from "@agocraft/core";
 import {
@@ -203,6 +204,13 @@ export interface AddItemInput {
    *  every calendar date under the "SAT" header text) instead of the region's
    *  layout frame. Needs no design px, so it is stamped unconditionally. */
   readonly enforceContainerIsFrame?: boolean;
+  /** WI-199 / DR-128 — agent-only grid-capacity guard. When `true` and the
+   *  container is an "auto-managed" auto-grid (no `areas` / `*Repeat`), the add
+   *  GROWS the grid's track count (`gridSpecForChildCount`) if the new child
+   *  would otherwise exceed capacity and stack onto the last cell. Set ONLY by
+   *  aku's `transformInput` — manual toolbar adds keep their deliberate track
+   *  count untouched. */
+  readonly enforceGridCapacity?: boolean;
 }
 export interface RemoveItemInput {
   readonly itemId: string;
@@ -710,6 +718,142 @@ function normalizeLayoutSpec(layout: LayoutSpec | undefined): LayoutSpec | undef
   return layout;
 }
 
+// ── WI-199 / DR-128 — nested-layout add support ──────────────────────────────
+// The @agocraft/layout engine reflows ONE level only (onChildAdd / onFrameChanged
+// reposition a parent's DIRECT children, never grandchildren), and onChildAdd
+// reads the parent's STORED grid spec (it never grows the track count). So adding
+// an item to a nested grid/flex left grandchildren stale and overflowed a grid's
+// cells — visibly broken until the user resized a container (which re-runs that
+// one level). These host-side helpers close both gaps without re-implementing any
+// layout math: grid-grow regenerates the spec via the same gridSpecForChildCount
+// used at creation; the cascade re-enters the engine's own onFrameChanged top-down.
+
+function frameEqualsRatio(
+  a: AgocraftItemFrame | undefined,
+  b: AgocraftItemFrame | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return (
+    a.x === b.x &&
+    a.y === b.y &&
+    a.width === b.width &&
+    a.height === b.height &&
+    (a.rotation ?? 0) === (b.rotation ?? 0)
+  );
+}
+
+function itemFrameOf(item: AgocraftItem | undefined): AgocraftItemFrame | undefined {
+  return (item?.attrs as { frame?: AgocraftItemFrame } | undefined)?.frame;
+}
+
+function itemLayoutOf(item: AgocraftItem | undefined): LayoutSpec | undefined {
+  return (item?.attrs as { layout?: LayoutSpec } | undefined)?.layout;
+}
+
+/** A frame the cascade should descend into: it owns a flex/grid layout AND has
+ *  at least one child whose position that layout manages. */
+function isReflowContainer(item: AgocraftItem | undefined): boolean {
+  if (item === undefined || item.children.length === 0) return false;
+  const k = itemLayoutOf(item)?.kind;
+  return k === "auto-flex" || k === "auto-grid";
+}
+
+/** The frame an `item.attrs` patch SETS (its `after.frame`), if any. */
+function frameFromAttrsPatch(p: Patch): AgocraftItemFrame | undefined {
+  if (p.type !== "item.attrs") return undefined;
+  return (p as { after?: { frame?: AgocraftItemFrame } }).after?.frame;
+}
+
+/** #3 — when adding to an "auto-managed" auto-grid would exceed its current track
+ *  capacity (so the new child stacks onto the last cell), return a grown spec
+ *  sized for the new child count; otherwise undefined. `current` is the normalized
+ *  stored spec. A deliberately-configured grid (template `areas` or auto-`*Repeat`)
+ *  is never grown — its track count is left to the author. */
+function grownGridSpec(
+  current: LayoutSpec | undefined,
+  newChildCount: number,
+): AutoGridSpec | undefined {
+  if (current === undefined || current.kind !== "auto-grid") return undefined;
+  const g = current as AutoGridSpec;
+  if (g.areas !== undefined || g.columnsRepeat !== undefined || g.rowsRepeat !== undefined) {
+    return undefined;
+  }
+  const capacity = Math.max(1, g.columns.length) * Math.max(1, g.rows.length);
+  if (newChildCount <= capacity) return undefined;
+  const grown = gridSpecForChildCount(newChildCount, g);
+  if (grown.columns.length === g.columns.length && grown.rows.length === g.rows.length) {
+    return undefined;
+  }
+  return grown;
+}
+
+/** #1 — reflow the descendants of a container whose own frame just changed
+ *  (`oldFrame`→`newFrame`). Re-enters the engine's `onFrameChanged` and keeps ONLY
+ *  the patches for the container's OWN children — the engine's block-2 output
+ *  (which targets the container's SIBLINGS, not its children) is dropped by the
+ *  `directChildIds` filter, so we never double-touch what onChildAdd already
+ *  emitted. Recurses into any child that is itself a reflow container whose frame
+ *  moved. Reads the pre-add document; returns extra reflow Patches. Depth-capped. */
+function relayoutContainerSubtree(
+  doc: CommandContext["document"],
+  containerId: string,
+  oldFrame: AgocraftItemFrame,
+  newFrame: AgocraftItemFrame,
+  depth: number,
+): Patch[] {
+  if (depth <= 0) return [];
+  const container = findItemDeep(doc, containerId);
+  if (container === undefined || container.children.length === 0) return [];
+  const directChildIds = new Set(container.children.map((c) => String(c.id)));
+  const out: Patch[] = [];
+  const childPatches = getLayoutEngine().onFrameChanged({
+    root: doc.root,
+    itemId: container.id,
+    oldFrame,
+    newFrame,
+  });
+  for (const p of childPatches) {
+    if (p.type !== "item.attrs") continue;
+    const childId = String(p.itemId);
+    if (!directChildIds.has(childId)) continue; // drop block-2 (sibling) output
+    out.push(p);
+    const childNode = findItemDeep(doc, childId);
+    const childOld = itemFrameOf(childNode);
+    const childNew = frameFromAttrsPatch(p);
+    if (
+      childOld !== undefined &&
+      childNew !== undefined &&
+      isReflowContainer(childNode) &&
+      !frameEqualsRatio(childOld, childNew)
+    ) {
+      out.push(...relayoutContainerSubtree(doc, childId, childOld, childNew, depth - 1));
+    }
+  }
+  return out;
+}
+
+/** #1 — given the sibling-shift patches an add produced, cascade a subtree reflow
+ *  into every sibling that is itself a reflow container whose frame changed. */
+function cascadeReflowFromSiblingPatches(
+  doc: CommandContext["document"],
+  siblingPatches: ReadonlyArray<Patch>,
+): Patch[] {
+  const out: Patch[] = [];
+  for (const sp of siblingPatches) {
+    if (sp.type !== "item.attrs") continue;
+    const sibId = String(sp.itemId);
+    const sibNode = findItemDeep(doc, sibId);
+    if (!isReflowContainer(sibNode)) continue;
+    const sibOld = itemFrameOf(sibNode);
+    const sibNew = frameFromAttrsPatch(sp);
+    if (sibOld === undefined || sibNew === undefined || frameEqualsRatio(sibOld, sibNew)) {
+      continue;
+    }
+    out.push(...relayoutContainerSubtree(doc, sibId, sibOld, sibNew, 12));
+  }
+  return out;
+}
+
 export function buildWeaveCommands(
   targets: WeaveCommandTargets,
   presetRegistry: PresetRegistry = defaultPresetRegistry(),
@@ -871,17 +1015,38 @@ export function buildWeaveCommands(
       }
       let stagedItem: AgocraftItem = agoItem;
       let layoutSiblingPatches: ReadonlyArray<Patch> = [];
+      // WI-199 / DR-128 — when a grid grows to fit the new child (#3) we emit an
+      // `item.layout` patch so the bigger track count persists & inverts.
+      let gridGrowPatch: Patch | undefined;
       if (LAYOUT_FEATURE_ENABLED && containerItem !== undefined) {
         // Normalize the parent's layout for the engine read: @agocraft/layout's
         // onParentResize dereferences spec.padding.left unguarded, so a parent
         // whose stored layout lacks padding would crash onChildAdd. This guards
         // ANY parent (even a layout stored before normalize-on-set landed).
         const parentLayout = (containerItem.attrs as { layout?: LayoutSpec } | undefined)?.layout;
+        const normalizedLayout = normalizeLayoutSpec(parentLayout);
+        // WI-199 / DR-128 #3 — AGENT-ONLY grid-capacity grow. If adding this child
+        // would overflow an auto-managed grid's tracks (→ stack onto the last
+        // cell), regenerate the spec for the new child count and run onChildAdd
+        // against the grown spec so the new child + siblings land in real cells.
+        let effectiveLayout = normalizedLayout;
+        if (input.enforceGridCapacity === true) {
+          const grown = grownGridSpec(normalizedLayout, container.children.length + 1);
+          if (grown !== undefined) {
+            effectiveLayout = grown;
+            gridGrowPatch = {
+              type: "item.layout",
+              itemId: containerItem.id,
+              before: parentLayout,
+              after: grown,
+            };
+          }
+        }
         const safeParent =
-          parentLayout !== undefined
+          effectiveLayout !== undefined
             ? {
                 ...containerItem,
-                attrs: { ...containerItem.attrs, layout: normalizeLayoutSpec(parentLayout) },
+                attrs: { ...containerItem.attrs, layout: effectiveLayout },
               }
             : containerItem;
         const result = getLayoutEngine().onChildAdd({ parent: safeParent, newChild: agoItem });
@@ -924,10 +1089,21 @@ export function buildWeaveCommands(
         }
       }
 
+      // WI-199 / DR-128 #1 — cascade a subtree reflow into every sibling that is
+      // itself a nested flex/grid container whose frame this add changed. The
+      // engine reflows one level only, so without this a nested container's
+      // grandchildren stay sized for its OLD box (visibly broken until a manual
+      // resize re-runs that level). No-op when the changed siblings are leaves.
+      const cascadePatches: ReadonlyArray<Patch> =
+        LAYOUT_FEATURE_ENABLED && layoutSiblingPatches.length > 0
+          ? cascadeReflowFromSiblingPatches(ctx.document, layoutSiblingPatches)
+          : [];
+
       // WI-024 Phase 2b — emit self-contained `item.create` (carries the full
       // subtree); `applyPatch` materializes it and its inverse removes it. No
       // PendingCreations side-channel.
       const patches: Patch[] = [
+        ...(gridGrowPatch !== undefined ? [gridGrowPatch] : []),
         {
           type: "item.create",
           parentId: container.id,
@@ -935,6 +1111,7 @@ export function buildWeaveCommands(
           item: serializeItemSubtree(stagedItem),
         },
         ...layoutSiblingPatches,
+        ...cascadePatches,
       ];
       return ok(String(stagedItem.id), patches);
     },

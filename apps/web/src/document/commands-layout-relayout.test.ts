@@ -18,6 +18,7 @@ import type { Patch } from "@agocraft/core";
 import {
   type Document as AgocraftDocument,
   type Item as AgocraftItem,
+  type AutoGridSpec,
   type CommandContext,
   createAutoFlexChildPolicy,
   createAutoFlexSpec,
@@ -571,6 +572,263 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       expect(layoutPatches).toHaveLength(1);
       // No child rearrangement when switching to free placement.
       expect(attrsPatches).toHaveLength(0);
+    });
+  },
+);
+
+// ── WI-199 / DR-128 — nested-layout add: cascade relayout + grid track grow ──
+
+/** A flat-attrs accessor for the `frame` an item.attrs patch sets. */
+function patchFrame(p: Patch): { x: number; y: number; width: number; height: number } | undefined {
+  if (p.type !== "item.attrs") return undefined;
+  return (p as { after?: { frame?: { x: number; y: number; width: number; height: number } } })
+    .after?.frame;
+}
+
+/** Build a CommandContext whose root holds a parent frame with arbitrary children
+ *  (mirrors makeCtx but lets the caller supply the full child list, including
+ *  nested containers). */
+function makeCtxChildren(
+  parentLayout: LayoutSpec,
+  children: ReadonlyArray<AgocraftItem>,
+): CommandContext {
+  const parent = frameItem(
+    "parent",
+    { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 }, layout: parentLayout },
+    children,
+  );
+  const root = frameItem("root", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 } }, [
+    parent,
+  ]);
+  const doc = {
+    id: "doc",
+    schema: undefined as unknown as AgocraftDocument["schema"],
+    root,
+    meta: { id: "doc", ...META, schemaRefs: [] },
+  } as unknown as AgocraftDocument;
+  return { document: doc, resolve: () => null as never, skipRelations: false } as CommandContext;
+}
+
+describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
+  "weave.item.add — #3 grid track auto-grow (enforceGridCapacity)",
+  () => {
+    /** A full 2×2 (= 4 cell) auto-managed grid with 4 occupied children. */
+    function full2x2(): { grid: AutoGridSpec; children: AgocraftItem[] } {
+      const grid = createAutoGridSpec({
+        columns: [trackFr(1), trackFr(1)],
+        rows: [trackFr(1), trackFr(1)],
+        justify: "stretch",
+        align: "stretch",
+      });
+      const children = [
+        frameItem("c1", {
+          frame: F(0, 0, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 1, row: 1 }),
+        }),
+        frameItem("c2", {
+          frame: F(0.5, 0, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 2, row: 1 }),
+        }),
+        frameItem("c3", {
+          frame: F(0, 0.5, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 1, row: 2 }),
+        }),
+        frameItem("c4", {
+          frame: F(0.5, 0.5, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 2, row: 2 }),
+        }),
+      ];
+      return { grid, children };
+    }
+
+    it("grows tracks (2×2 → 3 columns) and persists an item.layout patch when the grid would overflow", () => {
+      const { grid, children } = full2x2();
+      const ctx = makeCtxChildren(grid, children);
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("weave.item.add not found");
+
+      const result = cmd.run(ctx, {
+        kind: "frame",
+        containerId: "parent",
+        enforceGridCapacity: true,
+      });
+      if (!result.ok) throw new Error("expected ok");
+
+      const layoutPatches = result.patches.filter((p) => p.type === "item.layout");
+      expect(layoutPatches).toHaveLength(1);
+      const after = (layoutPatches[0] as { after?: AutoGridSpec }).after;
+      // 5 children → ⌈√5⌉ = 3 columns × 2 rows.
+      expect(after?.columns).toHaveLength(3);
+      expect(after?.rows).toHaveLength(2);
+
+      // The new child lands in a REAL free cell (3,1) → x = 2/3, NOT stacked on
+      // the last existing cell.
+      const staged = createdFrame(result.patches);
+      expect(staged?.x).toBeCloseTo(2 / 3, 5);
+      expect(staged?.width).toBeCloseTo(1 / 3, 5);
+    });
+
+    it("does NOT grow (or emit item.layout) without the agent flag — manual adds keep their track count", () => {
+      const { grid, children } = full2x2();
+      const ctx = makeCtxChildren(grid, children);
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("weave.item.add not found");
+
+      const result = cmd.run(ctx, { kind: "frame", containerId: "parent" });
+      if (!result.ok) throw new Error("expected ok");
+
+      expect(result.patches.filter((p) => p.type === "item.layout")).toHaveLength(0);
+    });
+
+    it("does NOT grow when there is still a free cell (capacity not exceeded)", () => {
+      const grid = createAutoGridSpec({
+        columns: [trackFr(1), trackFr(1)],
+        rows: [trackFr(1), trackFr(1)],
+        justify: "stretch",
+        align: "stretch",
+      });
+      // Only 2 of 4 cells filled — adding a 3rd stays within 2×2.
+      const children = [
+        frameItem("c1", {
+          frame: F(0, 0, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 1, row: 1 }),
+        }),
+        frameItem("c2", {
+          frame: F(0.5, 0, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 2, row: 1 }),
+        }),
+      ];
+      const ctx = makeCtxChildren(grid, children);
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("weave.item.add not found");
+
+      const result = cmd.run(ctx, {
+        kind: "frame",
+        containerId: "parent",
+        enforceGridCapacity: true,
+      });
+      if (!result.ok) throw new Error("expected ok");
+      expect(result.patches.filter((p) => p.type === "item.layout")).toHaveLength(0);
+    });
+  },
+);
+
+describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
+  "weave.item.add — #1 cascade relayout into nested containers",
+  () => {
+    it("reflows the GRANDCHILDREN of a nested flex container reshaped by the add", () => {
+      // Outer grid full at 2×2; cell (1,1) is a nested flex-COLUMN container whose
+      // children carry an intrinsic crossSize. Adding a 5th child grows the grid to
+      // 3 columns → the nested container's WIDTH (its flex cross axis) shrinks
+      // 0.5 → 1/3, so its children's cross ratios must be recomputed. Without the
+      // cascade those grandchildren stay sized for the old 0.5-wide box.
+      const grid = createAutoGridSpec({
+        columns: [trackFr(1), trackFr(1)],
+        rows: [trackFr(1), trackFr(1)],
+        justify: "stretch",
+        align: "stretch",
+      });
+      const nestedFlex = createAutoFlexSpec({
+        direction: "column",
+        justify: "start",
+        align: "start",
+      });
+      const gc1 = frameItem("gc1", {
+        frame: F(0, 0, 0.8, 0.4),
+        layoutChild: createAutoFlexChildPolicy({ basis: 0.4, crossSize: 0.8 }),
+      });
+      const gc2 = frameItem("gc2", {
+        frame: F(0, 0.4, 0.8, 0.4),
+        layoutChild: createAutoFlexChildPolicy({ basis: 0.4, crossSize: 0.8 }),
+      });
+      const F1 = frameItem(
+        "F1",
+        {
+          frame: F(0, 0, 0.5, 0.5),
+          layout: nestedFlex,
+          layoutChild: createAutoGridChildPolicy({ column: 1, row: 1 }),
+        },
+        [gc1, gc2],
+      );
+      const children = [
+        F1,
+        frameItem("c2", {
+          frame: F(0.5, 0, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 2, row: 1 }),
+        }),
+        frameItem("c3", {
+          frame: F(0, 0.5, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 1, row: 2 }),
+        }),
+        frameItem("c4", {
+          frame: F(0.5, 0.5, 0.5, 0.5),
+          layoutChild: createAutoGridChildPolicy({ column: 2, row: 2 }),
+        }),
+      ];
+      const ctx = makeCtxChildren(grid, children);
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("weave.item.add not found");
+
+      const result = cmd.run(ctx, {
+        kind: "frame",
+        containerId: "parent",
+        enforceGridCapacity: true,
+      });
+      if (!result.ok) throw new Error("expected ok");
+
+      const attrsById = new Map<string, Patch>();
+      for (const p of result.patches) {
+        if (p.type === "item.attrs") attrsById.set(String(p.itemId), p);
+      }
+      // F1 itself was repositioned by the grid grow (sibling patch)…
+      expect(attrsById.has("F1")).toBe(true);
+      // …and the cascade reflowed F1's CHILDREN against its new (narrower) box.
+      expect(attrsById.has("gc1")).toBe(true);
+      expect(attrsById.has("gc2")).toBe(true);
+      // The grandchild's stored cross (width) ratio was 0.8, sized for F1's old
+      // 0.5-wide box. The cascade recomputed it against F1's new (1/3-wide) box, so
+      // it must NO LONGER be the stale 0.8 — that recompute is the bug fix. (Here
+      // the preserved absolute cross overflows the narrower box and clamps to 1.0.)
+      const gc1Frame = patchFrame(nn(attrsById.get("gc1")));
+      expect(gc1Frame).toBeDefined();
+      expect(nn(gc1Frame).width).not.toBeCloseTo(0.8, 5);
+      expect(nn(gc1Frame).width).toBeGreaterThan(0);
+      expect(nn(gc1Frame).width).toBeLessThanOrEqual(1);
+    });
+
+    it("is a NO-OP when the reshaped siblings are leaves (no nested containers)", () => {
+      // A plain flex row of leaves: adding a 3rd reshapes the two leaf siblings,
+      // but none is a container, so no cascade (grandchild) patches are produced.
+      const flex = createAutoFlexSpec({ direction: "row", justify: "start", align: "stretch" });
+      const children = [
+        frameItem("a", {
+          frame: F(0, 0, 0.5, 1),
+          layoutChild: createAutoFlexChildPolicy({ basis: 0.5 }),
+        }),
+        frameItem("b", {
+          frame: F(0.5, 0, 0.5, 1),
+          layoutChild: createAutoFlexChildPolicy({ basis: 0.5 }),
+        }),
+      ];
+      const ctx = makeCtxChildren(flex, children);
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("weave.item.add not found");
+
+      const result = cmd.run(ctx, {
+        kind: "frame",
+        containerId: "parent",
+        attrsOverride: { layoutChild: createAutoFlexChildPolicy({ basis: 0.5 }) },
+      });
+      if (!result.ok) throw new Error("expected ok");
+
+      // Only the two leaf siblings (a, b) may carry item.attrs patches — there are
+      // no grandchildren to cascade into.
+      const attrsIds = result.patches
+        .filter((p) => p.type === "item.attrs")
+        .map((p) => String((p as { itemId: unknown }).itemId));
+      for (const id of attrsIds) {
+        expect(["a", "b"]).toContain(id);
+      }
     });
   },
 );

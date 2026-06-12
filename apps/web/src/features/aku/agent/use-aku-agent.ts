@@ -52,6 +52,7 @@ import type {
   AkuStatus,
 } from "../types.js";
 import { stampContainerGuard } from "./agent-container-guard.js";
+import { stampGridCapacityGuard } from "./agent-grid-capacity-guard.js";
 import { stampMinSizeGuard } from "./agent-min-size-guard.js";
 import {
   type AkuAgentMode,
@@ -526,9 +527,12 @@ export function useAkuAgent(deps: {
           const doc = depsRef.current.getDocument();
           const sized = fixAgentTextBox(commandName, input, doc);
           const guarded = stampContainerGuard(commandName, sized);
+          // WI-199 / DR-128 #3 — grow an auto-managed grid's tracks when an agent
+          // add would otherwise overflow & stack onto the last cell.
+          const capped = stampGridCapacityGuard(commandName, guarded);
           const design = depsRef.current.getDesignInfo?.();
-          if (design === undefined) return guarded;
-          return stampMinSizeGuard(commandName, guarded, design);
+          if (design === undefined) return capped;
+          return stampMinSizeGuard(commandName, capped, design);
         },
       }),
     [editor],
