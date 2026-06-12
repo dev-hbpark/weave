@@ -119,25 +119,46 @@ test("modifier-drag gesture arms when Cmd+Shift is held on a frame and cancels c
   page,
 }) => {
   await prepareDesign(page, { flavor: "slide-deck" });
-  // Two top-level frames + a child to give the controller a meaningful
-  // selection to drag.
+  // WI-202 — drag a child of the ACTIVE page, not a root frame. Since
+  // page-bounded editing (WI-153/163) the slide-deck canvas renders only
+  // the active page; additional root frames exist solely as rail tiles
+  // (outside `[data-design-plane]`), so a press on them can never arm
+  // the controller. The smoke target must live on the design plane.
+  const initialRoot = await listRootChildren(page);
+  expect(initialRoot.length).toBeGreaterThanOrEqual(1);
+  const pageId = initialRoot[0]!.id;
   await addFrame(page, "frame", {
+    containerId: pageId,
     frame: { x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
   });
   await addFrame(page, "frame", {
+    containerId: pageId,
     frame: { x: 0.6, y: 0.1, width: 0.3, height: 0.3, rotation: 0 },
   });
-  const rootChildren = await listRootChildren(page);
-  expect(rootChildren.length).toBeGreaterThanOrEqual(2);
-  const draggedId = rootChildren[rootChildren.length - 1]!.id;
-  const draggedFrame = page.locator(`[data-frame-id="${draggedId}"]`).first();
+  const listPageChildren = (): Promise<ReadonlyArray<string>> =>
+    page.evaluate((pid) => {
+      interface Node {
+        readonly id: string | number;
+        readonly children: ReadonlyArray<Node>;
+      }
+      type Doc = { root: Node };
+      const doc = (window as unknown as { __weaveDoc?: Doc }).__weaveDoc;
+      if (doc === undefined) return [];
+      const pageNode = doc.root.children.find((c) => String(c.id) === pid);
+      return pageNode === undefined ? [] : pageNode.children.map((c) => String(c.id));
+    }, pageId);
+  const children = await listPageChildren();
+  expect(children.length).toBeGreaterThanOrEqual(2);
+  const draggedId = children[children.length - 1]!;
+  // Stage-scoped lookup (WI-201) — rail tiles carry the same
+  // data-frame-id, so a global `.first()` is order-fragile.
+  const draggedFrame = page.getByTestId("frame-stage").locator(`[data-frame-id="${draggedId}"]`);
   const bbox = await draggedFrame.boundingBox();
   expect(bbox).not.toBeNull();
 
   // Press Cmd+Shift and start a pointer drag from the frame's center.
   // The controller arms `data-reparent-ghost` in the body; release
   // outside any target → ghost disappears and no patch fires.
-  const before = await listRootChildren(page);
   await page.keyboard.down("ControlOrMeta");
   await page.keyboard.down("Shift");
   await page.mouse.move(bbox!.x + bbox!.width / 2, bbox!.y + bbox!.height / 2);
@@ -156,8 +177,7 @@ test("modifier-drag gesture arms when Cmd+Shift is held on a frame and cancels c
   await page.keyboard.up("ControlOrMeta");
   await page.waitForTimeout(80);
 
-  // Ghost is gone, root children list unchanged.
+  // Ghost is gone, the page's children list unchanged (no patch fired).
   await expect(page.locator("[data-reparent-ghost]")).toHaveCount(0);
-  const after = await listRootChildren(page);
-  expect(after.map((c) => c.id)).toEqual(before.map((c) => c.id));
+  expect(await listPageChildren()).toEqual(children);
 });
