@@ -34,7 +34,16 @@ export function createFrameMoveSnap(deps: FrameMoveSnapDeps): FrameMoveSnap {
     begin(primaryItemId, movingItemIds): void {
       active = null;
       if (typeof document === "undefined") return;
-      const movingEl = document.querySelector(
+      // WI-201 — scope BOTH the moving-element lookup and the candidate sweep
+      // to the design-plane host subtree. `data-frame-id` is not exclusive to
+      // canvas frames: rail thumbnails (WI-039 drop-target hit-test) and the
+      // body-portal'd selection handles carry it too, and a document-wide
+      // query turned those into phantom alignment targets (WI-200 diag caught
+      // a rail tile rect among the candidates). The host is the bounds
+      // container the snap already depends on — no host, no snap.
+      const scope = deps.hostEl();
+      if (scope === null) return;
+      const movingEl = scope.querySelector(
         `[data-frame-id="${CSS.escape(String(primaryItemId))}"]`,
       );
       if (!(movingEl instanceof HTMLElement)) return;
@@ -45,7 +54,7 @@ export function createFrameMoveSnap(deps: FrameMoveSnapDeps): FrameMoveSnap {
       // the primary (the `contains` both-ways check also drops self).
       const movingSet = new Set(movingItemIds.map(String));
       const candidates: SnapRect[] = [];
-      for (const el of document.querySelectorAll<HTMLElement>("[data-frame-id]")) {
+      for (const el of scope.querySelectorAll<HTMLElement>("[data-frame-id]")) {
         if (movingSet.has(el.getAttribute("data-frame-id") ?? "")) continue;
         if (el.contains(movingEl) || movingEl.contains(el)) continue;
         candidates.push(rectOf(el));
@@ -54,17 +63,16 @@ export function createFrameMoveSnap(deps: FrameMoveSnapDeps): FrameMoveSnap {
       // Bounds container = the nearest ancestor frame, or the design host for a
       // top-level frame.
       const parentFrame = movingEl.parentElement?.closest<HTMLElement>("[data-frame-id]") ?? null;
-      const containerEl = parentFrame ?? deps.hostEl();
-      const container = containerEl !== null ? rectOf(containerEl) : null;
+      const containerEl = parentFrame ?? scope;
+      const container = rectOf(containerEl);
 
       // Grid (optional): a fixed pixel lattice anchored to the design host's
       // top-left, spanning its viewport rect. Off unless the user enables it.
       const grid = gridSnap.get();
-      const hostEl = deps.hostEl();
       const gridArg =
-        grid.enabled && grid.step > 0 && hostEl !== null
+        grid.enabled && grid.step > 0
           ? (() => {
-              const h = hostEl.getBoundingClientRect();
+              const h = scope.getBoundingClientRect();
               return {
                 step: grid.step,
                 range: { minX: h.left, maxX: h.right, minY: h.top, maxY: h.bottom },

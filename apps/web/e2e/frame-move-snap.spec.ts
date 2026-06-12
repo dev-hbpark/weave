@@ -45,6 +45,28 @@ async function frames(page: Page): Promise<Frame[]> {
   });
 }
 
+// WI-201 — resolve each doc child's CANVAS element by id, scoped to the
+// stage subtree. `data-frame-id` is not unique document-wide: the bottom
+// rail's thumbnails (WI-039) duplicate it, so a bare nth() over a global
+// `[data-frame-id]` query couples the test to DOM ordering between the
+// canvas and the rail. Pairing by id keeps box[i] ↔ frames(page)[i] exact.
+async function frameBoxes(page: Page): Promise<Array<{ x: number; y: number }>> {
+  const ids = await page.evaluate(() => {
+    const w = window as unknown as {
+      __weaveDoc: { root: { children: ReadonlyArray<{ id: unknown }> } };
+    };
+    return w.__weaveDoc.root.children.map((c) => String(c.id));
+  });
+  const stage = page.getByTestId("frame-stage");
+  const boxes: Array<{ x: number; y: number }> = [];
+  for (const id of ids) {
+    const box = await stage.locator(`[data-frame-id="${id}"]`).boundingBox();
+    if (box === null) throw new Error(`no canvas element for frame ${id}`);
+    boxes.push(box);
+  }
+  return boxes;
+}
+
 test("WI-073 — dragging a frame near another snaps it into alignment + shows a guide", async ({
   page,
 }) => {
@@ -57,10 +79,8 @@ test("WI-073 — dragging a frame near another snaps it into alignment + shows a
   if (a0 === undefined || b0 === undefined) return;
   expect(b0.x).not.toBeCloseTo(a0.x, 2); // start misaligned
 
-  const els = page.locator("[data-frame-id]");
-  const aBox = await els.nth(0).boundingBox();
-  const bBox = await els.nth(1).boundingBox();
-  if (aBox === null || bBox === null) throw new Error("no frame boxes");
+  const [aBox, bBox] = await frameBoxes(page);
+  if (aBox === undefined || bBox === undefined) throw new Error("no frame boxes");
 
   // Drag B so its LEFT edge lands 3px to the right of A's left edge — inside the
   // 6px snap tolerance → it should lock to A's left exactly.
@@ -116,7 +136,9 @@ test("WI-073 #1 — grid-snap toggle flips, and a grid guide shows while draggin
   // With the grid on, dragging the lone frame surfaces a snap guide (a grid line
   // is always within tolerance) — proving the grid path is wired through the
   // move binding. (Off-center interior spot → not a bounds line.)
-  const frame = page.locator("[data-frame-id]").first();
+  // WI-201 — stage-scoped: the rail thumbnail duplicates the frame's
+  // `data-frame-id`, so a global .first() could land on a tile.
+  const frame = page.getByTestId("frame-stage").locator("[data-frame-id]").first();
   const box = await frame.boundingBox();
   if (box === null) throw new Error("no frame box");
   const sx = box.x + 6;
