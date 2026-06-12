@@ -232,6 +232,27 @@ export function useSelectionChromeVisible(): boolean {
   return useInteractionGate("selectionChrome") && !peekActive;
 }
 
+/** WI-200 — floating selection chrome (contextual toolbar) may RECEIVE
+ *  pointer events only while no manipulation gesture is in flight.
+ *
+ *  Visible ≠ interactive: `selectionChrome` deliberately admits
+ *  `frame-manipulating` (handles must not vanish mid-drag), but the
+ *  GestureRouter delivers events via capture listeners on the CANVAS
+ *  host with no pointer capture — so a body-portal'd toolbar sitting on
+ *  the drag path becomes the pointermove TARGET and silently starves the
+ *  active move binding (one commit, then nothing: no snap guides, no
+ *  further movement, no pointerup). During `frame-manipulating` the
+ *  pointer is held down and the toolbar isn't clickable anyway, so it
+ *  costs nothing to make it inert. `text-editing` stays interactive —
+ *  the toolbar's font controls are the point of that mode. This is a
+ *  physics-level invariant of the gesture transport, identical across
+ *  flavors, hence a single-source hook here rather than a per-flavor
+ *  InputPolicy gate. */
+export function useSelectionChromeInteractive(): boolean {
+  const { mode } = useInteractionMode();
+  return mode !== "frame-manipulating";
+}
+
 /** WI-040 — frame-body / handle gesture bindings (move, resize, rotate)
  *  may be *registered* only when the mode is NOT one that owns the
  *  canvas exclusively.

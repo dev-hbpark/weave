@@ -2,7 +2,10 @@ import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { createPortal } from "react-dom";
 import { findItemDeep } from "../../../document/agocraft-mirror.js";
-import { useSelectionChromeVisible } from "../../../document/interactions/interaction-mode.js";
+import {
+  useSelectionChromeInteractive,
+  useSelectionChromeVisible,
+} from "../../../document/interactions/interaction-mode.js";
 import { ContextualToolbar } from "../../../document/toolbar/ContextualToolbar.js";
 
 // DR-027 / WI-071 Phase 2 — selection-driven contextual toolbar overlay
@@ -28,6 +31,7 @@ export function SelectionToolbarOverlay({
   onEditShapeFill,
 }: SelectionToolbarOverlayProps): React.ReactNode {
   const visible = useSelectionChromeVisible();
+  const interactive = useSelectionChromeInteractive();
   if (!visible) return null;
   if (typeof document === "undefined") return null;
 
@@ -54,7 +58,13 @@ export function SelectionToolbarOverlay({
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 46,
-        pointerEvents: "auto",
+        // WI-200 — inert while a manipulation gesture is in flight. The bar
+        // mounts MID-DRAG (commitFrame's first-commit selection) and, with
+        // pointer events on, becomes the pointermove target whenever the drag
+        // path crosses it — starving the canvas router's move binding (no
+        // pointer capture in the gesture transport). See
+        // useSelectionChromeInteractive.
+        pointerEvents: interactive ? "auto" : "none",
       }}
     >
       <ContextualToolbar
