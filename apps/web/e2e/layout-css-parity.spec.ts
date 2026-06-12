@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Differential CSS-parity harness for @agocraft/layout (WI-131 follow-up).
 //
 // The layout engine is a GEOMETRIC simulator that outputs absolute child frames

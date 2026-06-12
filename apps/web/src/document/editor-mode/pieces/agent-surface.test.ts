@@ -153,12 +153,12 @@ describe("weave.page.add adapter", () => {
 
   it("agent cannot override afterId (stamped after the spread)", () => {
     const out = pageAdd.mapInput?.({ afterId: "page-2" }, HOST) as Record<string, unknown>;
-    expect(out["afterId"]).toBe("page-1");
+    expect(out.afterId).toBe("page-1");
   });
 
   it("degenerate host (no active page) → afterId undefined (command appends at the deck end)", () => {
     const out = pageAdd.mapInput?.({}, NO_PAGE) as Record<string, unknown>;
-    expect(out["afterId"]).toBeUndefined();
+    expect(out.afterId).toBeUndefined();
   });
 
   it("schema drops afterId and keeps attrsOverride/units by reference (insert position is not agent-addressable)", () => {

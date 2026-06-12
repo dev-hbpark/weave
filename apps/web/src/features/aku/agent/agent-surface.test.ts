@@ -87,7 +87,7 @@ describe("bindAgentSurface (WI-168 / DR-115)", () => {
     expect(bound.commands.has("weave.wrapped")).toBe(true);
     expect(bound.commands.has("weave.b")).toBe(false); // internal name not advertised
     expect(Object.keys(bound.schemas).sort()).toEqual(["weave.a", "weave.wrapped"]);
-    expect(bound.schemas["weave.wrapped"]?.inputSchema["description"]).toBe("wrapped");
+    expect(bound.schemas["weave.wrapped"]?.inputSchema.description).toBe("wrapped");
     // The renamed row keeps the registered command's run (spread re-expose).
     expect(typeof bound.commands.get("weave.wrapped")?.run).toBe("function");
   });

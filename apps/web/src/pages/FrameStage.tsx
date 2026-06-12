@@ -321,7 +321,7 @@ export function FrameStage(props: FrameStageProps) {
       if (frameEl === null) return true;
       const id = frameEl.getAttribute("data-frame-id");
       const pages = visibleFrameIdsRef.current;
-      return id !== null && pages !== undefined && pages.has(id);
+      return id !== null && (pages?.has(id) ?? false);
     },
     [acceptWithinPage],
   );

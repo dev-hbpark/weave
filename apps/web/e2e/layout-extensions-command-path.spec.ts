@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Verifies the NEW layout features survive weave's real command path — the same
 // path the Aku agent drives: weave.frame.setLayout / weave.item.setLayoutChild
 // with the extended spec fields (wrap, alignContent, minmax, columnsRepeat,

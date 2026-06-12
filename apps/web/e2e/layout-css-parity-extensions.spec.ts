@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Differential CSS-parity harness for the WI-132 layout extensions:
 // flex space-evenly + wrap + align-content + baseline, grid minmax +
 // repeat(auto-fill/auto-fit) + dense + grid-template-areas.

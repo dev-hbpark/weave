@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
 // Font-size kind fix (WI-135 / DR-086) — reparenting a text into a
 // DIFFERENT-height parent keeps its on-screen size for BOTH kinds. A
 // `fontSizeSpec.kind:'ratio'` resolves to value × parentHeight; the
