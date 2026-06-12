@@ -34,14 +34,19 @@ describe("connectModeOptions (WI-175 → WI-176, DR-057 merge)", () => {
     expect(connectModeOptions("byo-ssh", "sk-ant-x")).toEqual({ mode: "byo-ssh" });
   });
 
+  it('"codex-ssh" requests the mode but never carries the key (WI-204 — server-side ChatGPT creds)', () => {
+    expect(connectModeOptions("codex-ssh", "sk-ant-x")).toEqual({ mode: "codex-ssh" });
+    expect(connectModeOptions("codex-ssh", null)).toEqual({ mode: "codex-ssh" });
+  });
+
   it("every visible option maps to a real mode request (registry coverage)", () => {
     for (const opt of AKU_AGENT_MODE_OPTIONS) {
       expect(connectModeOptions(opt.value, null).mode).toBe(opt.value);
     }
   });
 
-  it("the segments are exactly API / SSH — byo-apikey merged away (DR-057)", () => {
-    expect(AKU_AGENT_MODE_OPTIONS.map((o) => o.value)).toEqual(["api", "byo-ssh"]);
+  it("the segments are exactly API / SSH / Codex (DR-057 merge + WI-204 codex)", () => {
+    expect(AKU_AGENT_MODE_OPTIONS.map((o) => o.value)).toEqual(["api", "byo-ssh", "codex-ssh"]);
   });
 });
 
@@ -73,6 +78,8 @@ describe("agent-mode persistence", () => {
     expect(loadAgentMode()).toBe("api");
     saveAgentMode("byo-ssh");
     expect(loadAgentMode()).toBe("byo-ssh");
+    saveAgentMode("codex-ssh");
+    expect(loadAgentMode()).toBe("codex-ssh");
     saveAgentMode("server");
     expect(loadAgentMode()).toBe("server");
   });

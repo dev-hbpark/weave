@@ -33,8 +33,9 @@ export interface AkuUserMessage {
  *  (small-think DR-058 `cost` event — exactly one per task, covering EVERY model
  *  turn of the build + review pipeline). `costUsd` is an estimate in api mode
  *  (public list prices) and SDK-authoritative in byo-ssh; absent when the model
- *  family is unknown to the server's pricing table (tokens-only, no guessed
- *  dollars). Durable — survives persistence (a turn's cost doesn't expire). */
+ *  family is unknown to the server's pricing table AND always absent in codex-ssh
+ *  (subscription has no per-token price — tokens-only, no guessed dollars).
+ *  Durable — survives persistence (a turn's cost doesn't expire). */
 export interface AkuCostRecord {
   readonly inputTokens: number;
   readonly outputTokens: number;
@@ -42,9 +43,9 @@ export interface AkuCostRecord {
   readonly cacheWriteTokens: number;
   readonly costUsd?: number;
   /** Subscription rate-limit windows at the END of the task (small-think DR-059 —
-   *  byo-ssh only; api mode bills per token and never reports windows). Snapshot of
-   *  how full each window is NOW (other sessions burn the same windows), not "what
-   *  this task consumed". `utilization` is a 0–1 fraction. */
+   *  subscription modes byo-ssh/codex-ssh; api mode bills per token and never
+   *  reports windows). Snapshot of how full each window is NOW (other sessions burn
+   *  the same windows), not "what this task consumed". `utilization` is 0–1. */
   readonly limits?: ReadonlyArray<AkuLimitWindow>;
 }
 

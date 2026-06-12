@@ -5,21 +5,25 @@
  * 받는다(승인은 서버의 SMALL_THINK_ALLOWED_MODES allowlist). 이 모듈은 그 요청을
  * 만드는 클라이언트 쪽 순수 절반: 모드 영속화 + connect 옵션 변환.
  *
- * small-think DR-057 이 byo-apikey 를 api 로 통합했다 — 실행 모드는 이제 2종:
+ * small-think DR-057 이 byo-apikey 를 api 로 통합했다 — 실행 모드는 3종
+ * (WI-204: codex-ssh 추가, small-think WI-052/DR-066 다운스트림):
  * - `api`: hello 에 apiKey 가 실리면 그 키(연결별, keySource:"client"), 없으면
  *   서버 공유 키(keySource:"server"). weave 는 `.env` 의 `VITE_AKU_API_KEY` 가
  *   설정돼 있을 때만 키를 싣는다 — env 설정 자체가 운영자의 opt-in 이다.
  *   키 원문은 로그·React props 로 노출하지 않는다 (RISK-004).
- * - `byo-ssh`: 자격은 전부 서버 쪽(구독 CLI) — 클라이언트는 모드만 요청.
+ * - `byo-ssh`: 자격은 전부 서버 쪽(Claude 구독 CLI) — 클라이언트는 모드만 요청.
+ * - `codex-ssh`: 자격은 전부 서버 쪽(ChatGPT 구독 codex app-server) — byo-ssh 와
+ *   동일하게 모드만 요청. 비용 푸터는 토큰-온리(costUsd 없음 — 구독엔 단가가
+ *   없다)로 자동 강등되고, 구독 윈도우 %는 같은 five_hour/seven_day 라벨을 탄다.
  *
  * 승인 여부는 가정하지 않는다: 서버가 거부하면 부팅 모드로 폴백하고 실제 적용
  * 모드를 `serverInfo.mode` 로 통보한다 — AkuServerInfoChip 이 그대로 보여준다.
  */
 
 /** "server" = hello 에 모드를 싣지 않음(서버 부팅 모드 그대로) — 명시적으로 저장된
- *  경우에만 동작하는 레거시/탈출구 값. 나머지 둘은 서버의 실행 모드 2종(DR-057
- *  통합 후)에 대한 요청. 첫 선택 전 기본값은 DEFAULT_AGENT_MODE. */
-export type AkuAgentMode = "server" | "api" | "byo-ssh";
+ *  경우에만 동작하는 레거시/탈출구 값. 나머지 셋은 서버의 실행 모드 3종(DR-057
+ *  통합 + WI-204 codex)에 대한 요청. 첫 선택 전 기본값은 DEFAULT_AGENT_MODE. */
+export type AkuAgentMode = "server" | "api" | "byo-ssh" | "codex-ssh";
 
 /** 첫 선택 전(저장값 없음/가비지/localStorage 차단) 기본 모드 — 운영자 결정(WI-178):
  *  현 배포의 일상 모드가 구독 CLI(byo-ssh)이므로 새 브라우저도 그걸 요청한다.
@@ -27,7 +31,7 @@ export type AkuAgentMode = "server" | "api" | "byo-ssh";
  *  (WI-175 승인 불가정 원칙 그대로 — 기본값이 바뀌어도 안전). */
 export const DEFAULT_AGENT_MODE: AkuAgentMode = "byo-ssh";
 
-/** 세그먼트 컨트롤에 노출하는 선택지 — 실행 모드 2종만 ("server" 는 선택-이전 상태). */
+/** 세그먼트 컨트롤에 노출하는 선택지 — 실행 모드 3종만 ("server" 는 선택-이전 상태). */
 export const AKU_AGENT_MODE_OPTIONS: ReadonlyArray<{
   readonly value: AkuAgentMode;
   readonly label: string;
@@ -38,7 +42,8 @@ export const AKU_AGENT_MODE_OPTIONS: ReadonlyArray<{
     label: "API",
     hint: "API 키로 실행 — weave에 설정된 키(VITE_AKU_API_KEY)가 있으면 그 키, 없으면 서버 공유 키",
   },
-  { value: "byo-ssh", label: "SSH", hint: "서버의 구독 CLI(ssh)로 실행" },
+  { value: "byo-ssh", label: "SSH", hint: "서버의 Claude 구독 CLI(ssh)로 실행" },
+  { value: "codex-ssh", label: "Codex", hint: "서버의 ChatGPT 구독 Codex(app-server)로 실행" },
 ];
 
 const MODE_KEY = "weave.aku.agent-mode";
@@ -91,7 +96,7 @@ export interface ModeConnectOptions {
  * - "api": mode + (설정돼 있을 때만) apiKey — 키 노출의 단일 결정 지점.
  *   키가 실리면 서버는 그 키를 연결별로 사용(DR-057 keySource:"client"),
  *   없으면 서버 공유 키로 동작한다.
- * - "byo-ssh": mode 만 — 자격은 서버 쪽(구독 CLI)에 있다.
+ * - "byo-ssh" / "codex-ssh": mode 만 — 자격은 서버 쪽(각 구독 CLI)에 있다.
  */
 const MODE_CONNECT_OPTIONS: Record<AkuAgentMode, (apiKey: string | null) => ModeConnectOptions> = {
   server: () => ({}),
@@ -100,6 +105,7 @@ const MODE_CONNECT_OPTIONS: Record<AkuAgentMode, (apiKey: string | null) => Mode
     ...(apiKey !== null && apiKey !== "" ? { apiKey } : {}),
   }),
   "byo-ssh": () => ({ mode: "byo-ssh" }),
+  "codex-ssh": () => ({ mode: "codex-ssh" }),
 };
 
 /** 연결 옵션 변환 — connect 스프레드용 (`...connectModeOptions(mode, key)`). */

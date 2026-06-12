@@ -57,8 +57,8 @@ export function costFromEvent(event: unknown): AkuCostRecord | undefined {
     !isFiniteNumber(e.cacheWriteTokens)
   )
     return undefined;
-  // 구독 윈도우 (small-think DR-059, byo-ssh 전용) — malformed costUsd 처럼
-  // 토큰-온리로 강등하되, 배열이면 항목 단위로 검증해 살아남은 것만 싣는다.
+  // 구독 윈도우 (small-think DR-059 — 구독 모드 byo-ssh/codex-ssh) — malformed
+  // costUsd 처럼 토큰-온리로 강등하되, 배열이면 항목 단위로 검증해 살아남은 것만 싣는다.
   const limits = Array.isArray(e.limits)
     ? e.limits.map(limitFromEntry).filter((w): w is AkuLimitWindow => w !== undefined)
     : [];
@@ -143,7 +143,8 @@ export function formatLimitsLine(limits: ReadonlyArray<AkuLimitWindow>): string 
 }
 
 /** 버블 푸터 한 줄 — 입력은 캐시 읽기/쓰기 포함 총량 (모델에 실제로 들어간 토큰);
- *  byo-ssh 면 구독 윈도우 사용률("Session 23% · 주간 41%")이 뒤에 붙는다. */
+ *  구독 모드(byo-ssh/codex-ssh)면 구독 윈도우 사용률("Session 23% · 주간 41%")이
+ *  뒤에 붙는다. codex-ssh 는 costUsd 가 없어 토큰-온리로 자연 강등(WI-204). */
 export function formatCostLine(c: AkuCostRecord): string {
   const input = c.inputTokens + c.cacheReadTokens + c.cacheWriteTokens;
   const parts = [`입력 ${formatTokens(input)}`, `출력 ${formatTokens(c.outputTokens)} 토큰`];
