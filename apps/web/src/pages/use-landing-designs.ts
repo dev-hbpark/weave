@@ -4,7 +4,7 @@
 // the cross-tab storage listener — lives here so the page tests without mounting
 // providers and this hook tests with `renderHook` and no DOM.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   bootstrapFromCloud,
   duplicateDesignCloud,
@@ -12,6 +12,7 @@ import {
 } from "../document/cloud-sync.js";
 import { listResources, type MediaResource, removeResource } from "../document/resource-storage.js";
 import { clearDesign, type DesignSummary, listAllDesigns } from "../document/storage.js";
+import { type IdSelection, useIdSelection } from "./use-id-selection.js";
 
 /** Same id shape as `NewDesignWizard.makeDesignId` — local copy avoids
  *  importing into the workspace mount path. Both call sites yield
@@ -50,6 +51,14 @@ export interface LandingDesigns {
   readonly duplicate: (source: DesignSummary) => Promise<void>;
   readonly deleteDesign: (id: string) => void;
   readonly deleteResource: (id: string) => void;
+  /** Multi-select controller for the saved-designs grid. */
+  readonly designSelection: IdSelection;
+  /** Multi-select controller for the resources panel. */
+  readonly resourceSelection: IdSelection;
+  /** Delete every currently-selected design, then clear + refresh. */
+  readonly deleteSelectedDesigns: () => void;
+  /** Delete every currently-selected resource, then clear + refresh. */
+  readonly deleteSelectedResources: () => void;
 }
 
 export function useLandingDesigns(): LandingDesigns {
@@ -125,6 +134,31 @@ export function useLandingDesigns(): LandingDesigns {
     [refresh],
   );
 
+  // Selection controllers — one per list, fed the present ids so a deleted
+  // item drops out of the selection automatically (see use-id-selection).
+  const designIds = useMemo(() => designs.map((d) => d.id), [designs]);
+  const resourceIds = useMemo(() => resources.map((r) => r.id), [resources]);
+  const designSelection = useIdSelection(designIds);
+  const resourceSelection = useIdSelection(resourceIds);
+
+  const { selectedIds: selectedDesignIds, clear: clearDesignSelection } = designSelection;
+  const deleteSelectedDesigns = useCallback((): void => {
+    const ids = [...selectedDesignIds];
+    if (ids.length === 0) return;
+    for (const id of ids) clearDesign(id);
+    clearDesignSelection();
+    void refresh();
+  }, [selectedDesignIds, clearDesignSelection, refresh]);
+
+  const { selectedIds: selectedResourceIds, clear: clearResourceSelection } = resourceSelection;
+  const deleteSelectedResources = useCallback((): void => {
+    const ids = [...selectedResourceIds];
+    if (ids.length === 0) return;
+    for (const id of ids) removeResource(id);
+    clearResourceSelection();
+    void refresh();
+  }, [selectedResourceIds, clearResourceSelection, refresh]);
+
   useEffect(() => {
     let cancelled = false;
     // Paint the offline outbox instantly, then pull the cloud list and merge
@@ -151,5 +185,17 @@ export function useLandingDesigns(): LandingDesigns {
     };
   }, [refresh]);
 
-  return { designs, resources, duplicatingId, refresh, duplicate, deleteDesign, deleteResource };
+  return {
+    designs,
+    resources,
+    duplicatingId,
+    refresh,
+    duplicate,
+    deleteDesign,
+    deleteResource,
+    designSelection,
+    resourceSelection,
+    deleteSelectedDesigns,
+    deleteSelectedResources,
+  };
 }

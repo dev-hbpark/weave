@@ -116,3 +116,55 @@ test("deleting a design from the workspace removes its card", async ({ page }) =
 
   await expect(card).toHaveCount(0);
 });
+
+test("multi-select then bulk-delete removes only the selected designs", async ({ page }) => {
+  const idA = await prepareDesign(page, { flavor: "mixed", title: "Keep" });
+  await page.goto("/");
+  const idB = await prepareDesign(page, { flavor: "mixed", title: "Drop B" });
+  await page.goto("/");
+  const idC = await prepareDesign(page, { flavor: "mixed", title: "Drop C" });
+  await page.goto("/");
+
+  const section = page.getByTestId("workspace-designs");
+  const cardA = section.locator(`[data-design-id="${idA}"]`);
+  const cardB = section.locator(`[data-design-id="${idB}"]`);
+  const cardC = section.locator(`[data-design-id="${idC}"]`);
+  await expect(cardB).toBeVisible();
+  await expect(cardC).toBeVisible();
+
+  // Select B and C via their per-card checkboxes (role=checkbox button).
+  await cardB.getByRole("checkbox").click();
+  await cardC.getByRole("checkbox").click();
+  await expect(cardB).toHaveAttribute("data-selected", "true");
+  await expect(cardC).toHaveAttribute("data-selected", "true");
+  await expect(cardA).toHaveAttribute("data-selected", "false");
+  await expect(section.getByTestId("selected-count")).toHaveText("2개 선택됨");
+
+  // Bulk delete → accept confirm. Only A survives.
+  page.once("dialog", (d) => d.accept());
+  await section.getByTestId("delete-selected").click();
+
+  await expect(cardB).toHaveCount(0);
+  await expect(cardC).toHaveCount(0);
+  await expect(cardA).toBeVisible();
+});
+
+test("select-all then bulk-delete clears the whole designs grid", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed", title: "All-1" });
+  await page.goto("/");
+  await prepareDesign(page, { flavor: "mixed", title: "All-2" });
+  await page.goto("/");
+
+  const section = page.getByTestId("workspace-designs");
+  await expect(section.locator('[data-testid="design-card"]')).toHaveCount(2);
+
+  // "전체 선택" → every card selected.
+  await section.getByTestId("select-all").click();
+  await expect(section.locator('[data-testid="design-card"][data-selected="true"]')).toHaveCount(2);
+  await expect(section.getByTestId("selected-count")).toHaveText("2개 선택됨");
+
+  // Bulk delete all → empty state.
+  page.once("dialog", (d) => d.accept());
+  await section.getByTestId("delete-selected").click();
+  await expect(section.locator('[data-testid="design-card"]')).toHaveCount(0);
+});

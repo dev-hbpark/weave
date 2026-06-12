@@ -13,14 +13,125 @@ import {
   Card,
   CardEyebrow,
   CardTitle,
+  cn,
+  IconCheck,
   IconPlay,
+  IconTrash,
   Reveal,
   ThemePicker,
 } from "@weave/design-system";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { NewDesignWizard } from "./new-design/NewDesignWizard.js";
+import type { IdSelection } from "./use-id-selection.js";
 import { useLandingDesigns } from "./use-landing-designs.js";
+
+/** Page-local selection check affordance shared by cards and the section
+ *  header "전체 선택" control. Not promoted to the design system — it is the
+ *  gallery-selection chrome of this one page, not a reusable form checkbox
+ *  (design-system-triage: reuse tokens, escape for a page-local composite). */
+function SelectCheck({
+  checked,
+  mixed = false,
+  onToggle,
+  label,
+  className,
+  size = 22,
+}: {
+  readonly checked: boolean;
+  readonly mixed?: boolean;
+  readonly onToggle: () => void;
+  readonly label: string;
+  readonly className?: string;
+  readonly size?: number;
+}) {
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a styled toggle that lives inside a card-wrapping <Link>; a native <input type="checkbox"> can't intercept the navigation (needs preventDefault on the button) and carries form-control semantics/styling we don't want here. role="checkbox" + aria-checked is the correct ARIA mapping.
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={mixed ? "mixed" : checked}
+      aria-label={label}
+      onClick={(e) => {
+        // Cards wrap a <Link>; never navigate when toggling selection.
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle();
+      }}
+      style={{ width: size, height: size }}
+      className={cn(
+        "inline-flex items-center justify-center rounded-[var(--radius-sm)] border transition-colors",
+        checked || mixed
+          ? "bg-[color:var(--accent)] border-[color:var(--accent)] text-white"
+          : "bg-[color:var(--surface-overlay)] border-[color:var(--surface-overlay-border)] text-transparent hover:border-[color:var(--accent)]",
+        className,
+      )}
+    >
+      {mixed ? (
+        <span className="block w-[10px] h-[2px] rounded-full bg-white" aria-hidden />
+      ) : (
+        <IconCheck size={Math.round(size * 0.64)} aria-hidden />
+      )}
+    </button>
+  );
+}
+
+/** Section bulk-action bar — "전체 선택" + selected count + "선택 삭제" /
+ *  "선택 해제". Rendered above each list when it is non-empty. */
+function SelectionBar({
+  selection,
+  onDeleteSelected,
+  noun,
+}: {
+  readonly selection: IdSelection;
+  readonly onDeleteSelected: () => void;
+  readonly noun: string;
+}) {
+  const { selectedCount, allSelected, someSelected, toggleAll, clear } = selection;
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      <button
+        type="button"
+        data-testid="select-all"
+        onClick={toggleAll}
+        className="inline-flex items-center gap-2 text-[13px] text-[color:var(--text-default)] hover:text-[color:var(--text-strong)]"
+      >
+        <SelectCheck
+          checked={allSelected}
+          mixed={someSelected}
+          onToggle={toggleAll}
+          label={`${noun} 전체 선택`}
+          size={18}
+        />
+        전체 선택
+      </button>
+      {selectedCount > 0 ? (
+        <>
+          <span className="text-[13px] text-[color:var(--text-soft)]" data-testid="selected-count">
+            {selectedCount}개 선택됨
+          </span>
+          <Button
+            variant="ghost"
+            data-testid="delete-selected"
+            leadingIcon={<IconTrash size={16} aria-hidden />}
+            onClick={onDeleteSelected}
+            className="!h-9 !px-3 !text-[13px]"
+          >
+            선택 삭제
+          </Button>
+          <button
+            type="button"
+            data-testid="clear-selection"
+            onClick={clear}
+            className="text-[13px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)]"
+          >
+            선택 해제
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -44,8 +155,19 @@ function aspectLabel(width: number, height: number): string {
 export function LandingPage() {
   // Local UI state only — everything else is owned by the hook (Lens 1).
   const [wizardOpen, setWizardOpen] = useState(false);
-  const { designs, resources, duplicatingId, refresh, duplicate, deleteDesign, deleteResource } =
-    useLandingDesigns();
+  const {
+    designs,
+    resources,
+    duplicatingId,
+    refresh,
+    duplicate,
+    deleteDesign,
+    deleteResource,
+    designSelection,
+    resourceSelection,
+    deleteSelectedDesigns,
+    deleteSelectedResources,
+  } = useLandingDesigns();
 
   return (
     <>
@@ -111,13 +233,30 @@ export function LandingPage() {
 
         {/* Saved designs grid */}
         <section className="mt-12" data-testid="workspace-designs">
-          <div className="flex items-baseline justify-between mb-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
             <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-[color:var(--text-strong)]">
               저장된 디자인
               <span className="ml-2 text-[14px] text-[color:var(--text-soft)] font-normal">
                 {designs.length}
               </span>
             </h2>
+            {designs.length > 0 ? (
+              <SelectionBar
+                selection={designSelection}
+                noun="디자인"
+                onDeleteSelected={() => {
+                  const n = designSelection.selectedCount;
+                  if (n === 0) return;
+                  if (
+                    typeof window !== "undefined" &&
+                    !window.confirm(`선택한 디자인 ${n}개를 삭제할까요?`)
+                  ) {
+                    return;
+                  }
+                  deleteSelectedDesigns();
+                }}
+              />
+            ) : null}
           </div>
           {designs.length === 0 ? (
             <Card tone="default">
@@ -127,100 +266,146 @@ export function LandingPage() {
             </Card>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {designs.map((d) => (
-                <Reveal key={d.id} delay={0.05}>
-                  <div data-testid="design-card" data-design-id={d.id} className="group relative">
-                    <Link to={`/design/${d.id}`} className="block no-underline">
-                      <Card tone="raised" className="h-full">
-                        {/* Thumbnail surface — paints the design's background
+              {designs.map((d) => {
+                const selected = designSelection.isSelected(d.id);
+                return (
+                  <Reveal key={d.id} delay={0.05}>
+                    <div
+                      data-testid="design-card"
+                      data-design-id={d.id}
+                      data-selected={selected ? "true" : "false"}
+                      className={cn(
+                        "group relative rounded-[var(--radius-md)] transition-shadow",
+                        selected &&
+                          "ring-2 ring-[color:var(--accent)] ring-offset-2 ring-offset-[color:var(--bg-page)]",
+                      )}
+                    >
+                      {/* Selection check — top-left, visible on hover or when
+                        selected. Outside the Link so toggling never navigates. */}
+                      <div
+                        className={cn(
+                          "absolute top-2 left-2 z-10 transition-opacity",
+                          selected
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
+                        )}
+                      >
+                        <SelectCheck
+                          checked={selected}
+                          onToggle={() => designSelection.toggle(d.id)}
+                          label={`"${d.title}" 선택`}
+                        />
+                      </div>
+                      <Link to={`/design/${d.id}`} className="block no-underline">
+                        <Card tone="raised" className="h-full">
+                          {/* Thumbnail surface — paints the design's background
                             color so the user at least recognises tone. */}
-                        <div
-                          aria-hidden
-                          className="aspect-[16/9] -mx-5 -mt-5 mb-4 rounded-t-[var(--radius-md)] border-b border-[color:var(--surface-1-border)] overflow-hidden"
-                          style={{ background: d.background }}
-                        >
-                          <div className="h-full w-full flex items-center justify-center">
-                            <span
-                              className="text-[14px] uppercase tracking-[0.16em] font-mono opacity-30"
-                              style={{
-                                color:
-                                  d.background.toLowerCase() === "#ffffff" ||
-                                  d.background === "white"
-                                    ? "#1f2933"
-                                    : "rgba(255,255,255,0.7)",
-                              }}
-                            >
-                              {aspectLabel(d.width, d.height)}
-                            </span>
+                          <div
+                            aria-hidden
+                            className="aspect-[16/9] -mx-5 -mt-5 mb-4 rounded-t-[var(--radius-md)] border-b border-[color:var(--surface-1-border)] overflow-hidden"
+                            style={{ background: d.background }}
+                          >
+                            <div className="h-full w-full flex items-center justify-center">
+                              <span
+                                className="text-[14px] uppercase tracking-[0.16em] font-mono opacity-30"
+                                style={{
+                                  color:
+                                    d.background.toLowerCase() === "#ffffff" ||
+                                    d.background === "white"
+                                      ? "#1f2933"
+                                      : "rgba(255,255,255,0.7)",
+                                }}
+                              >
+                                {aspectLabel(d.width, d.height)}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        <CardTitle>{d.title}</CardTitle>
-                        <CardEyebrow>
-                          {d.width}×{d.height} · 마지막 수정 {formatDate(d.updatedAt)}
-                        </CardEyebrow>
-                      </Card>
-                    </Link>
-                    {/* Hover actions — Duplicate + Delete. Both live
+                          <CardTitle>{d.title}</CardTitle>
+                          <CardEyebrow>
+                            {d.width}×{d.height} · 마지막 수정 {formatDate(d.updatedAt)}
+                          </CardEyebrow>
+                        </Card>
+                      </Link>
+                      {/* Hover actions — Duplicate + Delete. Both live
                         OUTSIDE the Link so a click doesn't navigate. The
                         cluster sits in the top-right; visibility ties to
                         the parent card's hover so the chrome stays out
                         of the way until the user reaches for it.
                         Duplicate flow goes through `duplicateDesignCloud`
                         — cloud-only, no localStorage. */}
-                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                      <button
-                        type="button"
-                        data-testid="design-duplicate"
-                        disabled={duplicatingId !== null}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void duplicate(d);
-                        }}
-                        className="bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] disabled:opacity-50 disabled:cursor-progress rounded-[var(--radius-sm)] px-2 py-1"
-                        aria-label="디자인 복제"
-                      >
-                        {duplicatingId === d.id ? "복제 중…" : "복제"}
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="design-delete"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (
-                            typeof window !== "undefined" &&
-                            !window.confirm(`"${d.title}" 디자인을 삭제할까요?`)
-                          ) {
-                            return;
-                          }
-                          deleteDesign(d.id);
-                        }}
-                        className="bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] rounded-[var(--radius-sm)] px-2 py-1"
-                        aria-label="디자인 삭제"
-                      >
-                        ×
-                      </button>
+                      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          data-testid="design-duplicate"
+                          disabled={duplicatingId !== null}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void duplicate(d);
+                          }}
+                          className="bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] disabled:opacity-50 disabled:cursor-progress rounded-[var(--radius-sm)] px-2 py-1"
+                          aria-label="디자인 복제"
+                        >
+                          {duplicatingId === d.id ? "복제 중…" : "복제"}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="design-delete"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (
+                              typeof window !== "undefined" &&
+                              !window.confirm(`"${d.title}" 디자인을 삭제할까요?`)
+                            ) {
+                              return;
+                            }
+                            deleteDesign(d.id);
+                          }}
+                          className="bg-[color:var(--surface-overlay)] border border-[color:var(--surface-overlay-border)] text-[12px] text-[color:var(--text-soft)] hover:text-[color:var(--text-strong)] rounded-[var(--radius-sm)] px-2 py-1"
+                          aria-label="디자인 삭제"
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </Reveal>
-              ))}
+                  </Reveal>
+                );
+              })}
             </div>
           )}
         </section>
 
         {/* Resources panel */}
         <section className="mt-12" data-testid="workspace-resources">
-          <div className="flex items-baseline justify-between mb-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
             <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-[color:var(--text-strong)]">
               리소스
               <span className="ml-2 text-[14px] text-[color:var(--text-soft)] font-normal">
                 {resources.length}
               </span>
             </h2>
-            <p className="text-[12px] text-[color:var(--text-soft)]">
-              미디어 추가 시 자동으로 등록됩니다
-            </p>
+            {resources.length > 0 ? (
+              <SelectionBar
+                selection={resourceSelection}
+                noun="리소스"
+                onDeleteSelected={() => {
+                  const n = resourceSelection.selectedCount;
+                  if (n === 0) return;
+                  if (
+                    typeof window !== "undefined" &&
+                    !window.confirm(`선택한 리소스 ${n}개를 삭제할까요?`)
+                  ) {
+                    return;
+                  }
+                  deleteSelectedResources();
+                }}
+              />
+            ) : (
+              <p className="text-[12px] text-[color:var(--text-soft)]">
+                미디어 추가 시 자동으로 등록됩니다
+              </p>
+            )}
           </div>
           {resources.length === 0 ? (
             <Card tone="default">
@@ -231,50 +416,76 @@ export function LandingPage() {
             </Card>
           ) : (
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-              {resources.map((r) => (
-                <div
-                  key={r.id}
-                  data-testid="resource-card"
-                  data-resource-id={r.id}
-                  data-resource-kind={r.kind}
-                  data-resource-session-only={r.sessionOnly ? "true" : "false"}
-                  className="group relative aspect-square rounded-[var(--radius-md)] border border-[color:var(--surface-1-border)] bg-[color:var(--surface-1)] overflow-hidden"
-                >
-                  {r.kind === "image" ? (
-                    <img src={r.src} alt={r.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-black/40 text-[color:var(--text-strong)]">
-                      <div className="text-center">
-                        <div className="flex justify-center" aria-hidden>
-                          <IconPlay size={28} />
-                        </div>
-                        <div className="text-[11px] mt-1 text-white/80 break-all px-2">
-                          {r.name}
+              {resources.map((r) => {
+                const selected = resourceSelection.isSelected(r.id);
+                return (
+                  <div
+                    key={r.id}
+                    data-testid="resource-card"
+                    data-resource-id={r.id}
+                    data-resource-kind={r.kind}
+                    data-resource-session-only={r.sessionOnly ? "true" : "false"}
+                    data-selected={selected ? "true" : "false"}
+                    className={cn(
+                      "group relative aspect-square rounded-[var(--radius-md)] border bg-[color:var(--surface-1)] overflow-hidden",
+                      selected
+                        ? "border-[color:var(--accent)] ring-2 ring-[color:var(--accent)]"
+                        : "border-[color:var(--surface-1-border)]",
+                    )}
+                  >
+                    {r.kind === "image" ? (
+                      <img src={r.src} alt={r.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-black/40 text-[color:var(--text-strong)]">
+                        <div className="text-center">
+                          <div className="flex justify-center" aria-hidden>
+                            <IconPlay size={28} />
+                          </div>
+                          <div className="text-[11px] mt-1 text-white/80 break-all px-2">
+                            {r.name}
+                          </div>
                         </div>
                       </div>
+                    )}
+                    {/* Selection check — top-left, visible on hover or when
+                      selected. Sits above the thumbnail. */}
+                    <div
+                      className={cn(
+                        "absolute top-1 left-1 z-10 transition-opacity",
+                        selected
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
+                      )}
+                    >
+                      <SelectCheck
+                        checked={selected}
+                        onToggle={() => resourceSelection.toggle(r.id)}
+                        label={`"${r.name}" 선택`}
+                        size={20}
+                      />
                     </div>
-                  )}
-                  {r.sessionOnly ? (
-                    <span className="absolute top-1 left-1 bg-black/55 text-white text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded">
-                      이번 세션만
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    data-testid="resource-delete"
-                    onClick={() => {
-                      deleteResource(r.id);
-                    }}
-                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/55 text-white text-[11px] leading-none rounded px-1.5 py-1"
-                    aria-label="리소스 삭제"
-                  >
-                    ×
-                  </button>
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[10px] px-2 py-1 truncate opacity-0 group-hover:opacity-100 transition-opacity">
-                    {r.name}
+                    {r.sessionOnly ? (
+                      <span className="absolute bottom-1 left-1 bg-black/55 text-white text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded">
+                        이번 세션만
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      data-testid="resource-delete"
+                      onClick={() => {
+                        deleteResource(r.id);
+                      }}
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/55 text-white text-[11px] leading-none rounded px-1.5 py-1"
+                      aria-label="리소스 삭제"
+                    >
+                      ×
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[10px] px-2 py-1 truncate opacity-0 group-hover:opacity-100 transition-opacity">
+                      {r.name}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
