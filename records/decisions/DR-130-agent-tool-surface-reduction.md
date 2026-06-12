@@ -60,6 +60,8 @@ UI/단축키 불변, 에이전트만 못 봄). `PAGE_EXCLUDED`(coverage test)에
   (description-slim)** — 단 DR-048이 그 노트들이 레이아웃 오용을 막는다고 했으므로 품질 회귀
   주의하며 별도 WI로.
 - (−) FREE(mixed/canvas-board)는 DR-064대로 `tools:"all"` 유지 — 이번 축소는 page surface 한정.
+  *→ 이 부분은 DR-132(2026-06-13)가 확장: 실사용 세션이 전부 free-placement로 확인되어 같은
+  19개 de-list를 `{ allExcept }` 정책 변형으로 free에도 적용.*
 
 ## Verification
 

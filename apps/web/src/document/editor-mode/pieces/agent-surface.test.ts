@@ -18,7 +18,8 @@ const NO_PAGE: AgentHostContext = { rootId: "root-1", activeContainerId: undefin
 
 function adapterFor(exposedName: string): AgentToolAdapter {
   const tools = PAGE_AGENT_SURFACE.tools;
-  if (tools === "all") throw new Error("PAGE surface must be an explicit allow-list");
+  if (tools === "all" || !Array.isArray(tools))
+    throw new Error("PAGE surface must be an explicit allow-list");
   const found = tools.find((t) => typeof t !== "string" && t.exposedName === exposedName);
   if (found === undefined || typeof found === "string") {
     throw new Error(`no adapter exposed as ${exposedName}`);
@@ -252,7 +253,8 @@ describe("weave.page.duplicate adapter (WI-169)", () => {
 
 describe("page-surface composition (WI-169)", () => {
   const tools = PAGE_AGENT_SURFACE.tools;
-  if (tools === "all") throw new Error("PAGE surface must be an explicit allow-list");
+  if (tools === "all" || !Array.isArray(tools))
+    throw new Error("PAGE surface must be an explicit allow-list");
   const exposed = tools.map((t) => (typeof t === "string" ? t : t.exposedName));
 
   it("weave.preset.insertSlide is NOT exposed — page creation has one path (weave.page.add)", () => {

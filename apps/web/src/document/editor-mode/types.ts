@@ -440,11 +440,22 @@ export interface AgentToolAdapter {
  *  unsupported operations are unrepresentable rather than guarded after the
  *  fact (the WI-167 recurrence class, removed structurally). New commands
  *  must be enlisted per flavor (or deliberately left off) — omission fails
- *  safe as "not exposed" (DR-115 §5). */
+ *  safe as "not exposed" (DR-115 §5).
+ *
+ *  `{ allExcept }` (WI-207 / DR-132) = pass-through of everything registered
+ *  MINUS a closed de-list — the free-placement shape of the WI-205 / DR-130
+ *  tool-surface reduction. It keeps free placement's "new commands auto-flow
+ *  to the agent" philosophy (unlike the allow-list, omission exposes), while
+ *  de-advertising the non-canonical verbs whose schemas the model re-reads
+ *  every turn (small-think DR-067). */
 export interface AgentSurfacePolicy {
-  /** `"all"` = pass-through of every registered command. Otherwise a closed
-   *  allow-list: string = unchanged pass-through, adapter = wrapped tool. */
-  readonly tools: "all" | ReadonlyArray<string | AgentToolAdapter>;
+  /** `"all"` = pass-through of every registered command. `{ allExcept }` =
+   *  pass-through minus the de-list. Otherwise a closed allow-list: string =
+   *  unchanged pass-through, adapter = wrapped tool. */
+  readonly tools:
+    | "all"
+    | { readonly allExcept: ReadonlyArray<string> }
+    | ReadonlyArray<string | AgentToolAdapter>;
   /** Flavor-specific system-prompt fragment (absorbs the hardcoded
    *  pageLine). Empty/omitted = no fragment. */
   readonly promptFragment?: (host: AgentHostContext) => string;

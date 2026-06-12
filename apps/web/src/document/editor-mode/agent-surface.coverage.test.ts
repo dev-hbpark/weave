@@ -14,7 +14,11 @@ import { describe, expect, it } from "vitest";
 import { WEAVE_COMMAND_SCHEMAS } from "../../features/aku/agent/weave-command-schemas.js";
 import { buildWeaveCommands, type WeaveCommandTargets } from "../commands.js";
 import { defaultPresetRegistry } from "../presets/default-registry.js";
-import { FREE_AGENT_SURFACE, PAGE_AGENT_SURFACE } from "./pieces/agent-surface.js";
+import {
+  FREE_AGENT_SURFACE,
+  NONCANONICAL_AGENT_TOOLS,
+  PAGE_AGENT_SURFACE,
+} from "./pieces/agent-surface.js";
 import type { AgentToolAdapter } from "./types.js";
 
 const noopTargets: WeaveCommandTargets = {
@@ -54,58 +58,30 @@ const PAGE_EXCLUDED: ReadonlyArray<string> = [
 
   // ── WI-205 / DR-130 — agent tool-surface reduction ───────────────────────
   // The advertised schemas re-read every turn dominate agent input tokens
-  // (small-think DR-067). These 19 commands were de-listed from the AGENT
-  // surface to match the canonical funnel weave-capabilities §6 already teaches.
-  // ALL stay registered for the UI — only the agent no longer SEES them, and
-  // every verb is reachable through a kept canonical tool.
-  //
-  // (a) Non-canonical single-item style mutators — the domain prose explicitly
-  //     says these "do not exist; everything they did is via weave.item.add /
-  //     weave.item.update" (units). De-listing makes that statement TRUE.
-  "weave.shape.setFill", // → weave.item.update units:[{ kind:"decoration.fill" }]
-  "weave.shape.setCornerRadius", // → weave.item.update attrs.cornerRadius / cornerRadii
-  "weave.shape.setVertices", // → weave.item.update attrs (poly points)
-  "weave.item.setDecoration", // → weave.item.add / weave.item.update units
-  // (b) Non-canonical MULTI-item mutators — the prose says "do NOT use items.
-  //     align / resizeMulti / remove / duplicate — folded into items.update /
-  //     items.lifecycle". De-listing aligns the surface with that funnel.
-  "weave.items.resizeMulti", // → weave.items.update (per-item frames in `updates`)
-  "weave.items.remove", // → weave.items.lifecycle { op:"remove" }
-  "weave.items.duplicate", // → weave.items.lifecycle { op:"duplicate" }
-  "weave.items.duplicateWithDelta", // niche rhythmic clone → items.lifecycle + items.update frames
-  // (c) Niche shape/line/image ops — ~0 agent usage; canonical paths cover the
-  //     common case, fail-closed is acceptable for the rare one.
-  "weave.image.setCrop", // → weave.item.update attrs.cropRatio
-  "weave.item.flip", // → weave.item.update units:[{ kind:"transform.flip" }]
-  "weave.shape.breakToLine", // shape→line conversion, rare on slides
-  "weave.line.closeToShape", // line→shape conversion, rare on slides
-  // (d) Relative z-order ±1 steps — to/Front / to/Back cover the agent intent.
-  "weave.item.bringForward",
-  "weave.item.sendBackward",
-  // (e) Grid/flex micro-ops — placement is owned by weave.item.setLayoutChild /
-  //     weave.frame.setLayout / weave.design.reorderChildren.
-  "weave.item.swapGridCells",
-  "weave.item.dropGridCell",
-  "weave.item.swapFlexOrder",
-  // (f) Frame dissolve — niche AND destructive on a page (a page IS a frame:
-  //     dissolving the active page spills its children to the root). The UI
-  //     keeps it; the agent should not reach for it blind.
-  "weave.frame.removeKeepingChildren",
-  // (g) Whole-document reset — a footgun to hand an agent, not a slide-editing
-  //     capability. UI-only.
-  "weave.doc.reset",
+  // (small-think DR-067). The 19 non-canonical commands were de-listed from
+  // the AGENT surface to match the canonical funnel weave-capabilities §6
+  // already teaches. WI-207 / DR-132 made the de-list FLAVOR-NEUTRAL (the
+  // free surface now excludes the same names via { allExcept }), so the
+  // single source — names AND per-name reasons — lives in
+  // pieces/agent-surface.ts NONCANONICAL_AGENT_TOOLS.
+  ...NONCANONICAL_AGENT_TOOLS,
 ];
 
 function asAdapters(tools: typeof PAGE_AGENT_SURFACE.tools): ReadonlyArray<AgentToolAdapter> {
-  if (tools === "all") throw new Error("expected an explicit allow-list");
+  if (tools === "all" || !Array.isArray(tools)) throw new Error("expected an explicit allow-list");
   return tools.map((t) => (typeof t === "string" ? { exposedName: t, command: t } : t));
 }
 
 describe("page-bounded agent surface coverage (WI-168 / DR-115)", () => {
   const tools = asAdapters(PAGE_AGENT_SURFACE.tools);
 
-  it("free-placement flavors pass the whole registry through (DR-064 unchanged)", () => {
-    expect(FREE_AGENT_SURFACE.tools).toBe("all");
+  it("free-placement flavors pass the registry through MINUS the non-canonical de-list (WI-207 / DR-132)", () => {
+    expect(FREE_AGENT_SURFACE.tools).toEqual({ allExcept: NONCANONICAL_AGENT_TOOLS });
+  });
+
+  it("every de-listed name is a REGISTERED command (the de-list cannot drift from the catalogue)", () => {
+    const unknown = NONCANONICAL_AGENT_TOOLS.filter((n) => !REGISTERED.includes(n));
+    expect(unknown, `de-listed names not in the registry: ${unknown.join(", ")}`).toEqual([]);
   });
 
   it("every enlisted tool wraps a REGISTERED internal command", () => {

@@ -62,6 +62,50 @@ describe("bindAgentSurface (WI-168 / DR-115)", () => {
     expect(bound.schemas).toBe(SCHEMAS);
   });
 
+  it("{ allExcept } passes everything through MINUS the de-list (WI-207 / DR-132)", () => {
+    const { editor, calls } = makeEditor();
+    const commands = makeRegistry(["weave.a", "weave.b"]);
+    const bound = bindAgentSurface({
+      policy: { tools: { allExcept: ["weave.b"] } },
+      editor,
+      commands,
+      baseSchemas: SCHEMAS,
+      getHost: () => HOST,
+    });
+    // advertisement: schemas + registry view drop the de-listed name only
+    expect(Object.keys(bound.schemas)).toEqual(["weave.a"]);
+    expect(bound.commands.list().map((c) => c.name)).toEqual(["weave.a"]);
+    expect(bound.commands.has("weave.a")).toBe(true);
+    expect(bound.commands.has("weave.b")).toBe(false);
+    expect(bound.commands.get("weave.b")).toBeUndefined();
+    // exec: kept name passes through, de-listed name fails closed WITHOUT executing
+    const ok = (bound.editor.exec as (n: string, i: unknown) => { ok: boolean })("weave.a", {});
+    expect(ok.ok).toBe(true);
+    const blocked = (
+      bound.editor.exec as (n: string, i: unknown) => { ok: boolean; error?: { code: string } }
+    )("weave.b", {});
+    expect(blocked.ok).toBe(false);
+    expect(blocked.error?.code).toBe("agent-tool-not-exposed");
+    expect(calls.map((c) => c.name)).toEqual(["weave.a"]);
+  });
+
+  it("{ allExcept } auto-flows commands registered AFTER bind (lazy live-registry view)", () => {
+    const { editor } = makeEditor();
+    const commands = makeRegistry(["weave.a"]);
+    const bound = bindAgentSurface({
+      policy: { tools: { allExcept: ["weave.b"] } },
+      editor,
+      commands,
+      baseSchemas: SCHEMAS,
+      getHost: () => HOST,
+    });
+    commands.register({
+      name: "weave.c",
+      run: () => ({ ok: true, value: "weave.c", patches: [] }),
+    } as unknown as Command);
+    expect(bound.commands.list().map((c) => c.name)).toEqual(["weave.a", "weave.c"]);
+  });
+
   it("an allow-list exposes exactly its names (renames included) with their schemas", () => {
     const { editor } = makeEditor();
     const bound = bindAgentSurface({

@@ -20,10 +20,56 @@ import type { AgentCommandSpec } from "@agocraft/agent-client";
 import { clampFrameToPage } from "../../page-clamp.js";
 import type { AgentHostContext, AgentSurfacePolicy, AgentToolAdapter } from "../types.js";
 
-/** Free placement (mixed / canvas-board): the full registered command set,
- *  pass-through — byte-identical to the pre-DR-115 surface (no regression). */
+// WI-207 / DR-132 — the WI-205 / DR-130 de-list, applied FLAVOR-NEUTRALLY.
+// The advertised tool schemas are re-read on every agent turn (small-think
+// DR-067: input ≈ turns × static prefix), and every rationale below is about
+// the CANONICAL FUNNEL the cached domain prose teaches — none is page-
+// specific, so free placement de-advertises the same 19 verbs. ALL stay
+// registered for the UI; every verb remains reachable through a kept
+// canonical tool. Page-only exclusions (preset.insertSlide, items.group, …)
+// are NOT here — they live in the page surface's own triage
+// (agent-surface.coverage.test.ts PAGE_EXCLUDED).
+export const NONCANONICAL_AGENT_TOOLS: ReadonlyArray<string> = [
+  // (a) Non-canonical single-item style mutators — the domain prose says these
+  //     "do not exist; everything they did is via weave.item.add/update".
+  "weave.shape.setFill", // → weave.item.update units:[{ kind:"decoration.fill" }]
+  "weave.shape.setCornerRadius", // → weave.item.update attrs.cornerRadius / cornerRadii
+  "weave.shape.setVertices", // → weave.item.update attrs (poly points)
+  "weave.item.setDecoration", // → weave.item.add / weave.item.update units
+  // (b) Non-canonical multi-item mutators — folded into items.update /
+  //     items.lifecycle by the §6 funnel.
+  "weave.items.resizeMulti", // → weave.items.update (per-item frames in `updates`)
+  "weave.items.remove", // → weave.items.lifecycle { op:"remove" }
+  "weave.items.duplicate", // → weave.items.lifecycle { op:"duplicate" }
+  "weave.items.duplicateWithDelta", // → items.lifecycle + items.update frames
+  // (c) Niche shape/line/image ops — ~0 agent usage; canonical paths cover
+  //     the common case, fail-closed is acceptable for the rare one.
+  "weave.image.setCrop", // → weave.item.update attrs.cropRatio
+  "weave.item.flip", // → weave.item.update units:[{ kind:"transform.flip" }]
+  "weave.shape.breakToLine", // shape→line conversion, rare
+  "weave.line.closeToShape", // line→shape conversion, rare
+  // (d) Relative z-order ±1 steps — to/Front / to/Back cover the agent intent.
+  "weave.item.bringForward",
+  "weave.item.sendBackward",
+  // (e) Grid/flex micro-ops — placement is owned by weave.item.setLayoutChild /
+  //     weave.frame.setLayout / weave.design.reorderChildren.
+  "weave.item.swapGridCells",
+  "weave.item.dropGridCell",
+  "weave.item.swapFlexOrder",
+  // (f) Frame dissolve — niche AND destructive blind; reachable via
+  //     weave.item.reparent + weave.item.remove when truly needed.
+  "weave.frame.removeKeepingChildren",
+  // (g) Whole-document reset — a footgun to hand an agent. UI-only.
+  "weave.doc.reset",
+];
+
+/** Free placement (mixed / canvas-board): everything registered EXCEPT the
+ *  non-canonical de-list (WI-207 / DR-132). New commands still auto-flow to
+ *  the agent (pass-through philosophy, DR-064/DR-115), only the 19 verbs the
+ *  canonical funnel already covers are de-advertised — the same trim the
+ *  page surface shipped in WI-205 / DR-130, applied flavor-neutrally. */
 export const FREE_AGENT_SURFACE: AgentSurfacePolicy = {
-  tools: "all",
+  tools: { allExcept: NONCANONICAL_AGENT_TOOLS },
 };
 
 // ── input translation helpers (pure) ───────────────────────────────────────

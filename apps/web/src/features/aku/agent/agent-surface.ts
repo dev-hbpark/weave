@@ -63,16 +63,60 @@ export function bindAgentSurface(opts: {
 }): BoundAgentSurface {
   const { policy, editor, commands, baseSchemas, getHost, onPageActivate } = opts;
 
-  // "all" = the identity triple: byte-identical to the pre-DR-115 wiring, so
-  // free-placement flavors (mixed / canvas-board) cannot regress.
+  // "all" = the identity triple: byte-identical to the pre-DR-115 wiring.
   if (policy.tools === "all") {
     return { editor, commands, schemas: baseSchemas };
   }
 
+  // { allExcept } (WI-207 / DR-132) = lazy pass-through MINUS the de-list.
+  // Unlike the allow-list below (static names, adapters), this filters the
+  // LIVE registry at read time — new commands auto-flow to the agent (free-
+  // placement philosophy), the de-listed ones stop being advertised, and a
+  // call to a de-listed name fails closed without executing (defence-in-depth
+  // with the advertisement filter).
+  if (!Array.isArray(policy.tools)) {
+    const excluded = new Set((policy.tools as { allExcept: ReadonlyArray<string> }).allExcept);
+    const schemas = Object.fromEntries(
+      Object.entries(baseSchemas).filter(([name]) => !excluded.has(name)),
+    );
+    const commandsView: CommandRegistry = {
+      register: () => {
+        throw new Error("agent-surface: the agent command view is read-only");
+      },
+      get: <I, O>(name: string) =>
+        excluded.has(name) ? undefined : (commands.get(name) as Command<I, O> | undefined),
+      has: (name) => !excluded.has(name) && commands.has(name),
+      list: () => commands.list().filter((c) => !excluded.has(c.name)),
+    };
+    const exceptExec: ExecFn = (commandName, input, execOpts) => {
+      if (excluded.has(commandName)) {
+        return {
+          ok: false,
+          error: {
+            code: "agent-tool-not-exposed",
+            message: `"${commandName}" is not part of this design mode's agent surface`,
+          },
+        };
+      }
+      return (editor.exec as ExecFn)(commandName, input, execOpts);
+    };
+    const exceptEditor = new Proxy(editor, {
+      get(target, prop, receiver) {
+        if (prop === "exec") return exceptExec;
+        return Reflect.get(target, prop, receiver);
+      },
+    }) as Editor;
+    return { editor: exceptEditor, commands: commandsView, schemas };
+  }
+
+  // Array.isArray does not narrow a ReadonlyArray union's negative branch, so
+  // the allow-list shape is re-asserted here (the { allExcept } shape returned
+  // above; "all" returned before that).
+  const allowList = policy.tools as ReadonlyArray<string | AgentToolAdapter>;
   const adaptersByExposed = new Map<string, AgentToolAdapter>();
   const schemas: Record<string, AgentCommandSpec> = {};
 
-  for (const tool of policy.tools) {
+  for (const tool of allowList) {
     const adapter: AgentToolAdapter =
       typeof tool === "string" ? { exposedName: tool, command: tool } : tool;
     if (adaptersByExposed.has(adapter.exposedName)) {
