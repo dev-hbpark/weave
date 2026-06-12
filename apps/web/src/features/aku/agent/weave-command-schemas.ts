@@ -107,38 +107,17 @@ const QR_ATTRS_NOTE =
 // WI-077 — chart items are DATA-DRIVEN and reference a dataset by id; they own
 // no data inline. Creation is its own tool (weave.chart.add), so the note steers
 // the agent away from the empty-placeholder footgun of weave.item.add+kind:chart.
+// WI-209 / DR-134 — slimmed to that steer + the edit-merge contract: the full
+// chart model is advertised on weave.chart.add's own typed schema AND cached in
+// WEAVE_CAPABILITIES' chart itemKind, so restating it on item.add (a tool charts
+// must NOT use) was pure per-turn duplication.
 const CHART_ATTRS_NOTE =
   "For chart items (data-driven): a chart REFERENCES a dataset by attrs.datasetId — it owns NO data inline. " +
-  "To CREATE use weave.chart.add (seeds a dataset AND the chart in ONE step — pass dataset:{columns,rows}, " +
-  "chartType, and for non-category/value types an explicit encoding + variant); do NOT use weave.item.add with " +
-  "kind 'chart' (empty placeholder). " +
-  "14 CHART TYPES (attrs.chartType): bar · line · area · pie · funnel · gauge · scatter · bubble · radar · " +
-  "heatmap · candlestick · boxplot · treemap · sankey — pick the one that fits the data, not just bar/line/pie. " +
-  "ENCODING (attrs.encoding) maps visual channels → dataset columns, each { field:<column>, aggregate? } (value " +
-  "may be an ARRAY for multi-series): category+value[] for bar/line/area/pie/funnel/radar; x+y(+size) for " +
-  "scatter/bubble; x+y+value for heatmap; category+open/high/low/close for candlestick; category+lower/q1/median/" +
-  "q3/upper for boxplot; id+parent(+value) for treemap; source+target(+value) for sankey. " +
-  "VARIANT (attrs.variant): { stacked, normalized (100%), horizontal, smooth, innerRadius (pie→doughnut) }. " +
-  "STYLE detail, all via weave.item.update { itemId, attrs:{…} }: attrs.palette (series colors, string[]), " +
-  "attrs.showLegend / attrs.showAxis (boolean), attrs.opacity (0..1), and attrs.overrides for per-element emphasis " +
-  "— { datum:{ '<category>':{ color?, borderWidth?, offset? } }, series:{ '<series>':{ color?, borderWidth? } } } " +
-  "(highlight one bar/slice or a whole series). Edit the look/type/encoding/variant/style with weave.item.update; " +
-  "edit the DATA with weave.dataset.update. " +
-  "PARTIAL chart edits are NON-DESTRUCTIVE: attrs.variant, attrs.encoding and attrs.overrides are DEEP-MERGED " +
-  "over the chart's current values, so you may send ONLY the delta — e.g. attrs:{ variant:{ stacked:true } } " +
-  "keeps the other variant flags, and attrs:{ overrides:{ datum:{ 'B':{ color:'#e11' } } } } emphasizes ONE bar " +
-  "without dropping other datum/series overrides. To CLEAR a key, set its value to null (e.g. " +
-  "overrides:{ datum:{ 'B':null } } removes B's emphasis). attrs.palette is a full array (replaced wholesale). " +
-  "DATA: put the category/label column FIRST, numeric series after; keep series legible (≈≤5). For colours prefer " +
-  "the theme categorical tokens [var(--domain-slide-accent)/--domain-canvas-accent/--domain-block-accent/" +
-  "--domain-media-accent] in attrs.palette (distinct + theme-reactive), and GROUND the chart on a card surface " +
-  "(a frame behind it with decoration.fill + cornerRadius + soft shadow), not bare canvas. " +
-  "TEXT IS REAL TEXT ITEMS (DR-035): for bar/line/area + pie the CATEGORY/axis labels are AUTO-MANAGED text child " +
-  "items derived from the dataset — do NOT hand-add them (duplicates), do NOT reposition them, and editing a " +
-  "label's TEXT means editing the DATA (use weave.dataset.update). You MAY restyle those label items (color/" +
-  "fontWeight/fontSize via weave.item.update — persists across re-projection). ADD YOUR OWN separate text items " +
-  "for the chart TITLE, the one-line takeaway, callouts/annotations and a source note — a chart almost always " +
-  "needs a human title + takeaway the data labels don't supply.";
+  "To CREATE use weave.chart.add (seeds the dataset AND the chart in ONE step); do NOT use weave.item.add with " +
+  "kind 'chart' (empty placeholder). EDIT the look/type/encoding/variant/style via weave.item.update { attrs } — " +
+  "attrs.variant / attrs.encoding / attrs.overrides DEEP-MERGE over current values (send only the delta; set a " +
+  "key to null to CLEAR it; attrs.palette is replaced wholesale) — and edit the DATA via weave.dataset.update. " +
+  "Full per-field model (types, encoding matrix, style, auto-managed labels): the chart itemKind capabilities.";
 
 // WI-077 — tabular dataset payload, shared by weave.chart.add / weave.dataset.*.
 const DATASET_PAYLOAD: Json = {

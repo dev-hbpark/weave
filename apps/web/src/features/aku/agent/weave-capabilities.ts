@@ -77,30 +77,29 @@ export const WEAVE_CAPABILITIES = {
   ],
   itemKinds: [
     {
+      // WI-209 / DR-134 — catalogue-only entry. The structure/slide/grouping RULES
+      // (when to nest, filmstrip placement, backdrop judgment) live ONCE in the
+      // cached WEAVE_DOMAIN_KNOWLEDGE §0/§5; this entry keeps the per-kind FIELDS
+      // plus the one critical inline rule (presentable:false — the #1 footgun).
       kind: "frame",
       description: [
-        "A frame. A TOP-LEVEL frame (direct child of the design root) is a presentation SLIDE. A frame holds child items via weave.item.add with containerId = this frame's id; it has no text/image content of its own. NESTED FRAMES ARE YOUR LAYOUT TOOL FOR GROUPING: nest a frame (containerId = another frame's id), give it a layout via weave.frame.setLayout (auto-flex row/column or auto-grid), and it becomes a self-arranging container — a header band, a two-column split, a card, a card grid, a sidebar, a stat row. Reach for one to align/auto-arrange MULTIPLE related items, or to make a region reflow as a unit; it earns its place by doing real layout work. Do NOT wrap a SINGLE item (or a one-element region) in its own layout frame — a single-child frame is needless nesting; place that item directly on its parent instead. The defect to avoid is hand-placing a CLUSTER of related items by coordinate so they drift out of alignment — group THOSE; a lone well-placed item does not need a wrapper. CRITICAL RULE: a nested frame is a SLIDE by default, so on EVERY nested (non-top-level) frame set attrs.presentable:false — that makes it a LAYOUT GROUP, not an extra slide, so ONLY the top-level frame you intend as the slide lands in the deck. And use a plain SHAPE (rectangle) for a single coloured panel / divider / button background, never a frame.",
-        // SLIDE SEMANTICS — load-bearing for this presentation tool.
-        "SLIDE: a top-level frame (a direct child of the design root) IS one presentation slide. The deck = the ordered list of these root frames; Present mode shows them in order. Add each slide-frame with weave.item.add { kind:'frame', frame:{ x: i*1.1, y:0, width:1, height:1 } } (slide index i, 0-based) and NO containerId (→ the design root). Give each slide a DISTINCT x (a left-to-right filmstrip) — do NOT put them all at { x:0, y:0, width:1, height:1 }, which overlaps every slide on one spot. weave.design.setPresentationOrder reorders the deck, and weave.design.reorderChildren reorders siblings. NESTED frames (containerId = another frame's id) organise a slide's content into rows/columns/grids/cards via a layout — set attrs.presentable:false on EACH so it stays a layout group, never an extra slide. For a single coloured panel / box / divider / button, prefer a SHAPE (kind:'shape', rectangle); use a nested frame to group + auto-arrange multiple items.",
-        "BACKGROUND/FILL: ACTIVELY use frame fills — a slide should NOT sit on bare default white, and grouping frames should NOT be left transparent when a surface would add structure or depth. Give the slide a deliberate base fill and give section / group / card frames their own colour panel, tonal band, or card surface (often with cornerRadius + a soft decoration.shadow). Set the background with a decoration.fill unit — weave.item.add { …, units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } at creation, or weave.item.update { itemId, units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } later — solid, gradient, or image/video paint (see the shape itemKind for the PaintSpec shape). For a photo background, prefer adding a kind:'image' child at frame {0,0,1,1} then weave.item.sendToBack. attrs.cornerRadius (ABSOLUTE design-px, drawn circular, auto-capped at min(width,height)/2 — ~12–24 for a soft round, large = pill) rounds the frame, and attrs.cornerRadii { tl, tr, br, bl } (px) rounds each corner independently; decoration.shadow/.stroke also apply (see decoration units).",
-        "LAYOUT: a frame can auto-arrange its children — set attrs.layout (a LayoutSpec) via weave.frame.setLayout to get a CSS-flex row/column or CSS-grid. See layoutKinds for the full auto-flex / auto-grid spec.",
+        "A frame — the container kind (holds child items added with containerId = this frame's id; no text/image content of its own). A TOP-LEVEL frame (direct child of the design root, NO containerId) IS one presentation SLIDE; the deck = the ordered root frames (weave.design.setPresentationOrder reorders the deck, weave.design.reorderChildren reorders siblings). A NESTED frame (containerId = another frame) is the LAYOUT GROUPING tool — give it attrs.layout via weave.frame.setLayout (auto-flex / auto-grid; full spec in layoutKinds). CRITICAL: a nested frame is a SLIDE by default — set attrs.presentable:false on EVERY nested frame so it stays a layout group, not an extra slide. Slide placement (filmstrip), when a region earns a nested frame, and shape-vs-frame for single panels follow domain rules §0/§5.",
+        "BACKGROUND/FILL: the background is a decoration.fill unit (set in weave.item.add/update `units`; PaintSpec — see the decoration.fill unitKind). attrs.cornerRadius = corner radius in ABSOLUTE design-px (drawn circular, auto-capped at min(width,height)/2 — ~12–24 for a soft round, large = pill); attrs.cornerRadii { tl, tr, br, bl } (px) rounds each corner independently. decoration.shadow/.stroke also apply. Slides and card frames should carry deliberate fills (judgment in domain rules §5); a photo background = a kind:'image' child at frame {0,0,1,1} + weave.item.sendToBack.",
       ].join(" "),
       editableAttrs: ["frame", "layout", "cornerRadius", "cornerRadii", "presentable"],
       units: ["decoration.fill", "decoration.shadow", "decoration.stroke", "decoration.opacity"],
     },
     {
+      // WI-209 / DR-134 — catalogue-only entry. The sizing RULES (role px targets,
+      // body minimum, shared-frame budget — domain §2) and the auto-height /
+      // width-binding / flex-row / DR-098 placement rules (domain §3) live ONCE in
+      // the cached WEAVE_DOMAIN_KNOWLEDGE; this entry keeps the per-kind FIELDS
+      // (textRuns stays authoritative here — the domain block doesn't spec it).
       kind: "text",
       description: [
         "A text box. The visible string is attrs.text ('\\n' = line break).",
-        // SIZING — the load-bearing part. fontSize is absolute design-px, NOT a
-        // ratio, while attrs.frame is a 0..1 ratio of the parent. The two are
-        // bridged by the canvas px size, given in each task's [디자인] line — use
-        // it to pick a size that reads at the canvas scale.
-        "SIZING: give attrs.fontSizeSpec { kind:'px', value } — the ABSOLUTE design-px size (off the canvas px in the [디자인] line). It is FIXED (DR-101): the text renders at exactly that design-px and does NOT rescale when a frame / parent is resized — it scales only with the whole-canvas zoom. So pick the real px you want; it means the same everywhere (a 64px heading is 64px whether on a full slide or deep in a small card). SHARED-FRAME BUDGET — the #1 cause of overflow: when a frame holds MORE THAN ONE item the items SHARE its height, so a text does NOT get the whole frame. Before sizing, budget it: usable height = parent frame px height − padding(top+bottom) − the gaps between children; the SUM of the children's rendered heights (each ≈ fontSize × lineHeight × wrapped-line-count) + gaps must fit the usable height WITH MARGIN (≤ ~85%). Px role targets off the CANVAS height: heading ~6–9% (≈65–97px on a 1080px canvas), subheading ~4%, body ~3% (≈32px on 1080) — body is the readable BASELINE; real content (findings, agenda, bullets, descriptions) must NEVER be smaller than that. If a stack would crowd or overflow, CUT WORDS or enlarge the region (frame/track), do NOT shrink body below its minimum; never oversize. (A { kind:'ratio', value:0..1 } is still RENDERED (value × parent height) but NOT recommended — it rescales whenever the parent resizes; prefer px for stable, predictable size. NEVER put a fraction in the plain fontSize number — a 0..1 there renders as sub-pixel text.)",
-        "SIZING ROLES (canvas px is in each task's [디자인] line): heading 48–96px (~5–9% of canvas height → ratio ~0.05–0.09), subheading 32–48px, body 28–40px, caption 18–22px. On 1920×1080 a heading ≈64px and body ≈34px; on 800×600 a heading ≈40px and body ≈22px. BODY MINIMUM (hard rule — agent slides keep coming out too small): real CONTENT text — KEY FINDINGS, agenda items, bullet phrases, descriptions, labels next to numbers — is BODY, and body must be ≥ ~3% of the canvas height (≈32px on 1080, ≈40px on 4K); NEVER size content below that. Caption sizes (18–22px) are ONLY for true footnotes / source notes / tiny meta lines, NOT for findings or any readable content. If text doesn't fit at the body minimum, CUT WORDS or enlarge its region (frame/track) — do NOT shrink body below the minimum to make it fit. These px→ratio numbers hold ONLY when the text's parent frame fills the slide — inside a nested frame that is only part of the slide, divide the target px by THAT frame's px height instead (e.g. a body line in a half-height card uses about double the body ratio).",
-        // PLACEMENT — a text item is a CHILD of an auto-layout frame; the frame sets its
-        // WIDTH and the box AUTO-FITS its height to the wrapped content (AUTO-HEIGHT).
-        "PLACEMENT & SIZING: add text as a CHILD of an auto-layout frame (containerId = a layout frame); the frame sets the text's WIDTH and the box AUTO-FITS ITS HEIGHT to the wrapped content (auto-height). BIND THE TEXT'S WIDTH TO ITS CELL so it WRAPS and never overflows horizontally: in a flex COLUMN set the frame's align (or the child's alignSelf) to 'stretch' — in a column the cross axis IS the width, so the text fills the column width and wraps; in an auto-grid the column track already bounds the width. Do NOT leave a text in auto-width (hugging its content) inside a layout — a long line then spills past its cell. NEVER place WRAPPING body text as a DIRECT child of a flex ROW: in a row the MAIN axis is the width, so flex can SHRINK that text to a sliver (≈1ch) and it wraps into a one-glyph-per-line VERTICAL strip. For a row of text (e.g. label | value, or side-by-side paragraphs) wrap EACH side in its OWN flex-COLUMN sub-frame (the column then binds the text's width via stretch) or use an auto-grid whose tracks bound each cell — the text never competes for main-axis width. Only the WIDTH is layout-bound: do NOT give text main-axis grow or a vertical stretch (that inflates its HEIGHT) and do NOT pin a fixed height — a short title keeps its natural height, and spare room is taken up by the frame's justify / align / gap / padding. For equal-size OR deliberately ROOMY/FIXED regions inside a layout (e.g. comparison columns, a card with breathing room) size the CELL — grid ratio/fr tracks, flex grow/basis, or a wrapper FRAME — never a big leaf-text height; the text stays auto-height and aligns inside the roomy cell (textAlignVertical + the cell's align). CHOOSE A FONT SIZE THAT FITS: pick the fontSizeSpec ratio so the text sits inside its region with margin to spare — if it would crowd or overflow, bring the size DOWN and shorten the copy; never oversize. Position glyphs with textAlignHorizontal / textAlignVertical. ONLY when a text sits directly in an absolute-constraints frame (intentional free-form placement) give it an explicit frame and pin it: weave.item.setLayoutChild { itemId, policy:{ kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }. DR-098: weave now applies this Fixed-box policy AUTOMATICALLY to text you ADD into a free-placement (root / absolute-constraints) parent — the box is FIXED size and does NOT auto-grow, so give frame.width AND frame.height enough room for the content and set attrs.textOverflow 'VISIBLE' if it might spill. (Text added into a flex/grid frame is unaffected — the layout still sizes it, auto-height.)",
+        "SIZING: give attrs.fontSizeSpec { kind:'px', value } — the ABSOLUTE design-px size. It is FIXED (DR-101): the text renders at exactly that design-px and does NOT rescale when a frame / parent is resized (only the whole-canvas zoom scales it) — the same px at any nesting depth. NEVER put a 0..1 fraction into the plain fontSize number (sub-pixel, invisible text), and prefer px over { kind:'ratio' } (ratio rescales on parent resize). Role px targets, the BODY MINIMUM, and the shared-frame height budget are in domain rules §2 — size by them.",
+        "PLACEMENT: text inside an auto-layout (flex/grid) frame is AUTO-HEIGHT — the layout binds its WIDTH (so it wraps), the content sets its height; width-binding, the flex-ROW hazard, roomy-cell sizing and the free-form Fixed-box (DR-098) rules are in domain rules §3 — follow them. Position glyphs with textAlignHorizontal / textAlignVertical.",
         "STYLE: fontFamily (CSS stack), fontWeight ('normal' | 'bold'), fontStyle ('normal' | 'italic'), color, textDecoration ('NONE' | 'UNDERLINE' | 'STRIKETHROUGH'), textCase ('ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE'). These attrs style the WHOLE box.",
         // OUTLINE (외곽선) — DR-059 whole-item + DR-060 per-range.
         "OUTLINE (외곽선): attrs.textOutline = { color, width } draws a halo/stroke around the WHOLE text (color = hex or var(--token); width = VISIBLE halo thickness in design-px; omit or width<=0 = no outline) — use for a heading/number that must read over a busy image or a same-tone fill. For a PER-RANGE outline (just one word), put outlineColor / outlineWidth in that run's textRuns attributes instead (see PER-RANGE STYLE).",
@@ -108,7 +107,7 @@ export const WEAVE_CAPABILITIES = {
         // PER-RANGE typography (부분편집) — DR-062/DR-057. textRuns is the canonical
         // inline content; the plain `text` is a mirror derived from it.
         "PER-RANGE STYLE (부분편집 — style ONLY part of the text, e.g. one word/number a different color or bold): set attrs.textRuns = an ORDERED array of runs that, concatenated, form the full string. Each run is { insert:'<segment>', attributes?:{ color?, fontSize?(px), fontFamily?, fontWeight?:'bold', fontStyle?:'italic', textDecoration?:'UNDERLINE'|'STRIKETHROUGH', textCase?, letterSpacing?(px), outlineColor?, outlineWidth?(px) } }. A run with NO attributes inherits the box defaults. Use '\\n' as its own insert for a hard line break. Example — make 'sales' red+bold in 'Q3 sales up': textRuns:[{insert:'Q3 '},{insert:'sales',attributes:{color:'#e11',fontWeight:'bold'}},{insert:' up'}]. textRuns is the SINGLE SOURCE OF TRUTH: setting attrs.textRuns updates the visible text AND its styling; setting attrs.text alone REPLACES the whole string and RESETS every per-range style (use that for a plain whole-text rewrite). To recolor just one span on existing text, READ the current textRuns from the snapshot, change only the run(s) you want, and send the full textRuns back (the box keeps the others).",
-        "COLOR — DEFAULT to a theme token by ROLE so text re-skins with the theme: title/heading → var(--text-strong); body/paragraph → var(--text-default); secondary/supporting → var(--text-soft); caption/footnote/label → var(--text-muted); EMPHASIZED word/number/KPI/highlight → var(--accent) (or var(--accent-strong)). If you set NO color it already defaults to var(--text-default) (never lazily hard-code a neutral dark/light hex). Override with a LITERAL color only when the content's MOOD wants a specific text color (mood > theme), or for brand/data-bound text.",
+        "COLOR: defaults to var(--text-default) (never lazily hard-code a neutral hex) — choose tokens by ROLE via the text token roles in domain rules §4; a LITERAL color only when the content's mood / brand / data calls for it.",
         "LAYOUT: textAlignHorizontal ('LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED'), textAlignVertical ('TOP' | 'CENTER' | 'BOTTOM'), lineHeightSpec ({ value, unit: 'multiplier' | 'px' }, default 1.4×), letterSpacing / paragraphSpacing / paragraphIndent (all design-px).",
         "Edit any of these with weave.item.update { itemId, attrs }.",
       ].join(" "),
@@ -171,8 +170,9 @@ export const WEAVE_CAPABILITIES = {
         "• path — opaque raw SVG path: { d:'<svg path data>' }.",
         "• speech-bubble — { tail:{ anchorX, anchorY (0..1 of THIS shape's OWN bbox), direction:'down'|'up'|'left'|'right'|'free' }, cornerRadius (px) }.",
         "• heart — { variant: 'classic'|'rounded' }.",
-        // FILL — gradients are first-class, not solid-only.
-        "FILL: set a decoration.fill unit via weave.item.add/update { units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] }, where PaintSpec is discriminated on `type`: { type:'solid', color } | { type:'linear-gradient', angle (deg, 0=up 90=right — not a ratio), stops:[{offset:0..1 along the gradient axis, color},…] (≥2) } | { type:'radial-gradient', cx, cy (0..1 of the shape's OWN bbox — the gradient center), stops:[…] (≥2) } | { type:'image', src, fit?, opacity? } | { type:'video', src, fit?, muted?, loop?, opacity? } | { type:'none' } (transparent). Paint fit = cover|contain|fill|tile. color is any CSS color (#rrggbb/#rrggbbaa/rgb()/var(--token)).",
+        // FILL — gradients are first-class; the PaintSpec is specced ONCE on the
+        // decoration.fill unitKind (WI-209 dedup), this is the pointer.
+        "FILL: set a decoration.fill unit via weave.item.add/update { units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] } — solid / linear- or radial-gradient / image / video / none; the PaintSpec fields are specced on the decoration.fill unitKind. color accepts any CSS color (#rrggbb/#rrggbbaa/rgb()/var(--token)).",
         // DECORATIONS — shadow / stroke / filter / opacity are units, not attrs.
         "DECORATIONS: stroke, shadow, blur/color filters and layer opacity are decoration UNITS set via weave.item.add/update `units` (see the decoration unitKinds) — they are NOT attrs fields. Corner radius for rectangles goes in attrs.subAttrs.cornerRadii (absolute px) via weave.item.update. Size/position/rotation via attrs.frame; this shape can also be a layout child or carry its own attrs.layout.",
       ].join(" "),
@@ -264,7 +264,7 @@ export const WEAVE_CAPABILITIES = {
         // ── DATA composition — get the dataset shape right for the type. ──
         "DATA (compose it well): a dataset is { columns:[{name,type}], rows:[{<col>:value}] }. Put the CATEGORY/label column FIRST and numeric SERIES columns after it. Pick the chartType that FITS the data, not just bar/line/pie: 14 types (bar·line·area·pie·funnel·gauge·scatter·bubble·radar·heatmap·candlestick·boxplot·treemap·sankey). attrs.encoding maps channels→columns, each { field:<column>, aggregate? }; `value` may be an ARRAY for multiple (wide-format) series. category+value[] → bar/line/area/pie/funnel/radar; x+y(+size) → scatter/bubble; x+y+value → heatmap; category+open/high/low/close → candlestick; category+lower/q1/median/q3/upper → boxplot; id+parent(+value) → treemap; source+target(+value) → sankey. Keep series legible (≈≤5); compare proportions with pie/treemap, trends with line/area, ranked magnitudes with bar.",
         // ── STYLING — make it beautiful, all via weave.item.update { attrs }. ──
-        "STYLE (꾸미기 — all attrs via weave.item.update): attrs.palette = series colours (string[]) — use the theme-coordinated categorical tokens [var(--domain-slide-accent), var(--domain-canvas-accent), var(--domain-block-accent), var(--domain-media-accent)] so series stay distinct AND theme-reactive, or mood/brand literals when the content calls for it. attrs.variant = { stacked, normalized (100%), horizontal (bar), smooth (line/area), innerRadius (0..1 → pie becomes a DOUGHNUT) }. attrs.showLegend / attrs.showAxis (boolean), attrs.opacity (0..1), attrs.barWidth (0..1 of the band). EMPHASIS: attrs.overrides = { datum:{ '<category>':{ color?, borderWidth?, offset? } }, series:{ '<series>':{ color?, borderWidth? } } } — recolour or pull out the ONE hero bar/slice so the key number pops (partial-merge safe — send only the delta). GROUND the chart on a designed surface (a card frame behind it: decoration.fill + cornerRadius + soft shadow) instead of bare canvas; keep series/text contrast ≥ AA.",
+        "STYLE (꾸미기 — all attrs via weave.item.update): attrs.palette = series colours (string[]) — use the theme-coordinated categorical tokens [var(--domain-slide-accent), var(--domain-canvas-accent), var(--domain-block-accent), var(--domain-media-accent)] so series stay distinct AND theme-reactive, or mood/brand literals when the content calls for it. attrs.variant = { stacked, normalized (100%), horizontal (bar), smooth (line/area), innerRadius (0..1 → pie becomes a DOUGHNUT) }. attrs.showLegend / attrs.showAxis (boolean), attrs.opacity (0..1), attrs.barWidth (0..1 of the band). EMPHASIS: attrs.overrides = { datum:{ '<category>':{ color?, borderWidth?, offset? } }, series:{ '<series>':{ color?, borderWidth? } } } — recolour or pull out the ONE hero bar/slice so the key number pops. PARTIAL EDITS are non-destructive: attrs.variant / attrs.encoding / attrs.overrides DEEP-MERGE over the chart's current values (send only the delta; set a key to null to CLEAR it), while attrs.palette is a full array replaced wholesale. GROUND the chart on a designed surface (a card frame behind it: decoration.fill + cornerRadius + soft shadow) instead of bare canvas; keep series/text contrast ≥ AA.",
         // ── TEXT IS RENDERED AS REAL TEXT ITEMS — the load-bearing thing to know. ──
         "TEXT / LABELS (IMPORTANT — charts show their text through REAL weave text Items, DR-035): for bar/line/area + pie, the CATEGORY/axis labels are AUTO-MANAGED `text` child Items of the chart, DERIVED from the dataset (each tagged chartLabelRef). So: (1) do NOT hand-add category/axis label text — the chart projects them automatically; adding your own duplicates them. (2) Editing a managed label's TEXT actually edits the DATASET (it's derived, not free text) — to change a label, edit the data via weave.dataset.update. (3) Their POSITION is auto-placed (re-derived) — don't reposition them. (4) You MAY RESTYLE them for beauty — set color / fontWeight / fontSize / fontFamily on those label text Items via weave.item.update and it PERSISTS across re-projection (only text+position re-derive). (5) For a chart TITLE, a takeaway headline, a callout/annotation, an axis caption, or a source note, ADD YOUR OWN separate `text` Items (these are NOT auto-managed) and place them around the chart — a chart almost always needs a human title + one-line takeaway that the data labels do not provide. (Other types — scatter/heatmap/radar/etc. — keep the chart engine's own labels, not text Items.)",
       ].join(" "),
@@ -298,8 +298,10 @@ export const WEAVE_CAPABILITIES = {
     //    DISTINCT from the behavior units below (those use weave.item.addBehavior).
     {
       kind: "decoration.fill",
+      // WI-209 — the single PaintSpec source for the capabilities catalogue (the
+      // shape/frame FILL prose points here instead of restating the union).
       description:
-        "Fill paint of the item (e.g. a shape's interior, a frame's background). attrs is a PaintSpec: { type:'solid', color } | { type:'linear-gradient', angle, stops:[{offset,color},…] } | { type:'radial-gradient', cx, cy, stops } | { type:'image', src, fit?, opacity? } | { type:'video', src, fit?, muted?, loop?, opacity? } | { type:'none' }. Paint fit = cover|contain|fill|tile.",
+        "Fill paint of the item (e.g. a shape's interior, a frame's background). attrs is a PaintSpec: { type:'solid', color } | { type:'linear-gradient', angle (deg, 0=up 90=right — not a ratio), stops:[{offset:0..1 along the gradient axis, color},…] (≥2) } | { type:'radial-gradient', cx, cy (0..1 of the item's OWN bbox — the gradient center), stops:[…] (≥2) } | { type:'image', src, fit?, opacity? } | { type:'video', src, fit?, muted?, loop?, opacity? } | { type:'none' } (transparent). Paint fit = cover|contain|fill|tile.",
       editableAttrs: ["type", "color", "angle", "cx", "cy", "stops", "src", "fit", "opacity"],
     },
     {
@@ -469,12 +471,10 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   and always measure a child against its IMMEDIATE container — never against the slide unless the slide IS its",
   "   direct parent. (In an auto-flex/auto-grid frame the layout overrides a child's frame; the ratio basis still",
   "   matters for the frame's OWN box and for any absolute-constraints child.)",
-  "   LINE / POLY EXCEPTION — for kind:'line' (and a kind:'shape' poly) the `frame` is NOT the drawn figure, only the",
-  "   bounding box that ENCLOSES its `points`. The visible stroke is the polyline through attrs.points, each {x,y} a",
-  "   0..1 ratio of THAT bbox — so to read where a line actually goes (its endpoints, direction, slope) you MUST read",
-  "   `points`, not the frame: an endpoint's design position = frame.x/y + point × frame.width/height. Two lines with",
-  "   the SAME frame can run opposite diagonals (points [{0,0},{1,1}] vs [{0,1},{1,0}]). Editing only the frame moves /",
-  "   scales the whole stroke rigidly; to change which corners it connects, its angle, or one endpoint, edit `points`.",
+  "   LINE / POLY EXCEPTION — for kind:'line' (and a kind:'shape' poly) the `frame` is ONLY the bounding box that",
+  "   ENCLOSES its `points`; the visible stroke is the polyline through attrs.points (each {x,y} a 0..1 ratio of",
+  "   THAT bbox). Read AND edit `points` — not the frame — for endpoints / direction / angle (frame-only edits just",
+  "   translate/scale the stroke rigidly). Full model: the line itemKind.",
   "   MIN SIZE FLOOR — every item you add must render at least 10px on its LONG side AND 20px² in area (for text:",
   "   width ≥ 10px, since height auto-fits; for a line: length ≥ 10px). A deliberately-thin element is fine (a",
   "   2px×400px divider passes); only a near-invisible speck is blocked. weave REJECTS an add below this floor and",
@@ -488,9 +488,11 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   line). It renders at exactly that design-px and does NOT rescale when a frame/parent is resized (only the",
   "   whole-canvas zoom scales it) — so the px means the same thing everywhere; no dividing by parent heights, no",
   "   per-nesting math. PICK THE PX BY ROLE off the CANVAS height: heading ~5–7% (≈60–84px on a 1080px canvas),",
-  "   subheading ~4%, body ~3% (≈32px on 1080) — body is the readable BASELINE; real content (findings, agenda,",
-  "   bullets, descriptions) must NEVER be below it. The px is the SAME whether the text sits on a full slide or deep",
-  "   in a small nested card, so do NOT shrink it just because the parent frame is small.",
+  "   subheading ~4%, body ~3% (≈32px on 1080), caption 18–22px — body is the readable BASELINE; real content",
+  "   (findings, agenda, bullets, descriptions, labels next to numbers) must NEVER be below it, and caption sizes",
+  "   are ONLY for true footnotes / source notes / tiny meta lines, never for readable content. The px is the SAME",
+  "   whether the text sits on a full slide or deep in a small nested card, so do NOT shrink it just because the",
+  "   parent frame is small.",
   "   SHARED-FRAME BUDGET (the #1 overflow cause): items in ONE frame SHARE its height (minus padding and the gaps",
   "   between them), so a text does NOT own the whole frame — keep the SUM of the children's rendered heights",
   "   (each ≈ fontSize × lineHeight × line-count) within the usable height WITH margin (stack + gaps ≤ ~85%); if it",
@@ -502,7 +504,11 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   auto-flex / auto-grid frame. BIND ITS WIDTH to the cell so it WRAPS (never overflows): in a flex COLUMN set",
   "   align (or the child's alignSelf) to 'stretch' — the cross axis is the width — so the text fills the column",
   "   width and wraps; in an auto-grid the column track bounds it. Never leave layout text in auto-width (hugging",
-  "   content), or a long line spills past its cell. Only the WIDTH is layout-bound: do NOT grow or vertically",
+  "   content), or a long line spills past its cell. NEVER place WRAPPING body text as a DIRECT child of a flex",
+  "   ROW — in a row the MAIN axis is the width, so flex can SHRINK the text to a sliver (≈1ch) that wraps one",
+  "   glyph per line into a vertical strip; for a row of text (label | value, side-by-side paragraphs) wrap EACH",
+  "   side in its OWN flex-COLUMN sub-frame (the column binds the width via stretch) or use an auto-grid whose",
+  "   tracks bound each cell. Only the WIDTH is layout-bound: do NOT grow or vertically",
   "   stretch a text box and do NOT pin a fixed height — a short title keeps its natural content height; absorb",
   "   spare room with the frame's justify/align/gap/padding. For equal-size",
   "   regions (comparison columns, a card row) size the FRAMES via grid tracks / flex grow, never the leaf text.",
@@ -511,7 +517,10 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "   image meant to cover its frame — may still stretch to fill.) Grid children follow track/gap/span changes via",
   "   weave.item.setLayoutChild (auto-grid policy: column/row/columnSpan/rowSpan/alignSelf/justifySelf). ONLY for a",
   "   text in an absolute-constraints frame (free-form) pin it: weave.item.setLayoutChild { itemId, policy:{",
-  "   kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }.",
+  "   kind:'absolute-constraints', anchor:{ horizontal:'left', vertical:'top' } } }. DR-098: text ADDED into a",
+  "   free-placement (root / absolute-constraints) parent gets this Fixed-box policy AUTOMATICALLY — the box is",
+  "   FIXED size and does NOT auto-grow, so give frame.width AND frame.height enough room at the chosen fontSize",
+  "   and set attrs.textOverflow 'VISIBLE' if it might spill (text added into a flex/grid frame is unaffected).",
   "",
   "4) COLOR — the CONTENT'S MOOD comes FIRST, ahead of the currently-active theme. Read the atmosphere the",
   "   content should convey (finance → restrained/serious; kids → bright/playful; luxury → deep/elegant) and",
@@ -572,18 +581,13 @@ export const WEAVE_DOMAIN_KNOWLEDGE = [
   "     have no real asset URL, STILL place a source-less PLACEHOLDER (image: omit src + a descriptive alt like",
   "     '제품 사진 자리'; video: omit src + alt = clip description, optionally a poster URL) so the slot shows",
   "     instead of an empty/text-only slide. Always give image/video a descriptive alt. Match media to the topic.",
-  "   • CHARTS — compose the DATA, then make it BEAUTIFUL, then TITLE it (see the `chart` itemKind for full detail):",
-  "     (a) DATA: weave.chart.add seeds the dataset + chart together; category/label column FIRST, numeric series",
-  "     after; pick the chartType that FITS (not just bar/line/pie) and keep series legible (≈≤5). Edit data via",
-  "     weave.dataset.update, look/style via weave.item.update { attrs }. (b) STYLE: attrs.palette with the theme",
-  "     categorical tokens (--domain-slide/canvas/block/media-accent) so series are distinct + theme-reactive;",
-  "     attrs.variant (doughnut innerRadius / stacked / smooth / horizontal); attrs.overrides to emphasise the ONE",
-  "     hero bar/slice; showLegend/showAxis as needed; GROUND the chart on a card frame (decoration.fill +",
-  "     cornerRadius + soft shadow), AA contrast. (c) TEXT IS REAL TEXT ITEMS (DR-035): for bar/line/area + pie the",
-  "     CATEGORY/axis labels are AUTO-MANAGED text child items derived from the dataset — do NOT hand-add or",
-  "     reposition them, and editing a label's text edits the DATA (weave.dataset.update); you MAY restyle them",
-  "     (color/weight/size, persists). ALWAYS add your OWN separate text items for the chart TITLE + a one-line",
-  "     TAKEAWAY (and any callout / source note) — the data labels never supply those.",
+  "   • CHARTS — compose the DATA, then make it BEAUTIFUL, then TITLE it (full data/encoding/style model: the",
+  "     `chart` itemKind): create with weave.chart.add (seeds dataset + chart; pick the chartType that FITS, not",
+  "     just bar/line/pie); style with the theme categorical tokens in attrs.palette + variant/overrides for the",
+  "     ONE hero element, GROUNDED on a card frame, AA contrast; the CATEGORY/axis labels are AUTO-MANAGED text",
+  "     children (DR-035 — edit their text via weave.dataset.update, restyling is fine, never hand-add/reposition",
+  "     them), and they NEVER supply the human framing — ALWAYS add your OWN text items for the chart TITLE + a",
+  "     one-line TAKEAWAY (and any callout / source note).",
   "   • VISUAL TREATMENT (raise visual satisfaction — REQUIRED; a plain run of text on a blank slide is a defect):",
   "     ground content on DESIGNED SURFACES and add graphic polish. This is VISUAL work (colour / shape / depth),",
   "     NEVER more text or data. (a) FRAME BACKGROUNDS: give the slide a deliberate base fill (a solid mood colour",
