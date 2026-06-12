@@ -264,6 +264,56 @@ describe("RailPolicy (P2-b — DR-114 §4 tables, incl. the 2 approved behavior 
   });
 });
 
+describe("DeckPolicy (WI-194 / DR-127 — what the deck is made of)", () => {
+  function makeAttrItem(
+    id: string,
+    kind: string,
+    attrs: Record<string, unknown>,
+    children: AgocraftItem[] = [],
+  ): AgocraftItem {
+    return { ...makeItem(id, kind, children), attrs };
+  }
+  // root → page-1 (frame, contains nested-1 frame + shape-1)
+  //      → page-2 (frame, presentable:false — mixed-era deck exclusion)
+  //      → shape-root (non-frame at root)
+  const root = makeDoc([
+    makeAttrItem("page-1", "frame", {}, [
+      makeAttrItem("nested-1", "frame", {}),
+      makeAttrItem("shape-1", "shape", {}),
+    ]),
+    makeAttrItem("page-2", "frame", { presentable: false }),
+    makeAttrItem("shape-root", "shape", {}),
+  ]).root;
+
+  it("free-placement flavors: any-depth candidates minus presentable:false (WI-072 unchanged)", () => {
+    for (const f of ["mixed", "canvas-board"] as const) {
+      const { deck } = editorModeFor(f);
+      expect(deck.collectCandidateIds(root)).toEqual(["page-1", "nested-1"]);
+      // opted-out top-level frames keep their own present scene (link targets)
+      expect(deck.collectNonStepSceneIds(root)).toEqual(["page-2"]);
+      // a presentable nested frame owns its scene → parent tree skips it
+      const nested = root.children[0]?.children[0];
+      if (nested === undefined) throw new Error("fixture");
+      expect(deck.childOwnsScene(nested)).toBe(true);
+    }
+  });
+
+  it("page-bounded flavors: root-direct frames only, presentable IGNORED (structure is the meaning)", () => {
+    for (const f of ["slide-deck", "doc-page"] as const) {
+      const { deck } = editorModeFor(f);
+      // nested-1 is a group, not a slide; page-2's stale mixed-era stamp
+      // cannot hide a root page (no recovery UI exists on this rail).
+      expect(deck.collectCandidateIds(root)).toEqual(["page-1", "page-2"]);
+      expect(deck.collectNonStepSceneIds(root)).toEqual([]);
+      // nested frames never own a scene → they render INLINE in their
+      // page's scene (skipping them would punch a hole in the slide)
+      const nested = root.children[0]?.children[0];
+      if (nested === undefined) throw new Error("fixture");
+      expect(deck.childOwnsScene(nested)).toBe(false);
+    }
+  });
+});
+
 describe("HitPolicy (P3 — registry-level composition; resolution details in pieces/hit-resolution.test.ts)", () => {
   // root → page-1 → child-1 (page-direct) → grand-1 (deep)
   const hitDoc = makeDoc([

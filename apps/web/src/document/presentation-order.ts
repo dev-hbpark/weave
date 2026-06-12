@@ -50,6 +50,20 @@ export function collectPresentationIds(root: AgocraftItem): string[] {
   return out;
 }
 
+/** WI-194 / DR-127 — page-bounded deck source: ONLY root-direct frames are
+ *  deck candidates (page = artboard = slide). Depth ≥ 1 frames are structural
+ *  groups, never slides. Deliberately IGNORES `presentable` — in page-bounded
+ *  flavors structure IS the meaning, and honoring a stale `presentable: false`
+ *  stamp (e.g. set while the doc was mixed) would create an invisible page
+ *  with no recovery UI (slide-deck rail has no deck toggle, DR-114 §4). */
+export function collectRootPageIds(root: AgocraftItem): string[] {
+  const out: string[] = [];
+  for (const c of root.children) {
+    if (FRAME_KINDS.has(c.kind)) out.push(String(c.id));
+  }
+  return out;
+}
+
 /** WI-072 — frame ids the user opted OUT of the deck (`presentable: false`), in
  *  document order. The thumbnail panel renders these in a separate "non-slide"
  *  section so they stay reachable/selectable without being navigation steps. */
@@ -77,8 +91,13 @@ export function isSkippedFrame(item: AgocraftItem): boolean {
 
 /** WI-184 ⑪ — the present-mode step list: the effective deck order minus
  *  skipped frames. Renderers that show the DECK (thumbnail rail) keep using
- *  `effectivePresentationOrder`; only the SHOW steps through this. */
-export function presentationStepIds(design: Design): ReadonlyArray<string> {
+ *  `effectivePresentationOrder` / `effectiveDeckOrder`; only the SHOW steps
+ *  through this. WI-194 — the candidate collector is injectable so
+ *  page-bounded flavors step through root pages only (DeckPolicy). */
+export function presentationStepIds(
+  design: Design,
+  collect: (root: AgocraftItem) => ReadonlyArray<string> = collectPresentationIds,
+): ReadonlyArray<string> {
   const skipped = new Set<string>();
   function walk(item: AgocraftItem): void {
     for (const c of item.children) {
@@ -87,8 +106,9 @@ export function presentationStepIds(design: Design): ReadonlyArray<string> {
     }
   }
   walk(design.document.root);
-  if (skipped.size === 0) return effectivePresentationOrder(design);
-  return effectivePresentationOrder(design).filter((id) => !skipped.has(id));
+  const order = effectiveDeckOrder(design, collect);
+  if (skipped.size === 0) return order;
+  return order.filter((id) => !skipped.has(id));
 }
 
 /** Reconcile a saved order against what's actually in the tree. Stale ids
@@ -107,8 +127,19 @@ export function reconcilePresentationOrder(
 /** Derived order for the current design — collect tree ids, reconcile against
  *  saved order. Use this in renderers and presentation mode. */
 export function effectivePresentationOrder(design: Design): ReadonlyArray<string> {
-  const present = collectPresentationIds(design.document.root);
-  return reconcilePresentationOrder(design.presentationOrder, present);
+  return effectiveDeckOrder(design, collectPresentationIds);
+}
+
+/** WI-194 / DR-127 — `effectivePresentationOrder` with an injectable candidate
+ *  collector (DeckPolicy.collectCandidateIds). The saved order may be a
+ *  superset of the candidates (e.g. nested frames recorded while the doc was
+ *  mixed) — reconciliation prunes anything the collector doesn't return, so
+ *  the read-time filter holds regardless of how the frame was created. */
+export function effectiveDeckOrder(
+  design: Design,
+  collect: (root: AgocraftItem) => ReadonlyArray<string>,
+): ReadonlyArray<string> {
+  return reconcilePresentationOrder(design.presentationOrder, collect(design.document.root));
 }
 
 /** WI-184 ⑨ — move a SET of entries as one contiguous block to the drop

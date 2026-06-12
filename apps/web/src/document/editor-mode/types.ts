@@ -25,7 +25,7 @@
 // forbids, so keys land with their consumers, never ahead of them.
 
 import type { AgentCommandSpec } from "@agocraft/agent-client";
-import type { Document as AgocraftDocument } from "@agocraft/core";
+import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
 
 /** Declarative metadata for debug / telemetry / present surfaces — never a
  *  consumer branching key (DR-114 §6-G4: `ctx.mode ===` comparisons in a
@@ -255,6 +255,34 @@ export interface RailPolicy {
   readonly tileMenuRows: ReadonlySet<TileMenuRow>;
 }
 
+/** WI-194 / DR-127 — WHAT the deck is made of (vs RailPolicy = HOW the rail
+ *  behaves). The deck source was the last mode-blind read: `collect-
+ *  PresentationIds` gathered every frame at any depth, so frames created
+ *  INSIDE a page (WI-180 scoped add, WI-185 Cmd+G group wrapper, paste)
+ *  polluted the page-bounded rail and show — with no recovery UI, since the
+ *  slide-deck rail deliberately has no deck toggle (§4). Read-time structural
+ *  filter, not create-time stamping: one policy seam covers every creation
+ *  path, current and future, and keeps the data mode-neutral (Rule 5
+ *  round-trip; a stale `presentable:false` stamp can't hide a root page).
+ *  All three seams map 1:1 to a consumer: candidates → DesignPage rail order
+ *  + PresentPage steps; childOwnsScene → PresentFrameTree's skip-nested-
+ *  frame-it-has-its-own-scene check (page-bounded: nested frames have NO
+ *  scene and must render inline or slides get holes); nonStepScenes →
+ *  PresentPage's extra scenes for deck-excluded-but-presentable frames
+ *  (WI-072 mixed model; empty on page-bounded). */
+export interface DeckPolicy {
+  /** Deck candidates in document order — rail tiles + step population.
+   *  Page-bounded: root-direct frames only, `presentable` ignored.
+   *  Free-placement: every frame at any depth minus `presentable: false`. */
+  collectCandidateIds(root: AgocraftItem): ReadonlyArray<string>;
+  /** Present render — does this CHILD frame own a scene (so the parent's
+   *  tree skips it) or does it render inline as part of the parent? */
+  childOwnsScene(child: AgocraftItem): boolean;
+  /** Frames that are NOT steps but still get their own present scene
+   *  (mixed: deck-excluded top-level frames stay reachable via links). */
+  collectNonStepSceneIds(root: AgocraftItem): ReadonlyArray<string>;
+}
+
 /** Modifier intent of a frame click — Figma's selection model: plain click
  *  walks parent-first, Cmd/Ctrl (`deep`) bypasses depth entirely, Shift
  *  (`toggle`) flips multi-frame membership. Closed list, frozen by the
@@ -432,6 +460,7 @@ export interface EditorModeContext {
   readonly camera: CameraPolicy;
   readonly insertion: InsertionPolicy;
   readonly rail: RailPolicy;
+  readonly deck: DeckPolicy;
   readonly hit: HitPolicy;
   readonly input: InputPolicy;
   readonly agent: AgentSurfacePolicy;

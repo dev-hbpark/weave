@@ -32,6 +32,8 @@ export {
 export {
   collectNonSlideFrameIds,
   collectPresentationIds,
+  collectRootPageIds,
+  effectiveDeckOrder,
   effectivePresentationOrder,
   FRAME_KINDS,
   isSkippedFrame,

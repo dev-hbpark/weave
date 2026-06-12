@@ -81,7 +81,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   type DocFlavor,
   type DomainKind,
-  effectivePresentationOrder,
+  effectiveDeckOrder,
   FLAVOR_REGISTRY,
   firstChildOf,
   InteractionModeProvider,
@@ -1159,7 +1159,13 @@ function DesignPageBody() {
   // a time. `activePageId` scopes the canvas to a single page; the rail
   // switches it. Free placement → activePageId undefined → all frames render
   // (unchanged). Both come from the injected ViewPolicy now.
-  const presentationOrder = useMemo(() => effectivePresentationOrder(design), [design]);
+  // WI-194 / DR-127 — the deck order is POLICY-DERIVED: page-bounded flavors
+  // collect root-direct frames only (nested frames are groups, never tiles /
+  // steps); free placement keeps the WI-072 any-depth + presentable model.
+  const presentationOrder = useMemo(
+    () => effectiveDeckOrder(design, editorMode.deck.collectCandidateIds),
+    [design, editorMode],
+  );
   const { activePageId, setActivePageId } = useActivePage(
     presentationOrder,
     editorMode.view.pageChrome,
@@ -2938,6 +2944,10 @@ function DesignPageBody() {
                                       >
                                         <ThumbnailPanel
                                           design={design}
+                                          // WI-194 / DR-127 — policy-filtered deck
+                                          // order (page-bounded: root pages only;
+                                          // the panel itself stays policy-free).
+                                          deckOrder={presentationOrder}
                                           setPresentationOrder={setPresentationOrderViaEditor}
                                           selectedId={selectedFrameId}
                                           onSelect={(id) => {

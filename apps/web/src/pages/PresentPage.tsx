@@ -7,7 +7,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   type AgoItem,
   type CameraTargetBehavior,
-  collectNonSlideFrameIds,
   type DocFlavor,
   type EntranceAnimationBehavior,
   FRAME_KINDS,
@@ -183,7 +182,12 @@ export function PresentPage() {
   // is a declared composition root (.editor-mode-roots): it resolves the
   // flavor itself because no editor Provider exists on this route.
   const presentFlavor = (docInAgocraft.root.attrs.flavor as DocFlavor | undefined) ?? "mixed";
-  const clipScenes = editorModeFor(presentFlavor).view.pageChrome;
+  const presentMode = editorModeFor(presentFlavor);
+  const clipScenes = presentMode.view.pageChrome;
+  // WI-194 / DR-127 — WHAT the show is made of is the flavor's DeckPolicy:
+  // page-bounded steps through root pages only (nested frames render inline
+  // in their page's scene); free placement keeps the WI-072 any-depth model.
+  const deckPolicy = presentMode.deck;
   const [step, setStep] = useState(0);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
   // Phase 13d-4 — which scene's hover-effect is currently active. dim-others
@@ -203,8 +207,9 @@ export function PresentPage() {
   // entry's center + 1/max-size becomes the camera's position + scale.
   const cameraTargets = useMemo(() => {
     // WI-184 ⑪ — the show walks past skipped frames (PPT Hide Slide): they
-    // stay in the deck/rail but never become a camera step.
-    const ids = presentationStepIds(design);
+    // stay in the deck/rail but never become a camera step. WI-194 — the
+    // step population itself is the flavor's DeckPolicy candidates.
+    const ids = presentationStepIds(design, deckPolicy.collectCandidateIds);
     const out: {
       item: AgoItem;
       behavior: CameraTargetBehavior;
@@ -259,7 +264,7 @@ export function PresentPage() {
       out.push({ item, behavior, absW, absH });
     });
     return out;
-  }, [design, docInAgocraft]);
+  }, [design, docInAgocraft, deckPolicy]);
 
   const totalSteps = cameraTargets.length;
   const safeStep = Math.max(0, Math.min(step, totalSteps - 1));
@@ -475,14 +480,18 @@ export function PresentPage() {
              *  height (WI-059). `frameHeightPx` then carries this primitive's
              *  own height down to any nested children. */}
             <ParentFrameHeightContext.Provider value={design.height}>
-              <PresentFrameTree item={child} frameHeightPx={absH} />
+              <PresentFrameTree
+                item={child}
+                frameHeightPx={absH}
+                childOwnsScene={deckPolicy.childOwnsScene}
+              />
             </ParentFrameHeightContext.Provider>
           </div>
         ),
       });
     }
     return out;
-  }, [docInAgocraft, design.width, design.height]);
+  }, [docInAgocraft, design.width, design.height, deckPolicy]);
 
   // WI-072 — frames the user opted OUT of the deck (`presentable: false`).
   // Excluding a frame from the slide deck removes it from the *navigation
@@ -496,9 +505,14 @@ export function PresentPage() {
   // children), so giving it a second scene would (a) paint it twice and
   // (b) drop it under the visibility classifier as if it were a peer of its
   // own parent — which hid it whenever the parent slide was the active scene.
+  //
+  // WI-194 / DR-127 — the SET itself is the flavor's DeckPolicy: free
+  // placement = top-level `presentable: false` frames (the model above);
+  // page-bounded = empty (nested frames render inline in their page's scene,
+  // and a root page is always a step candidate — `presentable` is ignored).
   const nonSlideFrameScenes = useMemo<LocalScene[]>(() => {
     const out: LocalScene[] = [];
-    for (const frameId of collectNonSlideFrameIds(docInAgocraft.root)) {
+    for (const frameId of deckPolicy.collectNonStepSceneIds(docInAgocraft.root)) {
       const found = findItemDeep(docInAgocraft, frameId);
       if (found === undefined) continue;
       const trail = findTrailDeep(docInAgocraft, frameId) ?? [];
@@ -537,13 +551,14 @@ export function PresentPage() {
             <PresentFrameTree
               item={found as unknown as AgocraftItem}
               frameHeightPx={absH * design.height}
+              childOwnsScene={deckPolicy.childOwnsScene}
             />
           </div>
         ),
       });
     }
     return out;
-  }, [docInAgocraft, design.width, design.height]);
+  }, [docInAgocraft, design.width, design.height, deckPolicy]);
 
   const cameraTargetScenes = useMemo<LocalScene[]>(
     () =>
@@ -557,6 +572,7 @@ export function PresentPage() {
             key={String(item.id)}
             item={item as unknown as AgocraftItem}
             frameHeightPx={absH * design.height}
+            childOwnsScene={deckPolicy.childOwnsScene}
           />
         );
         // Phase 13d-3 — entrance-animation behavior (if any) drives a Web
@@ -613,7 +629,7 @@ export function PresentPage() {
           ),
         };
       }),
-    [cameraTargets, safeStep, design.width, design.height, hoveredEntry, clipScenes],
+    [cameraTargets, safeStep, design.width, design.height, hoveredEntry, clipScenes, deckPolicy],
   );
 
   // Combined scenes — root primitives + camera-target frames, sorted by

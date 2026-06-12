@@ -3,6 +3,7 @@
 
 import { FREE_AGENT_SURFACE } from "../pieces/agent-surface.js";
 import { FREE_CAMERA } from "../pieces/camera.js";
+import { FULL_DECK } from "../pieces/deck.js";
 import { DOC_ROOT_HIT } from "../pieces/hit-resolution.js";
 import { STANDARD_INPUT } from "../pieces/input.js";
 import { ROOT_INSERTION } from "../pieces/insertion.js";
@@ -18,6 +19,7 @@ export const MIXED_MODE: EditorModeContext = {
   camera: FREE_CAMERA,
   insertion: ROOT_INSERTION,
   rail: OVERVIEW_RAIL,
+  deck: FULL_DECK,
   hit: DOC_ROOT_HIT,
   input: STANDARD_INPUT,
   agent: FREE_AGENT_SURFACE,

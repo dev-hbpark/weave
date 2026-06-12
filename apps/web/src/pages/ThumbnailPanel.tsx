@@ -207,6 +207,12 @@ export interface ThumbnailPanelProps {
   /** WI-185 ⑯ — "배경 변경": the host selects/activates the page so the
    *  contextual toolbar's frame-background section surfaces. */
   readonly onEditBackground?: ((id: string) => void) | undefined;
+  /** WI-194 / DR-127 — the deck order to render, already policy-filtered by
+   *  the host (DesignPage: `effectiveDeckOrder(design, deck.collectCandidate-
+   *  Ids)`). A DATA prop, not a policy — the panel stays policy-free (same
+   *  contract as `showNonSlideSection`). Default = the legacy any-depth
+   *  WI-072 order, so policy-less hosts/tests are unchanged. */
+  readonly deckOrder?: ReadonlyArray<string> | undefined;
 }
 
 /** WI-184 ⑨ — stable empty set so collapsing the multi-select doesn't churn
@@ -331,6 +337,7 @@ export function ThumbnailPanel({
   onToggleSkip,
   onAddPageAfter,
   onEditBackground,
+  deckOrder,
 }: ThumbnailPanelProps) {
   // Keep useParams import so the panel still re-renders when route id changes.
   useParams<{ id: string }>();
@@ -357,7 +364,7 @@ export function ThumbnailPanel({
     return () => window.clearTimeout(t);
   }, [renamingId]);
 
-  const order = effectivePresentationOrder(design);
+  const order = deckOrder ?? effectivePresentationOrder(design);
   const entries = order
     .map((id) => findEntry(design.document.root, id, design.title))
     .filter((e): e is Entry => e !== undefined);

@@ -6,6 +6,8 @@ import { itemId as makeItemId } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
 import {
   collectPresentationIds,
+  collectRootPageIds,
+  effectiveDeckOrder,
   effectivePresentationOrder,
   isSkippedFrame,
   presentationStepIds,
@@ -39,6 +41,28 @@ describe("collectPresentationIds", () => {
       makeItem("e", "frame"),
     ]);
     expect(collectPresentationIds(root)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+});
+
+// WI-194 / DR-127 — page-bounded deck source: root-direct frames only,
+// `presentable` deliberately ignored (structure is the meaning; a stale
+// mixed-era stamp must not hide a root page).
+describe("collectRootPageIds", () => {
+  it("collects root-direct frames only — nested frames and non-frames excluded", () => {
+    const root = makeItem("root", "weave-doc", [
+      makeItem("a", "frame"),
+      makeItem("b", "frame", [makeItem("c", "frame"), makeItem("d", "shape")]),
+      makeItem("e", "shape"),
+    ]);
+    expect(collectRootPageIds(root)).toEqual(["a", "b"]);
+  });
+
+  it("ignores presentable:false on a root page (stale-stamp inverse-bug guard)", () => {
+    const root = makeItem("root", "weave-doc", [
+      makeItem("a", "frame", [], { presentable: false }),
+      makeItem("b", "frame"),
+    ]);
+    expect(collectRootPageIds(root)).toEqual(["a", "b"]);
   });
 });
 
@@ -123,6 +147,30 @@ describe("isSkippedFrame / presentationStepIds", () => {
     ]);
     const design = makeDesign(root, []);
     expect(presentationStepIds(design)).toEqual(["a", "b", "c"]);
+  });
+
+  // WI-194 / DR-127 — collector injection (DeckPolicy.collectCandidateIds).
+  it("effectiveDeckOrder prunes saved ids the collector doesn't return (read-time filter)", () => {
+    const root = makeItem("root", "weave-doc", [
+      makeItem("a", "frame", [makeItem("b", "frame")]),
+      makeItem("c", "frame"),
+    ]);
+    // saved order recorded while any-depth collection was in effect
+    const design = makeDesign(root, ["c", "b", "a"]);
+    expect(effectiveDeckOrder(design, collectRootPageIds)).toEqual(["c", "a"]);
+    expect(effectiveDeckOrder(design, collectPresentationIds)).toEqual(["c", "b", "a"]);
+  });
+
+  it("presentationStepIds with an injected collector steps through that population minus skipped", () => {
+    const root = makeItem("root", "weave-doc", [
+      makeItem("a", "frame", [makeItem("b", "frame")]),
+      makeItem("c", "frame", [], { skipped: true }),
+      makeItem("d", "frame"),
+    ]);
+    const design = makeDesign(root, []);
+    expect(presentationStepIds(design, collectRootPageIds)).toEqual(["a", "d"]);
+    // default collector = legacy any-depth behavior, unchanged
+    expect(presentationStepIds(design)).toEqual(["a", "b", "d"]);
   });
 });
 

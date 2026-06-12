@@ -3,6 +3,7 @@
 
 import { PAGE_AGENT_SURFACE } from "../pieces/agent-surface.js";
 import { ACTIVE_PAGE_CAMERA } from "../pieces/camera.js";
+import { PAGE_DECK } from "../pieces/deck.js";
 import { ACTIVE_PAGE_HIT } from "../pieces/hit-resolution.js";
 import { STANDARD_INPUT } from "../pieces/input.js";
 import { ACTIVE_PAGE_INSERTION } from "../pieces/insertion.js";
@@ -18,6 +19,7 @@ export const SLIDE_DECK_MODE: EditorModeContext = {
   camera: ACTIVE_PAGE_CAMERA,
   insertion: ACTIVE_PAGE_INSERTION,
   rail: PAGE_LIFECYCLE_RAIL,
+  deck: PAGE_DECK,
   hit: ACTIVE_PAGE_HIT,
   input: STANDARD_INPUT,
   agent: PAGE_AGENT_SURFACE,
