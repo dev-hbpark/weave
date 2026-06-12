@@ -4,13 +4,14 @@
 // up via props. Self-recursive; FrameStage mounts the root. The props type
 // is sliced from FrameStageProps (type-only import — no runtime cycle).
 
-import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
+import type { Item as AgocraftItem } from "@agocraft/core";
 import { resolveAnchor } from "@agocraft/editor";
 import { IconLock, SelectionLayer } from "@weave/design-system";
 import { type MotionStyle, motion, useMotionValue, useMotionValueEvent } from "motion/react";
 import type React from "react";
 import {
   type CSSProperties,
+  memo,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useContext,
@@ -36,6 +37,7 @@ import {
   type RolePolicy,
 } from "../../document/editor-mode/types.js";
 import { useCroppingItemId, useIsCropping } from "../../document/interactions/cropping-state.js";
+import { DocRefContext } from "../../document/interactions/doc-ref-context.js";
 import { useIsFrameHovered } from "../../document/interactions/frame-hover-store.js";
 import { useSelectionChromeOrNull } from "../../document/interactions/selection-chrome-context.js";
 import { SelectionVmContext } from "../../document/interactions/selection-context.js";
@@ -111,13 +113,13 @@ interface NestedFrameProps {
   // WI-033 P2 — Phase 13e `drillDimmed` + `drillProgressMV` props
   // removed alongside the drill-in opacity / dim chain in
   // NestedFrame's body. No frame is ever dimmed today.
-  /** WI-033 A1+A2 — the AgocraftDocument that owns this frame's tree.
-   *  When provided, NestedFrame's onClick routes through the injected
-   *  HitPolicy (`hit.selectTarget`) to apply Figma's parent-first
-   *  auto-select + Cmd/Ctrl deep-select semantics. When undefined, falls
-   *  back to the legacy "select the clicked frame" behaviour (backward
-   *  compat for any caller that hasn't been wired yet). */
-  readonly doc?: AgocraftDocument | undefined;
+  // WI-033 A1+A2 `doc` prop REMOVED (WI-198): the document changes identity
+  // on every tick, so as a prop it would defeat `React.memo(NestedFrame)`.
+  // All document consumption here is event/rAF-time (onClick hit resolution,
+  // RolePolicy capability checks, resolveHandles) — it now reads
+  // `DocRefContext` (latest committed doc, published by FrameStage). When no
+  // provider/doc exists, handlers fall back to the legacy "select the
+  // clicked frame" behaviour, same as the old `doc === undefined` branch.
   /** WI-033 A4 — fired on right-click. Caller (FrameStage) converts the
    *  viewport coords to design-plane local, runs `findFramesAtPoint`,
    *  and stashes the overlapping-layers list so the FrameContextMenu
@@ -145,7 +147,7 @@ interface NestedFrameProps {
   readonly hit: HitPolicy;
 }
 
-export function NestedFrame({
+function NestedFrameImpl({
   item,
   parentWidthPx,
   parentHeightPx,
@@ -166,7 +168,6 @@ export function NestedFrame({
   selectedHotspotId,
   onSelectHotspot,
   onCommitHotspotRegion,
-  doc,
   onContextMenuRequest,
   artboardId,
   roles,
@@ -179,6 +180,10 @@ export function NestedFrame({
   // already mutated the selection before our onClick fires; the vm
   // signal's `state.get()` always returns the latest.
   const _selectionVm = useContext(SelectionVmContext);
+  // WI-198 — latest committed document, read ONLY at event/rAF time (onClick
+  // hit resolution, capability checks, resolveHandles). Never read during
+  // render for render output: a memo-bailed frame would keep stale output.
+  const docRef = useContext(DocRefContext);
   // Manipulation handle drags publish "frame-manipulating" so tooltips don't
   // race with the gesture. The transition is guarded — if a context menu or
   // pan happens to win the press, we don't stomp their mode.
@@ -478,7 +483,6 @@ export function NestedFrame({
       {...(isolatedFrameIds !== undefined ? { isolatedFrameIds } : {})}
       {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
       onSelect={onSelect}
-      doc={doc}
       onContextMenuRequest={onContextMenuRequest}
       onUpdateItem={onUpdateItem}
       onUpdateShape={onUpdateShape}
@@ -650,6 +654,9 @@ export function NestedFrame({
           : e.metaKey || e.ctrlKey
             ? "deep"
             : "plain";
+        // WI-198 — event-time doc read (always the latest committed doc,
+        // fresher than any render-snapshot prop would be mid-gesture).
+        const doc = docRef?.current;
         if (intent === "toggle" && onToggleSelect !== undefined) {
           // WI-163 — a stage (page/artboard) never joins a multi-selection:
           // only "normal"-selectable items toggle in (RolePolicy).
@@ -772,6 +779,9 @@ export function NestedFrame({
             // removal here is the parent-layout constraint (grid / flex), which
             // is cross-cutting (any kind), so it is a single post-resolve filter
             // rather than a per-kind branch.
+            // WI-198 — rAF-time doc read via the ref context (resolveHandles
+            // runs per tick against live bounds; the latest doc is correct).
+            const doc = docRef?.current;
             const constraints =
               LAYOUT_FEATURE_ENABLED && doc !== undefined
                 ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
@@ -922,6 +932,16 @@ export function NestedFrame({
   // frame only renders ContextMenu chrome (when provided) around its body.
   return renderFrameMenu ? renderFrameMenu(itemId, inner) : inner;
 }
+
+// WI-198 — memoized export. With every prop identity-stable across document
+// ticks (FrameStage's `useStableHandler` contract + structurally-shared
+// `item` from @agocraft/core's path-copy `applyPatch`), a drag tick only
+// reconciles the dragged item's root→leaf ancestor path instead of the whole
+// frame tree. The recursive `<NestedFrame>` in `childNodes` above resolves to
+// THIS memoized const (module binding, evaluated at render time) — naming the
+// impl differently is deliberate: `memo(function NestedFrame() {…})` would
+// make the inner name shadow the const and recurse unmemoized.
+export const NestedFrame = memo(NestedFrameImpl);
 
 // WI-033 P2 — `AbsoluteFrame` / `ROOT_ABS_FRAME` / `absoluteFrameFor`
 // (Phase 12c entered-frame-to-design-plane camera math) removed

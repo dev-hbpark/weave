@@ -29,6 +29,13 @@ import { cameraFitBox } from "../../frame-camera-bridge.js";
  *  through CSS, but `pointer-events` is re-applied per frame wrapper by
  *  FrameStage's hit gate, so every id must appear in the set for the per-frame
  *  gate to enforce the block uniformly. */
+/** WI-198 — shared empty-set singleton. The gate-set memos below depend on
+ *  `document`, so in the common no-focus case a fresh `new Set()` per doc
+ *  tick would change identity on EVERY edit (including each drag-commit
+ *  pointermove) and defeat `React.memo(NestedFrame)` for the whole tree.
+ *  Returning this module constant keeps the no-focus identity stable. */
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
+
 function collectFocusGateIds(
   doc: AgocraftDocument,
   focusedId: string,
@@ -146,18 +153,18 @@ export function useFrameFocus({
   // Gate sets — `above` only takes later siblings at each ancestor; `outside`
   // takes every non-trail sibling at every level (with their subtrees).
   const dimmedFrameIds = useMemo<ReadonlySet<string>>(() => {
-    if (focused?.stage !== 1) return new Set<string>();
+    if (focused?.stage !== 1) return EMPTY_IDS;
     return collectFocusGateIds(document, focused.id, "above");
   }, [focused, document]);
   const isolatedFrameIds = useMemo<ReadonlySet<string>>(() => {
-    if (focused?.stage !== 2) return new Set<string>();
+    if (focused?.stage !== 2) return EMPTY_IDS;
     return collectFocusGateIds(document, focused.id, "outside");
   }, [focused, document]);
   // Tiles whose underlying frame is gated (dim OR isolate) get a "disabled"
   // treatment in ThumbnailPanel so the panel surface matches the canvas.
   const disabledFrameIds = useMemo<ReadonlySet<string>>(() => {
     if (dimmedFrameIds.size === 0 && isolatedFrameIds.size === 0) {
-      return new Set<string>();
+      return EMPTY_IDS;
     }
     const merged = new Set<string>(dimmedFrameIds);
     for (const id of isolatedFrameIds) merged.add(id);
