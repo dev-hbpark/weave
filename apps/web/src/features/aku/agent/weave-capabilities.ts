@@ -52,7 +52,7 @@ export const WEAVE_CAPABILITIES = {
         "ONE ITEM PER SLOT: each direct child is its own slot along the axis. To put MULTIPLE items in a SINGLE slot (e.g. an icon + a label that should travel together as one flex item), add a NESTED frame as that slot's child (containerId = this frame, presentable:false), give the nested frame its OWN layout (auto-flex/auto-grid), and put the several items INSIDE it. Do NOT drop the multiple items directly into this frame — they would each become separate slots.",
       ].join(" "),
       childConstraints:
-        "child attrs.frame is overridden by the flex layout; size/order it via weave.item.setLayoutChild (auto-flex policy) and weave.item.swapFlexOrder. ONE item per slot — to group several into one slot, nest a frame (its own layout) and put them inside it.",
+        "child attrs.frame is overridden by the flex layout; size/order it via weave.item.setLayoutChild (auto-flex policy), or reorder siblings with weave.design.reorderChildren. ONE item per slot — to group several into one slot, nest a frame (its own layout) and put them inside it.",
     },
     {
       kind: "auto-grid",
@@ -67,12 +67,12 @@ export const WEAVE_CAPABILITIES = {
         "• columnGap / rowGap — track spacing, 0..1 ratios of the frame.",
         "• justify (column-axis) / align (row-axis) — 'start'|'center'|'end'|'stretch' for children inside their cell.",
         "• padding — { top, right, bottom, left }, 0..1 ratios of the frame (top/bottom of its height, left/right of its width).",
-        "Per-child placement via weave.item.setLayoutChild { itemId, policy:{ kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf?, area? } }: column/row are 1-based cell indices, columnSpan/rowSpan (≥1) merge cells, area places the child into a named template region (overrides column/row/span). Also weave.item.swapGridCells / weave.item.dropGridCell move children between cells.",
+        "Per-child placement via weave.item.setLayoutChild { itemId, policy:{ kind:'auto-grid', column, row, columnSpan, rowSpan, alignSelf?, justifySelf?, area? } }: column/row are 1-based cell indices, columnSpan/rowSpan (≥1) merge cells, area places the child into a named template region (overrides column/row/span). Set a child's column/row to move it between cells.",
         // ONE child per cell — group with a nested frame to put several in one cell.
         "ONE ITEM PER CELL: each cell holds exactly ONE direct child (a joining child auto-takes the next free cell; two children can't share a cell — they'd land in different cells). To place MULTIPLE items in a SINGLE cell (e.g. a heading + body stacked inside one card cell), add a NESTED frame as that cell's child (containerId = this frame, presentable:false), give the nested frame its OWN layout (e.g. auto-flex column), and put the several items INSIDE it. columnSpan/rowSpan only MERGE cells for one child — they do NOT let two children share a cell.",
       ].join(" "),
       childConstraints:
-        "child attrs.frame is overridden by the grid layout; place/size it via weave.item.setLayoutChild (auto-grid policy), weave.item.swapGridCells, weave.item.dropGridCell. ONE item per cell — to put several in one cell, nest a frame (its own layout) as that cell's single child and place them inside it.",
+        "child attrs.frame is overridden by the grid layout; place/size it via weave.item.setLayoutChild (auto-grid policy — set column/row to move it between cells). ONE item per cell — to put several in one cell, nest a frame (its own layout) as that cell's single child and place them inside it.",
     },
   ],
   itemKinds: [
@@ -167,8 +167,7 @@ export const WEAVE_CAPABILITIES = {
         "• triangle — { variant: 'equilateral'|'isosceles-up'|'isosceles-down'|'right-angle' }.",
         "• star — { points (number of points), innerRatio (0..1 inner/outer radius) }.",
         "• polygon — a REGULAR N-gon: { sides } (e.g. 6 = hexagon).",
-        "• poly — a FREEFORM polygon from explicit vertices: { points:[{x,y},…] each a 0..1 ratio of THIS shape's OWN bbox (NOT the parent frame / design), closed:boolean (true = filled polygon, false = open polyline) }. Edit the vertices later with weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }.",
-        "CONVERT shape → line: weave.shape.breakToLine { itemId, vertexIndex? } opens a closed shape at one outline vertex into a stroke-only `line` (works for rectangle/triangle/polygon/star/ellipse/closed poly; the fill becomes the stroke).",
+        "• poly — a FREEFORM polygon from explicit vertices: { points:[{x,y},…] each a 0..1 ratio of THIS shape's OWN bbox (NOT the parent frame / design), closed:boolean (true = filled polygon, false = open polyline) }. Edit the vertices later with weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }. For a stroke-only outline, create a kind:'line' instead.",
         "• path — opaque raw SVG path: { d:'<svg path data>' }.",
         "• speech-bubble — { tail:{ anchorX, anchorY (0..1 of THIS shape's OWN bbox), direction:'down'|'up'|'left'|'right'|'free' }, cornerRadius (px) }.",
         "• heart — { variant: 'classic'|'rounded' }.",
@@ -194,8 +193,7 @@ export const WEAVE_CAPABILITIES = {
         "BOUNDS ARE NOT THE LINE — read `points`, not `frame`, to know where a line goes. Unlike a box / text / image / filled shape (whose `frame` IS the visible rectangle), a line's `attrs.frame` is ONLY the bounding box that ENCLOSES its `points`; the drawn stroke is the polyline through `points` (each {x,y} a 0..1 ratio of THAT bbox). So two lines with the SAME frame can look completely different: points [{0,0},{1,1}] runs ↘ (top-left→bottom-right) while [{0,1},{1,0}] runs ↗ — same box, opposite diagonals. To read a line's real endpoints / direction / slope from the snapshot, combine frame + points (endpoint design-pos = frame.x/y + point × frame.width/height); NEVER infer it from the frame alone. To EDIT: changing only `frame` translates / scales the whole stroke rigidly (the points keep their 0..1 positions); to change which corners it connects, its direction, angle, or a single endpoint, edit `points` — e.g. flip the diagonal with points:[{x:0,y:1},{x:1,y:0}], not by swapping the frame.",
         "ENDPOINT MARKERS: `heads:{ start, end }` — each 'none'|'triangle'|'open'|'diamond'|'circle' (arrow / dot ends).",
         "COLOUR / WIDTH: the stroke is a `decoration.stroke` UNIT — set via weave.item.add/update { units:[{ kind:'decoration.stroke', attrs:{ paint, width, lineCap?, lineJoin?, dashArray? } }] }. A line has NO fill.",
-        "Use `line` for arrows, connectors, underlines, dividers, freeform strokes, and curves. Use a `shape` for filled / area elements (rectangle, ellipse, polygon, …).",
-        "CONVERT line → shape: weave.line.closeToShape { itemId } fuses the two endpoints of a free line/curve into ONE vertex and closes it into a filled `poly` shape (needs ≥3 points; the stroke becomes the fill).",
+        "Use `line` for arrows, connectors, underlines, dividers, freeform strokes, and curves. Use a `shape` for filled / area elements (rectangle, ellipse, polygon, …) — for a filled outline create a kind:'shape' poly directly.",
       ].join(" "),
       editableAttrs: ["frame", "points", "smooth", "heads", "layoutChild"],
       units: ["decoration.stroke", "decoration.shadow", "decoration.opacity"],
@@ -203,7 +201,7 @@ export const WEAVE_CAPABILITIES = {
     {
       kind: "image",
       description:
-        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius the corner radius in ABSOLUTE design-px (circular, auto-capped at min(width,height)/2), and attrs.borderRadii { tl, tr, br, bl } (px) rounds each corner independently. Size/position via attrs.frame. attrs.cropRatio = { x, y, w, h, rotation? } (all 0..1 except rotation radians) crops to a sub-window of the source (no-crop = { x:0,y:0,w:1,h:1 }); set it via weave.item.update or the dedicated weave.image.setCrop. " +
+        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius the corner radius in ABSOLUTE design-px (circular, auto-capped at min(width,height)/2), and attrs.borderRadii { tl, tr, br, bl } (px) rounds each corner independently. Size/position via attrs.frame. attrs.cropRatio = { x, y, w, h, rotation? } (all 0..1 except rotation radians) crops to a sub-window of the source (no-crop = { x:0,y:0,w:1,h:1 }); set it via weave.item.update. " +
         'attrs.src is OPTIONAL: OMIT it (or pass "") to create a SOURCE-LESS PLACEHOLDER — a neutral framed box with an image glyph, NOT a broken image. Use this for wireframe/layout drafts where the real picture is added later. When src is empty, attrs.alt is rendered as CENTERED CAPTION TEXT inside the placeholder (so set a short alt like "제품 사진 자리" to label the slot); once a real src is set, alt reverts to its accessibility role and is no longer drawn.',
       editableAttrs: [
         "frame",
@@ -329,10 +327,10 @@ export const WEAVE_CAPABILITIES = {
     },
     {
       // WI-074 / DR-029 D7 — kind-agnostic mirror. Set/clear via the `units` arg of
-      // weave.item.update (or weave.item.flip). image / video / shape / line / frame.
+      // weave.item.update. image / video / shape / line / frame.
       kind: "transform.flip",
       description:
-        "Mirror the item's final composition. attrs = { flipH?:boolean (left/right), flipV?:boolean (up/down) }. Set via weave.item.update { units:[{ kind:'transform.flip', attrs:{ flipH:true } }] } (attrs:null clears it), or the shortcut weave.item.flip. image / video / shape / line / frame only (ignored on text / qr).",
+        "Mirror the item's final composition. attrs = { flipH?:boolean (left/right), flipV?:boolean (up/down) }. Set via weave.item.update { units:[{ kind:'transform.flip', attrs:{ flipH:true } }] } (attrs:null clears it). image / video / shape / line / frame only (ignored on text / qr).",
       editableAttrs: ["flipH", "flipV"],
     },
     // ── BEHAVIOR units — presentation interactivity. Set with

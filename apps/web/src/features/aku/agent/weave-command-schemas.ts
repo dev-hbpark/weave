@@ -338,30 +338,69 @@ const SHAPE_SUBATTRS_SCHEMA: Json = {
 // the agent sees valid fields up-front: `shape` (the sub-kind) + `subAttrs` (the
 // per-kind geometry contract above). `additionalProperties: true` keeps the bag
 // open for the other kinds' attrs (text / image / qr fields, frame, etc.).
+// Shared attrs-bag PROPERTIES (typed shape sub-kind + geometry). Reused by the
+// full (create) and slim (edit) bags so the typed surface stays single-sourced
+// while only the prose description differs.
+const ATTRS_BAG_PROPERTIES: Json = {
+  shape: {
+    type: "string",
+    enum: [
+      "rectangle",
+      "ellipse",
+      "line",
+      "arrow",
+      "triangle",
+      "star",
+      "polygon",
+      "poly",
+      "path",
+      "speech-bubble",
+      "heart",
+    ],
+    description: "Shape sub-kind (shape items only). Geometry goes in subAttrs.",
+  },
+  subAttrs: SHAPE_SUBATTRS_SCHEMA,
+};
+
+// FULL per-kind attrs model — the AUTHORITATIVE description, advertised on the
+// CREATE tool (weave.item.add). Getting attrs right AT CREATION prevents the
+// post-hoc layout/size fix storm (DR-048), so the create tool carries the whole
+// per-kind catalogue inline.
 const ATTRS_WITH_TEXT_NOTE: Json = {
   type: "object",
   additionalProperties: true,
-  properties: {
-    shape: {
-      type: "string",
-      enum: [
-        "rectangle",
-        "ellipse",
-        "line",
-        "arrow",
-        "triangle",
-        "star",
-        "polygon",
-        "poly",
-        "path",
-        "speech-bubble",
-        "heart",
-      ],
-      description: "Shape sub-kind (shape items only). Geometry goes in subAttrs.",
-    },
-    subAttrs: SHAPE_SUBATTRS_SCHEMA,
-  },
+  properties: ATTRS_BAG_PROPERTIES,
   description: `${FRAME_BASE_NOTE} ${FRAME_ATTRS_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${CHART_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${EMBED_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
+};
+
+// WI-206 / DR-131 — SLIM EDIT variant for weave.item.update / weave.items.update.
+// The full per-kind catalogue above (and WEAVE_CAPABILITIES' itemKinds + the
+// cached WEAVE_DOMAIN_KNOWLEDGE) already carries the detail in the per-turn
+// prefix, and the create tool is where the agent first reads it — so the edit
+// tools keep only a POINTER plus the edit-time rules that actually prevent
+// regressions (frame coords, auto-layout override, text px sizing, partial
+// merge). This drops ~2.3K tok PER edit tool out of the advertised schema, ×2
+// tools, ×every turn (small-think DR-067). The create path is untouched, so
+// creation quality (DR-048) cannot regress.
+const ATTRS_EDIT_DESC =
+  "The per-kind attrs bag — SAME model as weave.item.add's attrsOverride (see that tool, or the kinds " +
+  "capabilities reference, for the full per-kind field list). Pass ONLY the attrs you are CHANGING " +
+  "(shallow-merged — send COMPLETE sub-objects; chart variant/encoding/overrides deep-merge; text↔textRuns " +
+  "stay coherent). " +
+  "attrs.frame = { x, y, width, height, rotation }: 0..1 ratios of the item's OWN PARENT box (top-level → the " +
+  "whole DESIGN; nested → its containing frame), NEVER pixels. If the item is a child of an AUTO-LAYOUT " +
+  "(flex/grid) frame its frame is OVERRIDDEN by the layout — size/order it via weave.item.setLayoutChild, not an " +
+  "absolute frame; only an ABSOLUTE-parent child takes an explicit frame. " +
+  "Text: size with attrs.fontSizeSpec { kind:'px', value } — FIXED design-px (DR-101; body/content ≥ ~3% of " +
+  "canvas height); do NOT pin frame.height on AUTO-HEIGHT (flex/grid) text. Per-range styling → attrs.textRuns " +
+  "(read the current runs from the snapshot, edit only what changes, resend the FULL array). " +
+  "Shape geometry → attrs.subAttrs.";
+
+const ATTRS_EDIT_NOTE: Json = {
+  type: "object",
+  additionalProperties: true,
+  properties: ATTRS_BAG_PROPERTIES,
+  description: ATTRS_EDIT_DESC,
 };
 
 // WI-063 / WI-078 — units (decoration + transform) attached in ONE call so an item
@@ -810,7 +849,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     // filter / opacity / flip) in the SAME call — attrs:null clears a unit.
     // Provide attrs and/or units (at least one); only `itemId` is required.
     inputSchema: obj(
-      { itemId: STR, attrs: ATTRS_WITH_TEXT_NOTE, units: EDIT_UNITS },
+      { itemId: STR, attrs: ATTRS_EDIT_NOTE, units: EDIT_UNITS },
       ["itemId"],
       "EDIT one existing item — the primary change tool. `attrs` changes any attribute (text/textRuns, fontSize, color, frame, chart encoding/variant/overrides, …) and `units` sets/clears decoration + flip; give either or both. attrs is shallow-merged (send COMPLETE sub-objects) EXCEPT chart variant/encoding/overrides are deep-merged and text text↔textRuns stay coherent. Target by the itemId in the snapshot.",
     ),
@@ -1048,7 +1087,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     inputSchema: obj(
       {
         itemIds: STR_ARR,
-        attrs: ATTRS_WITH_TEXT_NOTE,
+        attrs: ATTRS_EDIT_NOTE,
         units: EDIT_UNITS,
         updates: {
           type: "array",

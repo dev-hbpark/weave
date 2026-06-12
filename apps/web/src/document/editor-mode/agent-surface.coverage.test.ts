@@ -51,6 +51,49 @@ const PAGE_EXCLUDED: ReadonlyArray<string> = [
   // page surface defers this until a doc-aware adapter can refuse page ids.
   // The UI gesture (Cmd+G) is unaffected — it filters by capability first.
   "weave.items.group",
+
+  // ── WI-205 / DR-130 — agent tool-surface reduction ───────────────────────
+  // The advertised schemas re-read every turn dominate agent input tokens
+  // (small-think DR-067). These 19 commands were de-listed from the AGENT
+  // surface to match the canonical funnel weave-capabilities §6 already teaches.
+  // ALL stay registered for the UI — only the agent no longer SEES them, and
+  // every verb is reachable through a kept canonical tool.
+  //
+  // (a) Non-canonical single-item style mutators — the domain prose explicitly
+  //     says these "do not exist; everything they did is via weave.item.add /
+  //     weave.item.update" (units). De-listing makes that statement TRUE.
+  "weave.shape.setFill", // → weave.item.update units:[{ kind:"decoration.fill" }]
+  "weave.shape.setCornerRadius", // → weave.item.update attrs.cornerRadius / cornerRadii
+  "weave.shape.setVertices", // → weave.item.update attrs (poly points)
+  "weave.item.setDecoration", // → weave.item.add / weave.item.update units
+  // (b) Non-canonical MULTI-item mutators — the prose says "do NOT use items.
+  //     align / resizeMulti / remove / duplicate — folded into items.update /
+  //     items.lifecycle". De-listing aligns the surface with that funnel.
+  "weave.items.resizeMulti", // → weave.items.update (per-item frames in `updates`)
+  "weave.items.remove", // → weave.items.lifecycle { op:"remove" }
+  "weave.items.duplicate", // → weave.items.lifecycle { op:"duplicate" }
+  "weave.items.duplicateWithDelta", // niche rhythmic clone → items.lifecycle + items.update frames
+  // (c) Niche shape/line/image ops — ~0 agent usage; canonical paths cover the
+  //     common case, fail-closed is acceptable for the rare one.
+  "weave.image.setCrop", // → weave.item.update attrs.cropRatio
+  "weave.item.flip", // → weave.item.update units:[{ kind:"transform.flip" }]
+  "weave.shape.breakToLine", // shape→line conversion, rare on slides
+  "weave.line.closeToShape", // line→shape conversion, rare on slides
+  // (d) Relative z-order ±1 steps — to/Front / to/Back cover the agent intent.
+  "weave.item.bringForward",
+  "weave.item.sendBackward",
+  // (e) Grid/flex micro-ops — placement is owned by weave.item.setLayoutChild /
+  //     weave.frame.setLayout / weave.design.reorderChildren.
+  "weave.item.swapGridCells",
+  "weave.item.dropGridCell",
+  "weave.item.swapFlexOrder",
+  // (f) Frame dissolve — niche AND destructive on a page (a page IS a frame:
+  //     dissolving the active page spills its children to the root). The UI
+  //     keeps it; the agent should not reach for it blind.
+  "weave.frame.removeKeepingChildren",
+  // (g) Whole-document reset — a footgun to hand an agent, not a slide-editing
+  //     capability. UI-only.
+  "weave.doc.reset",
 ];
 
 function asAdapters(tools: typeof PAGE_AGENT_SURFACE.tools): ReadonlyArray<AgentToolAdapter> {

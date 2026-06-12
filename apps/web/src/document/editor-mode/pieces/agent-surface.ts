@@ -38,7 +38,7 @@ function isRecord(v: unknown): v is Readonly<Record<string, unknown>> {
  *  explicit non-root containerId is respected (a frame inside the page). */
 export function intoActivePage(input: unknown, host: AgentHostContext): unknown {
   if (!isRecord(input) || host.activeContainerId === undefined) return input;
-  const containerId = input["containerId"];
+  const containerId = input.containerId;
   if (containerId !== undefined && containerId !== host.rootId) return input;
   return { ...input, containerId: host.activeContainerId };
 }
@@ -62,32 +62,32 @@ export function intoActivePageClamped(input: unknown, host: AgentHostContext): u
   if (
     host.activeContainerId === undefined || // degenerate host — no page box to clamp against
     !isRecord(retargeted) ||
-    retargeted["containerId"] !== host.activeContainerId
+    retargeted.containerId !== host.activeContainerId
   ) {
     return retargeted;
   }
-  const frame = retargeted["frame"];
+  const frame = retargeted.frame;
   if (
     !isRecord(frame) ||
-    typeof frame["x"] !== "number" ||
-    typeof frame["y"] !== "number" ||
-    typeof frame["width"] !== "number" ||
-    typeof frame["height"] !== "number" ||
-    !Number.isFinite(frame["x"]) ||
-    !Number.isFinite(frame["y"])
+    typeof frame.x !== "number" ||
+    typeof frame.y !== "number" ||
+    typeof frame.width !== "number" ||
+    typeof frame.height !== "number" ||
+    !Number.isFinite(frame.x) ||
+    !Number.isFinite(frame.y)
   ) {
     return retargeted;
   }
   const clamped = clampFrameToPage(
     {
-      x: frame["x"],
-      y: frame["y"],
-      width: frame["width"],
-      height: frame["height"],
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
     },
     { minX: AGENT_ADD_MIN_OVERLAP, minY: AGENT_ADD_MIN_OVERLAP },
   );
-  if (clamped.x === frame["x"] && clamped.y === frame["y"]) return retargeted;
+  if (clamped.x === frame.x && clamped.y === frame.y) return retargeted;
   return { ...retargeted, frame: { ...frame, x: clamped.x, y: clamped.y } };
 }
 
@@ -114,7 +114,7 @@ function withDescription(spec: AgentCommandSpec, description: string): AgentComm
 
 /** Append the page-bounded containerId semantics to the base description. */
 function withPageContainerNote(spec: AgentCommandSpec): AgentCommandSpec {
-  const prev = spec.inputSchema["description"];
+  const prev = spec.inputSchema.description;
   const note =
     "containerId: omit → the CURRENT PAGE (never the design root); pass an id only to target a frame INSIDE the page.";
   return withDescription(spec, typeof prev === "string" ? `${prev} ${note}` : note);
@@ -151,7 +151,7 @@ const PAGE_PAGE_ADD: AgentToolAdapter = {
   activatesPage: true,
   schema: (base) => {
     const b = requireBase("weave.page.add", base);
-    const baseProps = b.inputSchema["properties"];
+    const baseProps = b.inputSchema.properties;
     const props: Record<string, unknown> = {};
     if (isRecord(baseProps)) {
       // Argument shapes stay the base's by reference (no hand-copied drift);
@@ -212,18 +212,18 @@ const PAGE_REPARENT: AgentToolAdapter = {
   command: "weave.item.reparent",
   schema: (base) => {
     const b = requireBase("weave.item.reparent", base);
-    const prev = b.inputSchema["description"];
+    const prev = b.inputSchema.description;
     const note =
       "newParentId: the design root is not an editing surface here — a root target resolves to the CURRENT PAGE; to move an item onto another page pass that page's frame id.";
     return withDescription(b, typeof prev === "string" ? `${prev} ${note}` : note);
   },
   mapInput: (input, host) => {
     if (!isRecord(input) || host.activeContainerId === undefined) return input;
-    const entries = input["entries"];
+    const entries = input.entries;
     if (!Array.isArray(entries)) return input;
     let changed = false;
     const next = entries.map((entry) => {
-      if (isRecord(entry) && entry["newParentId"] === host.rootId) {
+      if (isRecord(entry) && entry.newParentId === host.rootId) {
         changed = true;
         return { ...entry, newParentId: host.activeContainerId };
       }
@@ -250,23 +250,22 @@ const PAGE_BATCH: AgentToolAdapter = {
   command: "weave.batch",
   schema: (base) => {
     const b = requireBase("weave.batch", base);
-    const prev = b.inputSchema["description"];
+    const prev = b.inputSchema.description;
     const note =
       "Ops use this surface's tools — weave.page.add is valid inside a batch (e.g. add a page, then fill it… across SEPARATE ops only if ids are needed), and an op's omitted containerId lands on the CURRENT PAGE.";
     return withDescription(b, typeof prev === "string" ? `${prev} ${note}` : note);
   },
   mapInput: (input, host) => {
     if (!isRecord(input)) return input;
-    const ops = input["ops"];
+    const ops = input.ops;
     if (!Array.isArray(ops)) return input;
     let changed = false;
     const next = ops.map((op) => {
       if (!isRecord(op)) return op;
-      const adapter = PAGE_OP_ADAPTERS[String(op["command"])];
+      const adapter = PAGE_OP_ADAPTERS[String(op.command)];
       if (adapter === undefined) return op;
-      const mapped =
-        adapter.mapInput !== undefined ? adapter.mapInput(op["input"], host) : op["input"];
-      if (adapter.command === op["command"] && mapped === op["input"]) return op;
+      const mapped = adapter.mapInput !== undefined ? adapter.mapInput(op.input, host) : op.input;
+      if (adapter.command === op.command && mapped === op.input) return op;
       changed = true;
       return { ...op, command: adapter.command, input: mapped };
     });
@@ -282,30 +281,37 @@ const PAGE_BATCH: AgentToolAdapter = {
  *  The coverage test (editor-mode/agent-surface.coverage.test.ts) holds this
  *  list ⊆ the registered command set and flags new registrations that were
  *  never triaged. */
+// WI-205 / DR-130 — agent tool-surface reduction. The advertised tool SCHEMAS
+// are re-read on EVERY agent turn (small-think DR-067: input tokens ≈ turns ×
+// static prefix; the ~46-tool schema set ≈ 20K tokens was the largest untouched
+// prefix chunk). This list was trimmed to the CANONICAL funnel the cached
+// domain-knowledge prose already teaches (weave-capabilities.ts §6): single-item
+// styling → weave.item.add / weave.item.update (units); multi-item → weave.items.
+// update / weave.items.lifecycle. The 19 non-canonical / niche / destructive
+// commands the prose already discourages (or never needs on a page) moved to
+// PAGE_EXCLUDED (coverage test) with a reason each — no human capability is lost
+// (the commands stay registered for the UI; only the AGENT surface shrinks), and
+// every removed verb is reachable through a kept canonical tool.
 const PAGE_PASSTHROUGH_TOOLS: ReadonlyArray<string> = [
   "weave.item.remove",
-  "weave.items.remove",
   "weave.item.update",
-  "weave.shape.setCornerRadius",
-  "weave.image.setCrop",
-  "weave.item.flip",
-  "weave.shape.setFill",
-  "weave.shape.setVertices",
-  "weave.items.resizeMulti",
+  // Canonical MULTI-item path (weave-capabilities §6): shared attrs/units,
+  // per-item frames, align/distribute (items.update), bulk remove/duplicate
+  // (items.lifecycle). The singular *.resizeMulti / items.remove / items.
+  // duplicate the prose folds into these are NOT advertised (PAGE_EXCLUDED).
   "weave.items.update",
   "weave.items.lifecycle",
   "weave.behavior.update",
-  "weave.doc.reset",
   "weave.design.setBackground",
   "weave.design.setPresentationOrder",
   "weave.design.reorderChildren",
-  "weave.item.bringForward",
-  "weave.item.sendBackward",
+  // Absolute z-order (to front / to back). The relative ±1 steps
+  // (bringForward / sendBackward) are excluded — to/Front/Back cover the
+  // agent's "raise above / drop below everything" intent.
   "weave.item.bringToFront",
   "weave.item.sendToBack",
-  "weave.shape.breakToLine",
-  "weave.line.closeToShape",
-  "weave.frame.removeKeepingChildren",
+  // Present-mode authoring (interactive hotspots / camera steps) — a real deck
+  // capability, kept on the agent surface.
   "weave.item.addBehavior",
   "weave.item.removeBehavior",
   "weave.dataset.add",
@@ -319,19 +325,10 @@ const PAGE_PASSTHROUGH_TOOLS: ReadonlyArray<string> = [
   "weave.clipboard.copy",
   "weave.clipboard.cut",
   "weave.item.duplicate",
-  "weave.items.duplicate",
-  // WI-185 ⑬ — explicit-delta clone. Item-level and flavor-neutral: clones
-  // land beside their source INSIDE the page; the ratio delta is the page's
-  // own coordinate space. Useful for rhythmic series on a slide.
-  "weave.items.duplicateWithDelta",
   // weave.page.duplicate is enlisted as an ADAPTER (PAGE_PAGE_DUPLICATE) —
   // same command, plus clone activation (WI-169).
   "weave.frame.setLayout",
   "weave.item.setLayoutChild",
-  "weave.item.swapGridCells",
-  "weave.item.swapFlexOrder",
-  "weave.item.dropGridCell",
-  "weave.item.setDecoration",
 ];
 
 /** Page-editing prompt fragment — short by design: the wrapped tools carry
