@@ -42,6 +42,12 @@ export interface AkuCostRecord {
   readonly cacheReadTokens: number;
   readonly cacheWriteTokens: number;
   readonly costUsd?: number;
+  /** True when the task ran in a SUBSCRIPTION mode (byo-ssh / codex-ssh) — stamped
+   *  at capture from the GRANTED mode (serverInfo.mode). The footer then HIDES the
+   *  per-token dollar ESTIMATE (a subscription doesn't bill per token) and shows
+   *  "구독" instead, keeping the usage windows. Per-message: a bubble keeps the mode
+   *  it ran in even if the panel later switches modes. */
+  readonly subscription?: boolean;
   /** Subscription rate-limit windows at the END of the task (small-think DR-059 —
    *  subscription modes byo-ssh/codex-ssh; api mode bills per token and never
    *  reports windows). Snapshot of how full each window is NOW (other sessions burn

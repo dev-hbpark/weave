@@ -142,13 +142,16 @@ export function formatLimitsLine(limits: ReadonlyArray<AkuLimitWindow>): string 
     .join(" · ");
 }
 
-/** 버블 푸터 한 줄 — 입력은 캐시 읽기/쓰기 포함 총량 (모델에 실제로 들어간 토큰);
- *  구독 모드(byo-ssh/codex-ssh)면 구독 윈도우 사용률("Session 23% · 주간 41%")이
- *  뒤에 붙는다. codex-ssh 는 costUsd 가 없어 토큰-온리로 자연 강등(WI-204). */
+/** 버블 푸터 한 줄 — 입력은 캐시 읽기/쓰기 포함 총량 (모델에 실제로 들어간 토큰).
+ *  구독 모드(byo-ssh/codex-ssh, `subscription:true`)면 예상비용($)을 숨기고 "구독"으로
+ *  표기한다 — 구독제는 토큰당 과금이 아니므로 추정 달러는 오해를 부른다. 실 사용량은
+ *  뒤에 붙는 구독 윈도우("Session 23% · 주간 41%", 증가분)로 본다. api 모드는 종전대로
+ *  실제 추정 달러를 표시. */
 export function formatCostLine(c: AkuCostRecord): string {
   const input = c.inputTokens + c.cacheReadTokens + c.cacheWriteTokens;
   const parts = [`입력 ${formatTokens(input)}`, `출력 ${formatTokens(c.outputTokens)} 토큰`];
-  if (c.costUsd !== undefined) parts.push(formatUsd(c.costUsd));
+  if (c.subscription === true) parts.push("구독");
+  else if (c.costUsd !== undefined) parts.push(formatUsd(c.costUsd));
   if (c.limits !== undefined && c.limits.length > 0) parts.push(formatLimitsLine(c.limits));
   return parts.join(" · ");
 }
@@ -173,7 +176,8 @@ export function describeCostDetail(c: AkuCostRecord): string {
     `캐시 쓰기 ${c.cacheWriteTokens.toLocaleString()}`,
     `출력 ${c.outputTokens.toLocaleString()} 토큰`,
   ];
-  if (c.costUsd !== undefined) parts.push(`${formatUsd(c.costUsd)} (api 모드는 추정치)`);
+  if (c.subscription === true) parts.push("구독 모드 — 토큰당 과금 없음(구독제), 예상비용 미표시");
+  else if (c.costUsd !== undefined) parts.push(`${formatUsd(c.costUsd)} (api 모드는 추정치)`);
   if (c.limits !== undefined && c.limits.length > 0) {
     const windows = sortedLimits(c.limits)
       .map(

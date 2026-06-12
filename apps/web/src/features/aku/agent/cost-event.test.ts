@@ -186,6 +186,38 @@ describe("cost formatting", () => {
     ).toBe("입력 58k · 출력 3.4k 토큰 · $0.0345 · Session 23% · 주간 41%");
   });
 
+  it("subscription mode (ssh) shows 구독 instead of the dollar estimate, keeping the windows", () => {
+    expect(
+      formatCostLine({
+        inputTokens: 1200,
+        outputTokens: 3400,
+        cacheReadTokens: 56000,
+        cacheWriteTokens: 800,
+        // The server may still send an API-equivalent estimate (codex-ssh WI-055) —
+        // a subscription bills flat, so the footer suppresses it and shows 구독.
+        costUsd: 0.0345,
+        subscription: true,
+        limits: [
+          { window: "five_hour", utilization: 0.23 },
+          { window: "seven_day", utilization: 0.41 },
+        ],
+      }),
+    ).toBe("입력 58k · 출력 3.4k 토큰 · 구독 · Session 23% · 주간 41%");
+  });
+
+  it("subscription mode without windows still shows 구독 (never the dollar)", () => {
+    expect(
+      formatCostLine({
+        inputTokens: 100,
+        outputTokens: 200,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        costUsd: 0.5,
+        subscription: true,
+      }),
+    ).toBe("입력 100 · 출력 200 토큰 · 구독");
+  });
+
   it("limits line appends this task's delta when attributed (WI-179): solo run = (+N%), sub-1% = (+<1%)", () => {
     expect(
       formatLimitsLine([

@@ -44,6 +44,7 @@ import type { SigDocument } from "../diversity/diversity-metric.js";
 import type {
   AkuAssistantMessage,
   AkuConnection,
+  AkuCostRecord,
   AkuDraft,
   AkuEditRecord,
   AkuHistoryController,
@@ -58,6 +59,7 @@ import {
   type AkuAgentMode,
   type AkuApiKeys,
   connectModeOptions,
+  isSubscriptionMode,
   loadAgentMode,
   saveAgentMode,
 } from "./agent-mode.js";
@@ -407,6 +409,15 @@ export function useAkuAgent(deps: {
   const [connection, setConnection] = useState<AkuConnection>(() => toConnection("idle"));
   // Server config announced on connect (mode + perf knobs); null until it arrives.
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
+  // Fresh GRANTED mode for the cost handlers (closures below run outside React's
+  // render, so they read the ref, not the state). Used to stamp a task's cost as
+  // subscription (ssh) at capture — the footer then hides the dollar estimate.
+  const serverInfoRef = useRef<ServerInfo | null>(null);
+  const stampCost = useCallback(
+    (cost: AkuCostRecord): AkuCostRecord =>
+      isSubscriptionMode(serverInfoRef.current?.mode) ? { ...cost, subscription: true } : cost,
+    [],
+  );
   // Live job-queue view pushed by the server (WI-034); null until it arrives.
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   // Pre-generation media-type question (small-think clarify): when the server asks
@@ -651,7 +662,8 @@ export function useAkuAgent(deps: {
     // 재입양된 런에도 태스크 비용은 도착한다 (WI-176) — 동일하게 푸터로 싣는다.
     const orphanCost = costFromEvent(event);
     if (orphanCost !== undefined) {
-      patchLastAssistant((prev) => ({ ...prev, cost: orphanCost }));
+      const stamped = stampCost(orphanCost);
+      patchLastAssistant((prev) => ({ ...prev, cost: stamped }));
     }
     const st = orphanRunStateRef.current;
     const activity = activityFor(st);
@@ -727,7 +739,10 @@ export function useAkuAgent(deps: {
           onClarify: (req) => onClarifyRef.current(req),
           // The server announces its active config (mode + model/speed knobs) on connect;
           // surface it in the panel header so the operator sees what's actually running.
-          onServerInfo: (info) => setServerInfo(info),
+          onServerInfo: (info) => {
+            serverInfoRef.current = info;
+            setServerInfo(info);
+          },
           // Live queue view (WI-034): running/queued + this client's positions.
           onQueueStatus: (s) => setQueueStatus(s),
           // WI-174 — frames of a grace-replayed run (no local pending) route back
@@ -1074,7 +1089,8 @@ export function useAkuAgent(deps: {
             // 좁힌다 (cost-event.ts); 버블 푸터로 렌더된다.
             const cost = costFromEvent(event);
             if (cost !== undefined) {
-              patchLastAssistant((prev) => ({ ...prev, cost }));
+              const stamped = stampCost(cost);
+              patchLastAssistant((prev) => ({ ...prev, cost: stamped }));
             }
             const activity = activityFor(runState);
             patchLastAssistant((prev) => ({
@@ -1188,7 +1204,7 @@ export function useAkuAgent(deps: {
         }
       }
     },
-    [agentSurface, commit, editor, getHandle, patchLastAssistant, uploadImages],
+    [agentSurface, commit, editor, getHandle, patchLastAssistant, uploadImages, stampCost],
   );
 
   const send = useCallback(

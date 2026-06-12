@@ -113,6 +113,15 @@ export function axesFromMode(mode: AkuAgentMode): {
   return MODE_TO_AXIS[mode];
 }
 
+/** 구독 모드 = SSH transport (byo-ssh / codex-ssh) — 자격이 서버의 구독 CLI에 있고
+ *  토큰당 과금이 아니다. 클라는 이 모드의 예상비용($)을 숨기고 "구독"으로 표시하며,
+ *  실 사용량은 구독 윈도우(세션/주간 증가분)로 본다. 인자는 serverInfo.mode(서버가
+ *  통보한 실제 모드) 문자열 — AkuAgentMode 뿐 아니라 임의 문자열도 안전. */
+const SUBSCRIPTION_MODES: ReadonlySet<string> = new Set(["byo-ssh", "codex-ssh"]);
+export function isSubscriptionMode(mode: string | null | undefined): boolean {
+  return mode != null && SUBSCRIPTION_MODES.has(mode);
+}
+
 const MODE_KEY = "weave.aku.agent-mode";
 
 const MODE_VALUES: ReadonlyArray<string> = [
