@@ -87,7 +87,7 @@ export function formatUsd(usd: number): string {
 
 /** 구독 윈도우 id → 한글 라벨 (Rule 6: 데이터 맵, 미지 id 는 원문 표기). */
 const LIMIT_WINDOW_LABELS: Readonly<Record<string, string>> = {
-  five_hour: "5시간",
+  five_hour: "Session",
   seven_day: "주간",
   seven_day_opus: "주간 Opus",
   seven_day_sonnet: "주간 Sonnet",
@@ -131,7 +131,7 @@ export function formatDeltaSuffix(taskDelta: number | undefined): string {
   return s === "0" ? "(+<1%)" : `(+${s}%)`;
 }
 
-/** "5시간 23%(+3%) · 주간 41%(+<1%)" — 푸터에 이어 붙는 구독 윈도우 사용률.
+/** "Session 23%(+3%) · 주간 41%(+<1%)" — 푸터에 이어 붙는 구독 윈도우 사용률.
  *  괄호의 증가분은 이 태스크가 단독 실행됐을 때만 서버가 보내준다 (WI-047). */
 export function formatLimitsLine(limits: ReadonlyArray<AkuLimitWindow>): string {
   return sortedLimits(limits)
@@ -143,7 +143,7 @@ export function formatLimitsLine(limits: ReadonlyArray<AkuLimitWindow>): string 
 }
 
 /** 버블 푸터 한 줄 — 입력은 캐시 읽기/쓰기 포함 총량 (모델에 실제로 들어간 토큰);
- *  byo-ssh 면 구독 윈도우 사용률("5시간 23% · 주간 41%")이 뒤에 붙는다. */
+ *  byo-ssh 면 구독 윈도우 사용률("Session 23% · 주간 41%")이 뒤에 붙는다. */
 export function formatCostLine(c: AkuCostRecord): string {
   const input = c.inputTokens + c.cacheReadTokens + c.cacheWriteTokens;
   const parts = [`입력 ${formatTokens(input)}`, `출력 ${formatTokens(c.outputTokens)} 토큰`];

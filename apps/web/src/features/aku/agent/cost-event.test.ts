@@ -166,7 +166,7 @@ describe("cost formatting", () => {
         { window: "seven_day", utilization: 0.41 }, // arrival order reversed on purpose
         { window: "five_hour", utilization: 0.23 },
       ]),
-    ).toBe("5시간 23% · 주간 41%");
+    ).toBe("Session 23% · 주간 41%");
     expect(formatLimitsLine([{ window: "lunar_cycle", utilization: 0.5 }])).toBe("lunar_cycle 50%");
   });
 
@@ -183,7 +183,7 @@ describe("cost formatting", () => {
           { window: "seven_day", utilization: 0.41 },
         ],
       }),
-    ).toBe("입력 58k · 출력 3.4k 토큰 · $0.0345 · 5시간 23% · 주간 41%");
+    ).toBe("입력 58k · 출력 3.4k 토큰 · $0.0345 · Session 23% · 주간 41%");
   });
 
   it("limits line appends this task's delta when attributed (WI-179): solo run = (+N%), sub-1% = (+<1%)", () => {
@@ -192,21 +192,21 @@ describe("cost formatting", () => {
         { window: "five_hour", utilization: 0.33, taskDelta: 0.03 },
         { window: "seven_day", utilization: 0.41, taskDelta: 0 },
       ]),
-    ).toBe("5시간 33%(+3%) · 주간 41%(+<1%)");
+    ).toBe("Session 33%(+3%) · 주간 41%(+<1%)");
     // absent taskDelta (overlapped run / window reset) → no suffix, NOT "+0%"
-    expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33 }])).toBe("5시간 33%");
+    expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33 }])).toBe("Session 33%");
   });
 
   it("delta passes measured decimals through verbatim — no display-layer precision loss", () => {
     expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33, taskDelta: 0.005 }])).toBe(
-      "5시간 33%(+0.5%)",
+      "Session 33%(+0.5%)",
     );
     expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33, taskDelta: 0.0025 }])).toBe(
-      "5시간 33%(+0.25%)",
+      "Session 33%(+0.25%)",
     );
     // a measured 0 means "below the source resolution", not "consumed nothing"
     expect(formatLimitsLine([{ window: "five_hour", utilization: 0.33, taskDelta: 0 }])).toBe(
-      "5시간 33%(+<1%)",
+      "Session 33%(+<1%)",
     );
   });
 
@@ -218,7 +218,7 @@ describe("cost formatting", () => {
       cacheWriteTokens: 0,
       limits: [{ window: "five_hour", utilization: 0.33, taskDelta: 0.03 }],
     });
-    expect(withDelta).toContain("5시간 33%(+3%)");
+    expect(withDelta).toContain("Session 33%(+3%)");
     expect(withDelta).toContain("단독 실행 구간의 증가분");
     const withoutDelta = describeCostDetail({
       inputTokens: 1,
@@ -238,7 +238,7 @@ describe("cost formatting", () => {
       cacheWriteTokens: 0,
       limits: [{ window: "five_hour", utilization: 0.23, resetsAt: 1_770_000_000 }],
     });
-    expect(detail).toContain("구독 윈도우 5시간 23%");
+    expect(detail).toContain("구독 윈도우 Session 23%");
     expect(detail).toContain("리셋");
     expect(detail).toContain("태스크 종료 시점의 전체 사용률");
   });
