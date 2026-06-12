@@ -9,6 +9,7 @@ import { Banner, IconButton, IconClose, Panel } from "@weave/design-system";
 import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef } from "react";
 import { AkuComposer, type AkuComposerSeed } from "./AkuComposer.js";
 import { AkuMascot } from "./AkuMascot.js";
+import { AkuModeBar } from "./AkuModeBar.js";
 import { AkuQueueChip } from "./AkuQueueChip.js";
 import { AkuServerInfoChip } from "./AkuServerInfoChip.js";
 import { AkuSettingsMenu } from "./AkuSettingsMenu.js";
@@ -152,8 +153,6 @@ export function AkuPanel({
             canClear={messages.length > 0}
             onResetToken={onResetToken}
             hasToken={hasToken}
-            agentMode={agentMode}
-            onSetAgentMode={onSetAgentMode}
           />
           {/* While streaming, closing does NOT end the run — it minimizes to the
               floating "편집 중…" pill (which carries the stop button). Label it as
@@ -167,6 +166,10 @@ export function AkuPanel({
             <IconClose size={16} />
           </IconButton>
         </Panel.Header>
+        {/* Execution-mode toggles (HANDOFF-030) — provider × transport, always
+            visible under the header so the operator can switch + verify without
+            opening the gear menu. Only once connected (a token exists). */}
+        {hasToken ? <AkuModeBar agentMode={agentMode} onSetAgentMode={onSetAgentMode} /> : null}
         <Panel.Body ref={bodyRef} data-aku-body>
           {hasToken && connection.banner !== null ? (
             <div className="px-3 pt-2">

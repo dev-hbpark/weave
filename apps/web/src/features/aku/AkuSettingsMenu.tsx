@@ -5,7 +5,6 @@
 
 import { IconButton, IconMore, Switch } from "@weave/design-system";
 import { useId, useState } from "react";
-import { AKU_AGENT_MODE_OPTIONS, type AkuAgentMode } from "./agent/agent-mode.js";
 import {
   AKU_CREATIVITY_OPTIONS,
   AKU_INTENT_SOURCE_OPTIONS,
@@ -21,8 +20,6 @@ export function AkuSettingsMenu({
   canClear,
   onResetToken,
   hasToken,
-  agentMode,
-  onSetAgentMode,
 }: {
   readonly settings: AkuSettings;
   readonly onSetSetting: SetAkuSetting;
@@ -32,9 +29,6 @@ export function AkuSettingsMenu({
   /** Forget the saved token (moved out of the header). */
   readonly onResetToken: () => void;
   readonly hasToken: boolean;
-  /** Execution-mode REQUEST (WI-175) — granted mode shows in the header chip. */
-  readonly agentMode: AkuAgentMode;
-  readonly onSetAgentMode: (mode: AkuAgentMode) => void;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -182,49 +176,9 @@ export function AkuSettingsMenu({
               </div>
             </div>
 
-            {/* Execution mode (WI-175) — a REQUEST: the server grants only
-                allowlisted modes (SMALL_THINK_ALLOWED_MODES) and announces the
-                ACTUAL mode in the header chip (serverInfo.mode). Changing it
-                drops the link and reconnects with a fresh hello. */}
-            <div className="mb-1.5">
-              <div className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-[color:var(--text-overlay-soft)]">
-                서버 모드
-              </div>
-              <div className="px-1.5 py-1">
-                {/* biome-ignore lint/a11y/useSemanticElements: intentional non-semantic element for this composite/overlay surface */}
-                <div
-                  className="flex gap-1"
-                  role="group"
-                  aria-label="서버 모드"
-                  data-testid="aku-agent-mode"
-                >
-                  {AKU_AGENT_MODE_OPTIONS.map((opt) => {
-                    const active = agentMode === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        aria-pressed={active}
-                        title={opt.hint}
-                        onClick={() => onSetAgentMode(opt.value)}
-                        className={`flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-[11px] border transition-colors ${
-                          active
-                            ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)] border-[color:var(--accent)]"
-                            : "border-[color:var(--surface-overlay-border)] text-[color:var(--text-overlay-soft)] hover:text-[color:var(--text-overlay)]"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="mt-1 text-[10.5px] text-[color:var(--text-overlay-soft)] leading-snug">
-                  API=설정된 키(VITE_AKU_API_KEY)가 있으면 그 키, 없으면 서버 공유 키 · SSH=서버의
-                  Claude 구독 CLI · Codex=서버의 ChatGPT 구독 Codex. 허용목록에 없는 모드는 거부되고
-                  기본 모드로 실행됩니다 — 실제 적용 모드는 상단 칩에 표시됩니다.
-                </div>
-              </div>
-            </div>
+            {/* Execution-mode selection moved OUT of this menu into the always-
+                visible AkuModeBar under the panel header (HANDOFF-030: provider ×
+                transport toggles). */}
 
             {/* Secondary actions (moved out of the header). */}
             <div className="mt-1 border-t border-[color:var(--surface-overlay-border)] pt-1.5">

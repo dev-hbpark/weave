@@ -56,6 +56,7 @@ import { stampGridCapacityGuard } from "./agent-grid-capacity-guard.js";
 import { stampMinSizeGuard } from "./agent-min-size-guard.js";
 import {
   type AkuAgentMode,
+  type AkuApiKeys,
   connectModeOptions,
   loadAgentMode,
   saveAgentMode,
@@ -366,7 +367,16 @@ export function useAkuAgent(deps: {
   // connection, else the server's shared key). Secret: never logged, never
   // returned from here.
   const [agentMode, setAgentModeState] = useState<AkuAgentMode>(() => loadAgentMode());
-  const apiKey = envStr("VITE_AKU_API_KEY") ?? null;
+  // Per-provider API keys — the selected mode's transport decides which (if any)
+  // rides the hello (api → Anthropic, openai-api → OpenAI; ssh modes carry none).
+  // env presence is the operator opt-in; values stay secret (never logged/returned).
+  const apiKeys = useMemo(
+    (): AkuApiKeys => ({
+      anthropic: envStr("VITE_AKU_API_KEY") ?? null,
+      openai: envStr("VITE_AKU_OPENAI_API_KEY") ?? null,
+    }),
+    [],
+  );
 
   // DEV diagnostics for "token setup keeps showing despite a saved token". Reveals
   // whether the value is actually under TOKEN_KEY on THIS origin (key/origin mismatch,
@@ -736,7 +746,7 @@ export function useAkuAgent(deps: {
           // mode asks for it). The server grants only allowlisted modes and
           // announces the ACTUAL mode in serverInfo.mode (chip in the header) —
           // never assume the request was honored.
-          ...connectModeOptions(agentMode, apiKey),
+          ...connectModeOptions(agentMode, apiKeys),
           connectTimeoutMs: CONNECT_TIMEOUT_MS,
           ...(schema !== undefined ? { schema } : {}),
         });
@@ -773,7 +783,7 @@ export function useAkuAgent(deps: {
       );
     }
     return connectingRef.current;
-  }, [editor, surface, designId, url, token, agentMode, apiKey]);
+  }, [editor, surface, designId, url, token, agentMode, apiKeys]);
 
   // Connect-on-init (WI-034 4b): once the SAVED design has loaded and a token is present, open
   // the link eagerly (instead of lazily on first submit) so a browser refresh reconnects within

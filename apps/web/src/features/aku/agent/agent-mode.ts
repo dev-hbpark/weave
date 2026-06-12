@@ -23,7 +23,17 @@
 /** "server" = hello 에 모드를 싣지 않음(서버 부팅 모드 그대로) — 명시적으로 저장된
  *  경우에만 동작하는 레거시/탈출구 값. 나머지 셋은 서버의 실행 모드 3종(DR-057
  *  통합 + WI-204 codex)에 대한 요청. 첫 선택 전 기본값은 DEFAULT_AGENT_MODE. */
-export type AkuAgentMode = "server" | "api" | "byo-ssh" | "codex-ssh";
+export type AkuAgentMode = "server" | "api" | "byo-ssh" | "openai-api" | "codex-ssh";
+
+/**
+ * The 4 real modes are a provider × transport MATRIX (small-think WI-056/DR-070):
+ *   (anthropic, api) → api        (anthropic, ssh) → byo-ssh
+ *   (openai,    api) → openai-api (openai,    ssh) → codex-ssh
+ * The panel exposes the two axes as two toggles (HANDOFF-030); the mode string
+ * stays the wire/persistence unit and is composed/derived from the axes.
+ */
+export type AkuProvider = "anthropic" | "openai";
+export type AkuTransport = "api" | "ssh";
 
 /** 첫 선택 전(저장값 없음/가비지/localStorage 차단) 기본 모드 — 운영자 결정(WI-178):
  *  현 배포의 일상 모드가 구독 CLI(byo-ssh)이므로 새 브라우저도 그걸 요청한다.
@@ -31,7 +41,8 @@ export type AkuAgentMode = "server" | "api" | "byo-ssh" | "codex-ssh";
  *  (WI-175 승인 불가정 원칙 그대로 — 기본값이 바뀌어도 안전). */
 export const DEFAULT_AGENT_MODE: AkuAgentMode = "byo-ssh";
 
-/** 세그먼트 컨트롤에 노출하는 선택지 — 실행 모드 3종만 ("server" 는 선택-이전 상태). */
+/** 실행 모드 4종 ("server" 는 선택-이전 상태). 패널 UI 는 이 flat 목록 대신 아래
+ *  provider/transport 두 축 옵션을 쓴다 — 이 목록은 모드 검증/커버리지의 단일 진실. */
 export const AKU_AGENT_MODE_OPTIONS: ReadonlyArray<{
   readonly value: AkuAgentMode;
   readonly label: string;
@@ -39,12 +50,68 @@ export const AKU_AGENT_MODE_OPTIONS: ReadonlyArray<{
 }> = [
   {
     value: "api",
-    label: "API",
-    hint: "API 키로 실행 — weave에 설정된 키(VITE_AKU_API_KEY)가 있으면 그 키, 없으면 서버 공유 키",
+    label: "Claude API",
+    hint: "Anthropic API 키로 실행 — weave에 설정된 키(VITE_AKU_API_KEY)가 있으면 그 키, 없으면 서버 공유 키",
   },
-  { value: "byo-ssh", label: "SSH", hint: "서버의 Claude 구독 CLI(ssh)로 실행" },
-  { value: "codex-ssh", label: "Codex", hint: "서버의 ChatGPT 구독 Codex(app-server)로 실행" },
+  { value: "byo-ssh", label: "Claude SSH", hint: "서버의 Claude 구독 CLI(ssh)로 실행" },
+  {
+    value: "openai-api",
+    label: "GPT API",
+    hint: "OpenAI API 키로 실행 — weave에 설정된 키(VITE_AKU_OPENAI_API_KEY)가 있으면 그 키, 없으면 서버 공유 키",
+  },
+  { value: "codex-ssh", label: "GPT SSH", hint: "서버의 ChatGPT 구독 Codex(app-server)로 실행" },
 ];
+
+/** 패널 2-토글 — provider 축 (Rule 6: 데이터). */
+export const AKU_PROVIDER_OPTIONS: ReadonlyArray<{
+  readonly value: AkuProvider;
+  readonly label: string;
+  readonly hint: string;
+}> = [
+  { value: "anthropic", label: "Claude", hint: "Anthropic (Claude)" },
+  { value: "openai", label: "GPT", hint: "OpenAI (GPT)" },
+];
+
+/** 패널 2-토글 — transport 축 (Rule 6: 데이터). */
+export const AKU_TRANSPORT_OPTIONS: ReadonlyArray<{
+  readonly value: AkuTransport;
+  readonly label: string;
+  readonly hint: string;
+}> = [
+  { value: "api", label: "API", hint: "API 키로 실행 (설정된 연결별 키, 없으면 서버 공유 키)" },
+  { value: "ssh", label: "SSH", hint: "서버의 구독 CLI로 실행 (Claude CLI / ChatGPT Codex)" },
+];
+
+/** (provider, transport) → mode, 그리고 역방향 (Rule 6: 데이터 테이블, switch 금지). */
+const AXIS_TO_MODE: Readonly<Record<string, Exclude<AkuAgentMode, "server">>> = {
+  "anthropic:api": "api",
+  "anthropic:ssh": "byo-ssh",
+  "openai:api": "openai-api",
+  "openai:ssh": "codex-ssh",
+};
+const MODE_TO_AXIS: Readonly<
+  Record<AkuAgentMode, { readonly provider: AkuProvider; readonly transport: AkuTransport }>
+> = {
+  // "server"(선택-이전)는 표시용으로 기본 모드의 축으로 매핑 — 토글은 항상 구체 모드를 만든다.
+  server: { provider: "anthropic", transport: "ssh" },
+  api: { provider: "anthropic", transport: "api" },
+  "byo-ssh": { provider: "anthropic", transport: "ssh" },
+  "openai-api": { provider: "openai", transport: "api" },
+  "codex-ssh": { provider: "openai", transport: "ssh" },
+};
+
+/** 두 축 → 모드 (한 축을 토글하면 다른 축은 현재값 유지). */
+export function modeFromAxes(provider: AkuProvider, transport: AkuTransport): AkuAgentMode {
+  return AXIS_TO_MODE[`${provider}:${transport}`] ?? DEFAULT_AGENT_MODE;
+}
+
+/** 모드 → 두 축 (토글 활성 표시용). */
+export function axesFromMode(mode: AkuAgentMode): {
+  readonly provider: AkuProvider;
+  readonly transport: AkuTransport;
+} {
+  return MODE_TO_AXIS[mode];
+}
 
 const MODE_KEY = "weave.aku.agent-mode";
 
@@ -90,25 +157,37 @@ export interface ModeConnectOptions {
   readonly apiKey?: string;
 }
 
+/** 연결별 API 키 — provider 별로 분리(API transport 만 사용). 키는 비밀: 선택된
+ *  provider 에 맞는 키만, 그 transport 가 API 일 때만 hello 에 실린다 (RISK-004). */
+export interface AkuApiKeys {
+  /** Anthropic 키 (VITE_AKU_API_KEY) — api 모드. */
+  readonly anthropic: string | null;
+  /** OpenAI 키 (VITE_AKU_OPENAI_API_KEY) — openai-api 모드. */
+  readonly openai: string | null;
+}
+
+const withKey = (mode: string, key: string | null): ModeConnectOptions => ({
+  mode,
+  ...(key !== null && key !== "" ? { apiKey: key } : {}),
+});
+
 /**
  * 모드별 연결-옵션 어댑터 (Rule 6: 레지스트리, switch/if-체인 금지).
  * - "server": 빈 객체 (hello 에 mode 없음 → 서버 부팅 모드, 기존 동작 100%).
- * - "api": mode + (설정돼 있을 때만) apiKey — 키 노출의 단일 결정 지점.
- *   키가 실리면 서버는 그 키를 연결별로 사용(DR-057 keySource:"client"),
- *   없으면 서버 공유 키로 동작한다.
+ * - "api" / "openai-api": mode + (설정돼 있을 때만) 해당 provider 의 apiKey — 키
+ *   노출의 단일 결정 지점. 키가 실리면 서버는 그 키를 연결별로 사용(keySource:
+ *   "client"), 없으면 서버 공유 키로 동작한다.
  * - "byo-ssh" / "codex-ssh": mode 만 — 자격은 서버 쪽(각 구독 CLI)에 있다.
  */
-const MODE_CONNECT_OPTIONS: Record<AkuAgentMode, (apiKey: string | null) => ModeConnectOptions> = {
+const MODE_CONNECT_OPTIONS: Record<AkuAgentMode, (keys: AkuApiKeys) => ModeConnectOptions> = {
   server: () => ({}),
-  api: (apiKey) => ({
-    mode: "api",
-    ...(apiKey !== null && apiKey !== "" ? { apiKey } : {}),
-  }),
+  api: (keys) => withKey("api", keys.anthropic),
+  "openai-api": (keys) => withKey("openai-api", keys.openai),
   "byo-ssh": () => ({ mode: "byo-ssh" }),
   "codex-ssh": () => ({ mode: "codex-ssh" }),
 };
 
-/** 연결 옵션 변환 — connect 스프레드용 (`...connectModeOptions(mode, key)`). */
-export function connectModeOptions(mode: AkuAgentMode, apiKey: string | null): ModeConnectOptions {
-  return MODE_CONNECT_OPTIONS[mode](apiKey);
+/** 연결 옵션 변환 — connect 스프레드용 (`...connectModeOptions(mode, keys)`). */
+export function connectModeOptions(mode: AkuAgentMode, keys: AkuApiKeys): ModeConnectOptions {
+  return MODE_CONNECT_OPTIONS[mode](keys);
 }
