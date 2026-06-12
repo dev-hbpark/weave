@@ -155,7 +155,15 @@ export function AkuPanel({
             agentMode={agentMode}
             onSetAgentMode={onSetAgentMode}
           />
-          <IconButton aria-label="아쿠 닫기" variant="ghost" size="sm" onClick={onClose}>
+          {/* While streaming, closing does NOT end the run — it minimizes to the
+              floating "편집 중…" pill (which carries the stop button). Label it as
+              minimize so the affordance matches the behavior. */}
+          <IconButton
+            aria-label={status === "streaming" ? "아쿠 최소화" : "아쿠 닫기"}
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+          >
             <IconClose size={16} />
           </IconButton>
         </Panel.Header>

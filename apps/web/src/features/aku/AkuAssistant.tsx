@@ -274,7 +274,13 @@ export function AkuAssistant({
           its live edit stays sharp inside the dim. The launcher renders while
           streaming whether or not the panel is open (WI-127), so the spotlight
           tracks it in both cases — it is gated on streaming alone, not on `!open`. */}
-      <AkuInteractionLock locked={status === "streaming"} spotlight={status === "streaming"} />
+      <AkuInteractionLock
+        locked={status === "streaming"}
+        spotlight={status === "streaming"}
+        showStatus={status === "streaming" && !open}
+        onStop={stop}
+        onOpen={openPanel}
+      />
       {/* The roaming launcher Aku. Shown when the panel is CLOSED and — WI-127 —
           ALSO while the agent is streaming even if the panel is open, so starting
           an edit visibly summons Aku (it flies to the edited frame). WI-137: ALSO

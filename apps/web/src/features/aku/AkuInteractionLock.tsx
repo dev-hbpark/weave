@@ -3,7 +3,11 @@
 // While the agent is streaming (`locked`), dims + blocks the whole app so only the
 // Aku panel/launcher is operable (correctness: the agent reads the doc/selection
 // and edits via editor.exec — concurrent user edits would corrupt its snapshot +
-// the undo stack). Rendered inside AkuAssistant's body portal, so the scrim is a
+// the undo stack). The "아쿠가 편집 중…" status pill (with a stop button) is the
+// MINIMIZED face of a running edit: shown only when the panel is CLOSED (`showStatus`)
+// — closing the panel mid-run minimizes to this pill rather than ending the run, and
+// the panel's own progress + stop take over when it is open. Rendered inside
+// AkuAssistant's body portal, so the scrim is a
 // <body> child (sibling of #root) at z-47 — below the Aku surface (z-48), above
 // all app chrome. Effects engage #root `inert` + the window keyboard/wheel guard;
 // everything reverses when `locked` goes false (status → idle), so it never traps.
@@ -18,6 +22,7 @@
 // A rAF loop tracks the launcher's REAL (gliding) centre into CSS vars on the
 // container; both layers inherit them so the hole stays glued to Aku.
 
+import { IconButton } from "@weave/design-system";
 import { useEffect, useRef } from "react";
 import { installInteractionLock, isAkuSurface } from "./interaction-lock.js";
 
@@ -31,9 +36,21 @@ const BRIGHT_GLOW = `radial-gradient(circle at ${SPOT}, rgba(255,255,255,0.10) 0
 export function AkuInteractionLock({
   locked,
   spotlight = false,
+  showStatus = true,
+  onStop,
+  onOpen,
 }: {
   readonly locked: boolean;
   readonly spotlight?: boolean;
+  /** Show the "아쿠가 편집 중…" status pill. Gated to panel-CLOSED only — while the
+   *  panel is open it shows its own streaming progress + stop button, so the
+   *  floating pill would be redundant (the lock scrim itself stays regardless). */
+  readonly showStatus?: boolean;
+  /** Stop the in-flight run from the pill (mirrors the panel composer's stop). */
+  readonly onStop?: (() => void) | undefined;
+  /** Re-open the panel by clicking the pill text — parity with tapping the
+   *  launcher Aku (the pill is the minimized face of the same surface). */
+  readonly onOpen?: (() => void) | undefined;
 }): JSX.Element | null {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -90,13 +107,36 @@ export function AkuInteractionLock({
           }}
         />
       ) : null}
-      <div
-        role="status"
-        aria-live="polite"
-        className="relative mt-20 rounded-[var(--radius-full)] border border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay)] px-3.5 py-1.5 text-[12px] font-medium text-[color:var(--text-overlay)] shadow-[var(--shadow-overlay)] backdrop-blur-[var(--surface-blur)]"
-      >
-        아쿠가 편집 중…
-      </div>
+      {/* Status pill — panel-CLOSED only (WI: minimized edit indicator). Carries
+          the same stop control as the panel composer so the run can be halted
+          without re-opening the panel. */}
+      {showStatus ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="relative mt-20 flex items-center gap-1.5 rounded-[var(--radius-full)] border border-[color:var(--surface-overlay-border)] bg-[color:var(--surface-overlay)] py-1 pl-3.5 pr-1 text-[12px] font-medium text-[color:var(--text-overlay)] shadow-[var(--shadow-overlay)] backdrop-blur-[var(--surface-blur)]"
+        >
+          {/* Clicking the text re-opens the panel — same affordance as tapping the
+              launcher Aku. A real <button> so it's keyboard-reachable. */}
+          {onOpen ? (
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label="아쿠 패널 열기"
+              className="rounded-[var(--radius-sm)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+            >
+              아쿠가 편집 중…
+            </button>
+          ) : (
+            <span>아쿠가 편집 중…</span>
+          )}
+          {onStop ? (
+            <IconButton aria-label="중지" variant="subtle" size="sm" onClick={onStop}>
+              <span className="block w-2.5 h-2.5 rounded-[2px] bg-current" aria-hidden="true" />
+            </IconButton>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
