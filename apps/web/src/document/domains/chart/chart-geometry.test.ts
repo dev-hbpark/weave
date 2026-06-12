@@ -9,9 +9,17 @@ import {
   clientToContainer,
   containerToClient,
   distanceFromCenter,
+  GAUGE_END_DEG,
+  GAUGE_RADIUS_FRAC,
+  GAUGE_START_DEG,
+  gaugeAngleForValue,
+  gaugeFracForValue,
+  gaugeLayout,
+  gaugeValueFromPoint,
   PIE_START_ANGLE_DEG,
   pieLayout,
   pieValueFromAngle,
+  pointOnGauge,
   pointOnPie,
 } from "./chart-geometry.js";
 
@@ -130,5 +138,69 @@ describe("distanceFromCenter", () => {
     const layout = pieLayout([1], 200, 200); // center (100,100)
     expect(distanceFromCenter(layout, 100, 100)).toBeCloseTo(0, 9);
     expect(distanceFromCenter(layout, 130, 140)).toBeCloseTo(50, 9); // 3-4-5
+  });
+});
+
+describe("gaugeLayout", () => {
+  it("computes center + radius from the un-zoomed layout size (radius 75%)", () => {
+    const layout = gaugeLayout(0, 100, 200, 160);
+    expect(layout.cx).toBe(100);
+    expect(layout.cy).toBe(80);
+    expect(layout.r).toBeCloseTo((160 / 2) * GAUGE_RADIUS_FRAC, 9); // min side / 2 × 0.75
+    expect(layout.min).toBe(0);
+    expect(layout.max).toBe(100);
+  });
+
+  it("collapses a non-positive domain span to a usable [min, min+1]", () => {
+    const layout = gaugeLayout(5, 5, 200, 200);
+    expect(layout.min).toBe(5);
+    expect(layout.max).toBe(6);
+  });
+});
+
+describe("gaugeFracForValue", () => {
+  it("maps min→0, mid→0.5, max→1 within the domain", () => {
+    const layout = gaugeLayout(0, 200, 200, 200);
+    expect(gaugeFracForValue(layout, 0)).toBeCloseTo(0, 9);
+    expect(gaugeFracForValue(layout, 100)).toBeCloseTo(0.5, 9);
+    expect(gaugeFracForValue(layout, 200)).toBeCloseTo(1, 9);
+  });
+
+  it("clamps out-of-domain values to [0, 1]", () => {
+    const layout = gaugeLayout(0, 100, 200, 200);
+    expect(gaugeFracForValue(layout, -50)).toBe(0);
+    expect(gaugeFracForValue(layout, 300)).toBe(1);
+  });
+});
+
+describe("gaugeAngleForValue / pointOnGauge", () => {
+  it("anchors min at the start angle (225°, lower-left) and max at the end (−45°)", () => {
+    const layout = gaugeLayout(0, 100, 200, 200);
+    expect(gaugeAngleForValue(layout, 0)).toBeCloseTo(GAUGE_START_DEG, 9);
+    expect(gaugeAngleForValue(layout, 100)).toBeCloseTo(GAUGE_END_DEG, 9);
+  });
+
+  it("places the mid value at the top of the dial (90°, screen-y up)", () => {
+    const layout = gaugeLayout(0, 100, 200, 200);
+    expect(gaugeAngleForValue(layout, 50)).toBeCloseTo(90, 9);
+    const top = pointOnGauge(layout, gaugeAngleForValue(layout, 50));
+    expect(top.x).toBeCloseTo(layout.cx, 9);
+    expect(top.y).toBeCloseTo(layout.cy - layout.r, 9); // directly above center
+  });
+});
+
+describe("gaugeValueFromPoint (cursor → value inverse)", () => {
+  it("recovers the value of a point placed on the arc (round-trip)", () => {
+    const layout = gaugeLayout(0, 100, 200, 200);
+    for (const value of [0, 25, 50, 75, 100]) {
+      const p = pointOnGauge(layout, gaugeAngleForValue(layout, value));
+      expect(gaugeValueFromPoint(layout, p.x, p.y)).toBeCloseTo(value, 6);
+    }
+  });
+
+  it("clamps the bottom opening (below the dial) to the nearer end", () => {
+    const layout = gaugeLayout(0, 100, 200, 200); // center (100,100)
+    // Straight down (270° math) is in the dial's bottom gap → clamps to max.
+    expect(gaugeValueFromPoint(layout, 100, 180)).toBe(100);
   });
 });

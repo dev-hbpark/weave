@@ -36,6 +36,7 @@ import {
   type ChartGeometryProvider,
   type ChartHandleKind,
   type ChartHandleSpec,
+  type ChartHandleValue,
   useChartGeometry,
 } from "../domains/chart/chart-geometry-store.js";
 import { useHoveredBarIndex } from "../domains/chart/chart-hover-store.js";
@@ -49,6 +50,10 @@ export interface ChartDataBinding {
   /** First value column of the encoding — the fallback value column when the
    *  selected datum carries no series name (single-series chart). */
   readonly valueColumn: string;
+  /** The x / y positional columns (scatter / bubble) — the two cells a `point`
+   *  handle writes. Empty when the chart has no x·y encoding. */
+  readonly xColumn?: string;
+  readonly yColumn?: string;
 }
 
 export interface ChartElementViewModelDeps {
@@ -79,13 +84,22 @@ interface ApplyContext {
 }
 
 /** Per-kind drag write strategy (Rule 6 — registry, no switch). A builder returns
- *  the `apply(rawScalar)` that commits ONE drag move, or null when the chart
- *  isn't bound for that kind. Each `apply` rounds + writes through a command, so
+ *  the `apply(value)` that commits ONE drag move, or null when the chart isn't
+ *  bound for that kind. Each `apply` rounds + writes through a command, so
  *  `mergeKeyOf` folds the drag into one undo step. */
-type ApplyBuilder = (c: ApplyContext) => ((raw: number) => void) | null;
+type ApplyBuilder = (c: ApplyContext) => ((v: ChartHandleValue) => void) | null;
+
+/** Wrap a 1-D (scalar) write so it ignores a 2-D `point` value — the scalar
+ *  handles (value / bar-width / inner-radius) never emit one, so this keeps each
+ *  builder reading a plain number without a per-kind branch. */
+function scalar(fn: (n: number) => void): (v: ChartHandleValue) => void {
+  return (v) => {
+    if (typeof v === "number") fn(v);
+  };
+}
 
 const APPLY_BY_KIND: Readonly<Record<ChartHandleKind, ApplyBuilder>> = {
-  // Datum value → the bound dataset cell (height / line point / pie sweep).
+  // Datum value → the bound dataset cell (height / line point / pie sweep / gauge dial).
   value: ({ deps, chartItemId, ref }) => {
     if (ref === null) return null;
     const binding = deps.getBinding(chartItemId);
@@ -93,11 +107,43 @@ const APPLY_BY_KIND: Readonly<Record<ChartHandleKind, ApplyBuilder>> = {
     if (binding === null || binding.datasetId === "" || rowIndex < 0) return null;
     const valueColumn = ref.seriesName ?? binding.valueColumn;
     if (valueColumn === "") return null;
-    return (raw) =>
+    return scalar((raw) =>
       deps.editor.exec("weave.dataset.update", {
         id: binding.datasetId,
         patch: (ds: DatasetPayload) => setCell(ds, rowIndex, valueColumn, String(roundNice(raw))),
+      }),
+    );
+  },
+  // Scatter / bubble point → its (x, y) dataset cells, written in ONE patch so the
+  // 2-D drag is a single undo step. The bubble `size` cell (if any) is untouched.
+  point: ({ deps, chartItemId, ref }) => {
+    if (ref === null) return null;
+    const binding = deps.getBinding(chartItemId);
+    const rowIndex = ref.rowIndex ?? -1;
+    const xCol = binding?.xColumn ?? "";
+    const yCol = binding?.yColumn ?? "";
+    if (
+      binding === null ||
+      binding.datasetId === "" ||
+      rowIndex < 0 ||
+      xCol === "" ||
+      yCol === ""
+    ) {
+      return null;
+    }
+    return (v) => {
+      if (typeof v === "number") return;
+      deps.editor.exec("weave.dataset.update", {
+        id: binding.datasetId,
+        patch: (ds: DatasetPayload) =>
+          setCell(
+            setCell(ds, rowIndex, xCol, String(roundNice(v.x))),
+            rowIndex,
+            yCol,
+            String(roundNice(v.y)),
+          ),
       });
+    };
   },
   // PER-BAR thickness → this datum's override (only this bar changes; the width
   // handle is offered only for single-series bars, so the key is the bare
@@ -105,7 +151,7 @@ const APPLY_BY_KIND: Readonly<Record<ChartHandleKind, ApplyBuilder>> = {
   "bar-width": ({ deps, chartItemId, ref }) => {
     const category = ref?.category;
     if (category === undefined) return null;
-    return (raw) =>
+    return scalar((raw) =>
       deps.editor.exec("weave.item.update", {
         itemId: chartItemId,
         patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
@@ -120,22 +166,24 @@ const APPLY_BY_KIND: Readonly<Record<ChartHandleKind, ApplyBuilder>> = {
             ),
           },
         }),
-      });
+      }),
+    );
   },
   // CHART-level thickness → the chart-wide `attrs.barWidth` (every bar's default).
   // Per-datum overrides still win, so this is the "all bars" knob at the parent
   // selection level (the per-bar handle is the exception at the drilled level).
   "global-bar-width": ({ deps, chartItemId }) => {
-    return (raw) =>
+    return scalar((raw) =>
       deps.editor.exec("weave.item.update", {
         itemId: chartItemId,
         attrs: { barWidth: roundFrac(raw) },
-      });
+      }),
+    );
   },
   // Donut hole → variant.innerRadius. Uses the patch form to MERGE into the
   // existing variant (the shallow `attrs` merge would drop sibling variant flags).
   "pie-inner-radius": ({ deps, chartItemId }) => {
-    return (raw) =>
+    return scalar((raw) =>
       deps.editor.exec("weave.item.update", {
         itemId: chartItemId,
         patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => ({
@@ -147,7 +195,8 @@ const APPLY_BY_KIND: Readonly<Record<ChartHandleKind, ApplyBuilder>> = {
             },
           },
         }),
-      });
+      }),
+    );
   },
 };
 
@@ -158,10 +207,12 @@ const CURSOR_BY_AXIS: Readonly<Record<ChartHandleSpec["anchor"]["axis"], string>
   x: "ew-resize",
   angular: "ew-resize",
   radial: "move",
+  free: "move",
 };
 
 const LABEL_BY_KIND: Readonly<Record<ChartHandleKind, string>> = {
   value: "값 조절 (드래그로 데이터 변경)",
+  point: "점 이동 (드래그로 x·y 값 변경)",
   "bar-width": "막대 두께 조절 (드래그로 너비 변경)",
   "global-bar-width": "전체 막대 두께 (드래그로 모든 막대 너비 변경)",
   "pie-inner-radius": "도넛 구멍 조절 (드래그로 안쪽 반지름 변경)",
@@ -169,6 +220,7 @@ const LABEL_BY_KIND: Readonly<Record<ChartHandleKind, string>> = {
 
 const TESTID_BY_KIND: Readonly<Record<ChartHandleKind, string>> = {
   value: "chart-value-handle",
+  point: "chart-point-handle",
   "bar-width": "chart-width-handle",
   "global-bar-width": "chart-global-width-handle",
   "pie-inner-radius": "chart-inner-radius-handle",
@@ -224,7 +276,7 @@ function useChartChrome(
  *  scalar (via the live spec) and commits it through the kind's write strategy.
  *  Near-identical scalars are skipped so a still pointer doesn't spam writes. */
 function startHandleDrag(
-  apply: (raw: number) => void,
+  apply: (v: ChartHandleValue) => void,
   spec: ChartHandleSpec,
   chartItemId: string,
   e: {
@@ -237,11 +289,16 @@ function startHandleDrag(
   },
   onEnd?: () => void,
 ): void {
-  let lastKey: number | null = null;
+  let lastKey: string | null = null;
   const write = (clientX: number, clientY: number): void => {
     const raw = spec.valueAtClient(clientX, clientY);
     if (raw === null) return;
-    const k = Math.round(raw * 1000);
+    // Skip a write when the resolved value hasn't moved (a still pointer mid-drag).
+    // 2-D points key on both axes so an x-only or y-only nudge still commits.
+    const k =
+      typeof raw === "number"
+        ? String(Math.round(raw * 1000))
+        : `${Math.round(raw.x * 1000)},${Math.round(raw.y * 1000)}`;
     if (k === lastKey) return;
     lastKey = k;
     apply(raw);
@@ -275,7 +332,7 @@ function HandleButton({
 }: {
   readonly spec: ChartHandleSpec;
   readonly chartItemId: string;
-  readonly apply: (raw: number) => void;
+  readonly apply: (v: ChartHandleValue) => void;
   readonly visible?: boolean;
   readonly onPin?: (pinned: boolean) => void;
 }): JSX.Element {
@@ -333,7 +390,7 @@ function GlobalWidthHandle({
 }: {
   readonly spec: ChartHandleSpec;
   readonly chartItemId: string;
-  readonly apply: (raw: number) => void;
+  readonly apply: (v: ChartHandleValue) => void;
 }): JSX.Element {
   const hovered = useHoveredBarIndex(chartItemId);
   const [pinned, setPinned] = useState(false);

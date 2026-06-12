@@ -56,6 +56,49 @@ function ensureAdvanced(): Promise<void> {
   return advancedLoad;
 }
 
+/** WI-195 — the per-bar-width CUSTOM bar series is `silent` (a non-silent custom
+ *  series re-invokes renderItem on every hover → whole-chart flicker), so its
+ *  marks emit no ECharts mouse events. weave hit-tests them at the zrender level
+ *  instead. Given a container-pixel point, returns the hit bar's click info, or
+ *  null when the series isn't custom / the point is outside a bar. The full
+ *  category band is the hit area (clicking the column selects that bar), bounded
+ *  vertically to the bar's value extent so the empty plot above stays "blank". */
+function customBarHitAt(
+  chart: ReturnType<typeof init>,
+  x: number,
+  y: number,
+): ChartClickInfo | null {
+  const opt = chart.getOption() as {
+    series?: ReadonlyArray<{ type?: string; name?: string; data?: unknown }>;
+  };
+  const s0 = opt.series?.[0];
+  if (s0?.type !== "custom") return null;
+  if (!chart.containPixel({ gridIndex: 0 }, [x, y])) return null;
+  const coord = chart.convertFromPixel({ seriesIndex: 0 }, [x, y]);
+  if (!Array.isArray(coord)) return null;
+  const idx = Math.round(coord[0] ?? -1);
+  const yVal = coord[1] ?? Number.NaN;
+  const item = (s0.data as ReadonlyArray<{ name?: string; value?: unknown }> | undefined)?.[idx];
+  if (item === undefined || item === null) return null;
+  const raw = Array.isArray(item.value) ? item.value[item.value.length - 1] : item.value;
+  const barVal = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(barVal) || !Number.isFinite(yVal)) return null;
+  // Inside the bar's vertical span (0..value), not the blank plot above it.
+  if (yVal < Math.min(0, barVal) || yVal > Math.max(0, barVal)) return null;
+  return {
+    category: String(item.name ?? ""),
+    seriesName: s0.name,
+    value: barVal,
+    dataIndex: idx,
+  };
+}
+
+/** True when the laid-out chart uses the silent custom (per-bar-width) series. */
+function isCustomBarChart(chart: ReturnType<typeof init>): boolean {
+  const opt = chart.getOption() as { series?: ReadonlyArray<{ type?: string }> };
+  return opt.series?.[0]?.type === "custom";
+}
+
 export type EChartViewProps = ChartRenderInput & {
   /** WI-092 — the owning chart item's id, so this view can publish its geometry
    *  provider (handle placement / value mapping) into the shared store keyed by
@@ -167,17 +210,39 @@ export default function EChartView(props: EChartViewProps): JSX.Element {
       onLegendRef.current?.(name);
       chart.dispatchAction({ type: "legendAllSelect" });
     });
-    // WI-092 — a click on the BLANK plot (zrender click with no shape target;
-    // the high-level `chart.on("click")` above only fires for marks) drops the
-    // datum selection → back to the whole-chart level.
-    chart.getZr().on("click", (e: { target?: unknown }) => {
-      if (e.target === undefined || e.target === null) onBgRef.current?.();
-    });
     // WI-092 — hover a mark → publish the hovered bar so the chart-level width
     // handle for THAT bar reveals (handles stay hidden otherwise). A short
     // debounce on `mouseout` lets a bar→bar move (out then over) not flicker and
     // lets a handle's own hover pin it before the clear fires.
     let hoverClear: ReturnType<typeof setTimeout> | undefined;
+    const clearHoverSoon = (): void => {
+      const id = itemIdRef.current;
+      if (id === undefined) return;
+      clearTimeout(hoverClear);
+      hoverClear = setTimeout(() => chartHoverStore.clearItem(id), 60);
+    };
+    // WI-092 — a click on the BLANK plot (zrender click with no shape target;
+    // the high-level `chart.on("click")` above only fires for marks) drops the
+    // datum selection → back to the whole-chart level.
+    // WI-195 — the silent custom (per-bar-width) bars emit no high-level mark
+    // click, so hit-test them here too: a click inside a custom bar drills it.
+    chart.getZr().on("click", (e: { target?: unknown; offsetX?: number; offsetY?: number }) => {
+      const hit = customBarHitAt(chart, e.offsetX ?? 0, e.offsetY ?? 0);
+      if (hit !== null) {
+        onClickRef.current?.(hit);
+        return;
+      }
+      // No bar hit: a press on blank space (no target, or inside a custom chart's
+      // empty plot) drops the datum selection.
+      if (
+        e.target === undefined ||
+        e.target === null ||
+        (isCustomBarChart(chart) &&
+          chart.containPixel({ gridIndex: 0 }, [e.offsetX ?? 0, e.offsetY ?? 0]))
+      ) {
+        onBgRef.current?.();
+      }
+    });
     chart.on("mouseover", (p: unknown) => {
       const di = (p as { dataIndex?: number }).dataIndex;
       const id = itemIdRef.current;
@@ -185,12 +250,22 @@ export default function EChartView(props: EChartViewProps): JSX.Element {
       clearTimeout(hoverClear);
       chartHoverStore.set({ chartItemId: id, rowIndex: di });
     });
-    chart.on("mouseout", () => {
+    chart.on("mouseout", clearHoverSoon);
+    // WI-195 — silent custom bars emit no `mouseover`, so publish the hovered bar
+    // via a zrender-level hit-test (only for the custom-bar charts; normal series
+    // keep the high-level path above). `globalout` clears when the pointer leaves.
+    chart.getZr().on("mousemove", (e: { offsetX?: number; offsetY?: number }) => {
       const id = itemIdRef.current;
-      if (id === undefined) return;
-      clearTimeout(hoverClear);
-      hoverClear = setTimeout(() => chartHoverStore.clearItem(id), 60);
+      if (id === undefined || !isCustomBarChart(chart)) return;
+      const hit = customBarHitAt(chart, e.offsetX ?? 0, e.offsetY ?? 0);
+      if (hit !== null && hit.dataIndex >= 0) {
+        clearTimeout(hoverClear);
+        chartHoverStore.set({ chartItemId: id, rowIndex: hit.dataIndex });
+      } else {
+        clearHoverSoon();
+      }
     });
+    chart.getZr().on("globalout", clearHoverSoon);
     return () => {
       ro.disconnect();
       unregister?.();

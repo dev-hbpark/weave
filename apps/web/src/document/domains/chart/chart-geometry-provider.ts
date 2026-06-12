@@ -22,8 +22,12 @@ import {
   clientToContainer,
   containerToClient,
   distanceFromCenter,
+  gaugeAngleForValue,
+  gaugeLayout,
+  gaugeValueFromPoint,
   pieLayout,
   pieValueFromAngle,
+  pointOnGauge,
   pointOnPie,
 } from "./chart-geometry.js";
 import type {
@@ -32,6 +36,7 @@ import type {
   ChartHandleAnchor,
   ChartHandleKind,
   ChartHandleSpec,
+  ChartHandleValue,
 } from "./chart-geometry-store.js";
 
 /** The slice of the echarts instance the provider needs. Loosely typed so this
@@ -46,6 +51,8 @@ export interface EchartsLike {
       readonly data?: unknown;
       readonly barWidth?: unknown;
       readonly radius?: unknown;
+      readonly min?: unknown;
+      readonly max?: unknown;
     }>;
   };
 }
@@ -103,6 +110,8 @@ interface Ctx {
     data?: unknown;
     barWidth?: unknown;
     radius?: unknown;
+    min?: unknown;
+    max?: unknown;
   }>;
   /** Live per-bar thickness resolver (see {@link ChartGeometryDeps.barFracAt}). */
   readonly barFracAt?: (ref: ChartElementRef) => number | undefined;
@@ -120,7 +129,7 @@ function isBarSeries(type: string | undefined): boolean {
 interface FamilyHandle {
   readonly kind: ChartHandleKind;
   anchor(ctx: Ctx): ChartHandleAnchor | null;
-  valueAt(ctx: Ctx, clientX: number, clientY: number): number | null;
+  valueAt(ctx: Ctx, clientX: number, clientY: number): ChartHandleValue | null;
 }
 
 interface FamilyGeometry {
@@ -363,12 +372,100 @@ const pieGeometry: FamilyGeometry = {
   handles: () => [pieSweepHandle, pieInnerRadiusHandle],
 };
 
+// ── gauge: a single value handle riding the dial arc (angular drag) ──────────
+/** Read a numeric option field, or a fallback when absent / non-finite. */
+function optNum(v: unknown, fallback: number): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** The gauge dial's [min,max] domain as the laid-out option carries it
+ *  (`gaugeOption` sets `min:0` + a nice-ceiling `max`; defaults guard skew). */
+function gaugeDomain(ctx: Ctx): { min: number; max: number } {
+  const s = ctx.series[0];
+  const min = optNum(s?.min, 0);
+  const max = optNum(s?.max, min + 1);
+  return { min, max: max > min ? max : min + 1 };
+}
+
+/** The gauge's displayed value (the FIRST data item — the dial shows one row). */
+function gaugeDisplayValue(ctx: Ctx): number {
+  const data = ctx.series[0]?.data;
+  const idx = ctx.ref.rowIndex ?? 0;
+  if (Array.isArray(data)) return datumValue(data[idx >= 0 ? idx : 0]);
+  return ctx.ref.value ?? 0;
+}
+
+const gaugeValueHandle: FamilyHandle = {
+  kind: "value",
+  anchor(ctx) {
+    const { min, max } = gaugeDomain(ctx);
+    const layout = gaugeLayout(min, max, ctx.box.offsetWidth, ctx.box.offsetHeight);
+    const p = pointOnGauge(layout, gaugeAngleForValue(layout, gaugeDisplayValue(ctx)));
+    const pt = containerToClient(ctx.box, p.x, p.y);
+    return { x: pt.x, y: pt.y, axis: "angular" };
+  },
+  valueAt(ctx, clientX, clientY) {
+    const { min, max } = gaugeDomain(ctx);
+    const layout = gaugeLayout(min, max, ctx.box.offsetWidth, ctx.box.offsetHeight);
+    const c = clientToContainer(ctx.box, clientX, clientY);
+    return gaugeValueFromPoint(layout, c.x, c.y);
+  },
+};
+
+const gaugeGeometry: FamilyGeometry = {
+  handles: () => [gaugeValueHandle],
+};
+
+// ── scatter / bubble: a 2-D point handle (free drag → x·y dataset cells) ─────
+/** A scatter datum is laid out as `[x, y]` (bubble adds a 3rd `size` slot). Read
+ *  the positional pair; null when the shape isn't a usable point. */
+function pointXY(d: unknown): readonly [number, number] | null {
+  if (!Array.isArray(d) || d.length < 2) return null;
+  const x = Number(d[0]);
+  const y = Number(d[1]);
+  return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+}
+
+const scatterPointHandle: FamilyHandle = {
+  kind: "point",
+  anchor(ctx) {
+    const si = seriesIndexOf(ctx);
+    const idx = ctx.ref.rowIndex ?? -1;
+    if (idx < 0) return null;
+    const data = ctx.series[si]?.data;
+    const pt = Array.isArray(data) ? pointXY(data[idx]) : null;
+    if (pt === null) return null;
+    const px = ctx.chart.convertToPixel({ seriesIndex: si }, [pt[0], pt[1]]);
+    if (!Array.isArray(px)) return null;
+    const c = containerToClient(ctx.box, px[0] ?? 0, px[1] ?? 0);
+    return { x: c.x, y: c.y, axis: "free" };
+  },
+  valueAt(ctx, clientX, clientY) {
+    const si = seriesIndexOf(ctx);
+    const c = clientToContainer(ctx.box, clientX, clientY);
+    const res = ctx.chart.convertFromPixel({ seriesIndex: si }, [c.x, c.y]);
+    if (!Array.isArray(res)) return null;
+    const x = res[0];
+    const y = res[1];
+    if (typeof x !== "number" || typeof y !== "number") return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+  },
+};
+
+const scatterGeometry: FamilyGeometry = {
+  handles: () => [scatterPointHandle],
+};
+
 /** Laid-out series type → handle family (registry, not switch). */
 const FAMILY_BY_SERIES_TYPE: Readonly<Record<string, FamilyGeometry>> = {
   bar: cartesianGeometry,
   line: cartesianGeometry, // area is a line series with areaStyle
   custom: cartesianGeometry, // WI-092 single-series bar (per-datum widths)
   pie: pieGeometry,
+  gauge: gaugeGeometry, // WI-192 single-dial value handle (angular drag)
+  scatter: scatterGeometry, // WI-193 2-D point handle (bubble renders as scatter too)
 };
 
 export function createChartGeometryProvider(deps: ChartGeometryDeps): ChartGeometryProvider {

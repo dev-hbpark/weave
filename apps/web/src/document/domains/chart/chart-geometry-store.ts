@@ -14,12 +14,23 @@
 import { useSyncExternalStore } from "react";
 import type { ChartElementRef } from "./chart-element-store.js";
 
-/** What a handle's drag SCALAR controls — the view-model routes the write by
- *  this (Rule 6: a strategy per kind, no switch in the drag loop):
- *    • `value`            — the datum's dataset cell (bar height / line point / pie sweep)
+/** What a handle's drag controls — the view-model routes the write by this
+ *  (Rule 6: a strategy per kind, no switch in the drag loop):
+ *    • `value`            — the datum's dataset cell (bar height / line point / pie sweep / gauge dial)
+ *    • `point`            — a scatter/bubble point's (x, y) dataset cells (2-D drag)
  *    • `bar-width`        — the chart's `barWidth` attr (bar thickness; all bars)
  *    • `pie-inner-radius` — the chart's `variant.innerRadius` (donut hole). */
-export type ChartHandleKind = "value" | "bar-width" | "global-bar-width" | "pie-inner-radius";
+export type ChartHandleKind =
+  | "value"
+  | "point"
+  | "bar-width"
+  | "global-bar-width"
+  | "pie-inner-radius";
+
+/** What a single drag move resolves to: a scalar (value / fraction / dial) for
+ *  the 1-D handles, or an `{x, y}` pair for the 2-D `point` (scatter) handle.
+ *  Discriminated by `typeof` at the write site (no per-kind branch in the geometry). */
+export type ChartHandleValue = number | { readonly x: number; readonly y: number };
 
 /** A weave-owned drag handle's anchor in CLIENT (screen) coordinates, plus the
  *  axis the drag is constrained to (drives the cursor + the value mapping). */
@@ -27,9 +38,10 @@ export interface ChartHandleAnchor {
   readonly x: number;
   readonly y: number;
   /** `y` — cartesian vertical value drag (bar/line/area height). `x` — horizontal
-   *  bar-thickness drag. `angular` — pie sweep around the arc. `radial` — pie
-   *  donut inner-radius (toward / away from the center). */
-  readonly axis: "y" | "x" | "angular" | "radial";
+   *  bar-thickness drag. `angular` — pie sweep / gauge dial around the arc.
+   *  `radial` — pie donut inner-radius (toward / away from the center). `free` —
+   *  unconstrained 2-D drag (a scatter point moves in both x and y). */
+  readonly axis: "y" | "x" | "angular" | "radial" | "free";
 }
 
 /** One weave-owned handle for the selected element: where it sits + what a drag
@@ -41,9 +53,10 @@ export interface ChartHandleSpec {
   /** Which bar this handle is for (chart-level `global-bar-width` handles use it
    *  to reveal only the hovered bar's handle). */
   readonly rowIndex?: number;
-  /** Map a live drag client position to this handle's new scalar (dataset value
-   *  or `barWidth` fraction); null when not resolvable. */
-  valueAtClient(clientX: number, clientY: number): number | null;
+  /** Map a live drag client position to this handle's new value — a scalar
+   *  (dataset value / `barWidth` fraction / dial value) or an `{x, y}` pair (the
+   *  scatter `point` handle); null when not resolvable. */
+  valueAtClient(clientX: number, clientY: number): ChartHandleValue | null;
 }
 
 /** The selected element's bounding box in CLIENT coordinates — the outline that

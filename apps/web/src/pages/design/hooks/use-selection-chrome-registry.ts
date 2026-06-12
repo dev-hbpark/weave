@@ -2,7 +2,11 @@ import type { Document as AgocraftDocument, LayoutChildPolicy, LayoutSpec } from
 import type { Editor, SelectionChromeRegistry } from "@agocraft/editor";
 import { useEffect, useRef } from "react";
 import { findItemDeep } from "../../../document/agocraft-mirror.js";
-import { migrateEncoding, valueFields } from "../../../document/domains/chart/chart-model.js";
+import {
+  channelFields,
+  migrateEncoding,
+  valueFields,
+} from "../../../document/domains/chart/chart-model.js";
 import { createChartElementViewModel } from "../../../document/selection-chrome/chart-element-view-model.js";
 import { createCornerRadiusViewModel } from "../../../document/selection-chrome/corner-radius-handle.js";
 import { createFrameDefaultViewModel } from "../../../document/selection-chrome/frame-default-view-model.js";
@@ -134,6 +138,9 @@ export function useSelectionChromeRegistry({
             return {
               datasetId: attrs.datasetId ?? "",
               valueColumn: valueFields(enc)[0] ?? "",
+              // scatter / bubble: the positional pair a `point` handle writes.
+              xColumn: channelFields(enc, "x")[0] ?? "",
+              yColumn: channelFields(enc, "y")[0] ?? "",
             };
           },
         }),

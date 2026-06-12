@@ -149,3 +149,84 @@ export function pieValueFromAngle(
   f = Math.min(maxFrac, Math.max(minFrac, f));
   return (f * restTotal) / (1 - f);
 }
+
+// ── Gauge layout (echarts has no convertToPixel for gauges either) ───────────
+//
+// Matches the gauge option built in `echarts-option.ts` (single dial, FIRST
+// row's value, `min:0`, `max:niceCeil(...)`, default ECharts geometry: center
+// 50%/50%, radius 75%, startAngle 225° → endAngle −45° measured math-CCW from
+// +x, sweeping CLOCKWISE over the top). The progress arc / pointer sit on this
+// 270° sweep; the value handle rides the arc at the current value's angle. Kept
+// here (echarts-free) so the angle↔value algebra is unit-tested without the
+// heavy library, exactly like the pie kernel above.
+
+/** ECharts gauge defaults (gaugeOption overrides none of these, so the rendered
+ *  dial uses them verbatim). */
+export const GAUGE_RADIUS_FRAC = 0.75;
+export const GAUGE_START_DEG = 225;
+export const GAUGE_END_DEG = -45;
+/** Total clockwise sweep of the dial (225° → −45° = 270°). */
+export const GAUGE_SWEEP_DEG = GAUGE_START_DEG - GAUGE_END_DEG;
+
+export interface GaugeLayout {
+  /** Center in internal (un-zoomed) container pixels. */
+  readonly cx: number;
+  readonly cy: number;
+  /** Arc radius in internal pixels (where the handle rides). */
+  readonly r: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+/** Build the gauge arc layout from the dial's [min,max] domain + the container's
+ *  un-zoomed layout size. A non-positive span collapses to [0,1] so callers
+ *  always get a usable fraction mapping. */
+export function gaugeLayout(
+  min: number,
+  max: number,
+  offsetW: number,
+  offsetH: number,
+): GaugeLayout {
+  const lo = Number.isFinite(min) ? min : 0;
+  const hi = Number.isFinite(max) && max > lo ? max : lo + 1;
+  return {
+    cx: offsetW / 2,
+    cy: offsetH / 2,
+    r: (Math.min(offsetW, offsetH) / 2) * GAUGE_RADIUS_FRAC,
+    min: lo,
+    max: hi,
+  };
+}
+
+/** Fraction (0..1) of a value within the dial's [min,max] domain, clamped. */
+export function gaugeFracForValue(layout: GaugeLayout, value: number): number {
+  const span = layout.max - layout.min;
+  if (span <= 0) return 0;
+  return Math.min(1, Math.max(0, (value - layout.min) / span));
+}
+
+/** Math-degrees of the arc point for a value: the dial sweeps CLOCKWISE from
+ *  `GAUGE_START_DEG` (min) by `frac · GAUGE_SWEEP_DEG`. */
+export function gaugeAngleForValue(layout: GaugeLayout, value: number): number {
+  return GAUGE_START_DEG - gaugeFracForValue(layout, value) * GAUGE_SWEEP_DEG;
+}
+
+/** A point on the gauge arc at `deg` (math-degrees), in internal px. Screen-y
+ *  grows downward, hence the `-sin` (shared convention with `pointOnPie`). */
+export function pointOnGauge(layout: GaugeLayout, deg: number, rad = layout.r): Point {
+  const t = (deg * Math.PI) / 180;
+  return { x: layout.cx + rad * Math.cos(t), y: layout.cy - rad * Math.sin(t) };
+}
+
+/** Inverse of the value handle: given the cursor's container point, what value
+ *  does its angle map to on the dial? The clockwise span from the dial's start
+ *  to the cursor, over the 270° sweep, is the fraction; clamped to [min,max] so
+ *  dragging into the bottom opening snaps to the nearer end. */
+export function gaugeValueFromPoint(layout: GaugeLayout, px: number, py: number): number {
+  const cursorDeg = (Math.atan2(-(py - layout.cy), px - layout.cx) * 180) / Math.PI;
+  const frac = Math.min(
+    1,
+    Math.max(0, clockwiseSpan(GAUGE_START_DEG, cursorDeg) / GAUGE_SWEEP_DEG),
+  );
+  return layout.min + frac * (layout.max - layout.min);
+}
