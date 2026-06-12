@@ -20,7 +20,7 @@
     "@agocraft/domain-canvas-design": "file:vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260602053511.tgz",
     "@agocraft/domain-media": "file:vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260602053511.tgz",
     "@agocraft/domain-presentation": "file:vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260602053511.tgz",
-    "@agocraft/editor": "file:vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz",
+    "@agocraft/editor": "file:vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz",
     "@agocraft/input": "file:vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz",
     "@agocraft/interaction": "file:vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz",
     "@agocraft/layout": "file:vendor/agocraft/agocraft-layout-1.0.0-rc.20260609010000.tgz",

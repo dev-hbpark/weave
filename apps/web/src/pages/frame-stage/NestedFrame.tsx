@@ -810,7 +810,11 @@ function NestedFrameImpl({
                 itemId,
                 x: pos.x,
                 y: pos.y,
-                node: spec.render({ bounds, selection: info }),
+                // DR-043 (agocraft) — `render` returns an opaque ChromeNode;
+                // the host knows its renderer is React, so it casts at the
+                // consumption boundary. weave's registered providers all
+                // return JSX.
+                node: spec.render({ bounds, selection: info }) as React.ReactNode,
               };
             });
             // DR-061 — locked: a small lock badge at the top-left corner marks

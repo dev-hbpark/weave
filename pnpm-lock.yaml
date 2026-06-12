@@ -12,7 +12,7 @@ overrides:
   '@agocraft/domain-canvas-design': file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260602053511.tgz
   '@agocraft/domain-media': file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260602053511.tgz
   '@agocraft/domain-presentation': file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260602053511.tgz
-  '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz
+  '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz
   '@agocraft/input': file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz
   '@agocraft/interaction': file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz
   '@agocraft/layout': file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260609010000.tgz
@@ -59,8 +59,8 @@ importers:
         specifier: file:vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260602053511.tgz
         version: file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)
       '@agocraft/editor':
-        specifier: file:vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz(react@18.3.1)(typescript@5.9.3)
       '@agocraft/input':
         specifier: file:vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz
         version: file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz
@@ -264,9 +264,9 @@ packages:
     resolution: {integrity: sha512-gy5kWUfEYM5pdMODmHRog1IEl8rI3UOoY3Ztat/Tkkgbqez/ZunTZSelGTS+34LCRRHYvuoA83VwNOF2+3v+/Q==, tarball: file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260602053511.tgz}
     version: 1.0.0-rc.20260602053511
 
-  '@agocraft/editor@file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz':
-    resolution: {integrity: sha512-2L3MZyXY9ESGYq1ztMQXRyIIwF4kqWYJLdvZ4LECNbGtWvWz71tBzVZeGurdsB0CBENex2jcKSJkr2/pqDnPlw==, tarball: file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz}
-    version: 1.0.0-rc.20260602053511
+  '@agocraft/editor@file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz':
+    resolution: {integrity: sha512-Vqg5ilzGSnknMaottYL0lCF4ACfnS02EukD9ChekuIBMAc3ToEo500W4Uq8fk1jL26OqhsqzSFTJ2gBeR1HtEg==, tarball: file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz}
+    version: 1.0.0-rc.20260612200000
     peerDependencies:
       react: '>=18'
     peerDependenciesMeta:
@@ -3497,7 +3497,7 @@ snapshots:
   '@agocraft/agent-client@file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611161000.tgz(react@18.3.1)(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz(typescript@5.9.3)
-      '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)
+      '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz(react@18.3.1)(typescript@5.9.3)
       '@small-think/client': file:apps/web/vendor/small-think/small-think-client-0.1.6.tgz(typescript@5.9.3)(zod@3.25.76)
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -3537,13 +3537,13 @@ snapshots:
   '@agocraft/domain-presentation@file:apps/web/vendor/agocraft/agocraft-domain-presentation-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)':
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz(typescript@5.9.3)
-      '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)
+      '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz(react@18.3.1)(typescript@5.9.3)
       valibot: 1.4.1(typescript@5.9.3)
     transitivePeerDependencies:
       - react
       - typescript
 
-  '@agocraft/editor@file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260602053511.tgz(react@18.3.1)(typescript@5.9.3)':
+  '@agocraft/editor@file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260612200000.tgz(react@18.3.1)(typescript@5.9.3)':
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260609193000.tgz(typescript@5.9.3)
       '@agocraft/input': file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz
