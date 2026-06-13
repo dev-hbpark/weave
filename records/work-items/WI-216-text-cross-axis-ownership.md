@@ -1,6 +1,6 @@
 # WI-216 — flex 자식 텍스트 높이: 엔진 cross-axis 소유 (fill/fixed/auto), observer 비간섭 (DR-053 Stage 2)
 
-- **Status:** IN-PROGRESS ((a)/(c) DONE·라이브검증됨 · (b) 엔진-소유 재구현 DONE — **grid 셀 fill 라이브검증됨 2026-06-13**, 잔여(flex-col·자동높이 성장·고정 토글) 검증대기 · (d) 엔진 세션 DONE — 검증대기) · 2026-06-13
+- **Status:** IN-PROGRESS ((a)/(c) DONE·검증됨 · (b) 엔진-소유 재구현 DONE — **grid 셀 fill + 자동높이 부모리사이즈 유지(content-auto 0-ratchet FIX 포함) 라이브검증됨 2026-06-13**, 잔여(flex-col·자동높이 줄추가 성장·고정 토글) 검증대기 · (d) regrow 엔진 세션 DONE — regrow 검증대기) · 2026-06-13
 - **Relates:** DR-053(레이아웃 크기변화 엔진 단독소유), WI-215(높이 ratchet — 선행), WI-149/DR-104, WI-145/146(observer revert 이력)
 - **Origin:** 운영자 — grid→flex→text에서 ① 플렉스 높이를 줄이면 텍스트 높이가 보장되지 못하고 줄어듦
   (fill이면 항상 가득, fixed면 자기 높이 유지여야 함) ② 텍스트 자동높이/자동너비/고정 속성을 바꿔도
@@ -75,6 +75,22 @@ weave `TextBlock` auto-height observer가 `deriveTextAutoResize(layoutChild)="HE
   - 검증: weave 1350 그린, tsc/biome 클린.
 
 라이브 검증: 부모 줄였다 늘려 복원(d) / grid 셀 fill·고정 / flex-col / 고정 토글이 리사이즈 후 유지 / 자동높이 정상 성장.
+
+## 자동너비 round-trip FIX (flex 자식, 2026-06-13 — 라이브 검증 대기)
+
+운영자: flex-column에서 "자동너비"로 둔 텍스트가 컨테이너 가로 조정 시 다른 속성으로 바뀌고, 자동너비로 다시
+설정 불가. **원인:** (c)의 `deriveTextAutoResize`(toolbar 읽기)가 auto-flex 자식을 `crossSize` 유무로만
+NONE/HEIGHT 판정 → **WIDTH_AND_HEIGHT를 절대 반환 못 함** + 메인축(basis)·방향 무시. 쓰기도 cross-only라
+메인축을 안 고정. **수정:** (1) 읽기 = toolbar가 엔진 `getContentAutoAxes`(방향/정렬 인지) → `contentAutoAxesToMode`
+((T,T)/(T,F)=자동너비·(F,T)=자동높이·(F,F)=고정); free 텍스트만 `deriveTextAutoResize` 폴백. (2) 쓰기 =
+`layoutChildForTextResizeMode` 2D 양축화(자동너비=양축 auto/자동높이=너비고정+높이auto/고정=양축고정), flex
+방향에 맞춰 main(basis)/cross(crossSize) 매핑 → 엔진 읽기와 round-trip. derive 테스트 24 그린, weave 1016 그린.
+
+## 미해결 (운영자 보고 2026-06-13)
+
+- **flex-column 컨테이너 높이↑ → 텍스트 폰트 커짐.** 원인 추정 = `fontSizeSpec:{kind:"ratio"}` 폰트가
+  부모(컨테이너) 높이에 비례(DR-093 의도 동작). ParentFrameHeightContext=컨테이너 높이 → ratio 폰트 = ratio×높이.
+  레이아웃 자식 텍스트가 컨테이너 크기 따라 폰트 스케일하는 게 맞는지 = 제품 결정(DR-093 영향) → 운영자 확인 필요.
 
 ## Follow-up (남음)
 

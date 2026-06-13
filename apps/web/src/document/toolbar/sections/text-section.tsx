@@ -19,6 +19,7 @@ import type {
   TextTruncation,
   TextWeight,
 } from "@agocraft/core";
+import { itemId as toItemId } from "@agocraft/core";
 import {
   Accordion,
   AccordionItem,
@@ -53,6 +54,7 @@ import { fontSizeTooltipCopy } from "../../../launch/text-v1-copy.js";
 import { EMPTY_READOUT, useActiveTextStyle } from "../../active-text-style.js";
 import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../../agocraft-mirror.js";
 import {
+  contentAutoAxesToMode,
   deriveTextAutoResize,
   type LegacyTextAutoResize,
   layoutChildForTextResizeMode,
@@ -61,6 +63,7 @@ import { displayFontSizePx, fontSizeAttrsForPx } from "../../domains/text-font-s
 import { FONT_GROUPS, FONT_ROLES, fontLabel } from "../../fonts/catalog.js";
 import { FontBrowseDialog } from "../../fonts/FontBrowseDialog.js";
 import { ensureFontByStack } from "../../fonts/font-loader.js";
+import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../../layout/registry.js";
 import {
   type DesignDims,
   useDesignDims,
@@ -181,12 +184,22 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
   );
   // WI-019 B4 / T3 Modify — the legacy `textAutoResize` field is gone in
   // agocraft v10. The 3-mode SegmentedControl below stays in v1 (familiar
-  // UX) but reads / writes through `attrs.layoutChild` via the canonical
-  // mapping in derive-text-auto-resize.ts. A full 4×4 anchor picker
-  // (WI019_LAYOUT_ENABLED) lands as a follow-up PR.
-  const textAutoResize = sharedValue<LegacyTextAutoResize>(items, (it) =>
-    deriveTextAutoResize((it.attrs as unknown as TextAttrs).layoutChild),
-  );
+  // UX) but reads / writes through `attrs.layoutChild`.
+  // WI-216 / DR-053 Stage 2 (b): for a LAID-OUT child the mode depends on the
+  // parent's flex DIRECTION / grid alignment (e.g. 자동너비 vs 자동높이 differ by
+  // which axis is main), which only the engine knows — so read it from
+  // `getContentAutoAxes`. Bare-`layoutChild` `deriveTextAutoResize` is the
+  // fallback for FREE / absolute text (engine returns managed:false).
+  const textAutoResize = sharedValue<LegacyTextAutoResize>(items, (it) => {
+    if (doc !== null && LAYOUT_FEATURE_ENABLED) {
+      const axes = getLayoutEngine().getContentAutoAxes({
+        root: doc.root,
+        itemId: toItemId(it.id),
+      });
+      if (axes.managed) return contentAutoAxesToMode(axes);
+    }
+    return deriveTextAutoResize((it.attrs as unknown as TextAttrs).layoutChild);
+  });
   const textAlignVertical = sharedValue<TextAlignVertical>(
     items,
     (it) => (it.attrs as unknown as TextAttrs).textAlignVertical ?? "TOP",

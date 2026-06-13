@@ -1,6 +1,7 @@
 import type { LayoutChildPolicy, LayoutSpec } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
 import {
+  contentAutoAxesToMode,
   deriveTextAutoResize,
   layoutChildForTextResizeMode,
   layoutChildFromTextAutoResize,
@@ -117,26 +118,42 @@ describe("layoutChildForTextResizeMode", () => {
   };
   const frame = { width: 0.5, height: 0.4 };
 
-  it("flex-row NONE stamps crossSize = frame.height and keeps the policy", () => {
+  // NONE(고정) = BOTH axes fixed: main basis frozen to its frame size + crossSize.
+  it("flex-row NONE fixes both axes (basis = frame.width, crossSize = frame.height)", () => {
     const r = layoutChildForTextResizeMode("NONE", flexChild, flexRow, frame);
-    expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: "auto", crossSize: 0.4 });
+    expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: 0.5, crossSize: 0.4 });
   });
 
-  it("flex-row HEIGHT clears crossSize (content-auto)", () => {
+  // HEIGHT(자동높이) = width FIXED (main in a row → basis frozen) + height auto (no crossSize).
+  it("flex-row HEIGHT fixes the width (main) and frees the height (cross)", () => {
     const fixed: LayoutChildPolicy = { ...flexChild, crossSize: 0.4 };
     const r = layoutChildForTextResizeMode("HEIGHT", fixed, flexRow, frame);
-    expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: "auto" });
+    expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: 0.5 });
   });
 
-  it("flex-row WIDTH_AND_HEIGHT hugs the main axis (basis auto) and frees the cross", () => {
+  // WIDTH_AND_HEIGHT(자동너비) = BOTH auto: main hugs (basis "auto"), cross free.
+  it("flex-row WIDTH_AND_HEIGHT frees both axes (basis auto, no crossSize)", () => {
     const wide: LayoutChildPolicy = { ...flexChild, basis: 0.5, crossSize: 0.4 };
     const r = layoutChildForTextResizeMode("WIDTH_AND_HEIGHT", wide, flexRow, frame);
     expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: "auto" });
   });
 
-  it("flex-column NONE stamps crossSize = frame.width (cross = width in a column)", () => {
-    const r = layoutChildForTextResizeMode("NONE", flexChild, flexCol, frame);
+  // In a COLUMN the axes swap: width = CROSS, height = MAIN. 자동너비 must free the
+  // WIDTH (cross) — the operator-reported case that previously could not be set.
+  it("flex-column WIDTH_AND_HEIGHT frees both (basis auto = height, no crossSize = width)", () => {
+    const r = layoutChildForTextResizeMode("WIDTH_AND_HEIGHT", flexChild, flexCol, frame);
+    expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: "auto" });
+  });
+
+  it("flex-column HEIGHT fixes the width (cross) and frees the height (main, basis auto)", () => {
+    const r = layoutChildForTextResizeMode("HEIGHT", flexChild, flexCol, frame);
+    // width = cross → crossSize = frame.width; height = main → basis "auto" (hug).
     expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: "auto", crossSize: 0.5 });
+  });
+
+  it("flex-column NONE fixes both (basis = frame.height [main], crossSize = frame.width)", () => {
+    const r = layoutChildForTextResizeMode("NONE", flexChild, flexCol, frame);
+    expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: 0.4, crossSize: 0.5 });
   });
 
   it("preserves alignSelf:stretch (FILL) untouched on a NONE write", () => {
@@ -145,15 +162,22 @@ describe("layoutChildForTextResizeMode", () => {
     expect(r).toMatchObject({ alignSelf: "stretch", crossSize: 0.4 });
   });
 
-  it("grid NONE stamps sizeW + sizeH (fixed cell)", () => {
+  it("grid NONE fixes both (sizeW + sizeH)", () => {
     const r = layoutChildForTextResizeMode("NONE", gridChild, grid, frame);
     expect(r).toMatchObject({ sizeW: 0.5, sizeH: 0.4 });
   });
 
-  it("grid HEIGHT clears sizeH but keeps an explicit sizeW", () => {
+  it("grid HEIGHT fixes width (sizeW) and frees height (no sizeH)", () => {
     const sized: LayoutChildPolicy = { ...gridChild, sizeW: 0.5, sizeH: 0.4 };
     const r = layoutChildForTextResizeMode("HEIGHT", sized, grid, frame);
     expect(r).toMatchObject({ sizeW: 0.5 });
+    expect((r as { sizeH?: number }).sizeH).toBeUndefined();
+  });
+
+  it("grid WIDTH_AND_HEIGHT frees both (no sizeW, no sizeH)", () => {
+    const sized: LayoutChildPolicy = { ...gridChild, sizeW: 0.5, sizeH: 0.4 };
+    const r = layoutChildForTextResizeMode("WIDTH_AND_HEIGHT", sized, grid, frame);
+    expect((r as { sizeW?: number }).sizeW).toBeUndefined();
     expect((r as { sizeH?: number }).sizeH).toBeUndefined();
   });
 
@@ -163,5 +187,24 @@ describe("layoutChildForTextResizeMode", () => {
       kind: "absolute-constraints",
       anchor: { horizontal: "left", vertical: "top" },
     });
+  });
+});
+
+describe("contentAutoAxesToMode — engine axes → legacy 3-mode (toolbar read)", () => {
+  it("both auto → 자동너비 (WIDTH_AND_HEIGHT)", () => {
+    expect(contentAutoAxesToMode({ managed: true, width: true, height: true })).toBe(
+      "WIDTH_AND_HEIGHT",
+    );
+  });
+  it("width-only auto → 자동너비", () => {
+    expect(contentAutoAxesToMode({ managed: true, width: true, height: false })).toBe(
+      "WIDTH_AND_HEIGHT",
+    );
+  });
+  it("height-only auto → 자동높이 (HEIGHT)", () => {
+    expect(contentAutoAxesToMode({ managed: true, width: false, height: true })).toBe("HEIGHT");
+  });
+  it("neither auto → 고정 (NONE)", () => {
+    expect(contentAutoAxesToMode({ managed: true, width: false, height: false })).toBe("NONE");
   });
 });

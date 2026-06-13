@@ -25,14 +25,23 @@
 // picker UI replaces the textAutoResize SegmentedControl directly; this shim
 // then becomes a pure derive-for-render compatibility layer.
 
-import type {
-  AutoFlexChildPolicy,
-  AutoGridChildPolicy,
-  LayoutChildPolicy,
-  LayoutSpec,
-} from "@agocraft/core";
+import type { AutoFlexChildPolicy, LayoutChildPolicy, LayoutSpec } from "@agocraft/core";
+import type { ContentAutoAxes } from "@agocraft/layout";
 
 export type LegacyTextAutoResize = "WIDTH_AND_HEIGHT" | "HEIGHT" | "NONE";
+
+/** WI-216 / DR-053 Stage 2 (b) — map the engine's per-axis content-auto verdict
+ *  to the legacy 3-mode SegmentedControl value. Used by the toolbar (text-section)
+ *  for LAID-OUT text, where the mode depends on the parent's flex DIRECTION /
+ *  grid alignment — knowledge only the engine has. `deriveTextAutoResize` (which
+ *  reads the bare `layoutChild`) cannot tell 자동너비 from 자동높이 on a flex child
+ *  because it ignores the main axis + direction; the engine's axes can.
+ *    (width, height) → mode:  (T,T)/(T,F) 자동너비 · (F,T) 자동높이 · (F,F) 고정 */
+export function contentAutoAxesToMode(axes: ContentAutoAxes): LegacyTextAutoResize {
+  if (axes.width) return "WIDTH_AND_HEIGHT";
+  if (axes.height) return "HEIGHT";
+  return "NONE";
+}
 
 export function deriveTextAutoResize(
   layoutChild: LayoutChildPolicy | undefined,
@@ -98,28 +107,40 @@ export function layoutChildForTextResizeMode(
   parentLayout: LayoutSpec | undefined,
   frame: { readonly width: number; readonly height: number },
 ): LayoutChildPolicy {
+  // The 3 legacy modes are 2-D (width-auto?, height-auto?), so BOTH axes are set
+  // per mode — not just the cross. This round-trips with the engine's
+  // `getContentAutoAxes` (the toolbar's read), regardless of flex direction:
+  //   WIDTH_AND_HEIGHT(자동너비) → width auto + height auto
+  //   HEIGHT(자동높이)           → width FIXED + height auto
+  //   NONE(고정)                 → width FIXED + height FIXED
+  const widthAuto = mode === "WIDTH_AND_HEIGHT";
+  const heightAuto = mode === "WIDTH_AND_HEIGHT" || mode === "HEIGHT";
+
   if (parentLayout?.kind === "auto-flex" && current?.kind === "auto-flex") {
-    const cross = parentLayout.direction === "row" ? frame.height : frame.width;
-    // 자동너비 hugs the MAIN axis (basis "auto"); both auto modes free the cross.
-    const base: AutoFlexChildPolicy = {
-      ...current,
-      basis: mode === "WIDTH_AND_HEIGHT" ? "auto" : current.basis,
+    // Map the 2-D width/height intent onto this flex's MAIN / CROSS axes.
+    const mainIsWidth = parentLayout.direction === "row";
+    const mainAuto = mainIsWidth ? widthAuto : heightAuto;
+    const crossAuto = mainIsWidth ? heightAuto : widthAuto;
+    const mainSize = mainIsWidth ? frame.width : frame.height;
+    const crossSize = mainIsWidth ? frame.height : frame.width;
+    const next: AutoFlexChildPolicy = {
+      kind: "auto-flex",
+      // main auto = hug content (basis "auto", grow 0); fixed = freeze basis.
+      grow: mainAuto ? 0 : current.grow,
+      shrink: current.shrink,
+      basis: mainAuto ? "auto" : mainSize,
+      ...(current.alignSelf !== undefined ? { alignSelf: current.alignSelf } : {}),
+      ...(crossAuto ? {} : { crossSize }),
     };
-    if (mode === "NONE") return { ...base, crossSize: cross };
-    const { crossSize: _omit, ...rest } = base;
-    return rest;
+    return next;
   }
   if (parentLayout?.kind === "auto-grid" && current?.kind === "auto-grid") {
     const { sizeW: _w, sizeH: _h, ...rest } = current;
-    if (mode === "NONE") return { ...rest, sizeW: frame.width, sizeH: frame.height };
-    // 자동높이 frees the height axis but keeps an explicit width fixed if it had
-    // one; 자동너비 frees both axes.
-    if (mode === "HEIGHT") {
-      const keepW: Partial<AutoGridChildPolicy> =
-        current.sizeW !== undefined ? { sizeW: current.sizeW } : {};
-      return { ...rest, ...keepW };
-    }
-    return rest;
+    return {
+      ...rest,
+      ...(widthAuto ? {} : { sizeW: frame.width }),
+      ...(heightAuto ? {} : { sizeH: frame.height }),
+    };
   }
   return layoutChildFromTextAutoResize(mode);
 }
