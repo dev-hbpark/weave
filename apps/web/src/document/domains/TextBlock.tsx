@@ -45,7 +45,7 @@ import {
   type WeaveRunStyle,
 } from "../types.js";
 import { deriveTextAutoResize } from "./derive-text-auto-resize.js";
-import { ParentFrameHeightContext } from "./parent-frame-context.js";
+import { ParentFrameHeightContext, ParentLayoutContext } from "./parent-frame-context.js";
 import { onTextAutofitRequest } from "./text-autofit-signal.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
@@ -124,6 +124,27 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const autoResizeMode = deriveTextAutoResize(a.layoutChild);
   const autoResizeRef = useRef(autoResizeMode);
   autoResizeRef.current = autoResizeMode;
+  // DR-053 Stage 2 — when this text is a flex-ROW child its HEIGHT is the layout's
+  // CROSS axis, OWNED by the agocraft engine: alignSelf "stretch" = FILL (parent
+  // propagates its height into the child) and an explicit `crossSize` = FIXED
+  // (stop at the child's own height). In both the auto-height observer must NOT
+  // write `frame.height` — doing so fought the engine and made fill/fixed
+  // impossible. Only when the height is the genuine content-auto axis (non-stretch
+  // + no crossSize) does the observer fit. (Scoped to flex-row, the reported case;
+  // other layouts keep their existing behaviour.)
+  const parentLayout = useContext(ParentLayoutContext);
+  const heightOwnedByLayout = ((): boolean => {
+    if (parentLayout?.kind !== "auto-flex") return false;
+    if ((parentLayout as { direction?: string }).direction !== "row") return false;
+    const lc = a.layoutChild;
+    if (lc?.kind !== "auto-flex") return false;
+    const align = lc.alignSelf ?? (parentLayout as { align?: string }).align;
+    if (align === "stretch") return true; // FILL — engine sizes the cross axis
+    if (lc.crossSize !== undefined) return true; // FIXED — engine holds crossSize
+    return false; // non-stretch + no crossSize → content-auto: observer may fit
+  })();
+  const heightOwnedRef = useRef(heightOwnedByLayout);
+  heightOwnedRef.current = heightOwnedByLayout;
   // Set below once `isEditing` is declared; the ResizeObserver reads it to
   // decide whether to skip its frame commit while editing (see the effect).
   const isEditingRef = useRef(false);
@@ -175,7 +196,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       // dispatched one. An earlier dispatch can be overwritten by some other
       // write (e.g. an explicit `weave.item.update` from the host) and the
       // observer would otherwise refuse to re-converge.
-      if (mode === "HEIGHT" && parentH > 0) {
+      if (mode === "HEIGHT" && parentH > 0 && !heightOwnedRef.current) {
         // WI-215 — re-settle height ONLY when the CONTENT actually changed (operator
         // principle: "재정리는 실제 크기 변화 시에만"). Content px (scrollHeight) depends
         // on WIDTH (wrapping), not on the parent's height — so a height-handle drag /

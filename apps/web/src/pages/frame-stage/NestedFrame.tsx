@@ -29,7 +29,10 @@ import {
 } from "../../document";
 import { isDomainItem } from "../../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
-import { ParentFrameHeightContext } from "../../document/domains/parent-frame-context.js";
+import {
+  ParentFrameHeightContext,
+  ParentLayoutContext,
+} from "../../document/domains/parent-frame-context.js";
 import {
   type ClickIntent,
   capabilityOf,
@@ -470,35 +473,43 @@ function NestedFrameImpl({
       </FrameCulledContext.Provider>
     </ParentFrameHeightContext.Provider>
   );
-  const childNodes = childFrames.map((c) => (
-    <NestedFrame
-      key={String(c.id)}
-      item={c}
-      parentWidthPx={widthPx}
-      parentHeightPx={heightPx}
-      editing={editing}
-      selectedId={selectedId}
-      {...(selectedIds !== undefined ? { selectedIds } : {})}
-      {...(dimmedFrameIds !== undefined ? { dimmedFrameIds } : {})}
-      {...(isolatedFrameIds !== undefined ? { isolatedFrameIds } : {})}
-      {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
-      onSelect={onSelect}
-      onContextMenuRequest={onContextMenuRequest}
-      onUpdateItem={onUpdateItem}
-      onUpdateShape={onUpdateShape}
-      onRemoveShape={onRemoveShape}
-      onDropAdd={onDropAdd}
-      onDragOver={onDragOver}
-      renderFrameMenu={renderFrameMenu}
-      onCommitFrame={onCommitFrame}
-      selectedHotspotId={selectedHotspotId}
-      onSelectHotspot={onSelectHotspot}
-      onCommitHotspotRegion={onCommitHotspotRegion}
-      artboardId={artboardId}
-      roles={roles}
-      hit={hit}
-    />
-  ));
+  // DR-053 Stage 2 — provide THIS frame's own layout to its children so a child
+  // TextBlock knows whether its height is layout-governed (flex-ROW cross / grid)
+  // and must NOT self-fit (fill = parent propagates; fixed = stop at child's size).
+  const ownLayout = (attrs as { layout?: import("@agocraft/core").LayoutSpec }).layout;
+  const childNodes = (
+    <ParentLayoutContext.Provider value={ownLayout}>
+      {childFrames.map((c) => (
+        <NestedFrame
+          key={String(c.id)}
+          item={c}
+          parentWidthPx={widthPx}
+          parentHeightPx={heightPx}
+          editing={editing}
+          selectedId={selectedId}
+          {...(selectedIds !== undefined ? { selectedIds } : {})}
+          {...(dimmedFrameIds !== undefined ? { dimmedFrameIds } : {})}
+          {...(isolatedFrameIds !== undefined ? { isolatedFrameIds } : {})}
+          {...(onToggleSelect !== undefined ? { onToggleSelect } : {})}
+          onSelect={onSelect}
+          onContextMenuRequest={onContextMenuRequest}
+          onUpdateItem={onUpdateItem}
+          onUpdateShape={onUpdateShape}
+          onRemoveShape={onRemoveShape}
+          onDropAdd={onDropAdd}
+          onDragOver={onDragOver}
+          renderFrameMenu={renderFrameMenu}
+          onCommitFrame={onCommitFrame}
+          selectedHotspotId={selectedHotspotId}
+          onSelectHotspot={onSelectHotspot}
+          onCommitHotspotRegion={onCommitHotspotRegion}
+          artboardId={artboardId}
+          roles={roles}
+          hit={hit}
+        />
+      ))}
+    </ParentLayoutContext.Provider>
+  );
 
   const inner = (
     <motion.div

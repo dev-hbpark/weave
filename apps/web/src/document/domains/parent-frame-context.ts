@@ -13,8 +13,17 @@
 // directly contains it. Default 0 → ratio resolves to 0 px when no provider is
 // mounted (tests / preview); px-kind and legacy-number fonts ignore the context.
 
+import type { LayoutSpec } from "@agocraft/core";
 import { createContext } from "react";
 
 /** Height (in design-px) of the frame that directly contains the rendered item.
  *  Consumed by `TextBlock` to resolve a `kind: "ratio"` fontSize. */
 export const ParentFrameHeightContext = createContext<number>(0);
+
+/** Layout spec of the frame that DIRECTLY contains the rendered item (undefined =
+ *  free / absolute parent). WI-216 / DR-053 Stage 2 — `TextBlock` reads this to
+ *  know whether its HEIGHT is layout-governed (a flex-ROW cross axis, or a grid
+ *  cell): in that case the agocraft layout owns the height (alignSelf stretch =
+ *  fill, crossSize = fixed) and the auto-height observer must NOT overwrite it.
+ *  Only when the height is the genuine content-auto axis does the observer fit. */
+export const ParentLayoutContext = createContext<LayoutSpec | undefined>(undefined);
