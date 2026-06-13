@@ -13,6 +13,7 @@
 // directly contains it. Default 0 → ratio resolves to 0 px when no provider is
 // mounted (tests / preview); px-kind and legacy-number fonts ignore the context.
 
+import type { LayoutSpec } from "@agocraft/core";
 import type { ContentAutoAxes } from "@agocraft/layout";
 import { createContext } from "react";
 
@@ -20,12 +21,21 @@ import { createContext } from "react";
  *  Consumed by `TextBlock` to resolve a `kind: "ratio"` fontSize. */
 export const ParentFrameHeightContext = createContext<number>(0);
 
+/** Layout spec of the frame that DIRECTLY contains the rendered item (each
+ *  `NestedFrame` provides its OWN `attrs.layout` to its children). RENDER-TIME
+ *  reliable (flows synchronously parent→child through React), unlike a
+ *  `DocRefContext` ref read at render — which is stale and made the content-auto
+ *  decision wrong (text auto-heighted instead of auto-widthing, WI-216). The
+ *  child computes its `ContentAutoAxes` from THIS + its own `layoutChild` via the
+ *  engine's pure `contentAutoAxesFor`. `undefined` = free / no-layout parent. */
+export const ParentLayoutContext = createContext<LayoutSpec | undefined>(undefined);
+
 /** Which of THIS item's axes are content-auto (host may size to content) vs
- *  layout-owned (fill/fixed/grow). WI-216 / DR-053 Stage 2 — computed by the
- *  agocraft engine (`getContentAutoAxes`) in `NestedFrame` and read by
- *  `TextBlock`, so the renderer carries NO layout reasoning of its own. Default
- *  `managed:false` (no provider / not in a layout) → the host keeps its own
- *  text-kind auto-size behaviour. */
+ *  layout-owned (fill/fixed/grow). WI-216 / DR-053 Stage 2 — derived by
+ *  `NestedFrame` from `ParentLayoutContext` + the item's `layoutChild` via the
+ *  engine's pure `contentAutoAxesFor`, read by `TextBlock`, so the renderer
+ *  carries NO layout reasoning of its own. Default `managed:false` (no provider /
+ *  not in a layout) → the host keeps its own text-kind auto-size behaviour. */
 export const ContentAutoAxesContext = createContext<ContentAutoAxes>({
   managed: false,
   width: false,

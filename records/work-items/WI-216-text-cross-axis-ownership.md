@@ -147,6 +147,20 @@ weave-only, 전체 1378 그린. **교훈: 같은 데이터를 두 컴포넌트�
 context) 한쪽만 신뢰 가능 — 이전 3·4·5차 추정(엔진/stretch/observer-stamp)이 다 빗나간 이유 = 진짜 원인은
 "toolbar의 doc 소스"였고, 그건 post-click JSON(=정상 정책)이 라벨만 틀렸음을 보여줘야 확정됐음.**
 
+### 5차 FIX (확정 — 라벨/동작 이분) — NestedFrame이 render-time에 stale docRef로 axes 계산 (2026-06-13)
+
+운영자 이분 결과: **라벨 정상, 동작 비정상**(자동너비인데 텍스트가 폭을 hug 안 하고 높이만 변함=auto-height
+동작), 배포 최신. 즉 toolbar 라벨 경로는 OK, **버그는 렌더 동작 경로**. 근본: `NestedFrame`이 (b) 리팩터에서
+`ContentAutoAxesContext`를 **render-time에 `getContentAutoAxes({root: docRef.current.root, ...})`**로 계산했는데,
+`docRef`(DocRefContext)는 **event/rAF-time 용 ref라 렌더 중엔 stale/undefined** → managed:false → TextBlock
+`fitWidth=false`(legacyMode=deriveTextAutoResize=HEIGHT) → auto-width가 auto-height로 렌더. (toolbar는
+useDocumentForResolution=라이브doc이라 라벨은 정상이었음 — 두 경로가 다른 doc소스를 쓴 게 이번에도 핵심.)
+**수정:** 제거했던 `ParentLayoutContext` 부활 — 각 NestedFrame이 자기 `attrs.layout`을 자식에 동기 제공(렌더-동기,
+신뢰가능); 자식은 그 부모레이아웃 + 자기 layoutChild로 엔진 PURE `contentAutoAxesFor` 계산(doc walk/ref 불요).
+TextBlock은 그대로 결과만 소비. weave-only, 1042 그린. **교훈: render-time 결정에 event/rAF-time ref(docRef)
+쓰면 stale; 부모→자식 동기 컨텍스트가 render-time 신뢰 가능. (b) 리팩터에서 ParentLayoutContext를 docRef
+getContentAutoAxes로 바꾼 게 회귀의 근원.**
+
 ## Follow-up (남음)
 
 - 증상②의 토글 정리: flex 자식에서 text-section의 자동너비/자동높이/고정(absolute-constraints) 컨트롤은

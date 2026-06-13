@@ -6,6 +6,7 @@
 
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { resolveAnchor } from "@agocraft/editor";
+import { contentAutoAxesFor } from "@agocraft/layout";
 import { IconLock, SelectionLayer } from "@weave/design-system";
 import { type MotionStyle, motion, useMotionValue, useMotionValueEvent } from "motion/react";
 import type React from "react";
@@ -32,6 +33,7 @@ import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../..
 import {
   ContentAutoAxesContext,
   ParentFrameHeightContext,
+  ParentLayoutContext,
 } from "../../document/domains/parent-frame-context.js";
 import {
   type ClickIntent,
@@ -451,12 +453,20 @@ function NestedFrameImpl({
 
   // DR-053 Stage 2 (b) — the ENGINE decides which of THIS item's axes are
   // content-auto (the host may size to content) vs layout-owned (fill/fixed/grow).
-  // Computed here (text items only — the sole consumer) and provided to the
-  // renderer so `TextBlock` carries NO layout reasoning. Outside a layout the
-  // engine returns managed:false → the renderer keeps its own text-kind auto-size.
+  // Derived from the PARENT's layout (provided synchronously via context by the
+  // parent NestedFrame) + this item's own `layoutChild`, through the engine's PURE
+  // `contentAutoAxesFor`. CRITICAL: this runs at RENDER time, so it must NOT read
+  // a `DocRefContext` ref (that ref is event/rAF-time and is stale during render —
+  // using it returned managed:false and made auto-width text render as auto-height,
+  // WI-216). The parent-layout context is render-synchronous and reliable. The
+  // renderer (TextBlock) still carries NO layout reasoning — just reads the result.
+  const parentLayoutForAxes = useContext(ParentLayoutContext);
   const contentAutoAxes =
-    LAYOUT_FEATURE_ENABLED && item.kind === "text" && docRef?.current !== undefined
-      ? getLayoutEngine().getContentAutoAxes({ root: docRef.current.root, itemId: item.id })
+    LAYOUT_FEATURE_ENABLED && item.kind === "text"
+      ? contentAutoAxesFor(
+          parentLayoutForAxes,
+          (attrs as { layoutChild?: import("@agocraft/core").LayoutChildPolicy }).layoutChild,
+        )
       : undefined;
 
   // WI-074 D7 — content + (for frames) children are mirrored together under a
@@ -489,8 +499,11 @@ function NestedFrameImpl({
       </ContentAutoAxesContext.Provider>
     </ParentFrameHeightContext.Provider>
   );
+  // Provide THIS frame's own layout to its children so each child can derive its
+  // content-auto axes from it at render time (no doc walk / no stale ref).
+  const ownLayout = (attrs as { layout?: import("@agocraft/core").LayoutSpec }).layout;
   const childNodes = (
-    <>
+    <ParentLayoutContext.Provider value={ownLayout}>
       {childFrames.map((c) => (
         <NestedFrame
           key={String(c.id)}
@@ -520,7 +533,7 @@ function NestedFrameImpl({
           hit={hit}
         />
       ))}
-    </>
+    </ParentLayoutContext.Provider>
   );
 
   const inner = (
