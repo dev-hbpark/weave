@@ -3176,10 +3176,15 @@ export function buildWeaveCommands(
       const results: unknown[] = [];
       for (let i = 0; i < ops.length; i++) {
         const op = ops[i];
-        const name = op?.command;
-        if (typeof name !== "string" || name === "") {
+        const rawName = op?.command;
+        if (typeof rawName !== "string" || rawName === "") {
           return fail("invalid-input", `weave.batch: op ${i} is missing a string \`command\``);
         }
+        // openai-api models sometimes write the SANITIZED tool spelling (dots →
+        // underscores, or a hybrid like "weave.item_update") as a batch op command.
+        // Canonical command names never contain underscores, so "_" → "." recovers
+        // the intent without ambiguity (live failure signature, small-think WI-057 era).
+        const name = byName.has(rawName) ? rawName : rawName.replace(/_/g, ".");
         if (BATCH_DISALLOWED.has(name)) {
           return fail("command-not-batchable", `weave.batch: "${name}" cannot run inside a batch`);
         }
@@ -3187,7 +3192,7 @@ export function buildWeaveCommands(
         if (cmd === undefined) {
           return fail(
             "unknown-command",
-            `weave.batch: op ${i} references unknown command "${name}"`,
+            `weave.batch: op ${i} references unknown command "${rawName}"`,
           );
         }
         const r = cmd.run({ ...ctx, document: workingDoc }, op?.input);

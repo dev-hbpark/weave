@@ -450,6 +450,25 @@ describe("weave.batch (WI-096 / DR-065)", () => {
     expect(last.after.fontSize).toBe(40);
   });
 
+  it("normalizes a sanitized / hybrid op command spelling (underscores → dots)", () => {
+    // openai-api models sometimes write the sanitized tool spelling — full
+    // ("weave_item_update") or hybrid ("weave.item_update") — as the op command.
+    // Canonical names never contain underscores, so the lookup recovers both.
+    for (const spelling of ["weave_item_update", "weave.item_update"]) {
+      const result = batchCmd().run(makePartialEditCtx(), {
+        ops: [{ command: spelling, input: { itemId: "text-1", attrs: { text: "A" } } }],
+      });
+      if (!result.ok) throw new Error(`"${spelling}" failed: ${JSON.stringify(result)}`);
+      expect(result.patches.filter((p) => p.type === "item.attrs")).toHaveLength(1);
+    }
+    // the disallowed-list also sees the normalized name — no nesting via spelling
+    const nested = batchCmd().run(makePartialEditCtx(), {
+      ops: [{ command: "weave_batch", input: { ops: [] } }],
+    });
+    expect(nested.ok).toBe(false);
+    if (!nested.ok) expect(nested.error.code).toBe("command-not-batchable");
+  });
+
   it("rejects an unknown command, nesting, and doc.reset", () => {
     const unknown = batchCmd().run(makePartialEditCtx(), {
       ops: [{ command: "weave.nope", input: {} }],
