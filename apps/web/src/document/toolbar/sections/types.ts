@@ -7,12 +7,20 @@
 // OS-root CODE_STRUCTURE_DESIGN_RULES Rule 6 (Declarative branching via
 // context dispatch).
 
+import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import type { JSX } from "react";
 import type { ItemSnapshot } from "../multi-edit.js";
 
 export interface ToolbarSectionProps {
   readonly editor: Editor;
+  /** Live document — the SAME reliable instance the cross-kind layout sections
+   *  (FlexChildSection / GridChildSection) receive. Sections that need to resolve
+   *  an item's PARENT (e.g. the text resize-mode read/write, which depends on the
+   *  parent flex/grid layout) MUST use this, NOT `useDocumentForResolution()` —
+   *  the latter can be null/stale in the toolbar's render position, which made the
+   *  text mode label fall back and mis-read 자동너비/자동높이 (WI-216). */
+  readonly document: AgocraftDocument;
   /** Selected items of the SAME kind. Mixed-kind selections do not reach
    *  any section (the toolbar hides itself before dispatching). */
   readonly items: ReadonlyArray<ItemSnapshot>;

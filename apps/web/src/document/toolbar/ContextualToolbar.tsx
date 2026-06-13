@@ -79,6 +79,7 @@ export function ContextualToolbar({
     >
       <section.Component
         editor={editor}
+        document={document}
         items={selectedItems}
         ids={ids}
         multi={multi}

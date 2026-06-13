@@ -126,7 +126,12 @@ function setRunsInlineAttr(
   });
 }
 
-export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
+export const TextSection: ToolbarSectionComponent = ({
+  editor,
+  document: layoutDoc,
+  items,
+  ids,
+}) => {
   // px↔% conversion needs the renderer's parent-height denominator (design-px).
   const doc = useDocumentForResolution();
   const dims = useDesignDims();
@@ -191,11 +196,14 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
   // `getContentAutoAxes`. Bare-`layoutChild` `deriveTextAutoResize` is the
   // fallback for FREE / absolute text (engine returns managed:false).
   const textAutoResize = sharedValue<LegacyTextAutoResize>(items, (it) => {
-    if (doc !== null && LAYOUT_FEATURE_ENABLED) {
-      // Resolve the parent the SAME way the WRITE does (findParentAndIndex on the
-      // live resolution doc) + the engine's PURE verdict, so read and write agree.
+    if (LAYOUT_FEATURE_ENABLED) {
+      // Resolve the parent from the RELIABLE `document` prop (the same instance the
+      // flex/grid child sections use) — NOT useDocumentForResolution, which is
+      // null/stale in the toolbar's render slot and made this read fall back to
+      // deriveTextAutoResize → flex 자동너비 mislabeled as 자동높이 (WI-216). Then the
+      // engine's PURE verdict; read and write now share this exact resolution.
       const parentLayout = (
-        findParentAndIndex(doc, it.id)?.parent.attrs as { layout?: LayoutSpec } | undefined
+        findParentAndIndex(layoutDoc, it.id)?.parent.attrs as { layout?: LayoutSpec } | undefined
       )?.layout;
       const axes = contentAutoAxesFor(parentLayout, (it.attrs as unknown as TextAttrs).layoutChild);
       if (axes.managed) return contentAutoAxesToMode(axes);
@@ -802,14 +810,13 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                         // legacy absolute-constraints anchor mapping. Per-item so
                         // each child reads its own parent layout + frame.
                         batchPerItem(editor, ids, (id) => {
-                          const parentLayout =
-                            doc !== null
-                              ? (
-                                  findParentAndIndex(doc, id)?.parent.attrs as
-                                    | { layout?: LayoutSpec }
-                                    | undefined
-                                )?.layout
-                              : undefined;
+                          // Reliable `document` prop (same as the read above) so the
+                          // write resolves the same parent the read does.
+                          const parentLayout = (
+                            findParentAndIndex(layoutDoc, id)?.parent.attrs as
+                              | { layout?: LayoutSpec }
+                              | undefined
+                          )?.layout;
                           editor.exec("weave.item.update", {
                             itemId: id,
                             patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => {

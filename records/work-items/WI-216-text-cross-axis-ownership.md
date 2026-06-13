@@ -132,6 +132,21 @@ auto-fit을 **항상 `weave.layout.contentMeasured` 커맨드로** 커밋(절대
 패치(onFrameChanged 없음). 렌더-타임 managed 플래그와 무관하게 flex 자식이 RESIZED_POLICY에 도달 불가.
 weave-only(엔진 API 기존), document 1037 그린. 라이브 검증 대기.
 
+### 4차 FIX (확정 — 운영자 post-click JSON) — TextSection이 잘못된 doc 소스 사용 (2026-06-13)
+
+운영자가 "자동너비 클릭 직후" export(`untitled-design-selection (4).json`): 텍스트 layoutChild=
+`{grow:0, shrink:1, basis:"auto"}`(crossSize 없음) = **올바른 auto-width!** 즉 **write·behavior는 정상,
+순수 버그는 toolbar LABEL.** `contentAutoAxesFor(flexRow start, {basis:"auto"})`=WIDTH_AND_HEIGHT인데
+라벨은 자동높이 표시 → 읽기가 `deriveTextAutoResize` 폴백 = `findParentAndIndex(doc, it.id)`가 **부모
+못 찾음**(managed:false). **근본 원인:** `TextSection`이 부모 해석에 `useDocumentForResolution()`를 썼는데
+**툴바 렌더 위치에서 그 컨텍스트가 null/stale.** 바로 옆 `FlexChildSection`/`GridChildSection`은 신뢰할 수
+있는 **`document` prop**으로 부모를 해석해서 정상 동작했음(그래서 flex-child 컨트롤은 멀쩡). **수정:**
+`ToolbarSectionProps`에 `document` 추가, `ContextualToolbar`가 section.Component에 전달, `TextSection`이
+read+write 모두 `document` prop으로 `findParentAndIndex` (useDocumentForResolution은 폰트 px/%에만 유지).
+weave-only, 전체 1378 그린. **교훈: 같은 데이터를 두 컴포넌트가 다른 doc 소스로 읽으면(한쪽 prop, 한쪽
+context) 한쪽만 신뢰 가능 — 이전 3·4·5차 추정(엔진/stretch/observer-stamp)이 다 빗나간 이유 = 진짜 원인은
+"toolbar의 doc 소스"였고, 그건 post-click JSON(=정상 정책)이 라벨만 틀렸음을 보여줘야 확정됐음.**
+
 ## Follow-up (남음)
 
 - 증상②의 토글 정리: flex 자식에서 text-section의 자동너비/자동높이/고정(absolute-constraints) 컨트롤은
