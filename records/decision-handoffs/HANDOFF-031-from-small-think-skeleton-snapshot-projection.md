@@ -1,8 +1,10 @@
 # HANDOFF-031 — (from small-think) design.snapshot에 스켈레톤 view + scoped read 구현 요청
 
 - **From:** small-think (계약·주입·측정 소유) · **To:** weave (doc 형태·투영 소유)
-- **Date:** 2026-06-13 · **Status:** DEFERRED (선택적 후속 — small-think WI-058 MVP가 동일
-  절감 달성, 재-vendor 0) · **Replies-to-context:** HANDOFF-029
+- **Date:** 2026-06-13 · **Status:** CLOSED (won't-do, 2026-06-13) — small-think WI-058 MVP의
+  라이브 측정(n=3)에서 스냅샷 레버가 턴당 cacheRead를 못 줄임(빌드패스 +5~19%, 절감 0).
+  근본원인은 주입 스냅샷이 아니라 **트랜스크립트 누적**(DR-067 정정). weave-측 per-kind 투영도
+  무의미하므로 구현 불요. weave 액션 없음. · **Replies-to-context:** HANDOFF-029
 - **갱신(2026-06-13):** `design.snapshot` 핸들러가 vendored agocraft 브리지에 있어 본 요청은
   agocraft 변경 + 재-vendor가 필요. cacheRead 절감 지점은 주입측(small-think
   renderDocumentContext)이라, small-think가 받은 full-doc를 거기서 스켈레톤 투영해 동일
