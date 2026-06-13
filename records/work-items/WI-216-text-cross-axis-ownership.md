@@ -109,6 +109,16 @@ on stretch-column→자동높이). 순수 write→read 로직은 align:start에�
 `alignSelf:"start"`로 강제(비-stretch alignSelf는 보존) → 쓴 content/fixed 사이징이 실제 적용되고 round-trip.
 roundtrip 18 + derive 25 + document 1035 그린.
 
+### 2차 FIX (라이브 "지금도 동일") — read/write 부모해석 비대칭 (2026-06-13, layout rc.20260613230000)
+
+1차(stretch clear) 배포 후에도 동일 → 증상이 `deriveTextAutoResize` 폴백(flex-col: 자동너비→자동높이/
+자동높이→고정)과 정확히 일치 = toolbar 읽기의 `getContentAutoAxes`가 **managed:false 반환 → 폴백**. 원인=
+읽기는 엔진 `getContentAutoAxes({root,itemId})`(엔진 자체 findParent tree-walk), 쓰기는 `findParentAndIndex`
+(agocraft-mirror) — **부모 해석 경로가 달라** 라이브 doc에서 읽기가 부모를 못 찾는 케이스. (순수 매핑 단위테스트는
+엔진 read를 직접 써서 통과 → 못 잡음.) **수정:** 엔진에 순수 `contentAutoAxesFor(parentLayout, childPolicy)`
+export(agocraft 22f58fd) + toolbar 읽기가 **쓰기와 동일한 `findParentAndIndex`로 부모 해석** 후 호출 →
+read/write 대칭(불일치 불가). 라이브 검증 대기.
+
 ## Follow-up (남음)
 
 - 증상②의 토글 정리: flex 자식에서 text-section의 자동너비/자동높이/고정(absolute-constraints) 컨트롤은

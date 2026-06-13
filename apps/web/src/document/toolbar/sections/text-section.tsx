@@ -19,7 +19,7 @@ import type {
   TextTruncation,
   TextWeight,
 } from "@agocraft/core";
-import { itemId as toItemId } from "@agocraft/core";
+import { contentAutoAxesFor } from "@agocraft/layout";
 import {
   Accordion,
   AccordionItem,
@@ -63,7 +63,7 @@ import { displayFontSizePx, fontSizeAttrsForPx } from "../../domains/text-font-s
 import { FONT_GROUPS, FONT_ROLES, fontLabel } from "../../fonts/catalog.js";
 import { FontBrowseDialog } from "../../fonts/FontBrowseDialog.js";
 import { ensureFontByStack } from "../../fonts/font-loader.js";
-import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../../layout/registry.js";
+import { LAYOUT_FEATURE_ENABLED } from "../../layout/registry.js";
 import {
   type DesignDims,
   useDesignDims,
@@ -192,10 +192,14 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
   // fallback for FREE / absolute text (engine returns managed:false).
   const textAutoResize = sharedValue<LegacyTextAutoResize>(items, (it) => {
     if (doc !== null && LAYOUT_FEATURE_ENABLED) {
-      const axes = getLayoutEngine().getContentAutoAxes({
-        root: doc.root,
-        itemId: toItemId(it.id),
-      });
+      // Resolve the parent the SAME way the WRITE does (findParentAndIndex) so the
+      // read and write never disagree, then compute the axes with the engine's PURE
+      // verdict. (The {root,itemId} form used a different parent lookup that could
+      // mismatch → managed:false → fallback → flex 자동너비/자동높이 mis-read.)
+      const parentLayout = (
+        findParentAndIndex(doc, it.id)?.parent.attrs as { layout?: LayoutSpec } | undefined
+      )?.layout;
+      const axes = contentAutoAxesFor(parentLayout, (it.attrs as unknown as TextAttrs).layoutChild);
       if (axes.managed) return contentAutoAxesToMode(axes);
     }
     return deriveTextAutoResize((it.attrs as unknown as TextAttrs).layoutChild);
