@@ -1,6 +1,6 @@
 # WI-215 — flex-ROW 텍스트 높이 0 붕괴 (auto-height observer × 크로스축 ratchet)
 
-- **Status:** SUPERSEDED-BY-ARCHITECTURE — agocraft DR-053(레이아웃 크기변화 엔진 단독소유)의
+- **Status:** RESOLVED (DR-053 Stage 1+3, 라이브 검증 통과 2026-06-13 — 그리드→플렉스→텍스트 높이 드래그 정상). 원 설계는 SUPERSEDED-BY-ARCHITECTURE — agocraft DR-053(레이아웃 크기변화 엔진 단독소유)의
   **Stage 1**(엔진 onFrameChanged 수정 + 크로스축 floor)로 재정의. weave observer 게이트(커밋
   0e73afd)는 2차 경로라 무해 잔존하되 Stage 2에서 제거 예정. · 2026-06-13
 - **Related:** WI-149/DR-104(flex-row 너비 squish — 본건은 그 **높이/크로스축 변종**), DR-103(렌더
