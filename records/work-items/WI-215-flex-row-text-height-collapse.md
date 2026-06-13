@@ -1,6 +1,8 @@
 # WI-215 — flex-ROW 텍스트 높이 0 붕괴 (auto-height observer × 크로스축 ratchet)
 
-- **Status:** PLANNED (설계 — 루트 확정, 구현·라이브검증 대기) · 2026-06-13
+- **Status:** SUPERSEDED-BY-ARCHITECTURE — agocraft DR-053(레이아웃 크기변화 엔진 단독소유)의
+  **Stage 1**(엔진 onFrameChanged 수정 + 크로스축 floor)로 재정의. weave observer 게이트(커밋
+  0e73afd)는 2차 경로라 무해 잔존하되 Stage 2에서 제거 예정. · 2026-06-13
 - **Related:** WI-149/DR-104(flex-row 너비 squish — 본건은 그 **높이/크로스축 변종**), DR-103(렌더
   플로어 — 너비축만), DR-101(px-fixed font), WI-199/DR-128(중첩 relayout 1레벨 한계),
   agocraft HANDOFF-025(크로스축 freeze)
@@ -28,6 +30,33 @@ flex-COLUMN / grid 셀에선 옳다(너비=레이아웃, 높이=콘텐츠 auto).
 4. 높이를 키우면 `parentH↑` → observer가 더 작은 height ratio 기록 → 엔진이 그 작아진 frame
    높이에서 `crossSize` 재freeze(grow:0, 일방 ratchet — DR-104 메커니즘의 크로스축판) → 0 수렴.
    → "높이를 키우면 작아지며 사라짐" + 데이터 복구가 안 붙음(매 인터랙션 재발).
+
+## ⚠️ 루트 정정 (2026-06-13, 배포 검증 후) — 진짜 동력은 agocraft 엔진, observer 아님
+
+배포본(weave observer 게이트 포함)에서도 **재현됨**. 운영자 정밀 repro: **그리드 → 플렉스 →
+텍스트** 구조에서 **플렉스 높이를 키우면 변화 없는데(그리드가 지배) 텍스트 바운드만 작아짐.**
+
+진짜 메커니즘 = agocraft `engine.ts onFrameChanged` 의 순서 버그:
+- **Step 1**(resized 아이템이 레이아웃 부모): 자식들을 **요청된 newFrame**(드래그 시도값)으로
+  `rescaleIntrinsic` → `text.crossSize *= oldFlexH/attemptedFlexH (<1)` → 텍스트 축소.
+- **Step 2**(resized 아이템의 위치를 *그 부모* 그리드에 위임): 그리드가 플렉스를 셀로 clamp →
+  플렉스 프레임 원복(변화 없음).
+- 순효과: 플렉스 불변 + 텍스트 crossSize 축소 → 드래그마다 반복 → 0(실측 e-23/e-08).
+
+즉 **Step 1이 "곧 부모가 되돌릴" 프레임으로 자식을 rescale**한다. 자식은 플렉스의 *실제
+(clamp 후)* 프레임으로 rescale돼야 하고, 그러면 scale=1 → 축소 없음. + 크로스축 min 플로어
+부재(`auto-flex.ts` MIN_MAIN_SHARE=0.04는 메인축만; cross는 `clampCross`=Math.min 상한만).
+
+**→ weave observer 게이트(아래 A0/A, 커밋 0e73afd)는 2차 경로였고 이 1차 동력을 못 막음.
+진짜 수정 = agocraft 엔진(+ 재-vendor):**
+1. `onFrameChanged`: resized 아이템이 *자신도 레이아웃 자식*이면, 자식 rescale을 **그 아이템의
+   실제 post-parent-clamp 프레임** 기준으로(또는 부모가 프레임을 override할 땐 Step1 rescale
+   skip하고 Step2 후 실제 프레임으로 1회 rescale). = 운영자 원칙 "실제 변할 때만 재정리"의 엔진판.
+2. 크로스축 `crossSize` min 플로어(메인 0.04 대응) — rescale/resolve가 0으로 못 가게. = HANDOFF-025.
+
+weave observer 게이트는 무해(2차 경로 + 로드 self-heal)라 유지. 아래 A/B/C(렌더 플로어·클램프)는
+엔진 수정 전 **시각 stopgap**으로만 의미. 대안 weave stopgap: 그리드-지배 축은 핸들 비노출
+(getChildConstraints가 그리드 자식에 대해 track-비성장 축을 canResize=false로).
 
 ## 수정 — 1순위 원칙 (운영자, 2026-06-13): "실제 크기 변화 시에만 재정리"
 
