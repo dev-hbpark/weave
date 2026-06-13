@@ -103,8 +103,8 @@ import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
  *  section listing every frame overlapping the right-clicked point.
  *  Empty `layers` → the section is elided. */
 import { nextPanForZoom } from "./frame-stage/camera-math.js";
+import { FrameScene } from "./frame-stage/FrameScene.js";
 import { perceivedLuminance } from "./frame-stage/luminance.js";
-import { NestedFrame } from "./frame-stage/NestedFrame.js";
 import { useStableHandler } from "./frame-stage/use-stable-handler.js";
 import { useViewportCulling } from "./frame-stage/use-viewport-culling.js";
 
@@ -1822,12 +1822,12 @@ export function FrameStage(props: FrameStageProps) {
               // React.memo(NestedFrame) bail every frame whose `item` ref is
               // unchanged — a drag commit re-renders only the dragged item's
               // ancestor path instead of the whole tree.
-              const planeChildren = frames.map((c, _i) => (
-                <NestedFrame
-                  key={String(c.id)}
-                  item={c}
-                  parentWidthPx={designWidth}
-                  parentHeightPx={designHeight}
+              const planeChildren = (
+                <FrameScene
+                  root={root}
+                  frames={frames}
+                  designWidth={designWidth}
+                  designHeight={designHeight}
                   editing={editing}
                   selectedId={props.selectedId}
                   {...(props.selectedIds !== undefined ? { selectedIds: props.selectedIds } : {})}
@@ -1856,7 +1856,7 @@ export function FrameStage(props: FrameStageProps) {
                   onSelectHotspot={onSelectHotspotStable}
                   onCommitHotspotRegion={onCommitHotspotRegionStable}
                 />
-              ));
+              );
               // The design-plane subtree — pan layer (user offset/zoom) wrapping
               // the design plane motion.div (drill spring transform). Frames
               // live inside the design plane so their positions interpret as
