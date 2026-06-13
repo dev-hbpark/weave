@@ -1,6 +1,6 @@
-# WI-216 — flex 자식 텍스트 높이: 엔진 cross-axis 소유 (fill/fixed/auto), observer 비간섭 (DR-053 Stage 2)
+# WI-216 — flex 자식 텍스트 크기: 엔진 단독 소유 (DR-053), 렌더-타임 후처리 제거 (Stage 3)
 
-- **Status:** IN-PROGRESS ((a)/(c) DONE·검증됨 · (b) 엔진-소유 재구현 DONE — **grid 셀 fill + 자동높이 부모리사이즈 유지(content-auto 0-ratchet FIX 포함) 라이브검증됨 2026-06-13**, 잔여(flex-col·자동높이 줄추가 성장·고정 토글) 검증대기 · (d) regrow 엔진 세션 DONE — regrow 검증대기) · 2026-06-13
+- **Status:** REFACTORED to DR-053 Stage 3 (2026-06-13) — 렌더-타임 measure-and-write-back(TextBlock ResizeObserver auto-fit) **전면 제거**, TextBlock=순수 렌더러, 레이아웃 엔진이 모든 크기 통제. 7수에 걸친 자동너비/자동높이/고정 버그의 공통 뿌리(observer 루프)를 패턴째 삭제. **다음 스텝: 텍스트 콘텐츠→박스/컨테이너 크기를 엔진 입력(intrinsic)으로.** 이전 (a)~(d) 시도 이력은 아래 보존(상당수가 observer 루프 회피책이라 Stage 3로 대체됨).
 - **Relates:** DR-053(레이아웃 크기변화 엔진 단독소유), WI-215(높이 ratchet — 선행), WI-149/DR-104, WI-145/146(observer revert 이력)
 - **Origin:** 운영자 — grid→flex→text에서 ① 플렉스 높이를 줄이면 텍스트 높이가 보장되지 못하고 줄어듦
   (fill이면 항상 가득, fixed면 자기 높이 유지여야 함) ② 텍스트 자동높이/자동너비/고정 속성을 바꿔도
