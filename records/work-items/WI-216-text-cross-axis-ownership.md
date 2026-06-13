@@ -86,11 +86,16 @@ NONE/HEIGHT 판정 → **WIDTH_AND_HEIGHT를 절대 반환 못 함** + 메인축
 `layoutChildForTextResizeMode` 2D 양축화(자동너비=양축 auto/자동높이=너비고정+높이auto/고정=양축고정), flex
 방향에 맞춰 main(basis)/cross(crossSize) 매핑 → 엔진 읽기와 round-trip. derive 테스트 24 그린, weave 1016 그린.
 
-## 미해결 (운영자 보고 2026-06-13)
+## 폰트 스케일 + 렌더 떨림 (운영자 보고 2026-06-13)
 
-- **flex-column 컨테이너 높이↑ → 텍스트 폰트 커짐.** 원인 추정 = `fontSizeSpec:{kind:"ratio"}` 폰트가
-  부모(컨테이너) 높이에 비례(DR-093 의도 동작). ParentFrameHeightContext=컨테이너 높이 → ratio 폰트 = ratio×높이.
-  레이아웃 자식 텍스트가 컨테이너 크기 따라 폰트 스케일하는 게 맞는지 = 제품 결정(DR-093 영향) → 운영자 확인 필요.
+- **flex-column 컨테이너 높이↑ → 텍스트 폰트 커짐 = 정상(운영자 확인).** `fontSizeSpec:{kind:"ratio"}`(%)
+  폰트가 부모(컨테이너) 높이에 비례(DR-093 의도 동작). px로 두면 안 커짐.
+- **폰트 커질 때 flex 레이아웃 렌더 떨림 FIX(라이브 검증 대기).** 원인=리사이즈 제스처 중 엔진 세션이 자식 크기를
+  preserve-absolute로 동결(DR-053 (d))하는데, % 폰트가 매 프레임 컨테이너 높이 따라 커짐 → 텍스트 콘텐츠 높이↑
+  → auto-height observer가 박스를 키우려 함 → 엔진 동결과 매 프레임 충돌 → 떨림. **수정=제스처 진행 중 observer
+  fit 억제 후 끝나면 1회 재정착**(편집중 억제와 동일 패턴): `text-autofit-signal.ts`에 `isLayoutGestureActive()`/
+  `markLayoutGestureActivity()`(commitFrame마다 마크 + 140ms 디바운스 종료→`requestTextAutofit()` 펄스),
+  `TextBlock.measureAndCommit`이 활성 중 skip, `FrameStage.commitFrame`이 마크. weave-only, document 1016 그린.
 
 ## Follow-up (남음)
 

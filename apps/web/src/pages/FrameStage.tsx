@@ -48,6 +48,7 @@ import {
 } from "../document";
 import { findItemDeep, isDomainItem } from "../document/agocraft-mirror.js";
 import { resizeCropWindow, setStraighten } from "../document/crop-geometry.js";
+import { markLayoutGestureActivity } from "../document/domains/text-autofit-signal.js";
 import {
   type CameraPolicy,
   capabilityOf,
@@ -1051,6 +1052,11 @@ export function FrameStage(props: FrameStageProps) {
         return frame as unknown as FrameGeom;
       },
       commitFrame(itemId, next, sessionId) {
+        // WI-216 / DR-053 — mark a handle-drag layout gesture in progress so a
+        // laid-out text's auto-height observer suppresses its fit during the drag
+        // (a `%` font scaling with the container would otherwise fight the engine
+        // session and jitter). A debounced end pulse re-settles once the drag stops.
+        markLayoutGestureActivity();
         // Selection follows a body-drag move. On the first commit of a
         // new gesture, if the moved item isn't already in the selection,
         // make it the single selection (Figma parity: dragging an

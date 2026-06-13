@@ -50,7 +50,7 @@ import {
   MeasureContentContext,
   ParentFrameHeightContext,
 } from "./parent-frame-context.js";
-import { onTextAutofitRequest } from "./text-autofit-signal.js";
+import { isLayoutGestureActive, onTextAutofitRequest } from "./text-autofit-signal.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -182,6 +182,12 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       const fitW = fitWidthRef.current;
       // Neither axis is content-auto (Fixed / fully layout-owned) → do not fit.
       if (!fitH && !fitW) return;
+      // WI-216 / DR-053 — while a handle-drag layout gesture is in progress the
+      // engine owns the children's sizes (frozen-baseline session). A `%` font
+      // scaling with the container would make this observer fight that session
+      // every frame (jitter); suppress the fit during the gesture — the debounced
+      // end pulse (requestTextAutofit) re-settles once the drag stops.
+      if (isLayoutGestureActive()) return;
       // DR-058 — during an undo/redo replay the frame was already restored by
       // the replayed patch; re-committing the fitted size here would spawn a
       // fresh user-command entry and CLEAR the redo stack. Skip while a history
