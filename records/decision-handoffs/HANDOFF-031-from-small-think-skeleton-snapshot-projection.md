@@ -1,7 +1,14 @@
 # HANDOFF-031 — (from small-think) design.snapshot에 스켈레톤 view + scoped read 구현 요청
 
 - **From:** small-think (계약·주입·측정 소유) · **To:** weave (doc 형태·투영 소유)
-- **Date:** 2026-06-13 · **Status:** Open (구현 요청) · **Replies-to-context:** HANDOFF-029
+- **Date:** 2026-06-13 · **Status:** DEFERRED (선택적 후속 — small-think WI-058 MVP가 동일
+  절감 달성, 재-vendor 0) · **Replies-to-context:** HANDOFF-029
+- **갱신(2026-06-13):** `design.snapshot` 핸들러가 vendored agocraft 브리지에 있어 본 요청은
+  agocraft 변경 + 재-vendor가 필요. cacheRead 절감 지점은 주입측(small-think
+  renderDocumentContext)이라, small-think가 받은 full-doc를 거기서 스켈레톤 투영해 동일
+  −33%를 재-vendor 0으로 달성(WI-058/DR-072 MVP). **본 핸드오프는 per-kind 권위 투영이
+  필요해질 때(예: label/구조 규칙을 kind별로 정교화) 픽업하는 선택적 후속으로 보류.** 아래
+  스펙은 그때 유효.
 - **small-think:** WI-058 / DR-072 · **근거:** small-think DR-067 + 입력토큰 곡선 실측
 
 ## 왜 (1줄)
