@@ -107,17 +107,38 @@ const QR_ATTRS_NOTE =
 // WI-077 — chart items are DATA-DRIVEN and reference a dataset by id; they own
 // no data inline. Creation is its own tool (weave.chart.add), so the note steers
 // the agent away from the empty-placeholder footgun of weave.item.add+kind:chart.
-// WI-209 / DR-134 — slimmed to that steer + the edit-merge contract: the full
-// chart model is advertised on weave.chart.add's own typed schema AND cached in
-// WEAVE_CAPABILITIES' chart itemKind, so restating it on item.add (a tool charts
-// must NOT use) was pure per-turn duplication.
 const CHART_ATTRS_NOTE =
   "For chart items (data-driven): a chart REFERENCES a dataset by attrs.datasetId — it owns NO data inline. " +
-  "To CREATE use weave.chart.add (seeds the dataset AND the chart in ONE step); do NOT use weave.item.add with " +
-  "kind 'chart' (empty placeholder). EDIT the look/type/encoding/variant/style via weave.item.update { attrs } — " +
-  "attrs.variant / attrs.encoding / attrs.overrides DEEP-MERGE over current values (send only the delta; set a " +
-  "key to null to CLEAR it; attrs.palette is replaced wholesale) — and edit the DATA via weave.dataset.update. " +
-  "Full per-field model (types, encoding matrix, style, auto-managed labels): the chart itemKind capabilities.";
+  "To CREATE use weave.chart.add (seeds a dataset AND the chart in ONE step — pass dataset:{columns,rows}, " +
+  "chartType, and for non-category/value types an explicit encoding + variant); do NOT use weave.item.add with " +
+  "kind 'chart' (empty placeholder). " +
+  "14 CHART TYPES (attrs.chartType): bar · line · area · pie · funnel · gauge · scatter · bubble · radar · " +
+  "heatmap · candlestick · boxplot · treemap · sankey — pick the one that fits the data, not just bar/line/pie. " +
+  "ENCODING (attrs.encoding) maps visual channels → dataset columns, each { field:<column>, aggregate? } (value " +
+  "may be an ARRAY for multi-series): category+value[] for bar/line/area/pie/funnel/radar; x+y(+size) for " +
+  "scatter/bubble; x+y+value for heatmap; category+open/high/low/close for candlestick; category+lower/q1/median/" +
+  "q3/upper for boxplot; id+parent(+value) for treemap; source+target(+value) for sankey. " +
+  "VARIANT (attrs.variant): { stacked, normalized (100%), horizontal, smooth, innerRadius (pie→doughnut) }. " +
+  "STYLE detail, all via weave.item.update { itemId, attrs:{…} }: attrs.palette (series colors, string[]), " +
+  "attrs.showLegend / attrs.showAxis (boolean), attrs.opacity (0..1), and attrs.overrides for per-element emphasis " +
+  "— { datum:{ '<category>':{ color?, borderWidth?, offset? } }, series:{ '<series>':{ color?, borderWidth? } } } " +
+  "(highlight one bar/slice or a whole series). Edit the look/type/encoding/variant/style with weave.item.update; " +
+  "edit the DATA with weave.dataset.update. " +
+  "PARTIAL chart edits are NON-DESTRUCTIVE: attrs.variant, attrs.encoding and attrs.overrides are DEEP-MERGED " +
+  "over the chart's current values, so you may send ONLY the delta — e.g. attrs:{ variant:{ stacked:true } } " +
+  "keeps the other variant flags, and attrs:{ overrides:{ datum:{ 'B':{ color:'#e11' } } } } emphasizes ONE bar " +
+  "without dropping other datum/series overrides. To CLEAR a key, set its value to null (e.g. " +
+  "overrides:{ datum:{ 'B':null } } removes B's emphasis). attrs.palette is a full array (replaced wholesale). " +
+  "DATA: put the category/label column FIRST, numeric series after; keep series legible (≈≤5). For colours prefer " +
+  "the theme categorical tokens [var(--domain-slide-accent)/--domain-canvas-accent/--domain-block-accent/" +
+  "--domain-media-accent] in attrs.palette (distinct + theme-reactive), and GROUND the chart on a card surface " +
+  "(a frame behind it with decoration.fill + cornerRadius + soft shadow), not bare canvas. " +
+  "TEXT IS REAL TEXT ITEMS (DR-035): for bar/line/area + pie the CATEGORY/axis labels are AUTO-MANAGED text child " +
+  "items derived from the dataset — do NOT hand-add them (duplicates), do NOT reposition them, and editing a " +
+  "label's TEXT means editing the DATA (use weave.dataset.update). You MAY restyle those label items (color/" +
+  "fontWeight/fontSize via weave.item.update — persists across re-projection). ADD YOUR OWN separate text items " +
+  "for the chart TITLE, the one-line takeaway, callouts/annotations and a source note — a chart almost always " +
+  "needs a human title + takeaway the data labels don't supply.";
 
 // WI-077 — tabular dataset payload, shared by weave.chart.add / weave.dataset.*.
 const DATASET_PAYLOAD: Json = {
@@ -317,69 +338,30 @@ const SHAPE_SUBATTRS_SCHEMA: Json = {
 // the agent sees valid fields up-front: `shape` (the sub-kind) + `subAttrs` (the
 // per-kind geometry contract above). `additionalProperties: true` keeps the bag
 // open for the other kinds' attrs (text / image / qr fields, frame, etc.).
-// Shared attrs-bag PROPERTIES (typed shape sub-kind + geometry). Reused by the
-// full (create) and slim (edit) bags so the typed surface stays single-sourced
-// while only the prose description differs.
-const ATTRS_BAG_PROPERTIES: Json = {
-  shape: {
-    type: "string",
-    enum: [
-      "rectangle",
-      "ellipse",
-      "line",
-      "arrow",
-      "triangle",
-      "star",
-      "polygon",
-      "poly",
-      "path",
-      "speech-bubble",
-      "heart",
-    ],
-    description: "Shape sub-kind (shape items only). Geometry goes in subAttrs.",
-  },
-  subAttrs: SHAPE_SUBATTRS_SCHEMA,
-};
-
-// FULL per-kind attrs model — the AUTHORITATIVE description, advertised on the
-// CREATE tool (weave.item.add). Getting attrs right AT CREATION prevents the
-// post-hoc layout/size fix storm (DR-048), so the create tool carries the whole
-// per-kind catalogue inline.
 const ATTRS_WITH_TEXT_NOTE: Json = {
   type: "object",
   additionalProperties: true,
-  properties: ATTRS_BAG_PROPERTIES,
+  properties: {
+    shape: {
+      type: "string",
+      enum: [
+        "rectangle",
+        "ellipse",
+        "line",
+        "arrow",
+        "triangle",
+        "star",
+        "polygon",
+        "poly",
+        "path",
+        "speech-bubble",
+        "heart",
+      ],
+      description: "Shape sub-kind (shape items only). Geometry goes in subAttrs.",
+    },
+    subAttrs: SHAPE_SUBATTRS_SCHEMA,
+  },
   description: `${FRAME_BASE_NOTE} ${FRAME_ATTRS_NOTE} ${TEXT_ATTRS_NOTE} ${QR_ATTRS_NOTE} ${CHART_ATTRS_NOTE} ${SHAPE_ATTRS_NOTE} ${IMAGE_ATTRS_NOTE} ${VIDEO_ATTRS_NOTE} ${EMBED_ATTRS_NOTE} ${LINE_ATTRS_NOTE}`,
-};
-
-// WI-206 / DR-131 — SLIM EDIT variant for weave.item.update / weave.items.update.
-// The full per-kind catalogue above (and WEAVE_CAPABILITIES' itemKinds + the
-// cached WEAVE_DOMAIN_KNOWLEDGE) already carries the detail in the per-turn
-// prefix, and the create tool is where the agent first reads it — so the edit
-// tools keep only a POINTER plus the edit-time rules that actually prevent
-// regressions (frame coords, auto-layout override, text px sizing, partial
-// merge). This drops ~2.3K tok PER edit tool out of the advertised schema, ×2
-// tools, ×every turn (small-think DR-067). The create path is untouched, so
-// creation quality (DR-048) cannot regress.
-const ATTRS_EDIT_DESC =
-  "The per-kind attrs bag — SAME model as weave.item.add's attrsOverride (see that tool, or the kinds " +
-  "capabilities reference, for the full per-kind field list). Pass ONLY the attrs you are CHANGING " +
-  "(shallow-merged — send COMPLETE sub-objects; chart variant/encoding/overrides deep-merge; text↔textRuns " +
-  "stay coherent). " +
-  "attrs.frame = { x, y, width, height, rotation }: 0..1 ratios of the item's OWN PARENT box (top-level → the " +
-  "whole DESIGN; nested → its containing frame), NEVER pixels. If the item is a child of an AUTO-LAYOUT " +
-  "(flex/grid) frame its frame is OVERRIDDEN by the layout — size/order it via weave.item.setLayoutChild, not an " +
-  "absolute frame; only an ABSOLUTE-parent child takes an explicit frame. " +
-  "Text: size with attrs.fontSizeSpec { kind:'px', value } — FIXED design-px (DR-101; body/content ≥ ~3% of " +
-  "canvas height); do NOT pin frame.height on AUTO-HEIGHT (flex/grid) text. Per-range styling → attrs.textRuns " +
-  "(read the current runs from the snapshot, edit only what changes, resend the FULL array). " +
-  "Shape geometry → attrs.subAttrs.";
-
-const ATTRS_EDIT_NOTE: Json = {
-  type: "object",
-  additionalProperties: true,
-  properties: ATTRS_BAG_PROPERTIES,
-  description: ATTRS_EDIT_DESC,
 };
 
 // WI-063 / WI-078 — units (decoration + transform) attached in ONE call so an item
@@ -828,7 +810,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     // filter / opacity / flip) in the SAME call — attrs:null clears a unit.
     // Provide attrs and/or units (at least one); only `itemId` is required.
     inputSchema: obj(
-      { itemId: STR, attrs: ATTRS_EDIT_NOTE, units: EDIT_UNITS },
+      { itemId: STR, attrs: ATTRS_WITH_TEXT_NOTE, units: EDIT_UNITS },
       ["itemId"],
       "EDIT one existing item — the primary change tool. `attrs` changes any attribute (text/textRuns, fontSize, color, frame, chart encoding/variant/overrides, …) and `units` sets/clears decoration + flip; give either or both. attrs is shallow-merged (send COMPLETE sub-objects) EXCEPT chart variant/encoding/overrides are deep-merged and text text↔textRuns stay coherent. Target by the itemId in the snapshot.",
     ),
@@ -1066,7 +1048,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
     inputSchema: obj(
       {
         itemIds: STR_ARR,
-        attrs: ATTRS_EDIT_NOTE,
+        attrs: ATTRS_WITH_TEXT_NOTE,
         units: EDIT_UNITS,
         updates: {
           type: "array",

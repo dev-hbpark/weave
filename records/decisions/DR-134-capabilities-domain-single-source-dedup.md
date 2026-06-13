@@ -1,6 +1,8 @@
 # DR-134 — per-kind 모델 3중 기술 dedup (catalogue/rules 단일 소스 분리)
 
-- **Status:** ACCEPTED (2026-06-13)
+- **Status:** SUPERSEDED (부분, 2026-06-13) by DR-136/WI-213 — §N 포인터화가 콜로케이션
+  품질을 깨 두 모드 완성도 저하(DR-048 육안 게이트 회귀). per-kind 품질 가이드는 itemKinds
+  인라인으로 복원. 토큰 분석·도구 de-list 연계(DR-130/132)는 유효.
 - **Work Item:** WI-209
 - **Relates:** DR-131/WI-206(스키마 description 비대칭 dedup — 본 DR은 그 "남은 레버"),
   DR-130/WI-205, DR-132/WI-207, DR-048(생성정확성 — create 경로 보호),

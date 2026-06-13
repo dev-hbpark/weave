@@ -1,6 +1,8 @@
 # DR-131 — 비대칭 스키마 description dedup: 생성은 full, 편집은 slim 포인터
 
-- **Date:** 2026-06-13 · **Status:** Accepted (구현·단위검증 완료 · 라이브 품질검증 운영 대기) · **WI:** WI-206
+- **Date:** 2026-06-13 · **Status:** SUPERSEDED (부분, 2026-06-13) by DR-136/WI-213 — 편집노트
+  슬림이 다듬기/보완 패스 품질을 떨어뜨려(DR-048 육안 게이트 회귀, 본 DR이 예고한 롤백 조건
+  발동) item.update/items.update를 full ATTRS_WITH_TEXT_NOTE로 복원. · **WI:** WI-206
 - **Relates:** WI-205/DR-130(도구 표면 축소), DR-048(생성 노트=레이아웃 오용 방지), small-think DR-067
 
 ## Context
