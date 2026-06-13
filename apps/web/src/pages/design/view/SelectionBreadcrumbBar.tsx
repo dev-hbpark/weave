@@ -40,7 +40,16 @@ export function SelectionBreadcrumbBar({
   return (
     <Toolbar
       aria-label="선택 경로"
-      className="max-w-[min(70vw,640px)] flex-nowrap overflow-x-auto"
+      // Match the floating-menu surface used by the property bar and other
+      // overlays (--surface-overlay, near-opaque + shadow) — the bare Toolbar
+      // primitive defaults to the subtle --surface-1 (alpha ~0.05) which reads
+      // as transparent against the canvas. DR-137 §1 keeps both stacked bars
+      // visually consistent.
+      className={cn(
+        "max-w-[min(70vw,640px)] flex-nowrap overflow-x-auto",
+        "bg-[color:var(--surface-overlay)] border-[color:var(--surface-overlay-border)]",
+        "text-[color:var(--text-overlay)] shadow-[var(--shadow-overlay)]",
+      )}
       data-testid="selection-breadcrumb"
     >
       {segments.map((seg, i) => (
