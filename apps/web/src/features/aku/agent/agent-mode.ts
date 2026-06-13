@@ -74,8 +74,15 @@ export const AKU_PROVIDER_OPTIONS: ReadonlyArray<{
   { value: "openai", label: "GPT", hint: "OpenAI (GPT) — 현재 비활성화", disabled: true },
 ];
 
-/** 패널 2-토글 — transport 축 (Rule 6: 데이터). `disabled` = 선택 불가(현재 비활성).
- *  API transport는 현재 비활성화 — SSH(구독 CLI)만 선택 가능. */
+/** API transport는 배포 인스턴스에선 비활성(구독 SSH만), **localhost(로컬 개발)에선 활성** —
+ *  per-turn 텔레메트리/ api-mode 측정·디버깅을 위해. 모듈 로드 시 1회 평가(브라우저);
+ *  window 없는 환경(SSR/테스트)은 비활성으로 안전 폴백. */
+const AKU_API_TRANSPORT_ENABLED =
+  typeof window !== "undefined" &&
+  /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+
+/** 패널 2-토글 — transport 축 (Rule 6: 데이터). `disabled` = 선택 불가.
+ *  API transport는 배포에선 비활성(SSH 구독 CLI만), localhost에선 활성. */
 export const AKU_TRANSPORT_OPTIONS: ReadonlyArray<{
   readonly value: AkuTransport;
   readonly label: string;
@@ -85,8 +92,10 @@ export const AKU_TRANSPORT_OPTIONS: ReadonlyArray<{
   {
     value: "api",
     label: "API",
-    hint: "API 키로 실행 (설정된 연결별 키, 없으면 서버 공유 키) — 현재 비활성화",
-    disabled: true,
+    hint: AKU_API_TRANSPORT_ENABLED
+      ? "API 키로 실행 (설정된 연결별 키, 없으면 서버 공유 키)"
+      : "API 키로 실행 — 배포에선 비활성 (localhost 전용)",
+    disabled: !AKU_API_TRANSPORT_ENABLED,
   },
   { value: "ssh", label: "SSH", hint: "서버의 구독 CLI로 실행 (Claude CLI / ChatGPT Codex)" },
 ];
