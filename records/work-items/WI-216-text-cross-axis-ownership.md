@@ -97,6 +97,18 @@ NONE/HEIGHT 판정 → **WIDTH_AND_HEIGHT를 절대 반환 못 함** + 메인축
   `markLayoutGestureActivity()`(commitFrame마다 마크 + 140ms 디바운스 종료→`requestTextAutofit()` 펄스),
   `TextBlock.measureAndCommit`이 활성 중 skip, `FrameStage.commitFrame`이 마크. weave-only, document 1016 그린.
 
+## 자동너비/자동높이 + FILL(stretch) round-trip FIX (2026-06-13 — 라이브 검증 대기)
+
+운영자: flex에서 자동너비 설정→자동높이로, 자동높이 설정→고정으로 바뀜(한 칸씩 내려감). **원인:** 3-모드 토글
+(자동너비/자동높이/고정)에는 **FILL(stretch) 상태가 없음** — FILL은 별도(flex-child alignSelf stretch). 토글 쓰기가
+stretch를 보존해서, 부모 `align:"stretch"`(또는 자식 alignSelf stretch)인 경우 엔진 `getContentAutoAxes`가
+stretch 축을 **content-auto 아님**으로 읽음 → 모드가 한 칸 잘못 읽힘(자동높이 on stretch-cross→고정, 자동너비
+on stretch-column→자동높이). 순수 write→read 로직은 align:start에선 정상이라 처음 못 잡음. **재현=새 통합테스트
+`text-resize-roundtrip.test.ts`(실엔진 write→getContentAutoAxes 매트릭스, align stretch 2건 실패).** **수정:**
+`layoutChildForTextResizeMode`가 3모드 중 어느 것도 FILL이 아니므로 effective cross align이 stretch면
+`alignSelf:"start"`로 강제(비-stretch alignSelf는 보존) → 쓴 content/fixed 사이징이 실제 적용되고 round-trip.
+roundtrip 18 + derive 25 + document 1035 그린.
+
 ## Follow-up (남음)
 
 - 증상②의 토글 정리: flex 자식에서 text-section의 자동너비/자동높이/고정(absolute-constraints) 컨트롤은

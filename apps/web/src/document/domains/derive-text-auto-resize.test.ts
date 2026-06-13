@@ -156,10 +156,18 @@ describe("layoutChildForTextResizeMode", () => {
     expect(r).toEqual({ kind: "auto-flex", grow: 0, shrink: 1, basis: 0.4, crossSize: 0.5 });
   });
 
-  it("preserves alignSelf:stretch (FILL) untouched on a NONE write", () => {
+  // None of the 3 modes is FILL, so a 고정/자동* write must CLEAR a stretch cross
+  // (else the engine reads the stretched axis as not-content-auto → wrong mode).
+  it("clears alignSelf:stretch on a NONE write (FILL is a separate state)", () => {
     const filled: LayoutChildPolicy = { ...flexChild, alignSelf: "stretch" };
     const r = layoutChildForTextResizeMode("NONE", filled, flexRow, frame);
-    expect(r).toMatchObject({ alignSelf: "stretch", crossSize: 0.4 });
+    expect(r).toMatchObject({ alignSelf: "start", crossSize: 0.4 });
+  });
+
+  it("preserves a NON-stretch alignSelf (center) on a write", () => {
+    const centered: LayoutChildPolicy = { ...flexChild, alignSelf: "center" };
+    const r = layoutChildForTextResizeMode("HEIGHT", centered, flexRow, frame);
+    expect(r).toMatchObject({ alignSelf: "center" });
   });
 
   it("grid NONE fixes both (sizeW + sizeH)", () => {

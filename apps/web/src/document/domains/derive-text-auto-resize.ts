@@ -123,13 +123,23 @@ export function layoutChildForTextResizeMode(
     const crossAuto = mainIsWidth ? heightAuto : widthAuto;
     const mainSize = mainIsWidth ? frame.width : frame.height;
     const crossSize = mainIsWidth ? frame.height : frame.width;
+    // None of the 3 legacy modes is FILL — FILL (alignSelf/align "stretch") is a
+    // SEPARATE state set via the flex-child toolbar. A stretched cross axis is
+    // neither content-auto nor a fixed intrinsic, so it would make the engine
+    // read the mode back WRONG (e.g. 자동높이 on a stretch-cross child reads 고정,
+    // 자동너비 on a stretch-column reads 자동높이 — the operator report). So when the
+    // effective cross alignment is stretch, force it to a non-stretch value
+    // ("start") so the written content/fixed sizing actually takes effect and
+    // round-trips. A non-stretch alignSelf (start/center/end) is preserved.
+    const effAlign = current.alignSelf ?? parentLayout.align;
+    const alignSelf = effAlign === "stretch" ? "start" : current.alignSelf;
     const next: AutoFlexChildPolicy = {
       kind: "auto-flex",
       // main auto = hug content (basis "auto", grow 0); fixed = freeze basis.
       grow: mainAuto ? 0 : current.grow,
       shrink: current.shrink,
       basis: mainAuto ? "auto" : mainSize,
-      ...(current.alignSelf !== undefined ? { alignSelf: current.alignSelf } : {}),
+      ...(alignSelf !== undefined ? { alignSelf } : {}),
       ...(crossAuto ? {} : { crossSize }),
     };
     return next;
