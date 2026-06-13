@@ -107,6 +107,11 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   frameRef.current = a.frame;
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
+  // WI-215 — last committed CONTENT size in unscaled layout px (scrollHeight/
+  // scrollWidth), used to gate the auto-fit on a REAL content change. -1 = not
+  // yet measured (force the first fit). See the gate in measureAndCommit.
+  const lastContentHpxRef = useRef(-1);
+  const lastContentWpxRef = useRef(-1);
   // WI-029 / DR-016 — Fixed mode locks both dimensions. The ResizeObserver
   // must NOT auto-fit height in NONE; otherwise the user-set height would
   // be overwritten by content fit.
@@ -171,16 +176,39 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       // write (e.g. an explicit `weave.item.update` from the host) and the
       // observer would otherwise refuse to re-converge.
       if (mode === "HEIGHT" && parentH > 0) {
-        const rounded = Math.round((el.scrollHeight / parentH) * 10000) / 10000;
-        if (Math.abs(rounded - frameRef.current.height) >= 0.0005) nextHeight = rounded;
+        // WI-215 — re-settle height ONLY when the CONTENT actually changed (operator
+        // principle: "재정리는 실제 크기 변화 시에만"). Content px (scrollHeight) depends
+        // on WIDTH (wrapping), not on the parent's height — so a height-handle drag /
+        // a parent-driven height change leaves it identical and MUST NOT rewrite the
+        // ratio. The old gate compared the ratio against frameRef, but its denominator
+        // (parentH) moves with the parent; when parentH is coupled to this child (a
+        // flex-ROW cross axis, or nested relayout) every parentH wobble produced a
+        // smaller ratio → re-frozen crossSize → a one-way ratchet to height 0. Gating
+        // on content px breaks that loop while still re-fitting on a real rewrap.
+        const contentHpx = el.scrollHeight;
+        const contentChanged =
+          lastContentHpxRef.current < 0 || Math.abs(contentHpx - lastContentHpxRef.current) >= 0.5;
+        if (contentChanged) {
+          const rounded = Math.round((contentHpx / parentH) * 10000) / 10000;
+          if (Math.abs(rounded - frameRef.current.height) >= 0.0005) nextHeight = rounded;
+          lastContentHpxRef.current = contentHpx;
+        }
       }
       // Auto-width measures `scrollWidth` — the inner div is sized
       // `width: max-content` in this mode (see textStyle), so it reports the
       // natural (un-wrapped) content width instead of echoing the frame width;
       // width exposes no handle, so this is the only way the box tracks content.
+      // Same content-delta gate (WI-215): only re-fit when the natural content
+      // width actually changed, not when the parent width moved underneath it.
       if (mode === "WIDTH_AND_HEIGHT" && parentW > 0) {
-        const rounded = Math.round((el.scrollWidth / parentW) * 10000) / 10000;
-        if (Math.abs(rounded - frameRef.current.width) >= 0.0005) nextWidth = rounded;
+        const contentWpx = el.scrollWidth;
+        const contentChanged =
+          lastContentWpxRef.current < 0 || Math.abs(contentWpx - lastContentWpxRef.current) >= 0.5;
+        if (contentChanged) {
+          const rounded = Math.round((contentWpx / parentW) * 10000) / 10000;
+          if (Math.abs(rounded - frameRef.current.width) >= 0.0005) nextWidth = rounded;
+          lastContentWpxRef.current = contentWpx;
+        }
       }
       if (nextHeight === undefined && nextWidth === undefined) return;
       onUpdateRef.current?.({

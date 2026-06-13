@@ -170,3 +170,87 @@ test("WI-146 — tall flex text auto-fits even when created in ONE agent-style b
 // fired through manual frame resizes and rescaled/fought the gesture). Agent
 // generation now re-settles via the round-end pulse (B-2), covered by the
 // round-grouping-editor unit test.
+
+// WI-215 — flex-ROW cross-axis height must NOT ratchet to 0 when the PARENT
+// height changes underneath the text (the operator repro: dragging a grid-cell
+// item's height made the text height collapse to ~0; data repair didn't hold
+// because each interaction re-triggered the loop). A text in a flex ROW has its
+// HEIGHT as the cross axis (layout-owned); the auto-height observer must re-settle
+// only on a real CONTENT change, not on a parentH wobble — otherwise the
+// scrollHeight/parentH ratio shrinks as parentH grows and freezes toward 0.
+async function buildFlexRowWithText(page: Page): Promise<{ f: string; t: string }> {
+  const ex = (name: string, input: unknown) =>
+    page.evaluate(
+      ({ n, i }) => {
+        const w = window as unknown as {
+          __weaveEditor: { exec: (n: string, i: unknown) => { value?: unknown } };
+        };
+        return String(w.__weaveEditor.exec(n, i).value);
+      },
+      { n: name, i: input },
+    );
+  const root = await page.evaluate(() =>
+    String((window as unknown as { __weaveDoc: { root: { id: unknown } } }).__weaveDoc.root.id),
+  );
+  const f = await ex("weave.item.add", {
+    kind: "frame",
+    containerId: root,
+    frame: { x: 0.1, y: 0.1, width: 0.5, height: 0.2, rotation: 0 },
+  });
+  await page.waitForTimeout(150);
+  const t = await ex("weave.item.add", {
+    kind: "text",
+    containerId: f,
+    frame: { x: 0, y: 0, width: 1, height: 0.5, rotation: 0 },
+    attrsOverride: { text: "Cell label" },
+  });
+  await page.waitForTimeout(150);
+  // ROW + align center → the text's HEIGHT is the cross axis (the collapse axis).
+  await ex("weave.frame.setLayout", {
+    itemId: f,
+    layout: {
+      kind: "auto-flex",
+      direction: "row",
+      gap: 0,
+      justify: "center",
+      align: "center",
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    },
+  });
+  return { f, t };
+}
+
+test("WI-215 — flex-ROW text height survives repeated parent-height changes (no 0-ratchet)", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "mixed", title: "WI-215-flex-row-height" });
+  const { f, t } = await buildFlexRowWithText(page);
+  await page.waitForTimeout(600);
+  const settled = await docFrameH(page, t);
+  expect(settled, `text height after settle = ${settled}`).toBeGreaterThan(0.001);
+
+  // Wobble the PARENT height several times (the relayout cascade that drove the
+  // ratchet). Content never changes, so the text height must stay stable — never
+  // collapse toward 0.
+  for (const ph of [0.3, 0.15, 0.35, 0.18]) {
+    await page.evaluate(
+      ({ id, h }) => {
+        const w = window as unknown as {
+          __weaveEditor: { exec: (n: string, i: unknown) => unknown };
+          __weaveDoc: { root: { id: unknown } };
+        };
+        w.__weaveEditor.exec("weave.item.update", {
+          itemId: id,
+          frame: { x: 0.1, y: 0.1, width: 0.5, height: h, rotation: 0 },
+        });
+      },
+      { id: f, h: ph },
+    );
+    await page.waitForTimeout(250);
+  }
+  await page.waitForTimeout(400);
+
+  const after = await docFrameH(page, t);
+  // Pre-fix this ratcheted to ~1e-8…1e-23. Require it stays a sane, visible ratio.
+  expect(after, `text height after parent-height wobble = ${after}`).toBeGreaterThan(0.01);
+});
