@@ -166,7 +166,6 @@ import {
   migrateEncoding,
 } from "../document/domains/chart/chart-model.js";
 import { useChartLabelSync } from "../document/domains/chart/use-chart-label-sync.js";
-import { MeasureContentContext } from "../document/domains/parent-frame-context.js";
 import { useEmbedMetaSync } from "../document/embed/use-embed-meta-sync.js";
 import { RotationSnapLayer } from "../document/selection-chrome/RotationSnapLayer.js";
 import { SnapFeedbackLayer } from "../document/selection-chrome/SnapFeedbackLayer.js";
@@ -1242,14 +1241,6 @@ function DesignPageBody() {
   const removeItem = (itemId: string) => editor.exec("weave.item.remove", { itemId, containerId });
   const updateItem: typeof rawUpdateItem = (itemId, patch) =>
     void editor.exec("weave.item.update", { itemId, patch });
-  // DR-053 Stage 2 (b) — engine-owned content auto-size: TextBlock reports its
-  // measured content here; the engine decides which axes it drives (no fixed-
-  // intrinsic stamp). Provided via MeasureContentContext to the stage subtree.
-  const measureContent = useCallback(
-    (itemId: string, content: { readonly width?: number; readonly height?: number }) =>
-      void editor.exec("weave.layout.contentMeasured", { itemId, content }),
-    [editor],
-  );
   // WI-032 Phase 3b — `weave.shape.update` / `weave.shape.remove` were
   // removed alongside the legacy `canvas-design` kind; shape primitives
   // flow through `updateItem` now.
@@ -2766,129 +2757,127 @@ function DesignPageBody() {
                                         transformOrigin: "50% 50%",
                                       }}
                                     >
-                                      <MeasureContentContext.Provider value={measureContent}>
-                                        <FrameStage
-                                          designWidth={design.width}
-                                          designHeight={design.height}
-                                          // WI-040 Phase 3 — host-supplied hover
-                                          // overlay. Lives inside FrameStage's
-                                          // design-plane so its rects share the
-                                          // camera transform. The Mount component
-                                          // uses the gate hook + projector;
-                                          // visibility filters + selection
-                                          // exclusion happen there.
-                                          renderHoverOverlay={() => (
-                                            <HoverAffordanceMount
-                                              doc={docInAgocraft}
-                                              hoveredKind={hoverContext.hoveredKind}
-                                              hoveredId={hoverContext.hoveredId}
-                                              designWidth={design.width}
-                                              designHeight={design.height}
-                                              selectedIds={selectedIds}
-                                              hoverSuppressedIds={hoverSuppressedIds}
-                                            />
-                                          )}
-                                          background={design.background}
-                                          root={docInAgocraft.root}
-                                          document={docInAgocraft}
-                                          editor={editor}
-                                          editing={true}
-                                          // WI-166 / DR-114 — injected policies
-                                          // (FrameStage knows the interfaces only).
-                                          roles={editorMode.roles}
-                                          view={editorMode.view}
-                                          camera={editorMode.camera}
-                                          hit={editorMode.hit}
-                                          fitInset={fitInset}
-                                          handMode={handMode}
-                                          // WI-033 P2 — enteredId / onEnter (drill-in mode,
-                                          // Phase 12) removed. onFitAll restored: empty-canvas
-                                          // double-click fits the camera to all items.
-                                          selectedId={selectedFrameId ?? undefined}
-                                          selectedIds={selectedIds}
-                                          dimmedFrameIds={dimmedFrameIds}
-                                          isolatedFrameIds={isolatedFrameIds}
-                                          visibleFrameIds={visibleFrameIds}
-                                          onSelect={setSelectedFrameId}
-                                          onToggleSelect={(id) => toggleFrames([id])}
-                                          onMarqueeSelect={onMarqueeSelect}
-                                          onFitAll={handleFitAll}
-                                          // WI-035 P3 — Toolbar drag-to-add. The
-                                          // DropdownMenu add-items set the mime
-                                          // `application/x-weave-add-kind` on
-                                          // dragstart; FrameStage routes the drop's
-                                          // `containerId` (root or hovered frame).
-                                          // This handler dispatches the same
-                                          // `weave.item.add` SSOT.
-                                          onDragOver={(e) => {
-                                            if (
-                                              e.dataTransfer.types.includes(
-                                                "application/x-weave-add-kind",
-                                              )
-                                            ) {
-                                              e.preventDefault();
-                                            }
-                                          }}
-                                          onDropAdd={(e, containerId) => {
-                                            const kindRaw = e.dataTransfer.getData(
+                                      <FrameStage
+                                        designWidth={design.width}
+                                        designHeight={design.height}
+                                        // WI-040 Phase 3 — host-supplied hover
+                                        // overlay. Lives inside FrameStage's
+                                        // design-plane so its rects share the
+                                        // camera transform. The Mount component
+                                        // uses the gate hook + projector;
+                                        // visibility filters + selection
+                                        // exclusion happen there.
+                                        renderHoverOverlay={() => (
+                                          <HoverAffordanceMount
+                                            doc={docInAgocraft}
+                                            hoveredKind={hoverContext.hoveredKind}
+                                            hoveredId={hoverContext.hoveredId}
+                                            designWidth={design.width}
+                                            designHeight={design.height}
+                                            selectedIds={selectedIds}
+                                            hoverSuppressedIds={hoverSuppressedIds}
+                                          />
+                                        )}
+                                        background={design.background}
+                                        root={docInAgocraft.root}
+                                        document={docInAgocraft}
+                                        editor={editor}
+                                        editing={true}
+                                        // WI-166 / DR-114 — injected policies
+                                        // (FrameStage knows the interfaces only).
+                                        roles={editorMode.roles}
+                                        view={editorMode.view}
+                                        camera={editorMode.camera}
+                                        hit={editorMode.hit}
+                                        fitInset={fitInset}
+                                        handMode={handMode}
+                                        // WI-033 P2 — enteredId / onEnter (drill-in mode,
+                                        // Phase 12) removed. onFitAll restored: empty-canvas
+                                        // double-click fits the camera to all items.
+                                        selectedId={selectedFrameId ?? undefined}
+                                        selectedIds={selectedIds}
+                                        dimmedFrameIds={dimmedFrameIds}
+                                        isolatedFrameIds={isolatedFrameIds}
+                                        visibleFrameIds={visibleFrameIds}
+                                        onSelect={setSelectedFrameId}
+                                        onToggleSelect={(id) => toggleFrames([id])}
+                                        onMarqueeSelect={onMarqueeSelect}
+                                        onFitAll={handleFitAll}
+                                        // WI-035 P3 — Toolbar drag-to-add. The
+                                        // DropdownMenu add-items set the mime
+                                        // `application/x-weave-add-kind` on
+                                        // dragstart; FrameStage routes the drop's
+                                        // `containerId` (root or hovered frame).
+                                        // This handler dispatches the same
+                                        // `weave.item.add` SSOT.
+                                        onDragOver={(e) => {
+                                          if (
+                                            e.dataTransfer.types.includes(
                                               "application/x-weave-add-kind",
-                                            );
-                                            if (kindRaw === "") return;
+                                            )
+                                          ) {
                                             e.preventDefault();
-                                            const kind = kindRaw as DomainKind;
-                                            // WI-153 P4 (DR-111 D5) — page-bounded: an
-                                            // empty-canvas drop arrives with the ROOT
-                                            // containerId; retarget it to the active page
-                                            // (root is page chrome there, not an editing
-                                            // surface). Hovered-frame drops pass through.
-                                            const target =
-                                              containerId === String(docInAgocraft.root.id)
-                                                ? (defaultAddContainerIdRef.current ?? containerId)
-                                                : containerId;
-                                            const result = editor.exec<unknown, string>(
-                                              "weave.item.add",
-                                              {
-                                                kind,
-                                                containerId: target,
-                                                frame: {
-                                                  x: 0.3,
-                                                  y: 0.3,
-                                                  width: 0.4,
-                                                  height: 0.4,
-                                                  rotation: 0,
-                                                },
-                                              },
-                                            );
-                                            if (result.ok) setSelectedFrameId(result.value);
-                                          }}
-                                          onUpdateItem={handleUpdateItem}
-                                          // WI-032 Phase 3b — onUpdateShape / onRemoveShape
-                                          // edited `canvas-design.attrs.shapes[]`; with that
-                                          // kind removed, shape primitives flow through
-                                          // `onUpdateItem` instead.
-                                          onCommitFrame={(
-                                            itemId,
-                                            nextFrame: ItemFrame,
-                                            sessionId?: string,
-                                          ) =>
-                                            // DR-053 (d) — thread the resize-gesture
-                                            // sessionId so the engine restores
-                                            // descendants on shrink→grow.
-                                            void editor.exec("weave.item.update", {
-                                              itemId,
-                                              patch: (prev: AgocraftItem) => ({
-                                                ...prev,
-                                                attrs: {
-                                                  ...prev.attrs,
-                                                  frame: nextFrame,
-                                                } as typeof prev.attrs,
-                                              }),
-                                              ...(sessionId !== undefined ? { sessionId } : {}),
-                                            })
                                           }
-                                          renderFrameMenu={renderFrameMenu}
-                                        />
-                                      </MeasureContentContext.Provider>
+                                        }}
+                                        onDropAdd={(e, containerId) => {
+                                          const kindRaw = e.dataTransfer.getData(
+                                            "application/x-weave-add-kind",
+                                          );
+                                          if (kindRaw === "") return;
+                                          e.preventDefault();
+                                          const kind = kindRaw as DomainKind;
+                                          // WI-153 P4 (DR-111 D5) — page-bounded: an
+                                          // empty-canvas drop arrives with the ROOT
+                                          // containerId; retarget it to the active page
+                                          // (root is page chrome there, not an editing
+                                          // surface). Hovered-frame drops pass through.
+                                          const target =
+                                            containerId === String(docInAgocraft.root.id)
+                                              ? (defaultAddContainerIdRef.current ?? containerId)
+                                              : containerId;
+                                          const result = editor.exec<unknown, string>(
+                                            "weave.item.add",
+                                            {
+                                              kind,
+                                              containerId: target,
+                                              frame: {
+                                                x: 0.3,
+                                                y: 0.3,
+                                                width: 0.4,
+                                                height: 0.4,
+                                                rotation: 0,
+                                              },
+                                            },
+                                          );
+                                          if (result.ok) setSelectedFrameId(result.value);
+                                        }}
+                                        onUpdateItem={handleUpdateItem}
+                                        // WI-032 Phase 3b — onUpdateShape / onRemoveShape
+                                        // edited `canvas-design.attrs.shapes[]`; with that
+                                        // kind removed, shape primitives flow through
+                                        // `onUpdateItem` instead.
+                                        onCommitFrame={(
+                                          itemId,
+                                          nextFrame: ItemFrame,
+                                          sessionId?: string,
+                                        ) =>
+                                          // DR-053 (d) — thread the resize-gesture
+                                          // sessionId so the engine restores
+                                          // descendants on shrink→grow.
+                                          void editor.exec("weave.item.update", {
+                                            itemId,
+                                            patch: (prev: AgocraftItem) => ({
+                                              ...prev,
+                                              attrs: {
+                                                ...prev.attrs,
+                                                frame: nextFrame,
+                                              } as typeof prev.attrs,
+                                            }),
+                                            ...(sessionId !== undefined ? { sessionId } : {}),
+                                          })
+                                        }
+                                        renderFrameMenu={renderFrameMenu}
+                                      />
                                     </div>
 
                                     {/* DR-027 / WI-071 — peek interaction surface (capture + overlay + inspector). */}

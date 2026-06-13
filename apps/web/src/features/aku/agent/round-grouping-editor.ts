@@ -20,7 +20,6 @@
 // "await each tool result before issuing the next" loop.
 
 import type { Editor } from "@agocraft/editor";
-import { requestTextAutofit } from "../../../document/domains/text-autofit-signal.js";
 
 /** Idle gap (ms) that ends a round. Bigger than a tool-call network round-trip,
  *  far smaller than the model's between-round latency. */
@@ -62,11 +61,10 @@ export function makeRoundGroupingEditor(
     if (open) {
       editor.endBatch();
       open = false;
-      // WI-146 — round ended: re-settle auto-height text the way a manual
-      // edit-exit does, so a generated design doesn't stay un-settled (overlapping
-      // / oversized) until the user edits it. Outside the just-closed batch, so the
-      // fit commits land as their own (post-round) history entries.
-      requestTextAutofit();
+      // DR-053 Stage 3 — the render-timing auto-fit was removed (the layout engine
+      // owns sizing). Agent-generated text settles via the engine layout, not a
+      // post-round measure-and-fit pulse. (Content→box sizing is a later
+      // engine-fed step.)
     }
   };
 

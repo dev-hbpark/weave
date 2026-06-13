@@ -566,7 +566,6 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.items.lifecycle": "여러 아이템 삭제/복제",
   "weave.behavior.update": "동작 수정",
   "weave.doc.reset": "문서 초기화",
-  "weave.layout.contentMeasured": "콘텐츠 크기 반영(내부)",
   "weave.design.setBackground": "배경색 변경",
   "weave.design.setPresentationOrder": "발표 순서 변경",
   "weave.design.reorderChildren": "순서 변경",
@@ -792,19 +791,6 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       {},
       [],
       "DANGER: wipe the ENTIRE document back to empty (removes ALL slides + items). Irreversible-feeling for the user — only use on an explicit 'start over / clear everything' request, never as a step inside a normal edit.",
-    ),
-  },
-
-  // DR-053 Stage 2 (b) — HOST-INTERNAL render-loop command (de-listed from every
-  // agent surface via NONCANONICAL_AGENT_TOOLS). Documented here only to satisfy
-  // the "every registered command has a schema" invariant; the agent never calls
-  // it — text auto-sizing is owned by the engine + reported by the renderer.
-  "weave.layout.contentMeasured": {
-    label: label("weave.layout.contentMeasured"),
-    inputSchema: obj(
-      { itemId: STR, content: obj({ width: NUM, height: NUM }, []) },
-      ["itemId", "content"],
-      "INTERNAL — host renderer reports an item's measured content size; the engine applies it to content-auto axes. Not for agent use (size via weave.item.update frame / layoutChild).",
     ),
   },
 

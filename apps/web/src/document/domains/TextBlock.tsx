@@ -8,12 +8,13 @@
 // camera/Stage transform scales the whole layer including the text, so a
 // 24-design-pixel text reads larger on screen as the user zooms in.
 //
-// Phase 18 — auto-height: a ResizeObserver watches the rendered text
-// content; whenever its height diverges from the current frame.height
-// (in ratio of the parent container), we dispatch a frame.height update.
-// Combined with the SelectionViewModel removing n/s handles for text
-// items, the user can only set the WIDTH manually (edge or corner) and
-// the height always follows the wrapped content.
+// DR-053 Stage 3 — PURE renderer. The agocraft layout engine OWNS all sizing;
+// TextBlock just paints the text inside its engine-assigned frame box (fill +
+// wrap). The old render-timing ResizeObserver auto-fit (measure rendered content
+// → write frame.height/width back) is REMOVED — that measure-and-write-back loop
+// fought the engine and caused the 자동너비/자동높이/고정 regressions. Content-driven
+// sizing (text → its own box and → its container) is a separate step, fed into
+// the engine as an input rather than measured at render time.
 
 import {
   type Item as AgocraftItem,
@@ -33,24 +34,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { isHistoryReplaying } from "../history-replay-state.js";
 import { useSelection } from "../interactions/selection-context.js";
 import { textEditTrigger } from "../interactions/text-edit-trigger.js";
 import { useResolveColor } from "../style/resolver-context.js";
-import {
-  type AgoItem,
-  type ItemFrame,
-  isItemLocked,
-  type TextAttrs,
-  type WeaveRunStyle,
-} from "../types.js";
-import { deriveTextAutoResize, type LegacyTextAutoResize } from "./derive-text-auto-resize.js";
-import {
-  ContentAutoAxesContext,
-  MeasureContentContext,
-  ParentFrameHeightContext,
-} from "./parent-frame-context.js";
-import { isLayoutGestureActive, onTextAutofitRequest } from "./text-autofit-signal.js";
+import { type AgoItem, isItemLocked, type TextAttrs, type WeaveRunStyle } from "../types.js";
+import { ParentFrameHeightContext } from "./parent-frame-context.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -101,231 +89,18 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const hasOutline =
     a.textOutline !== undefined && a.textOutline.width > 0 && resolvedOutlineColor !== undefined;
 
-  // Auto-height plumbing. The OUTER container fills the frame box; the
-  // INNER content div is what we measure. We must use the inner div (not
-  // the outer) because the outer is sized to frame.height — measuring it
-  // would always return the current height, not the natural content
-  // height.
+  // DR-053 Stage 3 — TextBlock is a PURE renderer. The agocraft layout engine
+  // OWNS all sizing: the text fills its engine-assigned frame box and wraps to
+  // it. There is NO render-timing measure-and-write-back (the old ResizeObserver
+  // auto-fit) — that loop fought the engine and caused the 자동너비/자동높이/고정
+  // regressions. Content-driven sizing (text → its own box, and → its container)
+  // is a separate step, fed into the engine as an input, not measured at render.
+  // `innerRef`/`data-text-content` remain so the selection chrome can track the
+  // rendered content box.
   const innerRef = useRef<HTMLDivElement | null>(null);
-  const frameRef = useRef<ItemFrame>(a.frame);
-  frameRef.current = a.frame;
-  const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
-  // WI-215 — last committed CONTENT size in unscaled layout px (scrollHeight/
-  // scrollWidth), used to gate the auto-fit on a REAL content change. -1 = not
-  // yet measured (force the first fit). See the gate in measureAndCommit.
-  const lastContentHpxRef = useRef(-1);
-  const lastContentWpxRef = useRef(-1);
-  // WI-029 / DR-016 — Fixed mode locks both dimensions. The ResizeObserver
-  // must NOT auto-fit height in NONE; otherwise the user-set height would
-  // be overwritten by content fit.
-  //
-  // DR-053 Stage 2 (b) — WHICH axes this text may auto-size to its content is a
-  // LAYOUT decision, OWNED by the agocraft engine, not re-derived here. For a
-  // laid-out (engine-managed) text the engine reports `{managed, width, height}`
-  // via `ContentAutoAxesContext` (computed in NestedFrame): a FILL (stretch) or
-  // FIXED (intrinsic) or growing axis returns false, so the observer never fights
-  // the engine. For FREE / absolute text (`managed:false`) the engine owns no
-  // sizing, so we keep the text-kind legacy auto-size from the `layoutChild`
-  // anchor (`deriveTextAutoResize`). This is the per-axis source of truth for both
-  // the observer (which axis to fit) and the render CSS below.
-  const contentAutoAxes = useContext(ContentAutoAxesContext);
-  const measureContent = useContext(MeasureContentContext);
-  const legacyMode = deriveTextAutoResize(a.layoutChild);
-  const fitWidth = contentAutoAxes.managed
-    ? contentAutoAxes.width
-    : legacyMode === "WIDTH_AND_HEIGHT";
-  const fitHeight = contentAutoAxes.managed ? contentAutoAxes.height : legacyMode === "HEIGHT";
-  // Render hint for overflow / max-content CSS below (auto-width wins the label).
-  const autoResizeMode: LegacyTextAutoResize = fitWidth
-    ? "WIDTH_AND_HEIGHT"
-    : fitHeight
-      ? "HEIGHT"
-      : "NONE";
-  const autoResizeRef = useRef(autoResizeMode);
-  autoResizeRef.current = autoResizeMode;
-  const fitWidthRef = useRef(fitWidth);
-  fitWidthRef.current = fitWidth;
-  const fitHeightRef = useRef(fitHeight);
-  fitHeightRef.current = fitHeight;
-  // All auto-fit commits go through `measureContent` (the weave.layout.contentMeasured
-  // command), which authoritatively decides managed-vs-free; the engine never lets a
-  // laid-out child get a fixed-intrinsic stamp. (No render-time managed flag needed
-  // for the commit — only for which axes to measure, via fitWidth/fitHeight above.)
-  const measureContentRef = useRef(measureContent);
-  measureContentRef.current = measureContent;
-  const itemIdStr = String(item.id);
-  const itemIdRef = useRef(itemIdStr);
-  itemIdRef.current = itemIdStr;
-  // Set below once `isEditing` is declared; the ResizeObserver reads it to
-  // decide whether to skip its frame commit while editing (see the effect).
-  const isEditingRef = useRef(false);
-  // Exposes the effect-local `measureAndCommit` so the edit-exit effect can
-  // run a single auto-fit when the user finishes typing.
-  const measureCommitRef = useRef<(() => void) | null>(null);
   // WI-029 — edit mode: double-click mounts the Lexical editor in place and the
-  // read-only render is hidden while editing. Declared early so the auto-fit
-  // effects and the container style below can read it.
+  // read-only render is hidden while editing.
   const [isEditing, setIsEditing] = useState(false);
-  isEditingRef.current = isEditing;
-
-  useEffect(() => {
-    const el = innerRef.current;
-    if (el === null) return;
-    // Measure the rendered content and commit a frame auto-fit, if it diverges
-    // from the live doc frame. Re-reads `el`/`frameRef` at call time so a
-    // debounced (deferred) invocation uses the LATEST content size, not a
-    // stale snapshot from when the observer fired.
-    const measureAndCommit = (): void => {
-      const fitH = fitHeightRef.current;
-      const fitW = fitWidthRef.current;
-      // Neither axis is content-auto (Fixed / fully layout-owned) → do not fit.
-      if (!fitH && !fitW) return;
-      // WI-216 / DR-053 — while a handle-drag layout gesture is in progress the
-      // engine owns the children's sizes (frozen-baseline session). A `%` font
-      // scaling with the container would make this observer fight that session
-      // every frame (jitter); suppress the fit during the gesture — the debounced
-      // end pulse (requestTextAutofit) re-settles once the drag stops.
-      if (isLayoutGestureActive()) return;
-      // DR-058 — during an undo/redo replay the frame was already restored by
-      // the replayed patch; re-committing the fitted size here would spawn a
-      // fresh user-command entry and CLEAR the redo stack. Skip while a history
-      // replay is the most-recent applied change.
-      if (isHistoryReplaying()) return;
-      const frameEl = el.closest("[data-frame-id]");
-      const parent = frameEl?.parentElement ?? null;
-      if (parent === null) return;
-      // CRITICAL: use the parent's UNSCALED layout size (`offsetWidth`/
-      // `offsetHeight`) as the ratio denominator. `el.scrollWidth`/`scrollHeight`
-      // are layout px (ignore the camera's CSS `transform: scale`), so the
-      // denominator MUST also be unscaled. `getBoundingClientRect()` is post-
-      // transform (scaled), which inflated the ratio by 1/zoom and made the
-      // auto-fit box wrong at any zoom ≠ 100%. The container has no padding, so
-      // the frame box equals the text's rendered bounds exactly (rubber band =
-      // text on the auto axis).
-      const parentW = parent.offsetWidth;
-      const parentH = parent.offsetHeight;
-      let nextHeight: number | undefined;
-      let nextWidth: number | undefined;
-      // Each axis is fitted INDEPENDENTLY per the engine's content-auto decision
-      // (`fitHeight`/`fitWidth`): a laid-out hug child fits BOTH; a height-auto
-      // cell fits only height; a fill/fixed axis is skipped (engine owns it).
-      // Compare against the LIVE doc value (`frameRef`) rather than the last
-      // dispatched one. An earlier dispatch can be overwritten by some other
-      // write (e.g. an explicit `weave.item.update` from the host) and the
-      // observer would otherwise refuse to re-converge.
-      if (fitH && parentH > 0) {
-        // WI-215 — re-settle height ONLY when the CONTENT actually changed (operator
-        // principle: "재정리는 실제 크기 변화 시에만"). Content px (scrollHeight) depends
-        // on WIDTH (wrapping), not on the parent's height — so a height-handle drag /
-        // a parent-driven height change leaves it identical and MUST NOT rewrite the
-        // ratio. The old gate compared the ratio against frameRef, but its denominator
-        // (parentH) moves with the parent; when parentH is coupled to this child (a
-        // flex-ROW cross axis, or nested relayout) every parentH wobble produced a
-        // smaller ratio → re-frozen crossSize → a one-way ratchet to height 0. Gating
-        // on content px breaks that loop while still re-fitting on a real rewrap.
-        const contentHpx = el.scrollHeight;
-        const contentChanged =
-          lastContentHpxRef.current < 0 || Math.abs(contentHpx - lastContentHpxRef.current) >= 0.5;
-        if (contentChanged) {
-          const rounded = Math.round((contentHpx / parentH) * 10000) / 10000;
-          if (Math.abs(rounded - frameRef.current.height) >= 0.0005) nextHeight = rounded;
-          lastContentHpxRef.current = contentHpx;
-        }
-      }
-      // Auto-width measures `scrollWidth` — the inner div is sized
-      // `width: max-content` in this mode (see textStyle), so it reports the
-      // natural (un-wrapped) content width instead of echoing the frame width;
-      // width exposes no handle, so this is the only way the box tracks content.
-      // Same content-delta gate (WI-215): only re-fit when the natural content
-      // width actually changed, not when the parent width moved underneath it.
-      if (fitW && parentW > 0) {
-        const contentWpx = el.scrollWidth;
-        const contentChanged =
-          lastContentWpxRef.current < 0 || Math.abs(contentWpx - lastContentWpxRef.current) >= 0.5;
-        if (contentChanged) {
-          const rounded = Math.round((contentWpx / parentW) * 10000) / 10000;
-          if (Math.abs(rounded - frameRef.current.width) >= 0.0005) nextWidth = rounded;
-          lastContentWpxRef.current = contentWpx;
-        }
-      }
-      if (nextHeight === undefined && nextWidth === undefined) return;
-      // ALWAYS commit the auto-fit through `weave.layout.contentMeasured` (the
-      // measureContent channel) — NEVER through onUpdate's frame write. The command
-      // authoritatively (against the live editor doc) decides managed-vs-free: a
-      // LAID-OUT child goes through the engine's onContentMeasured (applies content
-      // to the auto axes, NO fixed-intrinsic stamp); free text gets a plain frame
-      // patch. Routing here avoids onFrameChanged → RESIZED_POLICY entirely, which
-      // (when the render-time `managed` flag was momentarily false) re-stamped a
-      // flex child to fully-FIXED and turned 자동너비/자동높이 into 고정 (operator
-      // report). measureContent is provided wherever the design canvas mounts; if
-      // absent (preview), the SKIP is safe — present mode has no content changes.
-      const commit = measureContentRef.current;
-      if (commit !== null) {
-        commit(itemIdRef.current, {
-          ...(nextHeight !== undefined ? { height: nextHeight } : {}),
-          ...(nextWidth !== undefined ? { width: nextWidth } : {}),
-        });
-        return;
-      }
-      // Last-resort fallback ONLY when no measureContent provider is mounted (no
-      // engine reachable): a direct frame write. Safe for free text; a laid-out
-      // child shouldn't reach here in practice (the canvas always provides it).
-      onUpdateRef.current?.({
-        frame: {
-          ...frameRef.current,
-          ...(nextHeight !== undefined ? { height: nextHeight } : {}),
-          ...(nextWidth !== undefined ? { width: nextWidth } : {}),
-        },
-      });
-    };
-
-    measureCommitRef.current = measureAndCommit;
-    // While editing we DON'T commit the auto-fit to the model: every keystroke
-    // emits a full-attrs `weave.item.update` (text), and an interleaved frame
-    // commit would be clobbered by the text commit's stale snapshot (the race
-    // that previously forced a debounce). Instead the editor overflows freely
-    // and the selection chrome tracks the LIVE content element directly (see
-    // FrameStage `boundsOf`), so the box/handles stay glued without a model
-    // round-trip. The model is reconciled once when editing ends. Outside edit
-    // (direct content set, edge-resize wrap) we commit immediately.
-    const ro = new ResizeObserver(() => {
-      if (isEditingRef.current) return;
-      measureAndCommit();
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // Reconcile the model frame to the rendered content with one deferred auto-fit
-  // (the `measureAndCommit` no-ops for Fixed/NONE and while editing). Runs on:
-  //   • edit-exit — the ResizeObserver was muted during editing; and
-  //   • a LAYOUT change — the resize MODE or the box WIDTH changed (WI-145: the
-  //     observer's initial fit gets grouped into the agent transaction and
-  //     clobbered by setLayout, and the inner content size doesn't change after,
-  //     so the observer never re-fires).
-  // NOTE: this intentionally does NOT depend on `a.frame.height`. A height-write
-  // trigger (the reverted WI-146 B) re-ran the fit on EVERY height change — which
-  // fired all through a manual frame RESIZE, fighting the gesture. Agent-generated
-  // text instead re-settles via the round-end pulse below (B-2), so we don't need
-  // the height dep and avoid the resize interference.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: autoResizeMode / a.frame.width are intentional RE-RUN TRIGGERS (re-fit when the layout context changes), not values read in the body — removing them defeats the fix.
-  useEffect(() => {
-    if (isEditing) return;
-    const raf = requestAnimationFrame(() => measureCommitRef.current?.());
-    return () => cancelAnimationFrame(raf);
-  }, [isEditing, autoResizeMode, a.frame.width]);
-
-  // WI-146 — re-settle on an agent ROUND-END pulse. After a batched generation
-  // round the auto-fit can be left un-settled (overlapping / oversized) because
-  // the observer never re-fires; the round-grouping editor pulses this so every
-  // auto-height text runs the SAME fit a manual edit-exit would — no edit needed.
-  useEffect(() => {
-    return onTextAutofitRequest(() => {
-      if (isEditingRef.current) return;
-      requestAnimationFrame(() => measureCommitRef.current?.());
-    });
-  }, []);
 
   // Phase 1 (WI-029) — Figma-equivalent text attrs:
   //   textAlignVertical → flex justify-content
@@ -374,16 +149,11 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   })();
   const justifyContent =
     verticalAlign === "CENTER" ? "center" : verticalAlign === "BOTTOM" ? "flex-end" : "flex-start";
-  const isFixed = autoResizeMode === "NONE";
-  // Auto-width (WIDTH_AND_HEIGHT): the box hugs the content on BOTH axes.
-  // The inner div must size to its content (`max-content`) and never soft-wrap
-  // (`white-space: pre`) so the ResizeObserver can read the natural width.
-  const isAutoWidth = autoResizeMode === "WIDTH_AND_HEIGHT";
-  // Overflow is user-selectable in EVERY mode via `textOverflow`. When unset we
-  // fall back to the legacy mode-derived default (Fixed clips, Auto spills).
-  // The auto axis never overflows (the box tracks content); this matters for
-  // the manual axis (e.g. Auto-width with a user-shrunk height, or Fixed).
-  const clipOverflow = a.textOverflow !== undefined ? a.textOverflow === "HIDDEN" : isFixed;
+  // DR-053 Stage 3 — the engine OWNS the box; the text fills + wraps to it. No
+  // `max-content` (that only existed so the removed ResizeObserver could read the
+  // natural width). Overflow is user-controlled via `textOverflow` (default spill);
+  // content-driven box sizing is a later engine-fed step.
+  const clipOverflow = a.textOverflow === "HIDDEN";
   // Ellipsis truncation is a refinement of clipping — only meaningful when the
   // content is clipped. (No longer gated to Fixed mode.)
   const truncate = clipOverflow && a.textTruncation === "ENDING";
@@ -447,16 +217,8 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       }
     : {};
   const textStyle: CSSProperties = {
-    // Auto-width hugs content (`max-content` + `pre`, no soft wrap); the other
-    // modes fill the frame width (`100%` + `pre-wrap`) and wrap to it.
-    width: isAutoWidth ? "max-content" : "100%",
-    // The inner div is the element the auto-height ResizeObserver measures. As
-    // a flex child of a frame-height container it would otherwise be SHRUNK to
-    // the (short) container height — its border-box height would stay pinned
-    // while only `scrollHeight` grew, so the observer never fires when content
-    // grows by typing (a width change resizes the box and does fire it, which
-    // is why edge-resize wrapping works but typing did not). Pin flex-shrink: 0
-    // so the border-box height tracks content and the observer fires on growth.
+    // Engine-owned box: the content fills the frame width and wraps to it.
+    width: "100%",
     flexShrink: 0,
     fontFamily: a.fontFamily,
     fontSize: `${resolvedFontSizePx}px`,
@@ -468,7 +230,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     textAlign: horizontalAlign,
     lineHeight: lineHeightValue,
     letterSpacing: `${a.letterSpacing}px`,
-    whiteSpace: isAutoWidth ? "pre" : "pre-wrap",
+    whiteSpace: "pre-wrap",
     // WI-149 — break at WORD boundaries, NEVER mid-character. When the flex
     // engine starves a text row child toward 0 width (auto-flex shrink floors at
     // 0, not at content min-size — agocraft has no text measurement), the box can

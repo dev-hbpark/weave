@@ -6,7 +6,6 @@
 
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { resolveAnchor } from "@agocraft/editor";
-import { contentAutoAxesFor } from "@agocraft/layout";
 import { IconLock, SelectionLayer } from "@weave/design-system";
 import { type MotionStyle, motion, useMotionValue, useMotionValueEvent } from "motion/react";
 import type React from "react";
@@ -30,11 +29,7 @@ import {
 } from "../../document";
 import { isDomainItem } from "../../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
-import {
-  ContentAutoAxesContext,
-  ParentFrameHeightContext,
-  ParentLayoutContext,
-} from "../../document/domains/parent-frame-context.js";
+import { ParentFrameHeightContext } from "../../document/domains/parent-frame-context.js";
 import {
   type ClickIntent,
   capabilityOf,
@@ -451,59 +446,36 @@ function NestedFrameImpl({
         }
       : undefined;
 
-  // DR-053 Stage 2 (b) — the ENGINE decides which of THIS item's axes are
-  // content-auto (the host may size to content) vs layout-owned (fill/fixed/grow).
-  // Derived from the PARENT's layout (provided synchronously via context by the
-  // parent NestedFrame) + this item's own `layoutChild`, through the engine's PURE
-  // `contentAutoAxesFor`. CRITICAL: this runs at RENDER time, so it must NOT read
-  // a `DocRefContext` ref (that ref is event/rAF-time and is stale during render —
-  // using it returned managed:false and made auto-width text render as auto-height,
-  // WI-216). The parent-layout context is render-synchronous and reliable. The
-  // renderer (TextBlock) still carries NO layout reasoning — just reads the result.
-  const parentLayoutForAxes = useContext(ParentLayoutContext);
-  const contentAutoAxes =
-    LAYOUT_FEATURE_ENABLED && item.kind === "text"
-      ? contentAutoAxesFor(
-          parentLayoutForAxes,
-          (attrs as { layoutChild?: import("@agocraft/core").LayoutChildPolicy }).layoutChild,
-        )
-      : undefined;
-
   // WI-074 D7 — content + (for frames) children are mirrored together under a
-  // flip, so extract both so the flip wrapper can enclose them.
+  // flip, so extract both so the flip wrapper can enclose them. DR-053 Stage 3 —
+  // no content-auto axis context: the engine owns sizing, TextBlock is a pure
+  // renderer that fills its engine-assigned frame box.
   const frameContentNode = (
     <ParentFrameHeightContext.Provider value={parentHeightPx}>
-      <ContentAutoAxesContext.Provider
-        value={contentAutoAxes ?? { managed: false, width: false, height: false }}
-      >
-        <FrameCulledContext.Provider value={culled}>
-          <FrameContent
-            item={item as unknown as AgoItem}
-            {...(onUpdateItem
-              ? {
-                  onUpdate: (patch: Record<string, unknown>) =>
-                    onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
-                }
-              : {})}
-            {...(onUpdateShape
-              ? {
-                  onUpdateShape: (shapeId: string, patch: object) =>
-                    onUpdateShape(itemId, shapeId, patch),
-                }
-              : {})}
-            {...(onRemoveShape
-              ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
-              : {})}
-          />
-        </FrameCulledContext.Provider>
-      </ContentAutoAxesContext.Provider>
+      <FrameCulledContext.Provider value={culled}>
+        <FrameContent
+          item={item as unknown as AgoItem}
+          {...(onUpdateItem
+            ? {
+                onUpdate: (patch: Record<string, unknown>) =>
+                  onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
+              }
+            : {})}
+          {...(onUpdateShape
+            ? {
+                onUpdateShape: (shapeId: string, patch: object) =>
+                  onUpdateShape(itemId, shapeId, patch),
+              }
+            : {})}
+          {...(onRemoveShape
+            ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
+            : {})}
+        />
+      </FrameCulledContext.Provider>
     </ParentFrameHeightContext.Provider>
   );
-  // Provide THIS frame's own layout to its children so each child can derive its
-  // content-auto axes from it at render time (no doc walk / no stale ref).
-  const ownLayout = (attrs as { layout?: import("@agocraft/core").LayoutSpec }).layout;
   const childNodes = (
-    <ParentLayoutContext.Provider value={ownLayout}>
+    <>
       {childFrames.map((c) => (
         <NestedFrame
           key={String(c.id)}
@@ -533,7 +505,7 @@ function NestedFrameImpl({
           hit={hit}
         />
       ))}
-    </ParentLayoutContext.Provider>
+    </>
   );
 
   const inner = (

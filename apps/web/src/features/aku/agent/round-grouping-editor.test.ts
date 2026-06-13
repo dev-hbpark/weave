@@ -3,7 +3,6 @@
 
 import type { Editor } from "@agocraft/editor";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { onTextAutofitRequest } from "../../../document/domains/text-autofit-signal.js";
 import { makeRoundGroupingEditor, ROUND_IDLE_MS } from "./round-grouping-editor.js";
 
 interface FakeState {
@@ -100,23 +99,6 @@ describe("makeRoundGroupingEditor (WI-060)", () => {
     rg.close();
     expect(state.begins).toBe(0);
     expect(state.ends).toBe(0);
-  });
-
-  it("WI-146 — pulses a text-autofit request when a round closes (idle or force)", () => {
-    const { editor } = fakeEditor();
-    let pulses = 0;
-    const off = onTextAutofitRequest(() => {
-      pulses += 1;
-    });
-    const rg = makeRoundGroupingEditor(editor);
-    rg.editor.exec("weave.item.add", {});
-    expect(pulses).toBe(0); // not while the round is open
-    vi.advanceTimersByTime(ROUND_IDLE_MS); // round closes → pulse
-    expect(pulses).toBe(1);
-    // A close with no open group must NOT pulse.
-    rg.close();
-    expect(pulses).toBe(1);
-    off();
   });
 
   it("passes the exec result through unchanged", () => {

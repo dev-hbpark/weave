@@ -166,3 +166,25 @@ getContentAutoAxes로 바꾼 게 회귀의 근원.**
 - 증상②의 토글 정리: flex 자식에서 text-section의 자동너비/자동높이/고정(absolute-constraints) 컨트롤은
   덮이므로, flex 자식 전용으로 **cross 정책(stretch/crossSize/clear)** 을 쓰도록 변경 or 숨김 + content-auto
   (crossSize 제거) 컨트롤 제공. text-section은 렌더트리 밖이라 부모 레이아웃을 doc에서 찾아야 함.
+
+## DR-053 Stage 3 — render-timing post-processing REMOVED, engine owns all sizing (2026-06-13)
+
+운영자 지시: "렌더 타이밍에 후처리하는 조작들을 다 없애고 레이아웃 엔진에 의해서 모든게 통제되도록 리팩토링.
+엔진은 아이템 종류 확인 금지. 텍스트→상위 컨테이너 크기 전파는 다음 스텝." 7수에 걸친 버그가 전부 **렌더-타임
+measure-and-write-back 루프**(TextBlock ResizeObserver auto-fit)에서 나옴 → 그 패턴 자체를 제거.
+
+제거(weave-only, 엔진 무변경=재vendor 불요):
+- `TextBlock`: ResizeObserver auto-fit / measureAndCommit / fit refs / autofit 구독 전부 삭제 → **순수 렌더러**
+  (엔진이 준 frame 박스에 텍스트 fill+wrap, max-content/측정 없음). 편집(Lexical)은 유지.
+- `text-autofit-signal.ts` 파일 삭제(requestTextAutofit/isLayoutGestureActive/markLayoutGestureActivity).
+- `MeasureContentContext`+DesignPage `measureContent`+provider, `weave.layout.contentMeasured` 커맨드+
+  ContentMeasuredInput+governance(schema/label/NONCANONICAL), `ContentAutoAxesContext`/`ParentLayoutContext`
+  (parent-frame-context + NestedFrame providers), FrameStage `markLayoutGestureActivity`, round-grouping autofit 펄스.
+- 엔진 `onContentMeasured`는 호출자 없어져 dead(벤더 엔진에 잔존, 무해 — 다음 정리 때 제거).
+
+유지: 엔진 레이아웃(onFrameChanged/reflow/getChildConstraints/(d) 세션) = 모든 크기 통제. 툴바 모드(fill/fixed/auto)
+read/write는 그대로(엔진이 정책 해석). fill=stretch, fixed=crossSize/sizeH는 엔진이 동작. "auto"는 현재 frame
+기반(콘텐츠 hug는 다음 스텝). 검증: 전체 1377 그린, tsc/biome 클린.
+
+**다음 스텝(운영자): 텍스트 콘텐츠 크기 변화 → 자기 박스 + 상위 컨테이너 크기 반영을, 렌더-타임 측정이 아니라
+엔진 입력(intrinsic size 주입)으로 처리.**
