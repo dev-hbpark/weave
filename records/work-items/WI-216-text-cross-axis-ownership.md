@@ -28,6 +28,17 @@ weave `TextBlock` auto-height observer가 `deriveTextAutoResize(layoutChild)="HE
 - **효과:** fill(flex-child-section "자기 정렬: Stretch") / fixed(Start/Center, crossSize 유지)가
   엔진에 의해 정상 동작. **라이브 검증 필요(observer=revert 빈발 영역).**
 
+## 누적 요구 (운영자, 2026-06-13) — 하나의 기능으로 통합
+
+레이아웃 내 텍스트 크기 = fill(전파) / fixed(멈춤) / auto(콘텐츠), 모든 방향, regrow 복원, 토글 영속.
+
+- **(a) observer 게이트** — DONE(flex-row). 높이 레이아웃-지배면 frame.height 미기록.
+- **(b) 방향 일반화** — flex-COLUMN(크로스=너비, auto-width observer)·grid(행/열 트랙)도 (a)와 동일하게.
+- **(c) 토글/라벨 방향-인지(증상②③)** — `deriveTextAutoResize`가 auto-flex 자식이면 crossSize 유무 무관 "HEIGHT" 반환 → 툴바가 항상 "자동높이" 표시 + 리사이즈로 crossSize 스탬프되면 "자동높이로 되돌아간 듯". 수정: flex/grid 자식에서 (부모방향, alignSelf, crossSize)로 fill/fixed/auto 판정해 라벨 정확; 토글 쓰기는 absolute-constraints가 아니라 **cross 정책**(stretch=fill / crossSize=fixed / crossSize 제거=auto)로. text-section은 렌더트리 밖이라 doc에서 부모 레이아웃 조회.
+- **(d) regrow 복원(제스처 베이스라인)** — 리사이즈 제스처 시작(새 sessionId)에 doc 스냅샷, 드래그 동안 그 스냅샷을 onFrameChanged의 root로 사용(누적 ratchet 제거, 마우스다운 크기로 복원), pointerup에 폐기. **(A) weave-fed 베이스라인**(엔진 무상태, 재vendor 불요) 권장 / (B) 엔진 begin/endResize 세션.
+
+라이브 검증: 부모 줄였다 늘려 복원 / flex-col / grid / 고정 토글이 리사이즈 후에도 유지.
+
 ## Follow-up (남음)
 
 - 증상②의 토글 정리: flex 자식에서 text-section의 자동너비/자동높이/고정(absolute-constraints) 컨트롤은
