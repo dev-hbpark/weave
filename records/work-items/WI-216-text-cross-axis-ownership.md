@@ -1,6 +1,6 @@
 # WI-216 — flex 자식 텍스트 높이: 엔진 cross-axis 소유 (fill/fixed/auto), observer 비간섭 (DR-053 Stage 2)
 
-- **Status:** IN-PROGRESS ((a)/(c) DONE·라이브검증됨 · (b) 엔진-소유로 재구현 DONE · (d) 엔진 세션 DONE — (b)/(d) 라이브 검증 대기) · 2026-06-13
+- **Status:** IN-PROGRESS ((a)/(c) DONE·라이브검증됨 · (b) 엔진-소유 재구현 DONE — **grid 셀 fill 라이브검증됨 2026-06-13**, 잔여(flex-col·자동높이 성장·고정 토글) 검증대기 · (d) 엔진 세션 DONE — 검증대기) · 2026-06-13
 - **Relates:** DR-053(레이아웃 크기변화 엔진 단독소유), WI-215(높이 ratchet — 선행), WI-149/DR-104, WI-145/146(observer revert 이력)
 - **Origin:** 운영자 — grid→flex→text에서 ① 플렉스 높이를 줄이면 텍스트 높이가 보장되지 못하고 줄어듦
   (fill이면 항상 가득, fixed면 자기 높이 유지여야 함) ② 텍스트 자동높이/자동너비/고정 속성을 바꿔도
