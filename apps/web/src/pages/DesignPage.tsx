@@ -2885,10 +2885,21 @@ function DesignPageBody() {
                                       labelFor={labelFor}
                                     />
 
+                                    {/* WI-214 / DR-137 — selectedId/onSelectFrame
+                                        drive the breadcrumb row (ancestor path)
+                                        co-located atop this overlay; reaches
+                                        fully-tiled nested containers that have
+                                        no clickable empty pixel. */}
                                     <SelectionToolbarOverlay
                                       editor={editor}
                                       document={docInAgocraft}
                                       selectedIds={selectedIds}
+                                      selectedId={
+                                        selectedIds.size === 1
+                                          ? (selectedIds.values().next().value ?? null)
+                                          : null
+                                      }
+                                      onSelectFrame={(id) => selectFrame(id)}
                                       onEditMediaSrc={(mediaKind) =>
                                         setPendingMedia({ action: "edit", kind: mediaKind })
                                       }

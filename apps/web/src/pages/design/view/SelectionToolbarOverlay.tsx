@@ -7,6 +7,7 @@ import {
   useSelectionChromeVisible,
 } from "../../../document/interactions/interaction-mode.js";
 import { ContextualToolbar } from "../../../document/toolbar/ContextualToolbar.js";
+import { SelectionBreadcrumbBar } from "./SelectionBreadcrumbBar.js";
 
 // DR-027 / WI-071 Phase 2 — selection-driven contextual toolbar overlay
 // extracted from the canvas. Self-gates via useSelectionChromeVisible (must
@@ -14,11 +15,23 @@ import { ContextualToolbar } from "../../../document/toolbar/ContextualToolbar.j
 // SelectionChromeGate it replaces). Portal'd to document.body so it shares the
 // header's z-tier above the body-portal'd selection chrome. The selectedItems
 // derivation walks the full tree (findItemDeep) so nested items surface.
+//
+// WI-214 / DR-137 — also hosts the selection breadcrumb as the top row of a
+// centered vertical stack (breadcrumb over the property toolbar). Co-locating
+// here keeps both bars under one portal, one visible/interactive gate, and one
+// pointer-events policy — and centered placement keeps the breadcrumb out of
+// the roaming Aku launcher's top-corner path (a separate left-aligned bar
+// would collide with it).
 
 export interface SelectionToolbarOverlayProps {
   readonly editor: Editor;
   readonly document: AgocraftDocument;
   readonly selectedIds: ReadonlySet<string>;
+  /** Single selected frame id (or null when 0 / many selected) — drives the
+   *  breadcrumb (DR-137 §2). */
+  readonly selectedId: string | null;
+  /** Select an ancestor frame from a breadcrumb segment click. */
+  readonly onSelectFrame: (id: string) => void;
   readonly onEditMediaSrc: (kind: "image" | "video") => void;
   readonly onEditShapeFill: (kind: "image" | "video", current: string) => void;
 }
@@ -27,6 +40,8 @@ export function SelectionToolbarOverlay({
   editor,
   document: doc,
   selectedIds,
+  selectedId,
+  onSelectFrame,
   onEditMediaSrc,
   onEditShapeFill,
 }: SelectionToolbarOverlayProps): React.ReactNode {
@@ -58,6 +73,11 @@ export function SelectionToolbarOverlay({
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 46,
+        // Centered vertical stack: breadcrumb (DR-137) over the property bar.
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 8,
         // WI-200 — inert while a manipulation gesture is in flight. The bar
         // mounts MID-DRAG (commitFrame's first-commit selection) and, with
         // pointer events on, becomes the pointermove target whenever the drag
@@ -67,6 +87,7 @@ export function SelectionToolbarOverlay({
         pointerEvents: interactive ? "auto" : "none",
       }}
     >
+      <SelectionBreadcrumbBar document={doc} selectedId={selectedId} onSelect={onSelectFrame} />
       <ContextualToolbar
         editor={editor}
         document={doc}
