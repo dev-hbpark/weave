@@ -124,24 +124,40 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const autoResizeMode = deriveTextAutoResize(a.layoutChild);
   const autoResizeRef = useRef(autoResizeMode);
   autoResizeRef.current = autoResizeMode;
-  // DR-053 Stage 2 — when this text is a flex-ROW child its HEIGHT is the layout's
-  // CROSS axis, OWNED by the agocraft engine: alignSelf "stretch" = FILL (parent
-  // propagates its height into the child) and an explicit `crossSize` = FIXED
-  // (stop at the child's own height). In both the auto-height observer must NOT
-  // write `frame.height` — doing so fought the engine and made fill/fixed
-  // impossible. Only when the height is the genuine content-auto axis (non-stretch
-  // + no crossSize) does the observer fit. (Scoped to flex-row, the reported case;
-  // other layouts keep their existing behaviour.)
+  // DR-053 Stage 2 — when this text's HEIGHT is a layout-OWNED axis, the agocraft
+  // engine sizes it and the auto-height observer must NOT write `frame.height`
+  // (doing so fights the engine and makes fill/fixed impossible). Only when the
+  // height is the genuine content-auto axis does the observer fit.
+  //
+  // The HEIGHT is layout-owned when it is the engine's FILL or FIXED axis:
+  //   • flex-ROW  → height = CROSS axis. FILL = alignSelf "stretch"; FIXED = crossSize set.
+  //   • auto-grid → height = ROW axis (pairs with alignSelf/align). FILL = align(Self)
+  //     "stretch" (the grid DEFAULT, so a plain grid cell fills its height); FIXED = sizeH set.
+  //   • flex-COLUMN → height = MAIN axis (governed by basis/grow/shrink, NOT the cross
+  //     fill/fixed toggle); left to the observer's content-fit (basis "auto" hug). The
+  //     column CROSS axis is WIDTH, and the observer never auto-fits width for a laid-out
+  //     child (deriveTextAutoResize never returns WIDTH_AND_HEIGHT for one), so width
+  //     fill/fixed is already engine-owned without a gate. (b): grid is the case the
+  //     row-only (a) gate missed — a default-stretch grid cell ratcheted to height 0.)
   const parentLayout = useContext(ParentLayoutContext);
   const heightOwnedByLayout = ((): boolean => {
-    if (parentLayout?.kind !== "auto-flex") return false;
-    if ((parentLayout as { direction?: string }).direction !== "row") return false;
     const lc = a.layoutChild;
-    if (lc?.kind !== "auto-flex") return false;
-    const align = lc.alignSelf ?? (parentLayout as { align?: string }).align;
-    if (align === "stretch") return true; // FILL — engine sizes the cross axis
-    if (lc.crossSize !== undefined) return true; // FIXED — engine holds crossSize
-    return false; // non-stretch + no crossSize → content-auto: observer may fit
+    if (parentLayout?.kind === "auto-flex") {
+      if ((parentLayout as { direction?: string }).direction !== "row") return false;
+      if (lc?.kind !== "auto-flex") return false;
+      const align = lc.alignSelf ?? (parentLayout as { align?: string }).align;
+      if (align === "stretch") return true; // FILL — engine sizes the cross axis
+      if (lc.crossSize !== undefined) return true; // FIXED — engine holds crossSize
+      return false; // non-stretch + no crossSize → content-auto: observer may fit
+    }
+    if (parentLayout?.kind === "auto-grid") {
+      if (lc?.kind !== "auto-grid") return false;
+      const align = lc.alignSelf ?? (parentLayout as { align?: string }).align;
+      if (align === "stretch") return true; // FILL — engine fills the cell height
+      if (lc.sizeH !== undefined) return true; // FIXED — engine holds sizeH
+      return false; // non-stretch + no sizeH → content-auto: observer may fit
+    }
+    return false;
   })();
   const heightOwnedRef = useRef(heightOwnedByLayout);
   heightOwnedRef.current = heightOwnedByLayout;

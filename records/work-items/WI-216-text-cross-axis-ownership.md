@@ -1,6 +1,6 @@
 # WI-216 — flex 자식 텍스트 높이: 엔진 cross-axis 소유 (fill/fixed/auto), observer 비간섭 (DR-053 Stage 2)
 
-- **Status:** IN-PROGRESS ((a) observer 게이트 DONE · (c) 토글 영속 DONE — 라이브 검증 대기 · (b)/(d) 남음) · 2026-06-13
+- **Status:** IN-PROGRESS ((a) observer 게이트 DONE · (c) 토글 영속 DONE(라이브 검증됨) · (b) 방향 일반화 DONE — 라이브 검증 대기 · (d) 남음) · 2026-06-13
 - **Relates:** DR-053(레이아웃 크기변화 엔진 단독소유), WI-215(높이 ratchet — 선행), WI-149/DR-104, WI-145/146(observer revert 이력)
 - **Origin:** 운영자 — grid→flex→text에서 ① 플렉스 높이를 줄이면 텍스트 높이가 보장되지 못하고 줄어듦
   (fill이면 항상 가득, fixed면 자기 높이 유지여야 함) ② 텍스트 자동높이/자동너비/고정 속성을 바꿔도
@@ -33,7 +33,15 @@ weave `TextBlock` auto-height observer가 `deriveTextAutoResize(layoutChild)="HE
 레이아웃 내 텍스트 크기 = fill(전파) / fixed(멈춤) / auto(콘텐츠), 모든 방향, regrow 복원, 토글 영속.
 
 - **(a) observer 게이트** — DONE(flex-row). 높이 레이아웃-지배면 frame.height 미기록.
-- **(b) 방향 일반화** — flex-COLUMN(크로스=너비, auto-width observer)·grid(행/열 트랙)도 (a)와 동일하게.
+- **(b) 방향 일반화** — DONE(라이브 검증 대기). 핵심 통찰: laid-out 자식의 `deriveTextAutoResize`는
+  NONE/HEIGHT만 반환(WIDTH_AND_HEIGHT 불가) → observer의 width 분기는 laid-out 자식에 절대 안 탐 →
+  **HEIGHT 분기만 게이트 필요**. 누락된 케이스 = **grid**: 기본 spec `align:"stretch"`라 sizeH 없는 grid
+  셀 텍스트가 HEIGHT 도출→observer가 높이 ratchet→0. 수정(`TextBlock.tsx` `heightOwnedByLayout`):
+  auto-flex(row: stretch|crossSize) + **auto-grid(행축=높이: align(Self) stretch=fill | sizeH=fixed)**
+  둘 다 처리. flex-COLUMN: 높이=MAIN축(basis/grow/shrink 지배, 크로스 fill/fixed 토글 무관)이라 observer
+  콘텐츠-fit 유지(basis auto hug), 크로스=너비는 observer가 어차피 width 안 건드림(엔진 소유). 검증:
+  document 1009 그린, tsc/biome 클린. (남은 한계: flex-column에서 grow>0/고정 basis로 MAIN(높이)을
+  엔진이 채우는 경우는 크로스 개념 밖 — (d) regrow 세션에서 다룸.)
 - **(c) 토글/라벨 방향-인지(증상②③)** — DONE(라이브 검증 대기). 두 면 모두 수정:
   - **읽기**: `deriveTextAutoResize`가 auto-flex 자식 `crossSize` 존재 → "고정"(NONE), 부재 → "자동높이"(HEIGHT);
     auto-grid `sizeH|sizeW` 존재 → "고정". 라벨이 리사이즈 후 엔진이 스탬프한 crossSize를 읽어 **"고정"으로 sticky**
