@@ -93,14 +93,88 @@ describe("fixAgentTextBox", () => {
     expect(ov(out).layoutChild).toEqual(FIXED);
   });
 
-  it("does NOT touch text added into a flex COLUMN frame (layout owns the size)", () => {
+  it("stamps alignSelf:stretch for text added into a flex COLUMN (WI-215 — bind width, keep auto-height)", () => {
+    // The default column `align` is "start" (not "stretch"), so an unstretched
+    // column-text's WIDTH collapses to its seed → a 1-glyph vertical ribbon.
+    // alignSelf:"stretch" binds the width to the column (text wraps) while
+    // grow:0 + basis:"auto" keep the HEIGHT following content.
     const input = { kind: "text", containerId: "flexFrame", attrsOverride: { text: "hi" } };
+    const out = fixAgentTextBox("weave.item.add", input, makeDoc());
+    expect(ov(out).layoutChild).toEqual({
+      kind: "auto-flex",
+      grow: 0,
+      shrink: 1,
+      basis: "auto",
+      alignSelf: "stretch",
+    });
+    expect(ov(out).text).toBe("hi");
+  });
+
+  it("leaves grid text with NO layoutChild alone (grid auto-places + stretches by default)", () => {
+    const input = { kind: "text", containerId: "gridFrame", attrsOverride: { text: "hi" } };
     expect(fixAgentTextBox("weave.item.add", input, makeDoc())).toBe(input);
   });
 
-  it("does NOT touch text added into an auto-grid frame (the track owns the width)", () => {
-    const input = { kind: "text", containerId: "gridFrame", attrsOverride: { text: "hi" } };
+  it("MERGES justifySelf:stretch into grid text that has cell placement but no justifySelf (WI-215)", () => {
+    // Live repro: grid justify:'center' + text layoutChild {col,row} without
+    // justifySelf → the cell sizes from sizeW (0 for auto-height text) → sliver.
+    // We add the width-binding the agent omitted, KEEPING its column/row.
+    const input = {
+      kind: "text",
+      containerId: "gridFrame",
+      attrsOverride: {
+        text: "프레임워크 코어 격리",
+        layoutChild: { kind: "auto-grid", column: 2, row: 1, columnSpan: 1, rowSpan: 1 },
+      },
+    };
+    const out = fixAgentTextBox("weave.item.add", input, makeDoc());
+    expect(ov(out).layoutChild).toEqual({
+      kind: "auto-grid",
+      column: 2,
+      row: 1,
+      columnSpan: 1,
+      rowSpan: 1,
+      justifySelf: "stretch",
+    });
+    expect(ov(out).text).toBe("프레임워크 코어 격리");
+  });
+
+  it("RESPECTS an explicit justifySelf the agent chose for grid text (no override)", () => {
+    const input = {
+      kind: "text",
+      containerId: "gridFrame",
+      attrsOverride: {
+        text: "x",
+        layoutChild: {
+          kind: "auto-grid",
+          column: 1,
+          row: 1,
+          columnSpan: 1,
+          rowSpan: 1,
+          justifySelf: "center",
+        },
+      },
+    };
     expect(fixAgentTextBox("weave.item.add", input, makeDoc())).toBe(input);
+  });
+
+  it("MERGES alignSelf:stretch into flex-COLUMN text that has a policy but no alignSelf", () => {
+    const input = {
+      kind: "text",
+      containerId: "flexFrame",
+      attrsOverride: {
+        text: "hi",
+        layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto" },
+      },
+    };
+    const out = fixAgentTextBox("weave.item.add", input, makeDoc());
+    expect(ov(out).layoutChild).toEqual({
+      kind: "auto-flex",
+      grow: 0,
+      shrink: 1,
+      basis: "auto",
+      alignSelf: "stretch",
+    });
   });
 
   it("injects CSS-flex:1 share for text added into an auto-flex ROW (WI-149/DR-104)", () => {

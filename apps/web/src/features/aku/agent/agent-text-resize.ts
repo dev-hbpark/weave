@@ -23,11 +23,31 @@
 //    policy whose kind matches the parent layout, so it keeps this verbatim
 //    instead of freezing the full-width seed.
 //
-//  • TEXT in auto-flex COLUMN / auto-grid — left ALONE. A column's main axis is
-//    height (width is the cross axis, bound by align/stretch) and a grid cell's
-//    track bounds the width, so the full-width seed is harmless and the layout
-//    owns the size (auto-height text — grow on a column-text would inflate its
-//    HEIGHT, which we must not do).
+//  • TEXT in auto-flex COLUMN — WI-215: stamp `alignSelf:"stretch"` (keeping
+//    grow:0 / shrink:1 / basis:"auto" so the HEIGHT still follows the wrapped
+//    content). WHY: a column's CROSS axis is the WIDTH, and the DEFAULT parent
+//    `align` is "start" (DEFAULT_AUTO_FLEX_SPEC), NOT "stretch" — so unless the
+//    agent remembered to set the column's `align:"stretch"` (or the child's
+//    `alignSelf`), the text's width is NOT bound by the column and collapses to
+//    its intrinsic crossSize/seed → a ~1-glyph VERTICAL ribbon (the same sliver
+//    symptom as the row case, but driven by the cross axis). The capabilities /
+//    schema prose already tells the agent "in a COLUMN set align/alignSelf
+//    'stretch' for text", but that was prompt-hoped only; this enforces it in
+//    code at the agent seam. `stretch` fills the cross axis (width → wraps),
+//    never the main axis (height stays auto), so it is safe for auto-height
+//    text. A short title still looks centered via textAlign — only the BOX
+//    fills the column width.
+//
+//  • TEXT in auto-grid — WI-215: if the agent set a cell-placement policy
+//    (column/row) that omits `justifySelf`, MERGE `justifySelf:"stretch"` so the
+//    text fills the column track regardless of the parent's `justify` (an agent
+//    commonly sets `justify:"center"`, which sizes the child from its intrinsic
+//    width — 0 for an agent add → sliver). When there is NO policy at all we
+//    can't stamp a `justifySelf` (no column/row → the adapter can't place the
+//    cell), so instead we DROP a degenerate (near-0) incoming `frame.width`: the
+//    child falls back to the FULL_FRAME seed, which the cell clamps to the track
+//    width. A no-frame / real-width add is already fine (the seed or the real
+//    width fills/clamps to the cell).
 //
 //  • NON-TEXT (frame / shape / image / qr / line / chart …) in auto-flex ROW or
 //    COLUMN — WI-149 round 3 / DR-104: the SAME FULL_FRAME ratchet, but on the
@@ -56,6 +76,18 @@ const FIXED_LAYOUT_CHILD = layoutChildFromTextAutoResize("NONE");
 // shares height.
 const FLEX_SHARE = { kind: "auto-flex", grow: 1, shrink: 1, basis: 0 } as const;
 
+// WI-215 — column TEXT: bind the CROSS axis (width) so the text wraps to the
+// column, but leave the MAIN axis (height) auto. `alignSelf:"stretch"` fills the
+// column width regardless of the parent's `align` (which defaults to "start", not
+// "stretch"); grow:0 + basis:"auto" keep the height following the wrapped content.
+const FLEX_COL_TEXT = {
+  kind: "auto-flex",
+  grow: 0,
+  shrink: 1,
+  basis: "auto",
+  alignSelf: "stretch",
+} as const;
+
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
@@ -80,6 +112,16 @@ function containerLayoutKind(
   return "grid";
 }
 
+/** True when the add carries an explicit `frame.width` that is degenerate
+ *  (≤ the engine's MIN_MAIN_SHARE floor of 0.04) — a value that would starve a
+ *  layout child read intrinsically (non-stretch grid/flex). Dropping it lets the
+ *  FULL_FRAME seed size the child instead. */
+function hasDegenerateWidth(input: Record<string, unknown>): boolean {
+  const fr = isObj(input.frame) ? input.frame : undefined;
+  if (fr === undefined) return false;
+  return typeof fr.width === "number" && Number.isFinite(fr.width) && fr.width <= 0.04;
+}
+
 /** True when the agent gave an explicit, positive MAIN-axis size on the add's
  *  `frame` (width for a row, height for a column) — a deliberate size we must
  *  NOT override (e.g. a `qr` added at width 0.1). When absent, the item would
@@ -97,16 +139,28 @@ function hasExplicitMainSize(input: Record<string, unknown>, container: Containe
  *  `use-aku-agent` proxy calls it for every add.)
  *
  *  TEXT:    free → Fixed box (DR-098); flex ROW → CSS `flex:1` share (DR-104);
- *           flex COLUMN / grid → leave (auto-height, the layout owns the size).
+ *           flex COLUMN → `alignSelf:"stretch"`; auto-GRID → `justifySelf:"stretch"`
+ *           — both BIND THE CROSS / COLUMN axis (the WIDTH) so the text wraps and
+ *           the box can't collapse to a vertical sliver, while the main / row axis
+ *           (the HEIGHT) stays auto (WI-215). WHY a stretch is forced: the cross /
+ *           column-axis alignment DEFAULTS to a non-stretch value (flex `align`
+ *           defaults to "start"; an agent commonly sets a GRID's `justify`/`align`
+ *           to "center" — observed live), and when NOT stretching the layout sizes
+ *           the child from its intrinsic width (`crossSize`/`sizeW`), which for an
+ *           agent-added auto-height text is 0 → a ~1-glyph ribbon. Crucially, for a
+ *           COLUMN/GRID this stretch is merged in EVEN WHEN the agent already set a
+ *           `layoutChild` (it carries the GRID cell placement `column`/`row`) — we
+ *           only add the width-binding the agent omitted, and respect an explicit
+ *           `alignSelf`/`justifySelf` it DID choose.
  *  NON-TEXT (frame / shape / image / qr / line / chart …): flex ROW or COLUMN
  *           → CSS `flex:1` share so it can't inherit the FULL_FRAME (1.0) seed on
  *           the main axis and over-fill (WI-149 round 3 — a row of 5 full-width
  *           card frames was over-filling 5×). Only when the agent set NO explicit
- *           main-axis size (a deliberate size like `qr` 0.1 is respected); free /
- *           grid parents are left to their own placement.
+ *           `layoutChild` and NO explicit main-axis size (a deliberate size like
+ *           `qr` 0.1 is respected); free / grid parents are left to their own
+ *           placement.
  *
- *  Returns the same reference for non-add / already-set / left-alone cases. An
- *  explicit `layoutChild` from the agent always wins. Pure; never throws. */
+ *  Returns the same reference for non-add / left-alone cases. Pure; never throws. */
 export function fixAgentTextBox(
   commandName: string,
   input: unknown,
@@ -114,9 +168,7 @@ export function fixAgentTextBox(
 ): unknown {
   if (commandName !== "weave.item.add" || !isObj(input)) return input;
   const attrs = isObj(input.attrsOverride) ? input.attrsOverride : {};
-  // Respect an explicit layoutChild the agent set (e.g. a deliberate auto-width
-  // or grow/basis split).
-  if (attrs.layoutChild !== undefined) return input;
+  const existingLc = attrs.layoutChild;
   const containerId = typeof input.containerId === "string" ? input.containerId : undefined;
   let container: ContainerLayout;
   try {
@@ -130,10 +182,51 @@ export function fixAgentTextBox(
   });
 
   if (input.kind === "text") {
+    // A text whose WIDTH is not bound to its cell collapses to a vertical sliver.
+    // In a flex COLUMN / auto-GRID the agent often sets a `layoutChild` for cell
+    // placement but omits the cross/column-axis stretch, so MERGE the stretch in
+    // (preserving its placement) instead of bailing — unless the agent chose its
+    // own cross/column-axis alignment, which we respect.
+    if (container === "flex-col") {
+      if (existingLc === undefined) return withChild({ ...FLEX_COL_TEXT });
+      if (
+        isObj(existingLc) &&
+        existingLc.kind === "auto-flex" &&
+        existingLc.alignSelf === undefined
+      ) {
+        return withChild({ ...existingLc, alignSelf: "stretch" });
+      }
+      return input;
+    }
+    if (container === "grid") {
+      if (
+        isObj(existingLc) &&
+        existingLc.kind === "auto-grid" &&
+        existingLc.justifySelf === undefined
+      ) {
+        return withChild({ ...existingLc, justifySelf: "stretch" });
+      }
+      // No cell policy (the grid auto-places + sizes the child): we can't stamp a
+      // `justifySelf` without a column/row, but a NON-stretch parent `justify`
+      // would size the child from its intrinsic width — and a degenerate
+      // (near-0) incoming `frame.width` then collapses it to a sliver. The grid
+      // owns position + width, so DROP a degenerate frame: the child falls back
+      // to the FULL_FRAME seed, which the cell clamps to the track width (fills).
+      if (existingLc === undefined && hasDegenerateWidth(input)) {
+        const { frame: _dropped, ...rest } = input;
+        return rest;
+      }
+      return input; // no policy (seed fills) or explicit justifySelf
+    }
+    // free / flex-row: only act when the agent set NO explicit policy.
+    if (existingLc !== undefined) return input;
     if (container === "free") return withChild(FIXED_LAYOUT_CHILD);
     if (container === "flex-row") return withChild({ ...FLEX_SHARE });
-    return input; // flex-col / grid — auto-height text, the layout owns the size
+    return input;
   }
+  // Respect an explicit layoutChild the agent set on a NON-text item (e.g. a
+  // deliberate grow/basis split or cell placement).
+  if (existingLc !== undefined) return input;
   // Non-text: share the main axis in any flex parent, but only when the item
   // would otherwise inherit the full-frame seed on that axis.
   if (
