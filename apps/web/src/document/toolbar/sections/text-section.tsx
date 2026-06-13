@@ -7,6 +7,8 @@
 // More popover.
 
 import type {
+  LayoutChildPolicy,
+  LayoutSpec,
   PartialTextStyle,
   TextAlign,
   TextAlignVertical,
@@ -49,11 +51,11 @@ import { Fragment, useState } from "react";
 import { TextOnboardingHint } from "../../../launch/TextOnboardingHint.js";
 import { fontSizeTooltipCopy } from "../../../launch/text-v1-copy.js";
 import { EMPTY_READOUT, useActiveTextStyle } from "../../active-text-style.js";
-import { absoluteFrameBox, findItemDeep } from "../../agocraft-mirror.js";
+import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../../agocraft-mirror.js";
 import {
   deriveTextAutoResize,
   type LegacyTextAutoResize,
-  layoutChildFromTextAutoResize,
+  layoutChildForTextResizeMode,
 } from "../../domains/derive-text-auto-resize.js";
 import { displayFontSizePx, fontSizeAttrsForPx } from "../../domains/text-font-size.js";
 import { FONT_GROUPS, FONT_ROLES, fontLabel } from "../../fonts/catalog.js";
@@ -777,15 +779,45 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                     <SegmentedControl<LegacyTextAutoResize>
                       value={isMixed(textAutoResize) ? "HEIGHT" : textAutoResize}
                       onValueChange={(v) =>
-                        updateAll(editor, ids, (prev) => ({
-                          attrs: {
-                            ...prev.attrs,
-                            // WI-019 B4 — write through layoutChild instead of
-                            // the removed textAutoResize field. The legacy 3-
-                            // mode UX is preserved via canonical mapping.
-                            layoutChild: layoutChildFromTextAutoResize(v),
-                          },
-                        }))
+                        // WI-216 / DR-053 Stage 2 (c) — write through layoutChild.
+                        // For a LAID-OUT child (auto-flex / grid) keep the layout
+                        // policy and toggle only the engine-owned intrinsic size,
+                        // so "고정" durably sticks instead of reverting to
+                        // "자동높이" on the next resize. Free text falls back to the
+                        // legacy absolute-constraints anchor mapping. Per-item so
+                        // each child reads its own parent layout + frame.
+                        batchPerItem(editor, ids, (id) => {
+                          const parentLayout =
+                            doc !== null
+                              ? (
+                                  findParentAndIndex(doc, id)?.parent.attrs as
+                                    | {
+                                        layout?: LayoutSpec;
+                                      }
+                                    | undefined
+                                )?.layout
+                              : undefined;
+                          editor.exec("weave.item.update", {
+                            itemId: id,
+                            patch: (prev: { attrs: Readonly<Record<string, unknown>> }) => {
+                              const a = prev.attrs as {
+                                layoutChild?: LayoutChildPolicy;
+                                frame?: { width: number; height: number };
+                              };
+                              return {
+                                attrs: {
+                                  ...prev.attrs,
+                                  layoutChild: layoutChildForTextResizeMode(
+                                    v,
+                                    a.layoutChild,
+                                    parentLayout,
+                                    a.frame ?? { width: 0, height: 0 },
+                                  ),
+                                },
+                              };
+                            },
+                          });
+                        })
                       }
                       options={[
                         { value: "WIDTH_AND_HEIGHT", label: "자동너비" },

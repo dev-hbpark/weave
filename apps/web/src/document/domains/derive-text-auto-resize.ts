@@ -25,7 +25,12 @@
 // picker UI replaces the textAutoResize SegmentedControl directly; this shim
 // then becomes a pure derive-for-render compatibility layer.
 
-import type { LayoutChildPolicy } from "@agocraft/core";
+import type {
+  AutoFlexChildPolicy,
+  AutoGridChildPolicy,
+  LayoutChildPolicy,
+  LayoutSpec,
+} from "@agocraft/core";
 
 export type LegacyTextAutoResize = "WIDTH_AND_HEIGHT" | "HEIGHT" | "NONE";
 
@@ -33,13 +38,19 @@ export function deriveTextAutoResize(
   layoutChild: LayoutChildPolicy | undefined,
 ): LegacyTextAutoResize {
   if (layoutChild === undefined) return "HEIGHT";
-  // WI-020 v1.1 / DR-041: a laid-out child (auto-flex / auto-grid) gets its
-  // WIDTH from the parent layout (cross-axis stretch, a grid column track, or a
-  // flex basis), so the text must WRAP to that width and auto-fit its HEIGHT —
-  // i.e. "HEIGHT" (auto-height). Returning "WIDTH_AND_HEIGHT" (auto-width) here
-  // made layout-child text hug its content (max-content + `white-space: pre`,
-  // no soft-wrap) and OVERFLOW its cell horizontally. Auto-width is only for
-  // free placement (an absolute-constraints scale×scale anchor), below.
+  // WI-216 / DR-053 Stage 2 (c): a laid-out child's cross size is layout-governed.
+  // An EXPLICIT intrinsic size (flex `crossSize` / grid `sizeH`·`sizeW`) is a
+  // FIXED size ("고정" — the engine holds it); its ABSENCE is content-auto
+  // ("자동높이"). This makes the toolbar label STICKY: after a manual resize the
+  // engine stamps `crossSize`, so the text correctly reads "고정" instead of
+  // reverting to "자동높이" (the operator-reported bug). (FILL = `alignSelf:
+  // "stretch"`, set via the flex-child toolbar — not one of these 3 legacy modes.)
+  if (layoutChild.kind === "auto-flex") {
+    return layoutChild.crossSize !== undefined ? "NONE" : "HEIGHT";
+  }
+  if (layoutChild.kind === "auto-grid") {
+    return layoutChild.sizeH !== undefined || layoutChild.sizeW !== undefined ? "NONE" : "HEIGHT";
+  }
   if (layoutChild.kind !== "absolute-constraints") return "HEIGHT";
   const h = layoutChild.anchor.horizontal;
   const v = layoutChild.anchor.vertical;
@@ -61,4 +72,54 @@ export function layoutChildFromTextAutoResize(mode: LegacyTextAutoResize): Layou
     case "NONE":
       return { kind: "absolute-constraints", anchor: { horizontal: "left", vertical: "top" } };
   }
+}
+
+/** WI-216 / DR-053 Stage 2 (c)+(b) — pick the child policy for a text resize
+ *  mode when the text is a LAID-OUT child (auto-flex / auto-grid).
+ *
+ *  Unlike the free-text inverse above (which always writes an
+ *  absolute-constraints anchor), this KEEPS the existing layout policy and only
+ *  toggles the engine-owned intrinsic sizes. Writing an absolute-constraints
+ *  anchor onto a flex/grid child is the operator-reported bug: the layout pass
+ *  re-derives an auto-flex policy WITHOUT `crossSize`, so "고정" silently reverts
+ *  to "자동높이" after the next resize. Here "고정"(NONE) durably stamps the
+ *  intrinsic size (the engine then HOLDS it) and "자동높이"(HEIGHT) clears the
+ *  cross/height intrinsic so the axis is content-auto again.
+ *
+ *  Axis convention — flex cross axis = height in a `row`, width in a `column`;
+ *  grid sizes both axes independently (`sizeW`/`sizeH`). FILL (`alignSelf:
+ *  "stretch"`) is set via the flex-child toolbar, not by these 3 legacy modes,
+ *  and is preserved untouched here. Falls back to the free-text inverse for a
+ *  free / absolute-constraints parent. `frame` values are parent-relative ratios
+ *  (0..1) — the same unit `crossSize` / `sizeW` / `sizeH` carry. */
+export function layoutChildForTextResizeMode(
+  mode: LegacyTextAutoResize,
+  current: LayoutChildPolicy | undefined,
+  parentLayout: LayoutSpec | undefined,
+  frame: { readonly width: number; readonly height: number },
+): LayoutChildPolicy {
+  if (parentLayout?.kind === "auto-flex" && current?.kind === "auto-flex") {
+    const cross = parentLayout.direction === "row" ? frame.height : frame.width;
+    // 자동너비 hugs the MAIN axis (basis "auto"); both auto modes free the cross.
+    const base: AutoFlexChildPolicy = {
+      ...current,
+      basis: mode === "WIDTH_AND_HEIGHT" ? "auto" : current.basis,
+    };
+    if (mode === "NONE") return { ...base, crossSize: cross };
+    const { crossSize: _omit, ...rest } = base;
+    return rest;
+  }
+  if (parentLayout?.kind === "auto-grid" && current?.kind === "auto-grid") {
+    const { sizeW: _w, sizeH: _h, ...rest } = current;
+    if (mode === "NONE") return { ...rest, sizeW: frame.width, sizeH: frame.height };
+    // 자동높이 frees the height axis but keeps an explicit width fixed if it had
+    // one; 자동너비 frees both axes.
+    if (mode === "HEIGHT") {
+      const keepW: Partial<AutoGridChildPolicy> =
+        current.sizeW !== undefined ? { sizeW: current.sizeW } : {};
+      return { ...rest, ...keepW };
+    }
+    return rest;
+  }
+  return layoutChildFromTextAutoResize(mode);
 }

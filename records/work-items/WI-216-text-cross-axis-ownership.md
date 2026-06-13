@@ -1,6 +1,6 @@
 # WI-216 — flex 자식 텍스트 높이: 엔진 cross-axis 소유 (fill/fixed/auto), observer 비간섭 (DR-053 Stage 2)
 
-- **Status:** IN-PROGRESS (observer 게이트 DONE, 토글/content-auto 토글 follow-up) · 2026-06-13
+- **Status:** IN-PROGRESS ((a) observer 게이트 DONE · (c) 토글 영속 DONE — 라이브 검증 대기 · (b)/(d) 남음) · 2026-06-13
 - **Relates:** DR-053(레이아웃 크기변화 엔진 단독소유), WI-215(높이 ratchet — 선행), WI-149/DR-104, WI-145/146(observer revert 이력)
 - **Origin:** 운영자 — grid→flex→text에서 ① 플렉스 높이를 줄이면 텍스트 높이가 보장되지 못하고 줄어듦
   (fill이면 항상 가득, fixed면 자기 높이 유지여야 함) ② 텍스트 자동높이/자동너비/고정 속성을 바꿔도
@@ -34,7 +34,16 @@ weave `TextBlock` auto-height observer가 `deriveTextAutoResize(layoutChild)="HE
 
 - **(a) observer 게이트** — DONE(flex-row). 높이 레이아웃-지배면 frame.height 미기록.
 - **(b) 방향 일반화** — flex-COLUMN(크로스=너비, auto-width observer)·grid(행/열 트랙)도 (a)와 동일하게.
-- **(c) 토글/라벨 방향-인지(증상②③)** — `deriveTextAutoResize`가 auto-flex 자식이면 crossSize 유무 무관 "HEIGHT" 반환 → 툴바가 항상 "자동높이" 표시 + 리사이즈로 crossSize 스탬프되면 "자동높이로 되돌아간 듯". 수정: flex/grid 자식에서 (부모방향, alignSelf, crossSize)로 fill/fixed/auto 판정해 라벨 정확; 토글 쓰기는 absolute-constraints가 아니라 **cross 정책**(stretch=fill / crossSize=fixed / crossSize 제거=auto)로. text-section은 렌더트리 밖이라 doc에서 부모 레이아웃 조회.
+- **(c) 토글/라벨 방향-인지(증상②③)** — DONE(라이브 검증 대기). 두 면 모두 수정:
+  - **읽기**: `deriveTextAutoResize`가 auto-flex 자식 `crossSize` 존재 → "고정"(NONE), 부재 → "자동높이"(HEIGHT);
+    auto-grid `sizeH|sizeW` 존재 → "고정". 라벨이 리사이즈 후 엔진이 스탬프한 crossSize를 읽어 **"고정"으로 sticky**
+    (이전엔 무조건 "자동높이"로 되돌아감).
+  - **쓰기**: 새 `layoutChildForTextResizeMode(mode, current, parentLayout, frame)` — flex/grid 자식이면
+    레이아웃 정책 유지하고 cross 정책만 토글(고정=crossSize/sizeW·sizeH 스탬프, 자동높이=cross 제거,
+    자동너비=basis "auto"+cross 제거). absolute-constraints 앵커를 쓰던 기존 경로(재스탬프로 되돌아가는 버그)를
+    대체. free/absolute 텍스트는 기존 `layoutChildFromTextAutoResize` 폴백. text-section은 렌더트리 밖이라
+    `batchPerItem`+`findParentAndIndex(doc,id)`로 자식별 부모 레이아웃 조회. (flex-row/col + grid 모두 처리 →
+    (b)의 방향 일반화 상당부분 동반.) 검증: derive 테스트 17 그린, tsc/biome 클린.
 - **(d) regrow 복원(제스처 베이스라인)** — 리사이즈 제스처 시작(새 sessionId)에 doc 스냅샷, 드래그 동안 그 스냅샷을 onFrameChanged의 root로 사용(누적 ratchet 제거, 마우스다운 크기로 복원), pointerup에 폐기. **(A) weave-fed 베이스라인**(엔진 무상태, 재vendor 불요) 권장 / (B) 엔진 begin/endResize 세션.
 
 라이브 검증: 부모 줄였다 늘려 복원 / flex-col / grid / 고정 토글이 리사이즈 후에도 유지.
