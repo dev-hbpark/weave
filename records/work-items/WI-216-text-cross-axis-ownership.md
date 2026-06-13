@@ -1,6 +1,6 @@
 # WI-216 — flex 자식 텍스트 높이: 엔진 cross-axis 소유 (fill/fixed/auto), observer 비간섭 (DR-053 Stage 2)
 
-- **Status:** IN-PROGRESS ((a) observer 게이트 DONE · (c) 토글 영속 DONE(라이브 검증됨) · (b) 방향 일반화 DONE — 라이브 검증 대기 · (d) 남음) · 2026-06-13
+- **Status:** IN-PROGRESS ((a)/(c) DONE·라이브검증됨 · (b) 엔진-소유로 재구현 DONE · (d) 엔진 세션 DONE — (b)/(d) 라이브 검증 대기) · 2026-06-13
 - **Relates:** DR-053(레이아웃 크기변화 엔진 단독소유), WI-215(높이 ratchet — 선행), WI-149/DR-104, WI-145/146(observer revert 이력)
 - **Origin:** 운영자 — grid→flex→text에서 ① 플렉스 높이를 줄이면 텍스트 높이가 보장되지 못하고 줄어듦
   (fill이면 항상 가득, fixed면 자기 높이 유지여야 함) ② 텍스트 자동높이/자동너비/고정 속성을 바꿔도
@@ -52,9 +52,29 @@ weave `TextBlock` auto-height observer가 `deriveTextAutoResize(layoutChild)="HE
     대체. free/absolute 텍스트는 기존 `layoutChildFromTextAutoResize` 폴백. text-section은 렌더트리 밖이라
     `batchPerItem`+`findParentAndIndex(doc,id)`로 자식별 부모 레이아웃 조회. (flex-row/col + grid 모두 처리 →
     (b)의 방향 일반화 상당부분 동반.) 검증: derive 테스트 17 그린, tsc/biome 클린.
-- **(d) regrow 복원(제스처 베이스라인)** — 리사이즈 제스처 시작(새 sessionId)에 doc 스냅샷, 드래그 동안 그 스냅샷을 onFrameChanged의 root로 사용(누적 ratchet 제거, 마우스다운 크기로 복원), pointerup에 폐기. **(A) weave-fed 베이스라인**(엔진 무상태, 재vendor 불요) 권장 / (B) 엔진 begin/endResize 세션.
+- **(d) regrow 복원(제스처 베이스라인) — DONE(옵션 B 엔진 세션, 라이브 검증 대기).** agocraft 엔진
+  `beginResize`/`endResize` + `onFrameChanged`/`reflowSubtree`의 선택 `gestureId`. 제스처 첫 호출 때
+  gestureId 최초 등장 시 root에서 subtree(frame+policy) 자동 스냅샷(=마우스다운 상태, 아직 미커밋), 캐스케이드가
+  **누적 doc이 아닌 동결 baseline에서** rescale → 부모 축소→재확대가 마우스다운 크기로 복원. 새 제스처가 이전 세션
+  evict. weave 와이어: `FrameStage.commitFrame`이 per-제스처 `sessionId`(editor FrameAccess)를
+  `onCommitFrame(itemId,frame,sessionId)`로 → DesignPage가 `editor.exec("weave.item.update",{...,sessionId})`
+  → item.update가 `onFrameChanged({gestureId:sessionId})`. engine.test +13(60), layout 271 그린.
 
-라이브 검증: 부모 줄였다 늘려 복원 / flex-col / grid / 고정 토글이 리사이즈 후에도 유지.
+- **🔑 (b) 엔진-소유로 전면 재구현 (운영자 지시 "텍스트블록에 레이아웃 로직 0, 엔진이 모두 처리") — DONE(라이브 검증 대기).**
+  (a)/(c)에서 `TextBlock.heightOwnedByLayout`(부모레이아웃+정책 추론)·`text-section` cross 판정이 weave에 있던 것을
+  전부 agocraft 엔진으로 이관:
+  - 엔진 신규 `getContentAutoAxes({root,itemId})→{managed,width,height}` = fill/fixed/auto **단일 판정원**
+    (`CONTENT_AUTO_AXES_BY_KIND`). `onContentMeasured({root,itemId,content})` = 측정 콘텐츠를 auto 축에만
+    적용·**intrinsic 미스탬프**(auto가 fixed로 변환되던 버그 원천차단)·reflow. (agocraft 65e4ea8, layout
+    rc.20260613210000, DR-053 Stage 2.)
+  - weave: `ParentLayoutContext`+`heightOwnedByLayout` **삭제** → `ContentAutoAxesContext`(NestedFrame이
+    text 아이템마다 `getContentAutoAxes` 호출해 제공) + `MeasureContentContext`(DesignPage가 editor-exec
+    커밋fn 제공). `TextBlock`은 부울 `fitWidth/fitHeight`만 읽어 축별 observer 구동(레이아웃 추론 0); managed
+    텍스트 커밋은 신규 `weave.layout.contentMeasured` 커맨드→엔진(스탬프 없음), free 텍스트만 기존 onUpdate.
+    커맨드는 host-internal이라 양 에이전트 surface에서 de-list(NONCANONICAL) + 거버넌스 2게이트(스키마/triage) 갱신.
+  - 검증: weave 1350 그린, tsc/biome 클린.
+
+라이브 검증: 부모 줄였다 늘려 복원(d) / grid 셀 fill·고정 / flex-col / 고정 토글이 리사이즈 후 유지 / 자동높이 정상 성장.
 
 ## Follow-up (남음)
 

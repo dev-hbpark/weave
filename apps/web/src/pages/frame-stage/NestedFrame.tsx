@@ -30,8 +30,8 @@ import {
 import { isDomainItem } from "../../document/agocraft-mirror.js";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
 import {
+  ContentAutoAxesContext,
   ParentFrameHeightContext,
-  ParentLayoutContext,
 } from "../../document/domains/parent-frame-context.js";
 import {
   type ClickIntent,
@@ -100,7 +100,9 @@ interface NestedFrameProps {
   readonly renderFrameMenu: FrameStageProps["renderFrameMenu"];
   /** Update this frame's `attrs.frame` directly. Phase 12b — manipulation
    *  handles dispatch through this. */
-  readonly onCommitFrame: ((itemId: string, next: ItemFrame) => void) | undefined;
+  readonly onCommitFrame:
+    | ((itemId: string, next: ItemFrame, sessionId?: string) => void)
+    | undefined;
   // WI-033 P2 — `onEnter` (Phase 12c double-click drill-in callback)
   // removed.
   /** Phase 13c-2 — hotspot overlay editing on the selected frame. */
@@ -447,38 +449,48 @@ function NestedFrameImpl({
         }
       : undefined;
 
+  // DR-053 Stage 2 (b) — the ENGINE decides which of THIS item's axes are
+  // content-auto (the host may size to content) vs layout-owned (fill/fixed/grow).
+  // Computed here (text items only — the sole consumer) and provided to the
+  // renderer so `TextBlock` carries NO layout reasoning. Outside a layout the
+  // engine returns managed:false → the renderer keeps its own text-kind auto-size.
+  const contentAutoAxes =
+    LAYOUT_FEATURE_ENABLED && item.kind === "text" && docRef?.current !== undefined
+      ? getLayoutEngine().getContentAutoAxes({ root: docRef.current.root, itemId: item.id })
+      : undefined;
+
   // WI-074 D7 — content + (for frames) children are mirrored together under a
   // flip, so extract both so the flip wrapper can enclose them.
   const frameContentNode = (
     <ParentFrameHeightContext.Provider value={parentHeightPx}>
-      <FrameCulledContext.Provider value={culled}>
-        <FrameContent
-          item={item as unknown as AgoItem}
-          {...(onUpdateItem
-            ? {
-                onUpdate: (patch: Record<string, unknown>) =>
-                  onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
-              }
-            : {})}
-          {...(onUpdateShape
-            ? {
-                onUpdateShape: (shapeId: string, patch: object) =>
-                  onUpdateShape(itemId, shapeId, patch),
-              }
-            : {})}
-          {...(onRemoveShape
-            ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
-            : {})}
-        />
-      </FrameCulledContext.Provider>
+      <ContentAutoAxesContext.Provider
+        value={contentAutoAxes ?? { managed: false, width: false, height: false }}
+      >
+        <FrameCulledContext.Provider value={culled}>
+          <FrameContent
+            item={item as unknown as AgoItem}
+            {...(onUpdateItem
+              ? {
+                  onUpdate: (patch: Record<string, unknown>) =>
+                    onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
+                }
+              : {})}
+            {...(onUpdateShape
+              ? {
+                  onUpdateShape: (shapeId: string, patch: object) =>
+                    onUpdateShape(itemId, shapeId, patch),
+                }
+              : {})}
+            {...(onRemoveShape
+              ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
+              : {})}
+          />
+        </FrameCulledContext.Provider>
+      </ContentAutoAxesContext.Provider>
     </ParentFrameHeightContext.Provider>
   );
-  // DR-053 Stage 2 — provide THIS frame's own layout to its children so a child
-  // TextBlock knows whether its height is layout-governed (flex-ROW cross / grid)
-  // and must NOT self-fit (fill = parent propagates; fixed = stop at child's size).
-  const ownLayout = (attrs as { layout?: import("@agocraft/core").LayoutSpec }).layout;
   const childNodes = (
-    <ParentLayoutContext.Provider value={ownLayout}>
+    <>
       {childFrames.map((c) => (
         <NestedFrame
           key={String(c.id)}
@@ -508,7 +520,7 @@ function NestedFrameImpl({
           hit={hit}
         />
       ))}
-    </ParentLayoutContext.Provider>
+    </>
   );
 
   const inner = (

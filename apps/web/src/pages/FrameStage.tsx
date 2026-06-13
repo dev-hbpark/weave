@@ -226,7 +226,9 @@ export interface FrameStageProps {
     | ((itemId: string, children: React.ReactNode, ctx?: FrameMenuContext) => React.ReactNode)
     | undefined;
   /** Phase 12b — commit a frame's full ItemFrame after a manipulation drag. */
-  readonly onCommitFrame?: ((itemId: string, next: ItemFrame) => void) | undefined;
+  readonly onCommitFrame?:
+    | ((itemId: string, next: ItemFrame, sessionId?: string) => void)
+    | undefined;
   // WI-033 P2 — `enteredId` / `onEnter` removed with drill-in mode.
   /** Double-clicking truly empty design-plane space fits the camera to the
    *  union bounds of every top-level item, so the whole design comes into
@@ -1111,7 +1113,9 @@ export function FrameStage(props: FrameStageProps) {
         }
         const commit = onCommitFrameRef.current;
         if (commit !== undefined) {
-          commit(String(itemId), cleanFrame);
+          // DR-053 (d) — pass the per-gesture sessionId so the engine restores
+          // descendants to their mouse-down size on a shrink→grow.
+          commit(String(itemId), cleanFrame, sessionId);
         }
       },
       computeMove(orig, dx, dy, parent) {

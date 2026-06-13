@@ -61,6 +61,11 @@ export const NONCANONICAL_AGENT_TOOLS: ReadonlyArray<string> = [
   "weave.frame.removeKeepingChildren",
   // (g) Whole-document reset — a footgun to hand an agent. UI-only.
   "weave.doc.reset",
+  // (h) HOST-INTERNAL render-loop command (DR-053 Stage 2 (b)): the text
+  //     renderer reports its measured content size so the ENGINE owns content
+  //     auto-sizing. Never an agent intent — the agent sizes via frame edits /
+  //     layoutChild. De-listed from every agent surface.
+  "weave.layout.contentMeasured",
 ];
 
 /** Free placement (mixed / canvas-board): everything registered EXCEPT the

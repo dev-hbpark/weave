@@ -245,6 +245,20 @@ export interface UpdateItemInput {
     readonly kind: string;
     readonly attrs?: Readonly<Record<string, unknown>> | null;
   }>;
+  /** DR-053 (d) — active resize-gesture id (pointerdown→up). When set, the
+   *  engine rescales descendants from the gesture-start baseline so a parent
+   *  shrink→grow restores them to their mouse-down sizes. Omit for non-gesture
+   *  programmatic frame writes. */
+  readonly sessionId?: string;
+}
+
+/** DR-053 Stage 2 (b) — the host measured an item's rendered CONTENT size; the
+ *  ENGINE decides which axes that may drive (content-auto) and applies it WITHOUT
+ *  converting the axis to a fixed intrinsic. Keeps the fill/fixed/auto decision
+ *  out of the host renderer (TextBlock). `content` is in parent-ratio units. */
+export interface ContentMeasuredInput {
+  readonly itemId: string;
+  readonly content: { readonly width?: number; readonly height?: number };
 }
 
 /** WI-055 — rectangle corner radius. Targets `attrs.subAttrs.cornerRadii`
@@ -1183,6 +1197,32 @@ export function buildWeaveCommands(
     },
   };
 
+  // DR-053 Stage 2 (b) — the host (TextBlock) measured an item's rendered CONTENT
+  // size; the ENGINE owns the fill/fixed/auto decision and applies it ONLY to the
+  // content-auto axes, WITHOUT stamping a fixed intrinsic (auto stays auto). This
+  // is the content→frame path that used to be the text observer writing
+  // `frame.height` directly (→ onFrameChanged stamped crossSize → auto became
+  // fixed). Routing through onContentMeasured keeps the host free of layout logic.
+  const contentMeasured: Command<ContentMeasuredInput, void> = {
+    name: "weave.layout.contentMeasured",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail(
+          "item-not-found",
+          `weave.layout.contentMeasured: no item with id "${input.itemId}"`,
+        );
+      }
+      if (!LAYOUT_FEATURE_ENABLED) return ok(undefined, []);
+      const patches = getLayoutEngine().onContentMeasured({
+        root: ctx.document.root,
+        itemId: child.id,
+        content: input.content,
+      });
+      return ok(undefined, patches);
+    },
+  };
+
   // attrs-diff computation for weave.item.update (extracted so the run body can
   // also fold in unit patches). Returns the item.attrs patch plus any LayoutEngine
   // reflow patches a frame change triggers.
@@ -1259,6 +1299,7 @@ export function buildWeaveCommands(
             itemId: child.id,
             oldFrame,
             newFrame,
+            ...(input.sessionId !== undefined ? { gestureId: input.sessionId } : {}),
           })
         : [];
     return extraPatches.length > 0 ? [patch, ...extraPatches] : [patch];
@@ -3056,6 +3097,7 @@ export function buildWeaveCommands(
 
   const base: ReadonlyArray<Command> = [
     addItem as Command,
+    contentMeasured as Command,
     removeItem as Command,
     removeItems as Command,
     updateItem as Command,

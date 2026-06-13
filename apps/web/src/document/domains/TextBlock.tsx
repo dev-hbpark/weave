@@ -44,8 +44,12 @@ import {
   type TextAttrs,
   type WeaveRunStyle,
 } from "../types.js";
-import { deriveTextAutoResize } from "./derive-text-auto-resize.js";
-import { ParentFrameHeightContext, ParentLayoutContext } from "./parent-frame-context.js";
+import { deriveTextAutoResize, type LegacyTextAutoResize } from "./derive-text-auto-resize.js";
+import {
+  ContentAutoAxesContext,
+  MeasureContentContext,
+  ParentFrameHeightContext,
+} from "./parent-frame-context.js";
 import { onTextAutofitRequest } from "./text-autofit-signal.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
@@ -116,51 +120,44 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // must NOT auto-fit height in NONE; otherwise the user-set height would
   // be overwritten by content fit.
   //
-  // WI-019 B4 / T3 Modify — the legacy `textAutoResize` field was removed
-  // in agocraft schema v10. We derive the equivalent mode from
-  // `attrs.layoutChild` via `deriveTextAutoResize` — see that helper for
-  // the closed mapping table. Legacy designs migrate automatically when
-  // loaded through Serializer.fromJSON({ migrations: [...] }).
-  const autoResizeMode = deriveTextAutoResize(a.layoutChild);
+  // DR-053 Stage 2 (b) — WHICH axes this text may auto-size to its content is a
+  // LAYOUT decision, OWNED by the agocraft engine, not re-derived here. For a
+  // laid-out (engine-managed) text the engine reports `{managed, width, height}`
+  // via `ContentAutoAxesContext` (computed in NestedFrame): a FILL (stretch) or
+  // FIXED (intrinsic) or growing axis returns false, so the observer never fights
+  // the engine. For FREE / absolute text (`managed:false`) the engine owns no
+  // sizing, so we keep the text-kind legacy auto-size from the `layoutChild`
+  // anchor (`deriveTextAutoResize`). This is the per-axis source of truth for both
+  // the observer (which axis to fit) and the render CSS below.
+  const contentAutoAxes = useContext(ContentAutoAxesContext);
+  const measureContent = useContext(MeasureContentContext);
+  const legacyMode = deriveTextAutoResize(a.layoutChild);
+  const fitWidth = contentAutoAxes.managed
+    ? contentAutoAxes.width
+    : legacyMode === "WIDTH_AND_HEIGHT";
+  const fitHeight = contentAutoAxes.managed ? contentAutoAxes.height : legacyMode === "HEIGHT";
+  // Render hint for overflow / max-content CSS below (auto-width wins the label).
+  const autoResizeMode: LegacyTextAutoResize = fitWidth
+    ? "WIDTH_AND_HEIGHT"
+    : fitHeight
+      ? "HEIGHT"
+      : "NONE";
   const autoResizeRef = useRef(autoResizeMode);
   autoResizeRef.current = autoResizeMode;
-  // DR-053 Stage 2 — when this text's HEIGHT is a layout-OWNED axis, the agocraft
-  // engine sizes it and the auto-height observer must NOT write `frame.height`
-  // (doing so fights the engine and makes fill/fixed impossible). Only when the
-  // height is the genuine content-auto axis does the observer fit.
-  //
-  // The HEIGHT is layout-owned when it is the engine's FILL or FIXED axis:
-  //   • flex-ROW  → height = CROSS axis. FILL = alignSelf "stretch"; FIXED = crossSize set.
-  //   • auto-grid → height = ROW axis (pairs with alignSelf/align). FILL = align(Self)
-  //     "stretch" (the grid DEFAULT, so a plain grid cell fills its height); FIXED = sizeH set.
-  //   • flex-COLUMN → height = MAIN axis (governed by basis/grow/shrink, NOT the cross
-  //     fill/fixed toggle); left to the observer's content-fit (basis "auto" hug). The
-  //     column CROSS axis is WIDTH, and the observer never auto-fits width for a laid-out
-  //     child (deriveTextAutoResize never returns WIDTH_AND_HEIGHT for one), so width
-  //     fill/fixed is already engine-owned without a gate. (b): grid is the case the
-  //     row-only (a) gate missed — a default-stretch grid cell ratcheted to height 0.)
-  const parentLayout = useContext(ParentLayoutContext);
-  const heightOwnedByLayout = ((): boolean => {
-    const lc = a.layoutChild;
-    if (parentLayout?.kind === "auto-flex") {
-      if ((parentLayout as { direction?: string }).direction !== "row") return false;
-      if (lc?.kind !== "auto-flex") return false;
-      const align = lc.alignSelf ?? (parentLayout as { align?: string }).align;
-      if (align === "stretch") return true; // FILL — engine sizes the cross axis
-      if (lc.crossSize !== undefined) return true; // FIXED — engine holds crossSize
-      return false; // non-stretch + no crossSize → content-auto: observer may fit
-    }
-    if (parentLayout?.kind === "auto-grid") {
-      if (lc?.kind !== "auto-grid") return false;
-      const align = lc.alignSelf ?? (parentLayout as { align?: string }).align;
-      if (align === "stretch") return true; // FILL — engine fills the cell height
-      if (lc.sizeH !== undefined) return true; // FIXED — engine holds sizeH
-      return false; // non-stretch + no sizeH → content-auto: observer may fit
-    }
-    return false;
-  })();
-  const heightOwnedRef = useRef(heightOwnedByLayout);
-  heightOwnedRef.current = heightOwnedByLayout;
+  const fitWidthRef = useRef(fitWidth);
+  fitWidthRef.current = fitWidth;
+  const fitHeightRef = useRef(fitHeight);
+  fitHeightRef.current = fitHeight;
+  // Engine-managed text commits its content size through the engine
+  // (`onContentMeasured`) so an auto axis is NOT silently stamped fixed; free text
+  // writes its frame directly via `onUpdate` (the engine owns no sizing for it).
+  const managedRef = useRef(contentAutoAxes.managed);
+  managedRef.current = contentAutoAxes.managed;
+  const measureContentRef = useRef(measureContent);
+  measureContentRef.current = measureContent;
+  const itemIdStr = String(item.id);
+  const itemIdRef = useRef(itemIdStr);
+  itemIdRef.current = itemIdStr;
   // Set below once `isEditing` is declared; the ResizeObserver reads it to
   // decide whether to skip its frame commit while editing (see the effect).
   const isEditingRef = useRef(false);
@@ -181,9 +178,10 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     // debounced (deferred) invocation uses the LATEST content size, not a
     // stale snapshot from when the observer fired.
     const measureAndCommit = (): void => {
-      const mode = autoResizeRef.current;
-      // Fixed mode: user controls width + height. Do not auto-update.
-      if (mode === "NONE") return;
+      const fitH = fitHeightRef.current;
+      const fitW = fitWidthRef.current;
+      // Neither axis is content-auto (Fixed / fully layout-owned) → do not fit.
+      if (!fitH && !fitW) return;
       // DR-058 — during an undo/redo replay the frame was already restored by
       // the replayed patch; re-committing the fitted size here would spawn a
       // fresh user-command entry and CLEAR the redo stack. Skip while a history
@@ -204,15 +202,14 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       const parentH = parent.offsetHeight;
       let nextHeight: number | undefined;
       let nextWidth: number | undefined;
-      // 자동너비/자동높이 are symmetric — the ResizeObserver owns exactly ONE
-      // axis (the auto one); the other is user-set via its edge handles.
-      //   "HEIGHT" (Auto-H)           → auto-fit height, width manual
-      //   "WIDTH_AND_HEIGHT" (Auto-W) → auto-fit width, height manual
+      // Each axis is fitted INDEPENDENTLY per the engine's content-auto decision
+      // (`fitHeight`/`fitWidth`): a laid-out hug child fits BOTH; a height-auto
+      // cell fits only height; a fill/fixed axis is skipped (engine owns it).
       // Compare against the LIVE doc value (`frameRef`) rather than the last
       // dispatched one. An earlier dispatch can be overwritten by some other
       // write (e.g. an explicit `weave.item.update` from the host) and the
       // observer would otherwise refuse to re-converge.
-      if (mode === "HEIGHT" && parentH > 0 && !heightOwnedRef.current) {
+      if (fitH && parentH > 0) {
         // WI-215 — re-settle height ONLY when the CONTENT actually changed (operator
         // principle: "재정리는 실제 크기 변화 시에만"). Content px (scrollHeight) depends
         // on WIDTH (wrapping), not on the parent's height — so a height-handle drag /
@@ -237,7 +234,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       // width exposes no handle, so this is the only way the box tracks content.
       // Same content-delta gate (WI-215): only re-fit when the natural content
       // width actually changed, not when the parent width moved underneath it.
-      if (mode === "WIDTH_AND_HEIGHT" && parentW > 0) {
+      if (fitW && parentW > 0) {
         const contentWpx = el.scrollWidth;
         const contentChanged =
           lastContentWpxRef.current < 0 || Math.abs(contentWpx - lastContentWpxRef.current) >= 0.5;
@@ -248,6 +245,21 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         }
       }
       if (nextHeight === undefined && nextWidth === undefined) return;
+      if (managedRef.current) {
+        // Engine-managed: report the measured content; the engine applies it to
+        // the auto axes WITHOUT stamping a fixed intrinsic (auto stays auto). NEVER
+        // write the frame directly — that path (onFrameChanged) would convert the
+        // auto axis to crossSize/sizeH and break fill/auto. Falls back to onUpdate
+        // only when no provider is mounted (tests / preview).
+        const commit = measureContentRef.current;
+        if (commit !== null) {
+          commit(itemIdRef.current, {
+            ...(nextHeight !== undefined ? { height: nextHeight } : {}),
+            ...(nextWidth !== undefined ? { width: nextWidth } : {}),
+          });
+          return;
+        }
+      }
       onUpdateRef.current?.({
         frame: {
           ...frameRef.current,
