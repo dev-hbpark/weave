@@ -29,6 +29,29 @@ flex-COLUMN / grid 셀에선 옳다(너비=레이아웃, 높이=콘텐츠 auto).
    높이에서 `crossSize` 재freeze(grow:0, 일방 ratchet — DR-104 메커니즘의 크로스축판) → 0 수렴.
    → "높이를 키우면 작아지며 사라짐" + 데이터 복구가 안 붙음(매 인터랙션 재발).
 
+## 수정 — 1순위 원칙 (운영자, 2026-06-13): "실제 크기 변화 시에만 재정리"
+
+운영자 통찰: **프레임이 부모 레이아웃 규칙상 실제로는 안 커지는데, 핸들을 움직이는 순간
+'커진 것처럼' 인식 → 폰트/auto-fit 재정리가 잘못 발동.** 어떤 상황에서든 **size가 실제로
+(committed) 변할 때만** 재정리해야 함.
+
+코드 정합: 코드베이스가 이미 반쯤 인지 — `TextBlock` 주석(L219-222)에 "WI-146 B의
+height-write 트리거가 매 height 변경마다 fit 재실행 → **manual RESIZE 제스처와 싸움** → revert"
+라고 박혀 있음. 그런데 refit effect는 여전히 **`a.frame.width` 변경**에 의존(L225 deps)하고,
+ResizeObserver는 *지각된* resize마다 `measureAndCommit`을 돌림. flex-ROW 자식은 부모가 크기를
+지배(핸들 드래그가 실제 frame 변화로 이어지지 않음)인데, 이 지각된 변화가 재정리를 발동 →
+관측치(scrollHeight/parentH)를 다시 써넣어 ratchet 시동.
+
+**A0 (1순위): 재정리 트리거를 *실제 committed 크기 델타*에 게이트.**
+- 진행 중 제스처/부모-지배 no-op에서는 재정리 금지.
+- refit/observer commit 전에 "직전 committed dimension과 비교해 유의미 변화가 있을 때만" 진행
+  (현재 ≥0.0005 임계는 *관측치 vs frameRef* 비교라, 부모 성장으로 분모가 바뀌면 항상 델타가
+  생겨 발동 — 분모(parentH)가 아닌 *콘텐츠/실제 box* 변화 기준으로 판정).
+- 폰트 재정리(있다면)도 동일 게이트 — px 폰트는 parent로 안 변해야 하고, ratio 폰트면
+  frame.height가 실제로 변할 때만 재계산.
+
+아래 A/B/C는 A0를 보강(루프가 시작되더라도 화면·저장값을 방어):
+
 ## 수정 (3겹 — DR-103/104 패턴 따름)
 
 **A — observer 방향-인지 (라이브 루프 차단, 1순위·weave):**
