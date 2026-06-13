@@ -787,53 +787,14 @@ function grownGridSpec(
   return grown;
 }
 
-/** #1 — reflow the descendants of a container whose own frame just changed
- *  (`oldFrame`→`newFrame`). Re-enters the engine's `onFrameChanged` and keeps ONLY
- *  the patches for the container's OWN children — the engine's block-2 output
- *  (which targets the container's SIBLINGS, not its children) is dropped by the
- *  `directChildIds` filter, so we never double-touch what onChildAdd already
- *  emitted. Recurses into any child that is itself a reflow container whose frame
- *  moved. Reads the pre-add document; returns extra reflow Patches. Depth-capped. */
-function relayoutContainerSubtree(
-  doc: CommandContext["document"],
-  containerId: string,
-  oldFrame: AgocraftItemFrame,
-  newFrame: AgocraftItemFrame,
-  depth: number,
-): Patch[] {
-  if (depth <= 0) return [];
-  const container = findItemDeep(doc, containerId);
-  if (container === undefined || container.children.length === 0) return [];
-  const directChildIds = new Set(container.children.map((c) => String(c.id)));
-  const out: Patch[] = [];
-  const childPatches = getLayoutEngine().onFrameChanged({
-    root: doc.root,
-    itemId: container.id,
-    oldFrame,
-    newFrame,
-  });
-  for (const p of childPatches) {
-    if (p.type !== "item.attrs") continue;
-    const childId = String(p.itemId);
-    if (!directChildIds.has(childId)) continue; // drop block-2 (sibling) output
-    out.push(p);
-    const childNode = findItemDeep(doc, childId);
-    const childOld = itemFrameOf(childNode);
-    const childNew = frameFromAttrsPatch(p);
-    if (
-      childOld !== undefined &&
-      childNew !== undefined &&
-      isReflowContainer(childNode) &&
-      !frameEqualsRatio(childOld, childNew)
-    ) {
-      out.push(...relayoutContainerSubtree(doc, childId, childOld, childNew, depth - 1));
-    }
-  }
-  return out;
-}
-
 /** #1 — given the sibling-shift patches an add produced, cascade a subtree reflow
- *  into every sibling that is itself a reflow container whose frame changed. */
+ *  into every sibling that is itself a reflow container whose frame changed.
+ *
+ *  DR-053: the layout CASCADE itself (reflow children → recurse into nested
+ *  containers) is now OWNED by the agocraft engine (`reflowSubtree`). The host no
+ *  longer recurses — it only maps the add's sibling-shift patches to the engine
+ *  call (which sibling changed → reflow its descendants). The engine recurses
+ *  internally using its own computed frames (consistent state). */
 function cascadeReflowFromSiblingPatches(
   doc: CommandContext["document"],
   siblingPatches: ReadonlyArray<Patch>,
@@ -843,13 +804,20 @@ function cascadeReflowFromSiblingPatches(
     if (sp.type !== "item.attrs") continue;
     const sibId = String(sp.itemId);
     const sibNode = findItemDeep(doc, sibId);
-    if (!isReflowContainer(sibNode)) continue;
+    if (sibNode === undefined || !isReflowContainer(sibNode)) continue;
     const sibOld = itemFrameOf(sibNode);
     const sibNew = frameFromAttrsPatch(sp);
     if (sibOld === undefined || sibNew === undefined || frameEqualsRatio(sibOld, sibNew)) {
       continue;
     }
-    out.push(...relayoutContainerSubtree(doc, sibId, sibOld, sibNew, 12));
+    out.push(
+      ...getLayoutEngine().reflowSubtree({
+        root: doc.root,
+        itemId: sibNode.id,
+        oldFrame: sibOld,
+        newFrame: sibNew,
+      }),
+    );
   }
   return out;
 }
