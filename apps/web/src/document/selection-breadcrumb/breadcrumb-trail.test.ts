@@ -56,9 +56,7 @@ function root(children: AgocraftItem[]): AgocraftDocument {
 //     └ B "Row"
 //        └ C "Cell"  (text, title "Hello")
 const TREE = root([
-  frame("A", { label: "Top" }, [
-    frame("B", { label: "Row" }, [textItem("C", { title: "Hello" })]),
-  ]),
+  frame("A", { label: "Top" }, [frame("B", { label: "Row" }, [textItem("C", { title: "Hello" })])]),
 ]);
 
 describe("buildBreadcrumb", () => {
