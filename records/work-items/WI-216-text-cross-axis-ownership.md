@@ -119,6 +119,19 @@ roundtrip 18 + derive 25 + document 1035 그린.
 export(agocraft 22f58fd) + toolbar 읽기가 **쓰기와 동일한 `findParentAndIndex`로 부모 해석** 후 호출 →
 read/write 대칭(불일치 불가). 라이브 검증 대기.
 
+### 3차 FIX (근본) — auto-fit observer가 RESIZED_POLICY로 정책을 STAMP (2026-06-13)
+
+운영자 JSON(`untitled-design-selection (3).json`) 분석 = 문제 텍스트의 layoutChild가
+`{grow:0,shrink:0,basis:0.6,crossSize:0.6501}` = **RESIZED_POLICY 시그니처**(양축 FIXED→고정). 즉
+모드 설정 후 **auto-fit observer가 정책을 fixed로 STAMP**하고 있었음. 경로: TextBlock auto-fit이
+managed 플래그(렌더-타임, docRef 타이밍 의존)가 순간 false면 `onUpdate→weave.item.update→onFrameChanged
+→RESIZED_POLICY`로 가서 flex 자식을 grow0/shrink0/basis N/crossSize N으로 재스탬프. (write/read 순수
+로직은 실-구조 통합테스트 `text-resize-realdoc.test.ts`로 정상 확인 → 버그는 런타임 observer 경로.) **수정:**
+auto-fit을 **항상 `weave.layout.contentMeasured` 커맨드로** 커밋(절대 onUpdate frame-write 안 함). 커맨드가
+**ctx.document(권위)로 managed 판정**: laid-out→engine.onContentMeasured(스탬프 없음)/free→평범한 frame
+패치(onFrameChanged 없음). 렌더-타임 managed 플래그와 무관하게 flex 자식이 RESIZED_POLICY에 도달 불가.
+weave-only(엔진 API 기존), document 1037 그린. 라이브 검증 대기.
+
 ## Follow-up (남음)
 
 - 증상②의 토글 정리: flex 자식에서 text-section의 자동너비/자동높이/고정(absolute-constraints) 컨트롤은

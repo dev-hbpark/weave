@@ -1213,13 +1213,49 @@ export function buildWeaveCommands(
           `weave.layout.contentMeasured: no item with id "${input.itemId}"`,
         );
       }
-      if (!LAYOUT_FEATURE_ENABLED) return ok(undefined, []);
-      const patches = getLayoutEngine().onContentMeasured({
-        root: ctx.document.root,
-        itemId: child.id,
-        content: input.content,
-      });
-      return ok(undefined, patches);
+      // Authoritative (ctx.document) managed decision — independent of any
+      // render-time `managed` flag the host may have computed against a stale
+      // snapshot. A LAID-OUT child (flex/grid) MUST go through onContentMeasured
+      // (the engine applies content to the auto axes WITHOUT stamping a fixed
+      // intrinsic). It must NEVER reach onFrameChanged → RESIZED_POLICY, which
+      // would re-stamp the policy to grow:0/shrink:0/basis:N/crossSize:N and
+      // silently turn 자동너비/자동높이 into 고정 (operator report).
+      const managed =
+        LAYOUT_FEATURE_ENABLED &&
+        getLayoutEngine().getContentAutoAxes({ root: ctx.document.root, itemId: child.id }).managed;
+      if (managed) {
+        return ok(
+          undefined,
+          getLayoutEngine().onContentMeasured({
+            root: ctx.document.root,
+            itemId: child.id,
+            content: input.content,
+          }),
+        );
+      }
+      // FREE / absolute / no-layout text: the engine owns no sizing, so just set
+      // the measured axes on the frame directly (a plain attrs patch — no engine
+      // reflow, no RESIZED_POLICY). This is the auto-width / auto-height fit for
+      // free-placement text that used to go through the host's onUpdate.
+      const cur = (child.attrs as { frame?: AgocraftItemFrame }).frame;
+      if (cur === undefined) return ok(undefined, []);
+      const nextFrame: AgocraftItemFrame = {
+        ...cur,
+        ...(input.content.width !== undefined ? { width: input.content.width } : {}),
+        ...(input.content.height !== undefined ? { height: input.content.height } : {}),
+      };
+      if (nextFrame.width === cur.width && nextFrame.height === cur.height) {
+        return ok(undefined, []);
+      }
+      const after = { ...(child.attrs as Record<string, unknown>), frame: nextFrame };
+      return ok(undefined, [
+        {
+          type: "item.attrs",
+          itemId: child.id,
+          before: child.attrs,
+          after: after as Readonly<Record<string, unknown>>,
+        } as Patch,
+      ]);
     },
   };
 

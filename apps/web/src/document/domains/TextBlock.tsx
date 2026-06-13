@@ -148,11 +148,10 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   fitWidthRef.current = fitWidth;
   const fitHeightRef = useRef(fitHeight);
   fitHeightRef.current = fitHeight;
-  // Engine-managed text commits its content size through the engine
-  // (`onContentMeasured`) so an auto axis is NOT silently stamped fixed; free text
-  // writes its frame directly via `onUpdate` (the engine owns no sizing for it).
-  const managedRef = useRef(contentAutoAxes.managed);
-  managedRef.current = contentAutoAxes.managed;
+  // All auto-fit commits go through `measureContent` (the weave.layout.contentMeasured
+  // command), which authoritatively decides managed-vs-free; the engine never lets a
+  // laid-out child get a fixed-intrinsic stamp. (No render-time managed flag needed
+  // for the commit — only for which axes to measure, via fitWidth/fitHeight above.)
   const measureContentRef = useRef(measureContent);
   measureContentRef.current = measureContent;
   const itemIdStr = String(item.id);
@@ -251,21 +250,27 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         }
       }
       if (nextHeight === undefined && nextWidth === undefined) return;
-      if (managedRef.current) {
-        // Engine-managed: report the measured content; the engine applies it to
-        // the auto axes WITHOUT stamping a fixed intrinsic (auto stays auto). NEVER
-        // write the frame directly — that path (onFrameChanged) would convert the
-        // auto axis to crossSize/sizeH and break fill/auto. Falls back to onUpdate
-        // only when no provider is mounted (tests / preview).
-        const commit = measureContentRef.current;
-        if (commit !== null) {
-          commit(itemIdRef.current, {
-            ...(nextHeight !== undefined ? { height: nextHeight } : {}),
-            ...(nextWidth !== undefined ? { width: nextWidth } : {}),
-          });
-          return;
-        }
+      // ALWAYS commit the auto-fit through `weave.layout.contentMeasured` (the
+      // measureContent channel) — NEVER through onUpdate's frame write. The command
+      // authoritatively (against the live editor doc) decides managed-vs-free: a
+      // LAID-OUT child goes through the engine's onContentMeasured (applies content
+      // to the auto axes, NO fixed-intrinsic stamp); free text gets a plain frame
+      // patch. Routing here avoids onFrameChanged → RESIZED_POLICY entirely, which
+      // (when the render-time `managed` flag was momentarily false) re-stamped a
+      // flex child to fully-FIXED and turned 자동너비/자동높이 into 고정 (operator
+      // report). measureContent is provided wherever the design canvas mounts; if
+      // absent (preview), the SKIP is safe — present mode has no content changes.
+      const commit = measureContentRef.current;
+      if (commit !== null) {
+        commit(itemIdRef.current, {
+          ...(nextHeight !== undefined ? { height: nextHeight } : {}),
+          ...(nextWidth !== undefined ? { width: nextWidth } : {}),
+        });
+        return;
       }
+      // Last-resort fallback ONLY when no measureContent provider is mounted (no
+      // engine reachable): a direct frame write. Safe for free text; a laid-out
+      // child shouldn't reach here in practice (the canvas always provides it).
       onUpdateRef.current?.({
         frame: {
           ...frameRef.current,

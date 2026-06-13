@@ -192,10 +192,8 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
   // fallback for FREE / absolute text (engine returns managed:false).
   const textAutoResize = sharedValue<LegacyTextAutoResize>(items, (it) => {
     if (doc !== null && LAYOUT_FEATURE_ENABLED) {
-      // Resolve the parent the SAME way the WRITE does (findParentAndIndex) so the
-      // read and write never disagree, then compute the axes with the engine's PURE
-      // verdict. (The {root,itemId} form used a different parent lookup that could
-      // mismatch → managed:false → fallback → flex 자동너비/자동높이 mis-read.)
+      // Resolve the parent the SAME way the WRITE does (findParentAndIndex on the
+      // live resolution doc) + the engine's PURE verdict, so read and write agree.
       const parentLayout = (
         findParentAndIndex(doc, it.id)?.parent.attrs as { layout?: LayoutSpec } | undefined
       )?.layout;
@@ -808,9 +806,7 @@ export const TextSection: ToolbarSectionComponent = ({ editor, items, ids }) => 
                             doc !== null
                               ? (
                                   findParentAndIndex(doc, id)?.parent.attrs as
-                                    | {
-                                        layout?: LayoutSpec;
-                                      }
+                                    | { layout?: LayoutSpec }
                                     | undefined
                                 )?.layout
                               : undefined;
