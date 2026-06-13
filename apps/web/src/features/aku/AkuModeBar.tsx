@@ -29,6 +29,7 @@ function Segments<V extends string>({
     readonly value: V;
     readonly label: string;
     readonly hint: string;
+    readonly disabled?: boolean;
   }>;
   readonly active: V;
   readonly onPick: (value: V) => void;
@@ -43,14 +44,16 @@ function Segments<V extends string>({
       <div className="flex gap-0.5" role="group" aria-label={label} data-testid={testid}>
         {options.map((opt) => {
           const isActive = active === opt.value;
+          const isDisabled = opt.disabled === true;
           return (
             <button
               key={opt.value}
               type="button"
               aria-pressed={isActive}
+              disabled={isDisabled}
               title={opt.hint}
               onClick={() => onPick(opt.value)}
-              className={`rounded-[var(--radius-sm)] px-2 py-0.5 text-[11px] border transition-colors ${
+              className={`rounded-[var(--radius-sm)] px-2 py-0.5 text-[11px] border transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-[color:var(--text-overlay-soft)] ${
                 isActive
                   ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)] border-[color:var(--accent)]"
                   : "border-[color:var(--surface-overlay-border)] text-[color:var(--text-overlay-soft)] hover:text-[color:var(--text-overlay)]"

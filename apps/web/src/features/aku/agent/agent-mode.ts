@@ -62,23 +62,32 @@ export const AKU_AGENT_MODE_OPTIONS: ReadonlyArray<{
   { value: "codex-ssh", label: "GPT SSH", hint: "서버의 ChatGPT 구독 Codex(app-server)로 실행" },
 ];
 
-/** 패널 2-토글 — provider 축 (Rule 6: 데이터). */
+/** 패널 2-토글 — provider 축 (Rule 6: 데이터). `disabled` = 선택 불가(현재 비활성).
+ *  GPT(openai)는 현재 비활성화 — Claude만 선택 가능. */
 export const AKU_PROVIDER_OPTIONS: ReadonlyArray<{
   readonly value: AkuProvider;
   readonly label: string;
   readonly hint: string;
+  readonly disabled?: boolean;
 }> = [
   { value: "anthropic", label: "Claude", hint: "Anthropic (Claude)" },
-  { value: "openai", label: "GPT", hint: "OpenAI (GPT)" },
+  { value: "openai", label: "GPT", hint: "OpenAI (GPT) — 현재 비활성화", disabled: true },
 ];
 
-/** 패널 2-토글 — transport 축 (Rule 6: 데이터). */
+/** 패널 2-토글 — transport 축 (Rule 6: 데이터). `disabled` = 선택 불가(현재 비활성).
+ *  API transport는 현재 비활성화 — SSH(구독 CLI)만 선택 가능. */
 export const AKU_TRANSPORT_OPTIONS: ReadonlyArray<{
   readonly value: AkuTransport;
   readonly label: string;
   readonly hint: string;
+  readonly disabled?: boolean;
 }> = [
-  { value: "api", label: "API", hint: "API 키로 실행 (설정된 연결별 키, 없으면 서버 공유 키)" },
+  {
+    value: "api",
+    label: "API",
+    hint: "API 키로 실행 (설정된 연결별 키, 없으면 서버 공유 키) — 현재 비활성화",
+    disabled: true,
+  },
   { value: "ssh", label: "SSH", hint: "서버의 구독 CLI로 실행 (Claude CLI / ChatGPT Codex)" },
 ];
 
