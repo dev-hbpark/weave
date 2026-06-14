@@ -1,6 +1,6 @@
 # WI-217 — 평면 scene 렌더러 + 호스트 순수화(NestedFrame 제거, 셀렉션 크롬 scene화)
 
-- **Status:** IN PROGRESS (S2+S3 done) · 2026-06-14
+- **Status:** DONE (S2–S5) · 2026-06-14 · main 통합(weave b43edcd / agocraft f789121, push 보류)
 - **Decision:** DR-138 (pairs agocraft DR-054/WI-041)
 - **Driver:** 운영자 — NestedFrame 제거 + 셀렉션/핸들 바닐라화 + 뷰모델은 그리기만.
 
@@ -51,7 +51,17 @@
   - **검증**: tsc/biome 클린, 단위 1368 green(−6=삭제된 grid-spec 테스트). grid auto-grow는
     `commands-layout-relayout.test.ts`가 권위검증(2×2→3컬럼 grow + item.layout 패치 + no-grow 케이스 +
     nested cascade, 전부 실엔진 경유). 라이브 스모크=selection-chrome-rotation 4 e2e(add/setLayout 경로) green.
-- **S5 · 검증·통합**: e2e + WEAVE_PERF=1(WI-197/198 기준) + main 통합.
+- **S5 · 검증·통합 (DONE)**
+  - **Perf**: WI-197(카메라 zoom=ref-mutation, React 재렌더 0 — 미변경) / WI-198(드래그 memo 보존)
+    핫패스 무영향. scene-geom 버스 발행은 FrameScene 렌더(문서변경)에서만 — zoom 경로 미진입. geomMap/
+    childrenMap O(N) 빌드는 드래그 커밋당 ~수백 op(<0.1ms). **라이브 camera-glue 스모크**(ctrl+wheel zoom 후
+    핸들이 새 스케일의 SE 코너로 재투영, <12px)=green. **권위 FPS 스펙(canvas-zoom-fps-perf/canvas-cull-perf)은
+    prepareDesign networkidle로 샌드박스 실행불가 → CI에서 측정 필요(잔여).**
+  - **e2e**: selection-chrome-rotation 5 테스트 green. 전체 e2e 스위트는 networkidle 차단으로 샌드박스 비실행
+    (기준선 아님 — 메모리 기록).
+  - **통합**: agocraft/weave 각 `refactor/layout-scene-engine`→main fast-forward(agocraft 3커밋 f789121,
+    weave 8+커밋). agocraft 단위 layout 303+editor 191 green 재확인. 외부레포(100_hackathon) 서브모듈
+    포인터 bump 커밋 완료. **origin push는 운영자 몫**(로컬 main까지만 진행).
 
 ## Acceptance
 
