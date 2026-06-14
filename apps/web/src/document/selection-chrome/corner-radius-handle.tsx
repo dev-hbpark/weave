@@ -21,6 +21,7 @@
 // file owns only geometry + interaction.
 
 import type { Editor, ItemSelectionViewModel, SelectionBounds } from "@agocraft/editor";
+import { SelectionChromeZ } from "@weave/design-system";
 import { type JSX, useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { type CornerKey, type CornerRadii, isUniformRadii } from "../corner-radius.js";
@@ -298,10 +299,10 @@ function Grip({ corner, itemId, kind, editor, geom, radii, split }: GripProps): 
         cursor: "pointer",
         padding: 0,
         touchAction: "none",
-        // WI-196 — selection-chrome layer (z 40, same as the SelectionLayer
-        // resize/rotate handles + rubber-band), so contextual menus (z 50) and
-        // the Aku panel (z 48) draw ABOVE this inner-element handle.
-        zIndex: 40,
+        // POINT handle (draggable dot) — same top tier as the resize/rotate +
+        // gap grips, above the layout-edit line handles that were occluding it.
+        // Single source: the SelectionChromeZ contract (DR-design-033).
+        zIndex: SelectionChromeZ.pointHandle,
       }}
     />,
     document.body,

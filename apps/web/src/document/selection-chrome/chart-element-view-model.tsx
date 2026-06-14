@@ -24,6 +24,7 @@
 // CSS-transform containing block.
 
 import type { Editor, ItemSelectionViewModel, SelectionBounds } from "@agocraft/editor";
+import { SelectionChromeZ } from "@weave/design-system";
 import { type JSX, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { type DatasetPayload, setCell } from "../dataset/dataset-store.js";
@@ -370,10 +371,9 @@ function HandleButton({
         cursor: CURSOR_BY_AXIS[anchor.axis],
         padding: 0,
         touchAction: "none",
-        // WI-196 — selection-chrome layer: sit at the SAME z as the SelectionLayer
-        // resize/rotate handles + rubber-band (z 40), so contextual menus (z 50)
-        // and the Aku panel (z 48) draw ABOVE these inner-element handles.
-        zIndex: 40,
+        // POINT handle (draggable datum dot) — top selection-chrome tier via the
+        // SelectionChromeZ contract, above any line handle; menus / Aku draw above.
+        zIndex: SelectionChromeZ.pointHandle,
         // Hidden chart-level handles: invisible + click-through until revealed.
         opacity: visible ? 1 : 0,
         pointerEvents: visible ? "auto" : "none",
@@ -512,9 +512,9 @@ function BoundOutline({ bounds }: { readonly bounds: ChartElementBounds }): JSX.
         borderRadius: 3,
         boxSizing: "border-box",
         pointerEvents: "none",
-        // WI-196 — just below this mark's handles (z 40); both within the
-        // selection-chrome band, under contextual menus / the Aku panel.
-        zIndex: 39,
+        // Non-interactive guide stroke — kept at the LINE-handle tier so it
+        // paints below this mark's POINT handles (SelectionChromeZ contract).
+        zIndex: SelectionChromeZ.lineHandle,
       }}
     />,
     document.body,

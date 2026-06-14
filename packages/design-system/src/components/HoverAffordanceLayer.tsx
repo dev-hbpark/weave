@@ -39,6 +39,7 @@
 
 import { type CSSProperties, type RefObject, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { SelectionChromeZ } from "../selection-chrome-z.js";
 
 export interface Rect {
   /** Design-plane local CSS pixels. The host (production: FrameStage's
@@ -96,10 +97,9 @@ const LAYER_STYLE: CSSProperties = {
   width: 0,
   height: 0,
   pointerEvents: "none",
-  // Sits below SelectionLayer (z 43 — DR-design-033) and
-  // MarqueeSelectionLayer (z 42) so selection chrome paints on top of hover
-  // affordance.
-  zIndex: 35,
+  // Below ALL selection chrome (the point/line handles + ring + marquee) so a
+  // selection always paints over hover hints — see the SelectionChromeZ contract.
+  zIndex: SelectionChromeZ.hoverAffordance,
 };
 
 function tierStyle(rect: Rect, host: HostBox): CSSProperties {

@@ -1,18 +1,18 @@
 // biome-ignore-all lint/style/noNonNullAssertion: Playwright e2e — `!` asserts presence of test globals (window.__weave*) and locator results; the nn() helper cannot cross the page.evaluate() boundary into the browser context
-// WI-196 — inner-element additional handles (corner-radius, layout-edit, chart
-// bar/value handles) must share the SELECTION-CHROME layer (z 40 — the same as
-// the SelectionLayer resize/rotate handles + rubber-band), NOT a higher z. They
-// had drifted to z 49/50, which is at/above the contextual menu (z 50) and the
-// Aku panel (z 48), so the handles wrongly painted OVER those surfaces. This pins
-// the computed z so it can't drift back above the menu/panel layers again.
+// WI-196 + DR-design-033 — inner-element additional handles (corner-radius,
+// layout-edit, chart bar/value handles) must obey the SelectionChromeZ contract:
+// POINT handles (draggable dots: corner-radius, chart datum) ride the
+// `pointHandle` tier, the non-interactive guide outline rides `lineHandle` just
+// below them, and ALL of it stays below the floating overlays (contextual
+// toolbar z 46, Aku panel z 48, menu z 50). This pins the computed z to the
+// single-source contract so it can't drift back above the menu/panel layers (or
+// behind a line handle) again. Imported direct from source (not the package
+// index) to keep React out of the node test context.
 
 import { expect, type Page, test } from "@playwright/test";
+import { SelectionChromeZ } from "../../../packages/design-system/src/selection-chrome-z.js";
 import { addFrame, clearAllDesigns, prepareDesign, setSelection } from "./helpers.js";
 
-// The layer band the inner-element handles must stay at-or-below. Anything that
-// should paint ABOVE them — contextual toolbar (z 46), Aku panel (z 48),
-// contextual menu (z 50) — lives above this.
-const CHROME_Z = 40;
 const MENU_PANEL_FLOOR = 46; // the lowest "above the handles" surface
 
 test.beforeEach(async ({ page }) => {
@@ -43,7 +43,7 @@ async function addChart(page: Page): Promise<string> {
   return id;
 }
 
-test("WI-196 — the corner-radius handle sits on the selection-chrome layer (z 40, below menus/panel)", async ({
+test("WI-196 / DR-design-033 — the corner-radius handle rides the POINT-handle tier, below menus/panel", async ({
   page,
 }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-196-corner" });
@@ -59,11 +59,11 @@ test("WI-196 — the corner-radius handle sits on the selection-chrome layer (z 
 
   await expect(page.getByTestId("corner-radius-handle-tr")).toBeVisible();
   const z = await zIndexOf(page, "corner-radius-handle-tr");
-  expect(z).toBe(CHROME_Z);
+  expect(z).toBe(SelectionChromeZ.pointHandle);
   expect(z).toBeLessThan(MENU_PANEL_FLOOR);
 });
 
-test("WI-196 — the chart value handle sits on the selection-chrome layer (z 40, below menus/panel)", async ({
+test("WI-196 / DR-design-033 — the chart value handle rides the POINT-handle tier; its guide outline sits below it", async ({
   page,
 }) => {
   await prepareDesign(page, { flavor: "mixed", title: "WI-196-chart" });
@@ -87,14 +87,16 @@ test("WI-196 — the chart value handle sits on the selection-chrome layer (z 40
   const handle = page.locator('[data-testid="chart-value-handle"]');
   await expect(handle).toBeVisible();
   const z = Number(await handle.first().evaluate((el) => getComputedStyle(el).zIndex));
-  expect(z).toBe(CHROME_Z);
+  expect(z).toBe(SelectionChromeZ.pointHandle);
   expect(z).toBeLessThan(MENU_PANEL_FLOOR);
-  // The selection outline around the mark stays just below its handles.
+  // The guide outline around the mark rides the LINE tier, just below its
+  // POINT handles.
   const boundZ = Number(
     await page
       .locator('[data-testid="chart-element-bound"]')
       .first()
       .evaluate((el) => getComputedStyle(el).zIndex),
   );
+  expect(boundZ).toBe(SelectionChromeZ.lineHandle);
   expect(boundZ).toBeLessThan(z);
 });

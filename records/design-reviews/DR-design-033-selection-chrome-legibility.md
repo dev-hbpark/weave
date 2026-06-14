@@ -63,6 +63,21 @@ descendant는 **co-equal 타깃이 아니라 secondary guide**다. focal hovered
 - 새 위계(오름차순): HoverAffordance 35 · chart guide 39 · LayoutLine/padding 40 · corner-radius grip 40 · GapGrip 41 · Marquee 42 · **SelectionLayer(ring+resize 핸들) 43** · RubberBand 45 · SelectionToolbar 46 · Aku 48 · menu 50 · tooltip 60.
 - 43은 GapGrip(41)/Marquee(42) **위**, SelectionToolbar(46)·Aku(48)·menu(50)·tooltip(60) **아래**. 메뉴/툴바/Aku는 여전히 모든 chrome 위에 그려짐.
 - gap grip/라인은 40–41 유지(드래그 타깃 위계 보존).
+- **모서리 곡률 핸들도 geometry grip이므로 같은 top tier(z 40→43)로 승격**(사용자 후속 요청) — padding/track 라인(40)·gap grip(41)에 가려지던 것 해소. resize 핸들과 동일 tier.
+
+### 문제 4 — z-layer 일반화 (재발 방지, 사용자 후속 요청)
+
+> "이런 이슈가 다시 안 생기게 **선타입 핸들과 포인트타입 핸들의 레이어를 일반화해서 관리**하자."
+
+문제 1b·2·3은 모두 **흩어진 inline `zIndex` 매직넘버**(SelectionLayer 40→43, HoverAffordance 35, LayoutLine/Padding 40, GapGrip 41, corner-radius 40, chart 40/39)가 서로 드리프트해 **POINT 핸들(드래그 점)이 LINE 핸들(드래그 선) 뒤로 가라앉던** 같은 클래스의 버그였다. 단일 소스로 묶어 근절한다.
+
+- **`@weave/design-system`에 `SelectionChromeZ` 계약 신설**(`packages/design-system/src/selection-chrome-z.ts`, index export). design-system이 published 하위 레이어이므로 design-system 컴포넌트(SelectionLayer/HoverAffordanceLayer)와 app 핸들(LayoutEditHandles/corner-radius/chart/marquee)이 **모두 여기서 import**(의존 방향 app→design-system 유지).
+- **두 핸들 패밀리 + 둘러싼 레이어:** `hoverAffordance(35) < lineHandle(40) < marquee(42) < pointHandle(43)` < 플로팅 오버레이(toolbar 46 / Aku 48 / menu 50 / tooltip 60).
+  - **LINE 핸들(드래그 선):** padding edge, grid track/gap 라인, chart 가이드 아웃라인 → `lineHandle`.
+  - **POINT 핸들(드래그 점):** resize/rotate + selection ring, gap grip 다이아몬드, corner-radius 그립, chart datum 핸들 → `pointHandle`. **항상 line 위**.
+- 새 핸들 추가 시 **패밀리만 선택**(선이면 `lineHandle`, 점이면 `pointHandle`) — inline z 금지.
+- GapGrip은 41→`pointHandle`(43)로 정규화(원래도 point였으나 라인 바로 위 41에 임시 배치). 동작 무변경.
+- **불변식 잠금:** `selection-chrome-z.test.ts` 4 케이스(family 순서·point>line 핵심 불변식·hover 최하·전부 오버레이 floor 46 미만). 향후 드리프트는 CI에서 실패.
 
 ### 문제 3 — gap/padding 핸들 마감 + 겹침/속빔 (LayoutEditHandles)
 
@@ -87,11 +102,16 @@ descendant는 **co-equal 타깃이 아니라 secondary guide**다. focal hovered
 
 | 파일 | 변경 |
 |---|---|
+| `packages/design-system/src/selection-chrome-z.ts` | **(문제 4)** 신규 — `SelectionChromeZ` 계약(hover 35 / line 40 / marquee 42 / point 43) 단일 소스 |
+| `packages/design-system/src/index.ts` | **(문제 4)** `SelectionChromeZ` export |
 | `packages/design-system/src/tokens.css` | 신규 토큰 `--hover-affordance-stroke-descendant: color-mix(... 55% ...)` + 주석 블록 갱신 |
-| `packages/design-system/src/components/HoverAffordanceLayer.tsx` | descendant outline `2px dashed (hovered token)`→`1px dashed (descendant token)`, `outlineOffset 0px`→`-1px`; LAYER_STYLE z-주석(SelectionLayer 43) 갱신 |
-| `packages/design-system/src/components/SelectionLayer.tsx` | 포털 `zIndex 40`→`43` + 주석 |
-| `apps/web/src/document/selection-chrome/corner-radius-handle.tsx` | **(문제 3)** grip background `var(--surface-1)`→`#ffffff`(불투명 채움 통일) |
-| `apps/web/src/document/selection-chrome/LayoutEditHandles.tsx` | **(문제 1b)** `MIN_PADDING_EDGE_INSET_PX = 6` — paddingEdges 위치·cross 길이를 최소 인셋으로 클램프(ring 안쪽 고정, 0 padding에서도 grabbable); **(문제 3)** `GRIP_LANE_PX = 18` — gridGapGrips 열=상단/행=좌측 disjoint 레인(겹침 해소); GapGrip background `--surface-1`→`#ffffff`(불투명 채움) + `boxShadow 0 1px 4px rgba(0,0,0,0.22)` + `borderRadius 2`; LayoutLine `opacity 0.55`→`0.42`; PaddingEdge `opacity 0.7`→`0.6`; z-주석 갱신 |
+| `packages/design-system/src/components/HoverAffordanceLayer.tsx` | descendant outline `2px dashed (hovered token)`→`1px dashed (descendant token)`, `outlineOffset 0px`→`-1px`; z `35`→`SelectionChromeZ.hoverAffordance` |
+| `packages/design-system/src/components/SelectionLayer.tsx` | 포털 z `40`→`SelectionChromeZ.pointHandle`(=43) |
+| `apps/web/src/document/selection-chrome/corner-radius-handle.tsx` | **(문제 3)** grip background `var(--surface-1)`→`#ffffff`; **(문제 2/4)** z →`SelectionChromeZ.pointHandle` |
+| `apps/web/src/document/selection-chrome/chart-element-view-model.tsx` | **(문제 4)** datum 핸들 z `40`→`pointHandle`, 가이드 아웃라인 z `39`→`lineHandle` |
+| `apps/web/src/document/marquee/MarqueeSelectionLayer.tsx` | **(문제 4)** z `42`→`SelectionChromeZ.marquee` |
+| `apps/web/src/document/selection-chrome/selection-chrome-z.test.ts` | **(문제 4)** 신규 — 계약 불변식 4 케이스 |
+| `apps/web/src/document/selection-chrome/LayoutEditHandles.tsx` | **(문제 1b)** `MIN_PADDING_EDGE_INSET_PX = 6` — paddingEdges 위치·cross 길이를 최소 인셋으로 클램프(ring 안쪽 고정, 0 padding에서도 grabbable); **(문제 3)** `GRIP_LANE_PX = 18` — gridGapGrips 열=상단/행=좌측 disjoint 레인(겹침 해소); GapGrip background `--surface-1`→`#ffffff`(불투명 채움) + `boxShadow 0 1px 4px rgba(0,0,0,0.22)` + `borderRadius 2`; LayoutLine `opacity 0.55`→`0.42`; PaddingEdge `opacity 0.7`→`0.6`; **(문제 4)** z 인라인 40/41 → `SelectionChromeZ.lineHandle`(라인) / `.pointHandle`(gap grip) |
 
 ## 검증
 

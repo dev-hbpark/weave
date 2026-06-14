@@ -30,6 +30,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { SelectionChromeZ } from "../selection-chrome-z.js";
 import { type HandleDir, SelectionHandle } from "./SelectionHandle.js";
 
 export interface SelectionLayerCapability {
@@ -178,14 +179,11 @@ export function SelectionLayer({
         width: box.width,
         height: box.height,
         pointerEvents: "none",
-        // DR-design-033 — the selection ring + square resize/rotate handles
-        // are the TOP-MOST non-menu chrome: they must never be occluded by the
-        // layout-edit gap grips (z 41) / lines (z 40) or the marquee (z 42).
-        // Raised to 43 (was 40). Still BELOW the SelectionToolbar (z 46), Aku
-        // panel (z 48), menus (z 50) and tooltips (z 60), so those overlays
-        // continue to draw above all selection chrome. The square resize
-        // handles inherit this portal z, satisfying "handles on top".
-        zIndex: 43,
+        // The selection ring + square resize/rotate handles are POINT handles:
+        // the top-most selection chrome, never occluded by line handles or the
+        // marquee. Single source: the SelectionChromeZ contract (DR-design-033).
+        // The resize handles inherit this portal z.
+        zIndex: SelectionChromeZ.pointHandle,
       }}
     >
       {/* Selection outline. `outline` (not `border`) keeps the box's hit

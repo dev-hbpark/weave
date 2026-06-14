@@ -17,6 +17,7 @@
 
 import type { AutoFlexSpec, AutoGridSpec, LayoutSpec } from "@agocraft/core";
 import type { Editor, ItemSelectionViewModel, SelectionBounds } from "@agocraft/editor";
+import { SelectionChromeZ } from "@weave/design-system";
 import { type JSX, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -502,12 +503,10 @@ function LayoutLine({
         margin: 0,
         cursor: vertical ? "col-resize" : "row-resize",
         touchAction: "none",
-        // WI-196 — selection-chrome layer. DR-design-033: the SelectionLayer
-        // ring + resize/rotate handles moved UP to z 43 (top-most non-menu
-        // chrome), so these inner layout lines stay at z 40 and no longer risk
-        // occluding the square resize handles. Menus (z 50) / Aku (z 48) /
-        // toolbar (z 46) still draw above everything here.
-        zIndex: 40,
+        // LINE handle (draggable stroke) — sits below every POINT handle by the
+        // SelectionChromeZ contract, so the resize / gap / corner grips on top
+        // of it stay clickable.
+        zIndex: SelectionChromeZ.lineHandle,
       }}
     />,
     document.body,
@@ -611,7 +610,7 @@ function PaddingEdge({
         margin: 0,
         cursor: edge.vertical ? "col-resize" : "row-resize",
         touchAction: "none",
-        zIndex: 40, // WI-196 selection-chrome layer (resize handles at z 43, DR-design-033)
+        zIndex: SelectionChromeZ.lineHandle, // LINE handle — below point handles
       }}
     />,
     document.body,
@@ -705,7 +704,9 @@ function GapGrip({
         margin: 0,
         cursor: column ? "col-resize" : "row-resize",
         touchAction: "none",
-        zIndex: 41, // just above the track line so the grip wins its small spot
+        // POINT handle (draggable dot) — above every line handle so the grip
+        // wins its spot over the track/padding strokes it sits among.
+        zIndex: SelectionChromeZ.pointHandle,
       }}
     />,
     document.body,

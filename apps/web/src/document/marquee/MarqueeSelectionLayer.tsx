@@ -29,6 +29,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { SelectionChromeZ } from "@weave/design-system";
 import { createPortal } from "react-dom";
 import { useEditAffordancesAllowed } from "../interactions/interaction-mode.js";
 
@@ -350,7 +351,7 @@ export const MarqueeSelectionLayer = forwardRef<HTMLDivElement, MarqueeSelection
                   width: viewportRect.width,
                   height: viewportRect.height,
                   pointerEvents: "none",
-                  zIndex: 42,
+                  zIndex: SelectionChromeZ.marquee,
                   background:
                     intent === "toggle"
                       ? "rgba(255, 184, 108, 0.12)"

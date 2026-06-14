@@ -1,5 +1,6 @@
 export { cn } from "./cn.js";
 export * from "./components/index.js";
+export { type SelectionChromeLayer, SelectionChromeZ } from "./selection-chrome-z.js";
 export {
   type UseDismissOnOutsidePointerArgs,
   useDismissOnOutsidePointer,
