@@ -3082,7 +3082,14 @@ export function buildWeaveCommands(
   // subtree re-arranges) — all in ONE transaction (one undo). Gated: no Hug
   // ancestor ⇒ only the sizePx is recorded (no layout change → existing path).
   const resizeHug: Command<
-    { readonly itemId: string; readonly sizePx: { readonly w: number; readonly h: number } },
+    {
+      readonly itemId: string;
+      readonly sizePx: { readonly w: number; readonly h: number };
+      // Design-plane px basis → EXACT Figma hug (root anchored to hug px ÷ parent
+      // px). Omit for the proportional cancel-trick fallback.
+      readonly designWidth?: number;
+      readonly designHeight?: number;
+    },
     void
   > = {
     name: "weave.item.resizeHug",
@@ -3098,7 +3105,13 @@ export function buildWeaveCommands(
           : createAutoFlexChildPolicy({ sizePx: input.sizePx });
 
       const reflow = LAYOUT_FEATURE_ENABLED
-        ? reflowHugOnResize({ root: ctx.document.root, itemId: child.id, newSizePx: input.sizePx })
+        ? reflowHugOnResize({
+            root: ctx.document.root,
+            itemId: child.id,
+            newSizePx: input.sizePx,
+            ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
+            ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
+          })
         : [];
 
       // Merge the child's new sizePx into its reflow frame-patch (one full-attrs

@@ -1,9 +1,9 @@
-// WI-042 / DR-055 / FR-011 P3 — live proof that a Hug frame grows when a child
-// inside it is resized (option A: resize writes the child's px sizePx, the engine
-// reflows the Hug ancestor up). Drives via weave.frame.setSizing + resizeHug
-// (toolbar is a later step). Demonstrates upward propagation end-to-end (the
-// design-dims-free cancel-trick grows the Hug root PROPORTIONALLY; exact-hug
-// bootstrap is a documented follow-up).
+// WI-042 / DR-055 / FR-011 P3 — live proof that a Hug frame grows EXACTLY to fit
+// when a child inside it is resized (option A: resize writes the child's px
+// sizePx; the engine reflows the Hug ancestor up). Passing design dims anchors
+// the root to its exact hug size (F width = child px ÷ design width) — bootstrapped
+// on the FIRST resize, not just proportionally. Drives via weave.frame.setSizing
+// + weave.item.resizeHug (the resize-handle pipeline + toolbar are follow-ups).
 //
 // Bootstraps without networkidle (the sandbox vite never settles).
 
@@ -131,44 +131,44 @@ test("P3: resizing a child grows its Hug frame (upward propagation, live)", asyn
     return hug;
   }, F);
 
-  // First resize seeds the child's px (Hug root has no old px basis yet → frame
-  // unchanged; the cancel-trick needs a prior px to scale from).
-  await exec(page, "weave.item.resizeHug", { itemId: child, sizePx: { w: 120, h: 40 } });
-  await page.waitForFunction(
-    ({ id }) => {
-      let sp: number | undefined;
-      const walk = (n: N) => {
-        if (String(n.id) === id) sp = n.attrs.layoutChild?.sizePx?.w;
-        for (const c of n.children) walk(c);
-      };
-      walk((window as unknown as W).__weaveDoc.root as unknown as N);
-      return sp === 120;
-    },
-    { id: child },
-  );
-  const w1 = (await findFrame(page, F)).width ?? 0;
+  // Design-plane px basis → EXACT Figma hug (F = child px ÷ design width).
+  const design = await page.evaluate(() => {
+    const d = (window as unknown as { __weaveDesign?: { width: number; height: number } })
+      .__weaveDesign;
+    return { w: d?.width ?? 0, h: d?.height ?? 0 };
+  });
+  expect(design.w).toBeGreaterThan(0);
 
-  // Second resize doubles the child's px → the Hug frame grows ~2×.
-  await exec(page, "weave.item.resizeHug", { itemId: child, sizePx: { w: 240, h: 40 } });
-  await page.waitForFunction(
-    ({ id }) => {
-      let sp: number | undefined;
-      const walk = (n: N) => {
-        if (String(n.id) === id) sp = n.attrs.layoutChild?.sizePx?.w;
-        for (const c of n.children) walk(c);
-      };
-      walk((window as unknown as W).__weaveDoc.root as unknown as N);
-      return sp === 240;
-    },
-    { id: child },
-  );
-  const w2 = (await findFrame(page, F)).width ?? 0;
+  const resize = async (w: number) => {
+    await exec(page, "weave.item.resizeHug", {
+      itemId: child,
+      sizePx: { w, h: 40 },
+      designWidth: design.w,
+      designHeight: design.h,
+    });
+    await page.waitForFunction(
+      ({ id, w }) => {
+        let sp: number | undefined;
+        const walk = (n: N) => {
+          if (String(n.id) === id) sp = n.attrs.layoutChild?.sizePx?.w;
+          for (const c of n.children) walk(c);
+        };
+        walk((window as unknown as W).__weaveDoc.root as unknown as N);
+        return sp === w;
+      },
+      { id: child, w },
+    );
+    return (await findFrame(page, F)).width ?? 0;
+  };
 
-  const msg = `w1=${w1} w2=${w2}`;
-  expect(w1, msg).toBeGreaterThan(0);
-  // child 120→240 (×2) ⇒ Hug frame width ~×2 (proportional upward growth).
-  expect(w2 / w1, msg).toBeGreaterThan(1.8);
-  expect(w2 / w1, msg).toBeLessThan(2.2);
+  // EXACT hug: single child, gap/pad 0 ⇒ F width = child px ÷ design width.
+  const w1 = await resize(120);
+  const w2 = await resize(240);
+
+  const msg = `w1=${w1} w2=${w2} designW=${design.w}`;
+  expect(w1, msg).toBeCloseTo(120 / design.w, 3); // exact, bootstrapped on FIRST resize
+  expect(w2, msg).toBeCloseTo(240 / design.w, 3); // exact
+  expect(w2 / w1, msg).toBeCloseTo(2, 1); // and proportional
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });

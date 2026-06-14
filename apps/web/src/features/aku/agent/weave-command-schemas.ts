@@ -1435,9 +1435,11 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       {
         itemId: STR,
         sizePx: obj({ w: NUM, h: NUM }, ["w", "h"], "Absolute pixel size {w,h}."),
+        designWidth: { ...NUM, description: "Design-plane width px → exact Hug (optional)." },
+        designHeight: { ...NUM, description: "Design-plane height px → exact Hug (optional)." },
       },
       ["itemId", "sizePx"],
-      "Resize a child by ABSOLUTE px (its intrinsic size). When the child sits inside a Hug frame, that frame grows to fit and the subtree re-arranges — all in one undo. Use for a child of a Hug container; for free-placement items use weave.item.update with a ratio frame.",
+      "Resize a child by ABSOLUTE px (its intrinsic size). When the child sits inside a Hug frame, that frame grows to fit and the subtree re-arranges — all in one undo (pass designWidth/Height for an exact Hug). Use for a child of a Hug container; for free-placement items use weave.item.update with a ratio frame.",
     ),
   },
   // Set how `itemId` behaves inside its parent frame's layout. Omit `policy` to
