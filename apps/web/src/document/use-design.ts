@@ -138,6 +138,35 @@ function withDocument(design: Design, document: AgocraftDocument): Design {
   };
 }
 
+/** Re-mirror the session-mutable wrapper fields (`presentationOrder`,
+ *  `background`) from the document's `attrs` — the same doc.attrs → wrapper
+ *  sync `applyChange` performs for live edits, hoisted to a pure helper for
+ *  the load path.
+ *
+ *  WI-161 delta load rebuilds `document` by replaying the patch tail onto an
+ *  OLD snapshot, but otherwise spreads that snapshot's wrapper. A reorder /
+ *  background change that lives in the tail therefore lands in
+ *  `document.attrs` yet leaves the wrapper at its stale snapshot value. Since
+ *  present mode reads `design.presentationOrder` (the wrapper) to build its
+ *  step list, the lag surfaced as "edit order ≠ present order" — present fell
+ *  back to document (z-)order whenever the snapshot's order pre-dated the
+ *  reorder. Mirroring from the freshly-replayed document closes the gap. */
+export function mirrorWrapperFromDocument(design: Design): Design {
+  const docAttrs = (design.document.attrs ?? {}) as Readonly<Record<string, unknown>>;
+  const order = docAttrs.presentationOrder;
+  const presentationOrder =
+    Array.isArray(order) && order.every((s) => typeof s === "string")
+      ? (order as ReadonlyArray<string>)
+      : design.presentationOrder;
+  const resolvedBg = resolveStoredColor(
+    design.document,
+    docAttrs.background,
+    design.document.root,
+    design.background,
+  );
+  return { ...design, presentationOrder, background: resolvedBg ?? design.background };
+}
+
 /** Resolve the initial Design for `id`.
  *
  *  `source` discriminates the open path under the offline-first model:
@@ -279,7 +308,14 @@ export function useDesign(id: string, opts: UseDesignOptions = {}): UseDesignRes
       // live document. Empty tail (pre-delta / just-compacted) → snapshot as-is.
       const restored =
         fetched.patches.length > 0
-          ? { ...hydrated, document: replaySerializedPatches(hydrated.document, fetched.patches) }
+          ? // The replayed patch tail may carry session-mutable design-level
+            // changes (reorder / background); re-mirror them onto the wrapper
+            // so present mode's `presentationOrder` reflects the tail, not the
+            // stale snapshot (otherwise it falls back to document z-order).
+            mirrorWrapperFromDocument({
+              ...hydrated,
+              document: replaySerializedPatches(hydrated.document, fetched.patches),
+            })
           : hydrated;
       setDesign(restored);
       // WI-136 — the cloud copy arrived after mount (LS-miss / present mode), so

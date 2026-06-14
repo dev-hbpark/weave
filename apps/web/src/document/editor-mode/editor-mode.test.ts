@@ -295,6 +295,10 @@ describe("DeckPolicy (WI-194 / DR-127 — what the deck is made of)", () => {
       const nested = root.children[0]?.children[0];
       if (nested === undefined) throw new Error("fixture");
       expect(deck.childOwnsScene(nested)).toBe(true);
+      // present cross-scene z-order context: above occludes (hidden),
+      // below is soft background (blur)
+      expect(deck.sceneVisibility("above")).toBe("hidden");
+      expect(deck.sceneVisibility("below")).toBe("blur");
     }
   });
 
@@ -310,6 +314,10 @@ describe("DeckPolicy (WI-194 / DR-127 — what the deck is made of)", () => {
       const nested = root.children[0]?.children[0];
       if (nested === undefined) throw new Error("fixture");
       expect(deck.childOwnsScene(nested)).toBe(false);
+      // self-contained full-bleed slides: no z-order context — every
+      // non-active scene is hidden (no blur) so the active slide shows cleanly
+      expect(deck.sceneVisibility("above")).toBe("hidden");
+      expect(deck.sceneVisibility("below")).toBe("hidden");
     }
   });
 });

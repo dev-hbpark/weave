@@ -281,6 +281,17 @@ export interface DeckPolicy {
   /** Frames that are NOT steps but still get their own present scene
    *  (mixed: deck-excluded top-level frames stay reachable via links). */
   collectNonStepSceneIds(root: AgocraftItem): ReadonlyArray<string>;
+  /** Present cross-scene visibility — how a NON-active scene paints relative
+   *  to the active frame, given whether it sits ABOVE or BELOW it in doc
+   *  (z-)order. Active-subtree scenes never reach this (they always render
+   *  normally). Free placement reads the active frame against its canvas
+   *  neighbours: an above scene is `"hidden"` (it would occlude the active
+   *  frame) and a below scene is `"blur"` (soft background context). Page-
+   *  bounded slides are self-contained full-bleed pages — there is no z-order
+   *  context to show, so every non-active scene is `"hidden"` (no blur) and
+   *  the active slide displays cleanly. Rule 6: the classifier lives here, not
+   *  as an inline flavor compare in PresentPage. */
+  sceneVisibility(position: "above" | "below"): "hidden" | "blur";
 }
 
 /** Modifier intent of a frame click — Figma's selection model: plain click

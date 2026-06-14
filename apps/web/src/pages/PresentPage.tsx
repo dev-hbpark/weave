@@ -663,9 +663,13 @@ export function PresentPage() {
       if (activeSubtreeIds.has(__docOrderId)) return rest;
       const rank = docOrderRank.get(__docOrderId);
       if (rank === undefined) return rest;
-      return rank > activeRank
-        ? { ...rest, visibility: "hidden" as const }
-        : { ...rest, visibility: "blur" as const };
+      // WI-194 / DR-127 — the cross-scene visibility model is the flavor's
+      // DeckPolicy, not an inline z-order rule here (Rule 6): free placement
+      // reads above→hidden / below→blur for canvas context; page-bounded
+      // slides are self-contained pages, so every non-active scene is hidden
+      // (no blur) and the active slide shows cleanly.
+      const visibility = deckPolicy.sceneVisibility(rank > activeRank ? "above" : "below");
+      return { ...rest, visibility };
     });
   }, [
     rootPrimitiveScenes,
@@ -674,6 +678,7 @@ export function PresentPage() {
     docOrderRank,
     activeFrameId,
     activeSubtreeIds,
+    deckPolicy,
   ]);
 
   // Match FrameStage's tone heuristic so document-scope tokens stay aligned

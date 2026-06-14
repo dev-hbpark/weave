@@ -27,6 +27,9 @@ export const FULL_DECK: DeckPolicy = Object.freeze({
   collectCandidateIds: collectPresentationIds,
   childOwnsScene: isPresentableFrame,
   collectNonStepSceneIds: collectNonSlideFrameIds,
+  // Free placement: z-order context. An above scene would occlude the active
+  // frame → hide it; a below scene is soft background → blur it.
+  sceneVisibility: (position: "above" | "below") => (position === "above" ? "hidden" : "blur"),
 });
 
 const NO_IDS: ReadonlyArray<string> = Object.freeze([]);
@@ -40,4 +43,8 @@ export const PAGE_DECK: DeckPolicy = Object.freeze({
   collectCandidateIds: collectRootPageIds,
   childOwnsScene: () => false,
   collectNonStepSceneIds: () => NO_IDS,
+  // Page-bounded: each slide is a self-contained full-bleed page. There is no
+  // z-order context to read, so non-active scenes are simply hidden (no blur)
+  // and the active slide shows cleanly — unlike the mixed model's blur/hide.
+  sceneVisibility: () => "hidden",
 });

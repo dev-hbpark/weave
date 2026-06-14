@@ -432,7 +432,10 @@ export const FLAVOR_REGISTRY: Readonly<Record<DocFlavor, DocFlavorMeta>> = {
     accentVar: "--domain-slide-accent",
     suggestedKinds: PRIMITIVE_SUGGESTIONS,
     pageNoun: "슬라이드",
-    availability: "available",
+    // Surfaced as a coming-soon tile in the wizard: the page-bounded present
+    // path still has open issues (stacked-slide order / camera), so the
+    // product isn't offering Presentation as a creatable flavor yet.
+    availability: "coming-soon",
   },
   "canvas-board": {
     flavor: "canvas-board",

@@ -11,6 +11,12 @@ test.beforeEach(async ({ page }) => {
 
 test("landing → wizard → editor → add frames via toolbar", async ({ page }) => {
   await page.goto("/");
+  // slide-deck (Presentation) is now a coming-soon flavor — disabled for real
+  // users. This spec exercises the page-bounded engine, so it sets the DEV
+  // unlock key (mirrors prepareDesign) before opening the wizard.
+  await page.evaluate(() => {
+    window.localStorage.setItem("weave.dev.unlock-flavors", "1");
+  });
 
   await page.getByTestId("landing-new-design").click();
   await expect(page.getByRole("heading", { name: /Start a new design/i })).toBeVisible();
@@ -47,30 +53,28 @@ test("landing → wizard → editor → add frames via toolbar", async ({ page }
   await expect(page.locator('[data-testid="frame-block"]')).toHaveCount(1);
 });
 
-// WI-165 — only mixed + slide-deck are product-ready; canvas-board and
-// doc-page tiles render disabled ("Coming soon") until their surfaces ship.
-// Driven by FLAVOR_REGISTRY.availability, not a hardcoded list. The DEV
-// unlock key (`weave.dev.unlock-flavors`, set by prepareDesign for specs
-// that exercise those engines) re-enables them — this test does NOT set it,
-// so it sees what a real user sees.
+// WI-165 — only mixed is product-ready; slide-deck (Presentation),
+// canvas-board and doc-page tiles render disabled ("Coming soon") until their
+// surfaces ship. Driven by FLAVOR_REGISTRY.availability, not a hardcoded list.
+// The DEV unlock key (`weave.dev.unlock-flavors`, set by prepareDesign for
+// specs that exercise those engines) re-enables them — this test does NOT set
+// it, so it sees what a real user sees.
 test("wizard disables coming-soon flavors (WI-165)", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("landing-new-design").click();
   await expect(page.getByRole("heading", { name: /Start a new design/i })).toBeVisible();
 
   await expect(page.getByTestId("new-design-flavor-mixed")).toBeEnabled();
-  await expect(page.getByTestId("new-design-flavor-slide-deck")).toBeEnabled();
+  await expect(page.getByTestId("new-design-flavor-slide-deck")).toBeDisabled();
   await expect(page.getByTestId("new-design-flavor-canvas-board")).toBeDisabled();
   await expect(page.getByTestId("new-design-flavor-doc-page")).toBeDisabled();
+  await expect(page.getByTestId("new-design-flavor-slide-deck")).toContainText("Coming soon");
   await expect(page.getByTestId("new-design-flavor-canvas-board")).toContainText("Coming soon");
   await expect(page.getByTestId("new-design-flavor-doc-page")).toContainText("Coming soon");
 
-  // The enabled pair still selects normally.
-  await page.getByTestId("new-design-flavor-slide-deck").click();
-  await expect(page.getByTestId("new-design-flavor-slide-deck")).toHaveAttribute(
-    "data-state",
-    "checked",
-  );
+  // The remaining enabled flavor still selects normally.
+  await page.getByTestId("new-design-flavor-mixed").click();
+  await expect(page.getByTestId("new-design-flavor-mixed")).toHaveAttribute("data-state", "checked");
 });
 
 // WI-155 — rail per-page duplicate. `weave.page.duplicate` clones the page

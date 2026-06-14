@@ -170,6 +170,7 @@ export function Stage({
   const [animating, setAnimating] = useState(false);
   const initRef = useRef(true);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `activeId` is an intentional re-run trigger — the body reads only the camera targets, but a step change on stacked scenes (slide-deck full-frame pages share one camera) leaves the targets equal, so without it the effect wouldn't run, `progressMV` would stay pinned at 1, and the opacity crossfade would never fire (the static-camera "next shows the slide I left" lag). See the dep-array comment below.
   useEffect(() => {
     if (vp === undefined) return;
     const next: CameraState = { cx: targetCx, cy: targetCy, scale: targetScale };
@@ -220,7 +221,17 @@ export function Stage({
     return () => {
       controls.stop();
     };
-  }, [targetCx, targetCy, targetScale, reduce, vp, progressMV]);
+    // `activeId` is a dep even though the body reads only the camera targets:
+    // scene opacity is driven SOLELY by `progressMV`, which is cycled (0→1)
+    // only here. Stacked scenes (slide-deck full-frame pages all share one
+    // camera position + scale) change the active scene WITHOUT changing the
+    // targets — without `activeId` here the effect wouldn't run, `progressMV`
+    // would stay pinned at 1, the opacity `useTransform`s would never re-fire,
+    // and the previously-active slide would stay visible while the new one
+    // stayed hidden (the "next doesn't advance / shows the slide I left" lag).
+    // Including it guarantees a progress cycle — hence an opacity crossfade —
+    // on every step, with a no-op camera move (from≈to) when targets match.
+  }, [activeId, targetCx, targetCy, targetScale, reduce, vp, progressMV]);
 
   // Derive screen-space transform values from progress. Each useTransform
   // re-runs whenever progressMV changes; the ref reads inside the mapper
