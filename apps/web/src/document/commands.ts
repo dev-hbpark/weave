@@ -53,6 +53,7 @@ import {
   findUnitInItem,
   itemId as makeItemId,
   unitId as makeUnitId,
+  mapItemDeep,
   moveAboveCommand,
   moveBelowCommand,
   moveToBottomCommand,
@@ -73,6 +74,7 @@ import {
   createSwapFlexOrderCommand,
   createSwapGridCellsCommand,
   gridSpecForChildCount,
+  refitHugContainer,
   reflowHugOnResize,
 } from "@agocraft/layout";
 import { nn } from "../lib/nn.js";
@@ -3088,7 +3090,15 @@ export function buildWeaveCommands(
   // a container property of both AutoFlexSpec and AutoGridSpec).
   // SIZING_RULES: a Hug axis needs ≥1 child (an empty container can't hug).
   const setFrameSizing: Command<
-    { readonly itemId: string; readonly sizing: AxisSizingPair },
+    {
+      readonly itemId: string;
+      readonly sizing: AxisSizingPair;
+      // WI-047 — design-plane px basis → EXACT re-fit: setting Hug snaps the
+      // container to its content NOW (not on the next child resize). Omit ⇒ the
+      // sizing attr changes but the box is re-fit only on a later reflow.
+      readonly designWidth?: number;
+      readonly designHeight?: number;
+    },
     void
   > = {
     name: "weave.frame.setSizing",
@@ -3114,14 +3124,55 @@ export function buildWeaveCommands(
         );
       }
       const nextLayout: LayoutSpec = { ...layout, sizing: input.sizing } as LayoutSpec;
-      return ok(undefined, [
-        {
-          type: "item.attrs",
-          itemId: child.id,
-          before: child.attrs,
-          after: { ...child.attrs, layout: nextLayout },
-        } as Patch,
-      ]);
+
+      // WI-048 — IMMEDIATE re-fit: recompute the container's Hug box + re-arrange
+      // its subtree right now, against the doc AS IF the new sizing were applied
+      // (mapItemDeep stages it). Without this, setting Hug only flips the attr and
+      // the container keeps its stale box until a child is resized. Needs design
+      // dims (exact path); without them the sizing attr still changes (the box
+      // re-fits on the next reflow).
+      const refitPatches: ReadonlyArray<Patch> =
+        LAYOUT_FEATURE_ENABLED &&
+        typeof input.designWidth === "number" &&
+        typeof input.designHeight === "number" &&
+        input.designWidth > 0 &&
+        input.designHeight > 0
+          ? refitHugContainer({
+              root: mapItemDeep(ctx.document.root, child.id, (it) => ({
+                ...it,
+                attrs: { ...it.attrs, layout: nextLayout },
+              })),
+              containerId: child.id,
+              designWidth: input.designWidth,
+              designHeight: input.designHeight,
+            })
+          : [];
+
+      // The re-fit may patch the container's OWN frame (it grew/shrank to its hug
+      // size). Fold that into a SINGLE container patch carrying BOTH the new
+      // layout AND the new frame, with `before` == the ORIGINAL attrs — so undo
+      // restores layout + frame in one clean step (two full-attrs patches on the
+      // same item would clobber each other's undo). Descendant re-arrange patches
+      // pass through untouched (their `before` is the original descendant attrs).
+      const cid = String(child.id);
+      const patchItemId = (p: Patch): string | undefined =>
+        "itemId" in p ? String((p as { itemId: unknown }).itemId) : undefined;
+      const containerRefit = refitPatches.find((p) => patchItemId(p) === cid) as
+        | { after: { frame?: ItemFrame } }
+        | undefined;
+      const descPatches = refitPatches.filter((p) => patchItemId(p) !== cid);
+      const containerPatch: Patch = {
+        type: "item.attrs",
+        itemId: child.id,
+        before: child.attrs,
+        after: {
+          ...child.attrs,
+          layout: nextLayout,
+          ...(containerRefit?.after.frame !== undefined ? { frame: containerRefit.after.frame } : {}),
+        },
+      } as Patch;
+
+      return ok(undefined, [containerPatch, ...descPatches]);
     },
   };
 

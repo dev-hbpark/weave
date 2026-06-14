@@ -43,6 +43,7 @@ import { ContextualToolbar as Bar, Select } from "@weave/design-system";
 import type { JSX } from "react";
 import { nn } from "../../../lib/nn.js";
 import { findItemDeep, findParentAndIndex } from "../../agocraft-mirror.js";
+import { useDesignDims } from "../../style/resolver-context.js";
 import type { ItemSnapshot } from "../multi-edit.js";
 
 type Sizing3 = AxisSizing; // "fixed" | "hug" | "fill"
@@ -86,6 +87,9 @@ export function FrameSizingSection({
   items,
   document,
 }: FrameSizingSectionProps): JSX.Element | null {
+  // WI-047 — design dims → EXACT re-fit on a sizing change (must precede the
+  // early returns: Rules of Hooks).
+  const dims = useDesignDims();
   // Sizing is a single-frame concern.
   if (items.length !== 1) return null;
   const item = nn(items[0]);
