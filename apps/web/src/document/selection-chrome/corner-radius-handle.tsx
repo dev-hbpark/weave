@@ -288,7 +288,11 @@ function Grip({ corner, itemId, kind, editor, geom, radii, split }: GripProps): 
         height: GRIP_PX,
         transform: "translate(-50%, -50%)",
         borderRadius: "50%",
-        background: "var(--surface-1, #fff)",
+        // DR-design-033 — OPAQUE white fill (parity with the square resize
+        // handles' `#ffffff` + the gap-grip diamonds), not the translucent
+        // `--surface-1` glass: a see-through grip let the frame edge / radius
+        // arc cross visibly through it and read as hollow.
+        background: "#ffffff",
         border: "2px solid var(--accent, #4f46e5)",
         boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
         cursor: "pointer",

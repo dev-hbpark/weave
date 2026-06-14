@@ -69,7 +69,7 @@ descendant는 **co-equal 타깃이 아니라 secondary guide**다. focal hovered
 > 2차 수정(사용자 피드백): 다이아몬드 (a) 열/행 grip이 교차-중심에서 정확히 겹쳐 구분·선택 불가, (b) 속이 비어(`--surface-1` 반투명) 뒤 라인이 비쳐 hollow.
 
 - **겹침 해소 — disjoint 레인:** 열 gap grip은 **상단 레인**(cy = innerTop + min(`GRIP_LANE_PX=18`, innerH/2)), 행 gap grip은 **좌측 레인**(cx = innerLeft + min(18, innerW/2)). 두 축이 서로 다른 레인에 있어 대칭 grid(2×2 등)에서도 같은 점에 절대 스택되지 않음 → 각각 독립적으로 보이고 클릭됨. 드래그는 boundary 좌표(축별 cx/cy)를 쓰므로 cross 위치 변경은 드래그에 영향 없음(검증: gap grip e2e green).
-- **속빔 해소 — 불투명 채움:** background `var(--surface-1)`(반투명 glass) → **`#ffffff`**(resize 핸들과 동일한 불투명 흰색). 라인이 더 이상 grip을 가로질러 비치지 않음.
+- **속빔 해소 — 불투명 채움:** background `var(--surface-1)`(반투명 glass) → **`#ffffff`**(resize 핸들과 동일한 불투명 흰색). 라인이 더 이상 grip을 가로질러 비치지 않음. **같은 글래스 채움을 쓰던 모서리 곡률 핸들(`corner-radius-handle.tsx`)도 `#ffffff` 불투명으로 통일**(사용자 후속 요청) — 프레임 edge/곡률 호가 비치던 hollow 해소.
 - **GapGrip 마감:** `box-shadow 0 1px 4px rgba(0,0,0,0.22)`(resize 핸들 `0 1px 3px rgba(0,0,0,0.18)`와 parity) + `borderRadius: 2`(tip softening) 유지. border `--accent` 유지.
 - **LayoutLine(gap/track 라인):** `opacity: 0.55` → **`0.42`** — 라인은 secondary guide로 물러나고 elevated grip이 primary 타깃으로 도드라짐.
 - **PaddingEdge(dashed):** `opacity: 0.7` → **`0.6`** — track 라인 guide weight와 일치.
@@ -90,6 +90,7 @@ descendant는 **co-equal 타깃이 아니라 secondary guide**다. focal hovered
 | `packages/design-system/src/tokens.css` | 신규 토큰 `--hover-affordance-stroke-descendant: color-mix(... 55% ...)` + 주석 블록 갱신 |
 | `packages/design-system/src/components/HoverAffordanceLayer.tsx` | descendant outline `2px dashed (hovered token)`→`1px dashed (descendant token)`, `outlineOffset 0px`→`-1px`; LAYER_STYLE z-주석(SelectionLayer 43) 갱신 |
 | `packages/design-system/src/components/SelectionLayer.tsx` | 포털 `zIndex 40`→`43` + 주석 |
+| `apps/web/src/document/selection-chrome/corner-radius-handle.tsx` | **(문제 3)** grip background `var(--surface-1)`→`#ffffff`(불투명 채움 통일) |
 | `apps/web/src/document/selection-chrome/LayoutEditHandles.tsx` | **(문제 1b)** `MIN_PADDING_EDGE_INSET_PX = 6` — paddingEdges 위치·cross 길이를 최소 인셋으로 클램프(ring 안쪽 고정, 0 padding에서도 grabbable); **(문제 3)** `GRIP_LANE_PX = 18` — gridGapGrips 열=상단/행=좌측 disjoint 레인(겹침 해소); GapGrip background `--surface-1`→`#ffffff`(불투명 채움) + `boxShadow 0 1px 4px rgba(0,0,0,0.22)` + `borderRadius 2`; LayoutLine `opacity 0.55`→`0.42`; PaddingEdge `opacity 0.7`→`0.6`; z-주석 갱신 |
 
 ## 검증
