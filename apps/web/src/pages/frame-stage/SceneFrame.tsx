@@ -14,8 +14,14 @@
 // whole ancestor chain exactly.
 
 import type { Item as AgocraftItem } from "@agocraft/core";
-import { resolveAnchor } from "@agocraft/editor";
-import { IconLock, SelectionLayer } from "@weave/design-system";
+import { resolveAnchor, resolveHandleGeometry } from "@agocraft/editor";
+import type { SceneEntry } from "@agocraft/layout";
+import {
+  type ExternalHandlePlacement,
+  IconLock,
+  SelectionLayer,
+  type SelectionLayerBounds,
+} from "@weave/design-system";
 import { type MotionStyle, motion, useMotionValue, useMotionValueEvent } from "motion/react";
 import type React from "react";
 import {
@@ -79,6 +85,12 @@ interface SceneFrameProps {
   /** The parent's box height (design px) — fed to ParentFrameHeightContext for
    *  font-size-ratio resolution (was `parentHeightPx`). */
   readonly parentHeight: number;
+  /** Design-plane pixel basis — used to project the engine's design-px handle
+   *  geometry (`resolveHandleGeometry`) into viewport px against the live
+   *  `[data-design-plane]` rect (S3 — selection chrome reads scene geometry,
+   *  not the rendered element's DOM box). */
+  readonly designWidth: number;
+  readonly designHeight: number;
   readonly editing: boolean;
   readonly selectedId: string | undefined;
   readonly selectedIds?: ReadonlySet<string>;
@@ -120,6 +132,8 @@ function SceneFrameImpl({
   h,
   rotation,
   parentHeight,
+  designWidth,
+  designHeight,
   editing,
   selectedId,
   selectedIds,
@@ -257,9 +271,11 @@ function SceneFrameImpl({
     ...(isCroppingThis ? { zIndex: 51 } : {}),
   };
 
-  // Auto-width/height text: chrome hugs the LIVE text on the auto axis (the box
-  // lags a debounce). S3 will source this from the scene; for now it still reads
-  // the rendered content element via selfRef-relative DOM.
+  // Auto-width/height text: chrome must hug the LIVE text on the auto axis (the
+  // model box lags a debounce behind typing, and the engine doesn't measure
+  // rendered glyphs). This is the accepted measurement carve-out (DR-138 S3):
+  // auto-text keeps the legacy DOM-content path; every other selection sources
+  // its handle geometry from the engine scene (rotation-aware) below.
   const textAutoMode =
     kind === "text"
       ? deriveTextAutoResizeForFrameStage(
@@ -280,6 +296,165 @@ function SceneFrameImpl({
             : { left: b.left, top: c.top, width: b.width, height: c.height };
         }
       : undefined;
+
+  // ── S3 / DR-138 — selection chrome from the engine scene (rotation-aware) ──
+  // `resolveHandleGeometry` reads ONLY center/rotation/box from a SceneEntry, so
+  // a thin stub from the primitive geometry props is enough — re-threading the
+  // live scene object would defeat the WI-198 memo (fresh object every tick).
+  const sceneEntry = {
+    itemId: item.id,
+    center: { x: cx, y: cy },
+    rotation,
+    box: { x: 0, y: 0, w: widthPx, h: heightPx },
+    parentHeight,
+    depth: 0,
+  } as unknown as SceneEntry;
+
+  // The design plane is an ancestor of every frame; its live rect carries the
+  // full design→viewport transform (base fit × camera pan/zoom), so re-reading
+  // it each rAF tick keeps chrome glued during camera motion — WITHOUT the
+  // per-frame `getBoundingClientRect` readback the engine refactor removes (and
+  // without the rotated element's axis-aligned-bbox error that readback had).
+  const planeBoundsOf = (target: HTMLElement): SelectionLayerBounds => {
+    const plane = target.closest('[data-design-plane="true"]');
+    const r = (plane instanceof HTMLElement ? plane : target).getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  };
+
+  // Shared spec resolution (registry → layout-constraint filter → lock), used by
+  // both the scene path and the auto-text carve-out path.
+  const resolveChromeSpecs = () => {
+    const info = {
+      selectionKind: "frame" as const,
+      itemId,
+      itemKind: kind,
+      unitKinds: item.units.map((u) => u.kind),
+    };
+    const doc = docRef?.current;
+    const constraints =
+      LAYOUT_FEATURE_ENABLED && doc !== undefined
+        ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
+        : undefined;
+    const locked = isItemLocked(item);
+    const noCanvasHandles = doc !== undefined && !capabilityOf(roles, doc, itemId).canvasHandles;
+    const specs = noCanvasHandles
+      ? []
+      : applyLayoutConstraintFilter(
+          selectionChromeRef.current?.resolve(info) ?? [],
+          constraints,
+          locked,
+        );
+    return { info, specs, locked };
+  };
+
+  const lockBadgeNode = (
+    <span
+      aria-hidden
+      data-lock-badge
+      className="flex items-center justify-center rounded-full bg-[color:var(--surface-overlay)] text-[color:var(--text-overlay)] shadow-[var(--shadow-overlay)]"
+      style={{ width: 18, height: 18 }}
+    >
+      <IconLock size={11} />
+    </span>
+  );
+
+  // Scene path: handle positions come from `resolveHandleGeometry` (design px,
+  // rotation-aware) projected to viewport via the live design-plane rect. The
+  // SelectionLayer wrapper spans the plane (boundsOf returns the plane rect), so
+  // its built-in inset outline is suppressed (`hideOutline`) and a rotated
+  // outline rect is emitted as the first placement instead.
+  const sceneResolveHandles = (
+    planeBounds: SelectionLayerBounds,
+  ): ReadonlyArray<ExternalHandlePlacement> => {
+    const { info, specs, locked } = resolveChromeSpecs();
+    const sx = designWidth > 0 ? planeBounds.width / designWidth : 1;
+    const sy = designHeight > 0 ? planeBounds.height / designHeight : 1;
+    const project = (g: { x: number; y: number }) => ({
+      x: planeBounds.left + g.x * sx,
+      y: planeBounds.top + g.y * sy,
+    });
+    // Item AABB in viewport (unrotated box) — handed to each handle's `render()`
+    // as the SelectionHandleContext bounds. Self-positioning + freeform handles
+    // draw their own overlay from this screen box; the rotation-aware *position*
+    // for anchor handles comes from `resolveHandleGeometry`.
+    const itemBounds: SelectionLayerBounds = {
+      left: planeBounds.left + (cx - widthPx / 2) * sx,
+      top: planeBounds.top + (cy - heightPx / 2) * sy,
+      width: widthPx * sx,
+      height: heightPx * sy,
+    };
+    const handles: ExternalHandlePlacement[] = [];
+    // Rotation-aware selection outline — a rotated rect centred on the box.
+    const oc = project(resolveHandleGeometry(sceneEntry, { type: "center" }, { scale: sx }));
+    handles.push({
+      id: "frame-outline",
+      itemId,
+      x: oc.x,
+      y: oc.y,
+      interactive: false,
+      node: (
+        <div
+          aria-hidden
+          style={{
+            width: itemBounds.width,
+            height: itemBounds.height,
+            transform: rotation ? `rotate(${rotation}rad)` : undefined,
+            outline: "1.5px solid var(--accent)",
+            outlineOffset: -1,
+            pointerEvents: "none",
+            boxSizing: "border-box",
+          }}
+        />
+      ),
+    });
+    for (const spec of specs) {
+      // Freeform anchors (poly vertices + the sentinel self-positioning handles)
+      // still assume screen-px bounds in their layout/render — they stay on the
+      // viewport-bounds path (S3 commit 3 migrates them). Corner/edge/center/
+      // offset-from anchors (resize / rotate) resolve rotation-aware.
+      const pos =
+        spec.anchor.type === "freeform"
+          ? resolveAnchor(spec.anchor, itemBounds)
+          : project(resolveHandleGeometry(sceneEntry, spec.anchor, { scale: sx }));
+      handles.push({
+        id: spec.id,
+        itemId,
+        x: pos.x,
+        y: pos.y,
+        node: spec.render({ bounds: itemBounds, selection: info }) as React.ReactNode,
+      });
+    }
+    if (locked) {
+      const lp = project(
+        resolveHandleGeometry(sceneEntry, { type: "corner", corner: "nw" }, { scale: sx }),
+      );
+      handles.push({ id: "lock-badge", itemId, x: lp.x, y: lp.y, interactive: false, node: lockBadgeNode });
+    }
+    return handles;
+  };
+
+  // Auto-text carve-out path: chrome hugs the live content box (viewport coords
+  // from `composeTextBounds`), handles resolve via `resolveAnchor` on that box.
+  const textResolveHandles = (
+    bounds: SelectionLayerBounds,
+  ): ReadonlyArray<ExternalHandlePlacement> => {
+    const { info, specs, locked } = resolveChromeSpecs();
+    const handles: ExternalHandlePlacement[] = specs.map((spec) => {
+      const pos = resolveAnchor(spec.anchor, bounds);
+      return {
+        id: spec.id,
+        itemId,
+        x: pos.x,
+        y: pos.y,
+        node: spec.render({ bounds, selection: info }) as React.ReactNode,
+      };
+    });
+    if (locked) {
+      const lp = resolveAnchor({ type: "corner", corner: "nw" }, bounds);
+      handles.push({ id: "lock-badge", itemId, x: lp.x, y: lp.y, interactive: false, node: lockBadgeNode });
+    }
+    return handles;
+  };
 
   // DR-053 Stage 3 — TextBlock is a pure renderer filling its engine-assigned box.
   // The parent height (scene) feeds font-size-ratio resolution.
@@ -418,64 +593,22 @@ function SceneFrameImpl({
         frameContentNode
       )}
       {isPrimarySelection && onCommitFrame !== undefined && chromeVisible && chromeForThisItem ? (
-        <SelectionLayer
-          targetRef={selfRef}
-          {...(composeTextBounds !== undefined ? { boundsOf: composeTextBounds } : {})}
-          resolveHandles={(bounds) => {
-            const info = {
-              selectionKind: "frame" as const,
-              itemId,
-              itemKind: kind,
-              unitKinds: item.units.map((u) => u.kind),
-            };
-            const doc = docRef?.current;
-            const constraints =
-              LAYOUT_FEATURE_ENABLED && doc !== undefined
-                ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
-                : undefined;
-            const locked = isItemLocked(item);
-            const noCanvasHandles =
-              doc !== undefined && !capabilityOf(roles, doc, itemId).canvasHandles;
-            const handles = (
-              noCanvasHandles
-                ? []
-                : applyLayoutConstraintFilter(
-                    selectionChromeRef.current?.resolve(info) ?? [],
-                    constraints,
-                    locked,
-                  )
-            ).map((spec) => {
-              const pos = resolveAnchor(spec.anchor, bounds);
-              return {
-                id: spec.id,
-                itemId,
-                x: pos.x,
-                y: pos.y,
-                node: spec.render({ bounds, selection: info }) as React.ReactNode,
-              };
-            });
-            if (locked) {
-              const lp = resolveAnchor({ type: "corner", corner: "nw" }, bounds);
-              handles.push({
-                id: "lock-badge",
-                itemId,
-                x: lp.x,
-                y: lp.y,
-                node: (
-                  <span
-                    aria-hidden
-                    data-lock-badge
-                    className="flex items-center justify-center rounded-full bg-[color:var(--surface-overlay)] text-[color:var(--text-overlay)] shadow-[var(--shadow-overlay)]"
-                    style={{ width: 18, height: 18 }}
-                  >
-                    <IconLock size={11} />
-                  </span>
-                ),
-              });
-            }
-            return handles;
-          }}
-        />
+        composeTextBounds !== undefined ? (
+          // Auto-text carve-out — live-content DOM box, viewport-anchored chrome.
+          <SelectionLayer
+            targetRef={selfRef}
+            boundsOf={composeTextBounds}
+            resolveHandles={textResolveHandles}
+          />
+        ) : (
+          // Scene-geometry chrome — rotation-aware, plane-projected, own outline.
+          <SelectionLayer
+            targetRef={selfRef}
+            boundsOf={planeBoundsOf}
+            hideOutline
+            resolveHandles={sceneResolveHandles}
+          />
+        )
       ) : null}
       {isPrimarySelection
         ? item.units

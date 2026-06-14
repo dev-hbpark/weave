@@ -87,6 +87,8 @@ export function FrameScene(props: FrameSceneProps) {
             h={e.box.h}
             rotation={e.rotation}
             parentHeight={e.parentHeight}
+            designWidth={designWidth}
+            designHeight={designHeight}
             editing={props.editing}
             selectedId={props.selectedId}
             {...(props.selectedIds !== undefined ? { selectedIds: props.selectedIds } : {})}

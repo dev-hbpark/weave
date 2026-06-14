@@ -62,6 +62,11 @@ export interface ExternalHandlePlacement {
    *  walk up from the click target and find the owning item without a
    *  separate lookup. */
   readonly itemId?: string;
+  /** Whether the placement wrapper captures pointer events. Defaults to
+   *  `true` (interactive handles). Set `false` for a decorative placement
+   *  — e.g. a rotation-aware selection outline that spans the whole box and
+   *  would otherwise swallow clicks meant for the item underneath. */
+  readonly interactive?: boolean;
 }
 
 export interface SelectionLayerBounds {
@@ -232,7 +237,7 @@ export function SelectionLayer({
               left: p.x - box.left,
               top: p.y - box.top,
               transform: "translate(-50%, -50%)",
-              pointerEvents: "auto",
+              pointerEvents: p.interactive === false ? "none" : "auto",
             }}
           >
             {p.node}
