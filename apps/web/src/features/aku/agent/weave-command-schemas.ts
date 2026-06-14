@@ -506,13 +506,81 @@ const BEHAVIOR: Json = {
   additionalProperties: true,
 };
 
-/** Frame layout policy (LayoutSpec). Open object — the variant is discriminated
- *  on `kind`, which JSON Schema can't gate cleanly, so the shape rides in the
- *  description (mirrors @agocraft/layout's AutoFlexSpec / AutoGridSpec). Omit
+/** 4-side padding (ratios). */
+const PADDING_SCHEMA: Json = {
+  type: "object",
+  additionalProperties: false,
+  description:
+    "4-side padding, each a 0..1 ratio of the frame (top/bottom of its height, left/right of its width).",
+  properties: { top: NUM, right: NUM, bottom: NUM, left: NUM },
+};
+
+/** A grid TrackSize (column/row track, or a minmax bound). `kind`-discriminated;
+ *  `value` for fr/ratio, `min`/`max` (themselves TrackSizes) for minmax. */
+const TRACK_SIZE_SCHEMA: Json = {
+  type: "object",
+  additionalProperties: true,
+  description:
+    "A grid TrackSize: { kind:'fr', value } (fractional share) | { kind:'ratio', value } (0..1 of the track axis) | { kind:'auto' } (fit children) | { kind:'minmax', min, max } where min/max are themselves fr/ratio/auto TrackSizes.",
+  properties: {
+    kind: { type: "string", enum: ["fr", "ratio", "auto", "minmax"] },
+    value: NUM,
+    min: { type: "object", additionalProperties: true },
+    max: { type: "object", additionalProperties: true },
+  },
+  required: ["kind"],
+};
+
+/** Auto-fill/auto-fit track repeat ({ mode, track }). */
+const TRACK_REPEAT_SCHEMA: Json = {
+  type: "object",
+  additionalProperties: false,
+  description:
+    "{ mode:'auto-fill'|'auto-fit', track:TrackSize } — auto-generate as many copies of `track` as fit the axis (track needs a definite ratio base, e.g. {kind:'ratio',value:0.25}). REPLACES that axis's columns/rows list.",
+  properties: {
+    mode: { type: "string", enum: ["auto-fill", "auto-fit"] },
+    track: TRACK_SIZE_SCHEMA,
+  },
+  required: ["mode", "track"],
+};
+
+/** Frame layout policy (LayoutSpec). `properties` give the model a concrete
+ *  scaffold for every flex + grid field; the `kind` discriminator (which JSON
+ *  Schema can't gate cleanly) + which field applies to which kind ride in the
+ *  description. `additionalProperties:true` keeps it forward-compatible. Omit
  *  `layout` on the command to CLEAR the frame's layout (back to free placement). */
 const LAYOUT_SPEC: Json = {
   type: "object",
   additionalProperties: true,
+  properties: {
+    kind: { type: "string", enum: ["absolute-constraints", "auto-flex", "auto-grid"] },
+    // auto-flex
+    direction: { type: "string", enum: ["row", "column"] },
+    gap: NUM,
+    wrap: { type: "string", enum: ["nowrap", "wrap"] },
+    alignContent: {
+      type: "string",
+      enum: ["start", "center", "end", "stretch", "space-between", "space-around", "space-evenly"],
+    },
+    // auto-grid
+    columns: { type: "array", items: TRACK_SIZE_SCHEMA },
+    rows: { type: "array", items: TRACK_SIZE_SCHEMA },
+    columnGap: NUM,
+    rowGap: NUM,
+    columnsRepeat: TRACK_REPEAT_SCHEMA,
+    rowsRepeat: TRACK_REPEAT_SCHEMA,
+    autoFlow: { type: "string", enum: ["row", "column"] },
+    dense: { type: "boolean" },
+    areas: STR_ARR,
+    // shared — justify/align enums union flex + grid (the description says which
+    // values apply to which kind).
+    justify: {
+      type: "string",
+      enum: ["start", "center", "end", "stretch", "space-between", "space-around", "space-evenly"],
+    },
+    align: { type: "string", enum: ["start", "center", "end", "stretch", "baseline"] },
+    padding: PADDING_SCHEMA,
+  },
   description:
     "A LayoutSpec, discriminated on `kind` (faithful CSS flexbox / grid). One of:\n" +
     "• { kind:'absolute-constraints' } — free placement; each child keeps its own frame (default).\n" +
@@ -537,6 +605,27 @@ const LAYOUT_SPEC: Json = {
 const LAYOUT_CHILD_POLICY: Json = {
   type: "object",
   additionalProperties: true,
+  properties: {
+    kind: { type: "string", enum: ["absolute-constraints", "auto-flex", "auto-grid"] },
+    // absolute-constraints
+    anchor: {
+      type: "object",
+      additionalProperties: true,
+      description: "{ horizontal, vertical } — pin the child within the parent.",
+    },
+    // auto-flex
+    grow: NUM,
+    shrink: NUM,
+    basis: { description: "main-axis base size: a 0..1 ratio of the parent main axis, or 'auto'." },
+    alignSelf: { type: "string", enum: ["start", "center", "end", "stretch", "baseline"] },
+    // auto-grid
+    column: NUM,
+    row: NUM,
+    columnSpan: NUM,
+    rowSpan: NUM,
+    justifySelf: { type: "string", enum: ["start", "center", "end", "stretch"] },
+    area: STR,
+  },
   description:
     "A LayoutChildPolicy, discriminated on `kind` (match the parent frame's layout kind). One of:\n" +
     "• { kind:'absolute-constraints', anchor:{ horizontal, vertical } } — pin within the parent.\n" +

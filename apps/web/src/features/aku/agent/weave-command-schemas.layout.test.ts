@@ -55,6 +55,72 @@ describe("layout feature grounding reaches the agent (WI-133)", () => {
     expect(s).toContain("baseline");
   });
 
+  // WI-222 — the schema must be STRUCTURED (typed properties), not just prose in a
+  // description over an open object. A bare `additionalProperties:true` gives the
+  // model no scaffold and it malforms the nested grid/flex detail objects.
+  it("WI-222: setLayout `layout` schema declares typed properties + nested sub-schemas", () => {
+    const input = WEAVE_COMMAND_SCHEMAS["weave.frame.setLayout"]?.inputSchema as {
+      properties?: { layout?: Record<string, never> };
+    };
+    const layout = input?.properties?.layout as
+      | {
+          properties?: Record<string, { items?: { properties?: { kind?: { enum?: string[] } } } }>;
+        }
+      | undefined;
+    expect(
+      layout?.properties,
+      "layout must declare typed properties, not prose-only",
+    ).toBeDefined();
+    for (const p of [
+      "kind",
+      "direction",
+      "gap",
+      "justify",
+      "align",
+      "padding",
+      "columns",
+      "rows",
+      "columnGap",
+      "rowGap",
+      "columnsRepeat",
+      "rowsRepeat",
+      "autoFlow",
+      "dense",
+      "areas",
+    ]) {
+      expect(layout?.properties?.[p], `layout.properties must include "${p}"`).toBeDefined();
+    }
+    // columns items resolve to a TrackSize whose `kind` enum includes minmax.
+    const trackKindEnum = layout?.properties?.columns?.items?.properties?.kind?.enum;
+    expect(trackKindEnum, "columns.items is a typed TrackSize").toContain("minmax");
+    // padding is a typed 4-side object.
+    const padding = layout?.properties?.padding as { properties?: Record<string, unknown> };
+    expect(padding?.properties?.top, "padding is a typed 4-side object").toBeDefined();
+  });
+
+  it("WI-222: setLayoutChild `policy` schema declares typed properties", () => {
+    const input = WEAVE_COMMAND_SCHEMAS["weave.item.setLayoutChild"]?.inputSchema as {
+      properties?: { policy?: { properties?: Record<string, unknown> } };
+    };
+    const policy = input?.properties?.policy;
+    expect(policy?.properties, "policy must declare typed properties").toBeDefined();
+    for (const p of [
+      "kind",
+      "grow",
+      "shrink",
+      "basis",
+      "alignSelf",
+      "column",
+      "row",
+      "columnSpan",
+      "rowSpan",
+      "justifySelf",
+      "area",
+    ]) {
+      expect(policy?.properties?.[p], `policy.properties must include "${p}"`).toBeDefined();
+    }
+  });
+
   it("auto-flex capability prose teaches wrap / alignContent / space-evenly", () => {
     const t = layoutKindText("auto-flex");
     for (const term of ["wrap", "alignContent", "space-evenly", "space-between"]) {
