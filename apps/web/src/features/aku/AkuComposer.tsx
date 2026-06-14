@@ -326,7 +326,7 @@ export function AkuComposer({
       ) : null}
 
       {images.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5" data-aku-attachments>
           {images.map((img, i) => (
             <div key={img.dataUrl} className="relative">
               <img
@@ -432,6 +432,7 @@ export function AkuComposer({
         <input
           ref={fileRef}
           id={fileInputId}
+          data-testid="aku-image-input"
           type="file"
           accept="image/*"
           multiple
