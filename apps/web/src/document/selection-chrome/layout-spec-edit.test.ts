@@ -1,15 +1,26 @@
 // WI-146 — core layout-edit math: track resolve/boundaries + spec edits.
-import { createAutoFlexSpec, createAutoGridChildPolicy, trackFr, trackRatio } from "@agocraft/core";
+import {
+  createAutoFlexSpec,
+  createAutoGridChildPolicy,
+  createAutoGridSpec,
+  trackFr,
+  trackRatio,
+} from "@agocraft/core";
 import { describe, expect, it } from "vitest";
 import { boundaryOffsets, resolveTrackSizes } from "./layout-handle-geometry.js";
 import {
   clampGap,
+  clampPadding,
   clampSpan,
   MAX_GAP,
+  MAX_PADDING,
   MIN_TRACK,
   resizeGridTrackBoundary,
   setFlexGap,
+  setGridColumnGap,
+  setGridRowGap,
   setGridSpan,
+  setPaddingSide,
 } from "./layout-spec-edit.js";
 
 const close = (a: number | undefined, b: number, eps = 1e-9) =>
@@ -66,6 +77,46 @@ describe("clampGap / setFlexGap", () => {
     const spec = createAutoFlexSpec({ direction: "row", gap: 0.05 });
     expect(setFlexGap(spec, 0.2).gap).toBe(0.2);
     expect(setFlexGap(spec, 5).gap).toBe(MAX_GAP);
+  });
+});
+
+describe("WI-219 clampPadding / setPaddingSide", () => {
+  it("clampPadding clamps to [0, MAX_PADDING]", () => {
+    expect(clampPadding(-1)).toBe(0);
+    expect(clampPadding(9)).toBe(MAX_PADDING);
+    expect(clampPadding(0.1)).toBe(0.1);
+    expect(clampPadding(Number.NaN)).toBe(0);
+  });
+
+  it("setPaddingSide changes ONLY the named side (flex), clamped", () => {
+    const spec = createAutoFlexSpec({
+      direction: "row",
+      padding: { top: 0.1, right: 0.1, bottom: 0.1, left: 0.1 },
+    });
+    const next = setPaddingSide(spec, "left", 0.3);
+    expect(next.padding.left).toBe(0.3);
+    expect(next.padding.right).toBe(0.1); // untouched
+    expect(next.padding.top).toBe(0.1);
+    expect(setPaddingSide(spec, "left", 5).padding.left).toBe(MAX_PADDING);
+  });
+
+  it("setPaddingSide works on a grid spec too", () => {
+    const spec = createAutoGridSpec({ columns: [trackFr(1), trackFr(1)], rows: [trackFr(1)] });
+    expect(setPaddingSide(spec, "bottom", 0.2).padding.bottom).toBe(0.2);
+  });
+});
+
+describe("WI-219 setGridColumnGap / setGridRowGap", () => {
+  const spec = createAutoGridSpec({ columns: [trackFr(1), trackFr(1)], rows: [trackFr(1)] });
+  it("sets the uniform column gap, clamped", () => {
+    expect(setGridColumnGap(spec, 0.15).columnGap).toBe(0.15);
+    expect(setGridColumnGap(spec, 9).columnGap).toBe(MAX_GAP);
+    expect(setGridColumnGap(spec, 0.15).rowGap).toBe(spec.rowGap); // row untouched
+  });
+  it("sets the uniform row gap, clamped", () => {
+    expect(setGridRowGap(spec, 0.2).rowGap).toBe(0.2);
+    expect(setGridRowGap(spec, -1).rowGap).toBe(0);
+    expect(setGridRowGap(spec, 0.2).columnGap).toBe(spec.columnGap); // column untouched
   });
 });
 

@@ -127,6 +127,10 @@ HANDLE_INTERACTIONS.register({ kind: "corner-radius-drag", buildStates: dragGest
 // WI-146 — dragging a layout boundary line (flex gap / grid track). Same drag FSM;
 // the sink maps the pointer to a new gap / track-pair split.
 HANDLE_INTERACTIONS.register({ kind: "layout-line-drag", buildStates: dragGestureStates });
+// WI-219 — dragging a padding edge (per-side paddingPx) / a grid gap grip (uniform
+// columnGap/rowGap). Same drag FSM; the sink authors the px field + ratio mirror.
+HANDLE_INTERACTIONS.register({ kind: "layout-padding-drag", buildStates: dragGestureStates });
+HANDLE_INTERACTIONS.register({ kind: "layout-gap-grip-drag", buildStates: dragGestureStates });
 HANDLE_INTERACTIONS.register({ kind: "discrete-action", buildStates: discreteActionStates });
 
 // ───── Dispatcher ─────────────────────────────────────────────────────────────

@@ -17,15 +17,51 @@ import { resolveTrackSizes, trackStartOffset } from "./layout-handle-geometry.js
 export const MAX_GAP = 0.5;
 /** Smallest track size a resize drag may leave (0..1) — keeps a track grabbable. */
 export const MIN_TRACK = 0.02;
+/** Max padding per side as a 0..1 ratio of the cross/main axis — caps a drag so a
+ *  single side can't eat the whole frame (a half-frame side padding is already
+ *  absurd). WI-219 / DR-139. */
+export const MAX_PADDING = 0.45;
 
 export function clampGap(gap: number): number {
   if (!Number.isFinite(gap)) return 0;
   return Math.max(0, Math.min(MAX_GAP, gap));
 }
 
+/** Clamp a padding ratio (one side) to [0, MAX_PADDING]. */
+export function clampPadding(p: number): number {
+  if (!Number.isFinite(p)) return 0;
+  return Math.max(0, Math.min(MAX_PADDING, p));
+}
+
 /** Set the uniform flex `gap` (0..1 of the main axis), clamped. */
 export function setFlexGap(spec: AutoFlexSpec, gap: number): AutoFlexSpec {
   return { ...spec, gap: clampGap(gap) };
+}
+
+/** WI-219 — one of the four padding sides. */
+export type PaddingSide = "top" | "right" | "bottom" | "left";
+
+/** WI-219 / DR-139 — set ONE padding side (0..1 ratio) on a flex OR grid spec,
+ *  clamped. Returns a new spec with only that side's `padding` ratio changed; the
+ *  caller spreads in the matching `paddingPx[side]` (px-first, ratio mirror). The
+ *  px field, when present, is preserved here and updated by the caller. */
+export function setPaddingSide<S extends AutoFlexSpec | AutoGridSpec>(
+  spec: S,
+  side: PaddingSide,
+  ratio: number,
+): S {
+  return { ...spec, padding: { ...spec.padding, [side]: clampPadding(ratio) } };
+}
+
+/** WI-219 / DR-139 — set a grid's uniform `columnGap` (0..1 ratio), clamped. The
+ *  caller spreads in `columnGapPx` (px-first, ratio mirror). */
+export function setGridColumnGap(spec: AutoGridSpec, gap: number): AutoGridSpec {
+  return { ...spec, columnGap: clampGap(gap) };
+}
+
+/** WI-219 / DR-139 — set a grid's uniform `rowGap` (0..1 ratio), clamped. */
+export function setGridRowGap(spec: AutoGridSpec, gap: number): AutoGridSpec {
+  return { ...spec, rowGap: clampGap(gap) };
 }
 
 /**

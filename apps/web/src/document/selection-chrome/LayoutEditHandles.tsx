@@ -28,9 +28,19 @@ import {
 } from "./chrome-geom.js";
 import { startHandleGesture, toHandlePointer } from "./handle-gesture-runner.js";
 import { boundaryOffsets, projectPointer, resolveTrackSizes } from "./layout-handle-geometry.js";
-import { resizeGridAxis, setFlexGap } from "./layout-spec-edit.js";
+import {
+  type PaddingSide,
+  resizeGridAxis,
+  setFlexGap,
+  setGridColumnGap,
+  setGridRowGap,
+  setPaddingSide,
+} from "./layout-spec-edit.js";
 
 const LINE_THICK = 3; // hit + visual thickness (screen px)
+const GRIP_SIZE = 12; // gap-grip diamond size (screen px) — DR-design-031
+/** 4-side px padding (matches core FlexPadding / GridPadding shape). */
+type Pad4Px = { top: number; right: number; bottom: number; left: number };
 
 export interface LayoutFrameInfo {
   readonly layout: LayoutSpec;
@@ -194,6 +204,110 @@ function gridLines(fs: FrameScreen, spec: AutoGridSpec, pad: LayoutFrameInfo["pa
     });
   });
   return lines;
+}
+
+/** WI-219 — one draggable padding edge (the inner inset line of one frame side). */
+interface PaddingEdgeSpec {
+  readonly key: string;
+  readonly side: PaddingSide;
+  /** vertical line (left/right edge) vs horizontal line (top/bottom edge). */
+  readonly vertical: boolean;
+  /** Screen pos of the line (x for vertical, y for horizontal). */
+  readonly pos: number;
+  /** Drawn extent along the cross axis (inset by the perpendicular paddings so the
+   *  line stays in the inner region, clear of the corner resize grips). */
+  readonly crossStart: number;
+  readonly crossLen: number;
+}
+
+/** The 4 padding edges of a flex/grid frame, at the current padded inset. */
+function paddingEdges(fs: FrameScreen, pad: LayoutFrameInfo["pad"]): PaddingEdgeSpec[] {
+  const innerTop = fs.top + pad.t * fs.h;
+  const innerH = Math.max(0, 1 - pad.t - pad.b) * fs.h;
+  const innerLeft = fs.left + pad.l * fs.w;
+  const innerW = Math.max(0, 1 - pad.l - pad.r) * fs.w;
+  return [
+    {
+      key: "pad-left",
+      side: "left",
+      vertical: true,
+      pos: fs.left + pad.l * fs.w,
+      crossStart: innerTop,
+      crossLen: innerH,
+    },
+    {
+      key: "pad-right",
+      side: "right",
+      vertical: true,
+      pos: fs.left + (1 - pad.r) * fs.w,
+      crossStart: innerTop,
+      crossLen: innerH,
+    },
+    {
+      key: "pad-top",
+      side: "top",
+      vertical: false,
+      pos: fs.top + pad.t * fs.h,
+      crossStart: innerLeft,
+      crossLen: innerW,
+    },
+    {
+      key: "pad-bottom",
+      side: "bottom",
+      vertical: false,
+      pos: fs.top + (1 - pad.b) * fs.h,
+      crossStart: innerLeft,
+      crossLen: innerW,
+    },
+  ];
+}
+
+/** WI-219 — one grid gap grip (diamond) centered in a gap band. */
+interface GapGripSpec {
+  readonly key: string;
+  readonly axis: "column" | "row";
+  readonly boundaryIndex: number;
+  /** Screen centre. */
+  readonly cx: number;
+  readonly cy: number;
+}
+
+/** Grid gap grips: one per column boundary (drag x → columnGap) + per row boundary
+ *  (drag y → rowGap), each centered in the inner region of the cross axis so it is
+ *  visually + hit-wise distinct from the full-extent track-boundary line. */
+function gridGapGrips(
+  fs: FrameScreen,
+  spec: AutoGridSpec,
+  pad: LayoutFrameInfo["pad"],
+): GapGripSpec[] {
+  const grips: GapGripSpec[] = [];
+  const colAvail = Math.max(0, 1 - pad.l - pad.r);
+  const rowAvail = Math.max(0, 1 - pad.t - pad.b);
+  const colSizes = resolveTrackSizes(spec.columns, spec.columnGap, colAvail);
+  const rowSizes = resolveTrackSizes(spec.rows, spec.rowGap, rowAvail);
+  const colB = boundaryOffsets(colSizes, spec.columnGap);
+  const rowB = boundaryOffsets(rowSizes, spec.rowGap);
+  const innerCenterY = fs.top + (pad.t + rowAvail / 2) * fs.h;
+  const innerCenterX = fs.left + (pad.l + colAvail / 2) * fs.w;
+  colB.forEach((off, i) => {
+    grips.push({
+      key: `gap-col-${i}`,
+      axis: "column",
+      boundaryIndex: i,
+      cx: fs.left + (pad.l + off) * fs.w,
+      cy: innerCenterY,
+    });
+  });
+  rowB.forEach((off, i) => {
+    grips.push({
+      key: `gap-row-${i}`,
+      axis: "row",
+      boundaryIndex: i,
+      cx: innerCenterX,
+      cy: fs.top + (pad.t + off) * fs.h,
+    });
+  });
+  return grips;
 }
 
 function useFrameTick(frameId: string, getFrame: LayoutEditHandlesDeps["getFrame"]) {
@@ -363,6 +477,194 @@ function LayoutLine({
   );
 }
 
+const PAD_LABEL: Record<PaddingSide, string> = {
+  left: "왼쪽 패딩 조절",
+  right: "오른쪽 패딩 조절",
+  top: "위쪽 패딩 조절",
+  bottom: "아래쪽 패딩 조절",
+};
+
+function PaddingEdge({
+  frameId,
+  edge,
+  fs,
+  info,
+  editor,
+}: {
+  readonly frameId: string;
+  readonly edge: PaddingEdgeSpec;
+  readonly fs: FrameScreen;
+  readonly info: LayoutFrameInfo;
+  readonly editor: Editor;
+}): JSX.Element | null {
+  const layout = info.layout;
+  if (layout.kind !== "auto-flex" && layout.kind !== "auto-grid") return null;
+
+  const onPointerDown = (e: React.PointerEvent): void => {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    const side = edge.side;
+    // WI-043 px-first: a padding edge follows the cursor to an ABSOLUTE inset, so
+    // we author paddingPx[side] directly + mirror the ratio (px ÷ design size).
+    // The engine reads paddingPx on later resize → the padding stays fixed px.
+    const curPadPx: Pad4Px =
+      layout.paddingPx ??
+      ({
+        top: layout.padding.top * fs.dh,
+        right: layout.padding.right * fs.dw,
+        bottom: layout.padding.bottom * fs.dh,
+        left: layout.padding.left * fs.dw,
+      } satisfies Pad4Px);
+    const write = (clientX: number, clientY: number): void => {
+      // Inset of this side from its frame edge, in design px (clamped ≥ 0).
+      const px =
+        side === "left"
+          ? (clientX - fs.left) / fs.zoom
+          : side === "right"
+            ? (fs.left + fs.w - clientX) / fs.zoom
+            : side === "top"
+              ? (clientY - fs.top) / fs.zoom
+              : (fs.top + fs.h - clientY) / fs.zoom;
+      const nextPx = Math.max(0, px);
+      const axisPx = side === "left" || side === "right" ? fs.dw : fs.dh;
+      const nextRatio = axisPx > 0 ? nextPx / axisPx : 0;
+      const specWithRatio = setPaddingSide(layout, side, nextRatio);
+      const nextPadPx: Pad4Px = { ...curPadPx, [side]: nextPx };
+      editor.exec("weave.frame.setLayout", {
+        itemId: frameId,
+        layout: { ...specWithRatio, paddingPx: nextPadPx },
+      });
+    };
+    startHandleGesture({
+      kind: "layout-padding-drag",
+      handleId: `layout-pad.${edge.key}`,
+      itemId: frameId,
+      origin: toHandlePointer(e),
+      sink: {
+        update: (p) => write(p.clientX, p.clientY),
+        commit: (p) => write(p.clientX, p.clientY),
+      },
+    });
+  };
+
+  return createPortal(
+    <button
+      type="button"
+      aria-label={PAD_LABEL[edge.side]}
+      data-handle-kind="custom"
+      data-handle-id={`layout-pad.${edge.key}`}
+      data-testid={`layout-pad-${edge.side}`}
+      onPointerDown={onPointerDown}
+      style={{
+        position: "fixed",
+        left: edge.vertical ? edge.pos : edge.crossStart,
+        top: edge.vertical ? edge.crossStart : edge.pos,
+        width: edge.vertical ? LINE_THICK : edge.crossLen,
+        height: edge.vertical ? edge.crossLen : LINE_THICK,
+        transform: edge.vertical ? "translateX(-50%)" : "translateY(-50%)",
+        // Dashed accent → distinct from the solid gap/track lines (DR-design-031).
+        backgroundImage: edge.vertical
+          ? "repeating-linear-gradient(to bottom, var(--accent, #4f46e5) 0 5px, transparent 5px 9px)"
+          : "repeating-linear-gradient(to right, var(--accent, #4f46e5) 0 5px, transparent 5px 9px)",
+        opacity: 0.7,
+        border: "none",
+        padding: 0,
+        margin: 0,
+        cursor: edge.vertical ? "col-resize" : "row-resize",
+        touchAction: "none",
+        zIndex: 40, // WI-196 selection-chrome layer
+      }}
+    />,
+    document.body,
+  );
+}
+
+function GapGrip({
+  frameId,
+  grip,
+  fs,
+  info,
+  editor,
+}: {
+  readonly frameId: string;
+  readonly grip: GapGripSpec;
+  readonly fs: FrameScreen;
+  readonly info: LayoutFrameInfo;
+  readonly editor: Editor;
+}): JSX.Element | null {
+  const layout = info.layout;
+  if (layout.kind !== "auto-grid") return null;
+  const column = grip.axis === "column";
+
+  const onPointerDown = (e: React.PointerEvent): void => {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    // Uniform gap follows the cursor 1:1: boundary k moves by (k+0.5)·Δgap, so
+    // divide the pointer delta by (k+0.5). px-first + ratio mirror (WI-043 P5).
+    const startCx = grip.cx;
+    const startCy = grip.cy;
+    const factor = grip.boundaryIndex + 0.5;
+    const axisPx = column ? fs.dw : fs.dh;
+    const gapPxNow = column
+      ? (layout.columnGapPx ?? layout.columnGap * fs.dw)
+      : (layout.rowGapPx ?? layout.rowGap * fs.dh);
+    const write = (clientX: number, clientY: number): void => {
+      const deltaDesign = projectPointer(
+        column ? clientX : clientY,
+        0,
+        { x: column ? startCx : startCy, y: 0 },
+        { x: 1, y: 0 },
+        fs.zoom,
+      );
+      const nextGapPx = Math.max(0, gapPxNow + deltaDesign / factor);
+      const nextRatio = axisPx > 0 ? nextGapPx / axisPx : 0;
+      const next = column
+        ? { ...setGridColumnGap(layout, nextRatio), columnGapPx: nextGapPx }
+        : { ...setGridRowGap(layout, nextRatio), rowGapPx: nextGapPx };
+      editor.exec("weave.frame.setLayout", { itemId: frameId, layout: next });
+    };
+    // touch the start coords so the closure keeps them (no live-pos drift)
+    void startCy;
+    startHandleGesture({
+      kind: "layout-gap-grip-drag",
+      handleId: `layout-gap.${grip.key}`,
+      itemId: frameId,
+      origin: toHandlePointer(e),
+      sink: {
+        update: (p) => write(p.clientX, p.clientY),
+        commit: (p) => write(p.clientX, p.clientY),
+      },
+    });
+  };
+
+  return createPortal(
+    <button
+      type="button"
+      aria-label={column ? "열 간격 조절" : "행 간격 조절"}
+      data-handle-kind="custom"
+      data-handle-id={`layout-gap.${grip.key}`}
+      data-testid={`layout-gap-${grip.axis}-${grip.boundaryIndex}`}
+      onPointerDown={onPointerDown}
+      style={{
+        position: "fixed",
+        left: grip.cx,
+        top: grip.cy,
+        width: GRIP_SIZE,
+        height: GRIP_SIZE,
+        transform: "translate(-50%, -50%) rotate(45deg)", // diamond
+        background: "var(--surface-1, #fff)",
+        border: "2px solid var(--accent, #4f46e5)",
+        padding: 0,
+        margin: 0,
+        cursor: column ? "col-resize" : "row-resize",
+        touchAction: "none",
+        zIndex: 41, // just above the track line so the grip wins its small spot
+      }}
+    />,
+    document.body,
+  );
+}
+
 function LayoutEditHandles({
   itemId,
   editor,
@@ -375,13 +677,15 @@ function LayoutEditHandles({
   const state = useFrameTick(itemId, getFrame);
   if (state === null) return null;
   const { fs, info } = state;
-  const lines =
-    info.layout.kind === "auto-flex"
-      ? flexLines(itemId, fs, info.layout)
-      : info.layout.kind === "auto-grid"
-        ? gridLines(fs, info.layout, info.pad)
-        : [];
-  if (lines.length === 0) return null;
+  const isFlex = info.layout.kind === "auto-flex";
+  const isGrid = info.layout.kind === "auto-grid";
+  if (!isFlex && !isGrid) return null;
+  const lines = isFlex
+    ? flexLines(itemId, fs, info.layout as AutoFlexSpec)
+    : gridLines(fs, info.layout as AutoGridSpec, info.pad);
+  // WI-219 — padding edges (both kinds) + grid gap grips (grid only).
+  const edges = paddingEdges(fs, info.pad);
+  const grips = isGrid ? gridGapGrips(fs, info.layout as AutoGridSpec, info.pad) : [];
   return (
     <>
       {lines.map((line) => (
@@ -393,6 +697,19 @@ function LayoutEditHandles({
           info={info}
           editor={editor}
         />
+      ))}
+      {edges.map((edge) => (
+        <PaddingEdge
+          key={edge.key}
+          frameId={itemId}
+          edge={edge}
+          fs={fs}
+          info={info}
+          editor={editor}
+        />
+      ))}
+      {grips.map((grip) => (
+        <GapGrip key={grip.key} frameId={itemId} grip={grip} fs={fs} info={info} editor={editor} />
       ))}
     </>
   );
