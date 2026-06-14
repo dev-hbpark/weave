@@ -75,8 +75,11 @@ export function FrameSizingSection({
   if (items.length !== 1) return null;
   const item = nn(items[0]);
   const layout = (item.attrs as { layout?: LayoutSpec }).layout;
-  // Hug/Fill modeling here is an auto-flex capability (grid container sizing = P4).
-  if (layout === undefined || layout.kind !== "auto-flex") return null;
+  // WI-042 P4 — Hug applies to auto-flex AND auto-grid containers (a Hug grid
+  // sizes its tracks to cell content). Other kinds have no container sizing.
+  if (layout === undefined || (layout.kind !== "auto-flex" && layout.kind !== "auto-grid")) {
+    return null;
+  }
 
   const live = findItemDeep(document, item.id);
   const hasChildren = live !== undefined && live.children.length > 0;
@@ -90,7 +93,8 @@ export function FrameSizingSection({
     ...(parentFlex !== undefined ? [opt("fill")] : []),
   ];
 
-  const ownSizing: AxisSizingPair = (layout as AutoFlexSpec).sizing ?? DEFAULT_AXIS_SIZING;
+  const ownSizing: AxisSizingPair =
+    (layout as { sizing?: AxisSizingPair }).sizing ?? DEFAULT_AXIS_SIZING;
   const policy = (item.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild;
   const flexPolicy = policy !== undefined && policy.kind === "auto-flex" ? policy : undefined;
   const grow = flexPolicy?.grow ?? 0;

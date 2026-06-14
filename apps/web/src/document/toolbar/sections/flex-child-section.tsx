@@ -78,13 +78,13 @@ export function FlexChildSection({
   const parentSpec = parentFlexSpec(document, item.id);
   if (parentSpec === undefined) return null;
 
-  // WI-042 / DR-055 — an auto-flex FRAME owns its sizing (incl. Fill) through the
-  // unified FrameSizingSection (Fixed/Hug/Fill). Suppress the duplicate Grow
-  // segment here for such frames; keep align-self (alignment, orthogonal). A
-  // NON-frame child (no own layout) keeps Grow — it has no Hug, so this is its
+  // WI-042 / DR-055 — a CONTAINER frame (auto-flex or auto-grid) owns its sizing
+  // (incl. Fill) through the unified FrameSizingSection (Fixed/Hug/Fill). Suppress
+  // the duplicate Grow segment here for such frames; keep align-self (alignment,
+  // orthogonal). A NON-container child keeps Grow — it has no Hug, so this is its
   // only Fill control.
-  const ownIsAutoFlex =
-    ((item.attrs as { layout?: LayoutSpec }).layout?.kind ?? undefined) === "auto-flex";
+  const ownKind = (item.attrs as { layout?: LayoutSpec }).layout?.kind;
+  const ownIsAutoFlex = ownKind === "auto-flex" || ownKind === "auto-grid";
 
   const policy = (item.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild;
   const flexPolicy = policy !== undefined && policy.kind === "auto-flex" ? policy : undefined;

@@ -24,11 +24,10 @@ import type {
   Item as AgocraftItem,
   BuiltinItemFrame as AgocraftItemFrame,
   Unit as AgocraftUnit,
+  LayoutChildPolicy,
   LayoutSpec,
 } from "@agocraft/core";
 import {
-  type AutoFlexChildPolicy,
-  type AutoFlexSpec,
   type AxisSizingPair,
   type ClipboardTransport,
   type Command,
@@ -3050,10 +3049,11 @@ export function buildWeaveCommands(
         return fail("item-not-found", `weave.frame.setSizing: no item "${input.itemId}"`);
       }
       const layout = (child.attrs as { layout?: LayoutSpec }).layout;
-      if (layout === undefined || layout.kind !== "auto-flex") {
+      // WI-042 P4 — sizing is a container property of auto-flex OR auto-grid.
+      if (layout === undefined || (layout.kind !== "auto-flex" && layout.kind !== "auto-grid")) {
         return fail(
           "invalid-input",
-          "weave.frame.setSizing: target needs an auto-flex layout (sizing is a container property)",
+          "weave.frame.setSizing: target needs an auto-flex / auto-grid layout (sizing is a container property)",
         );
       }
       const hugW = input.sizing.width === "hug";
@@ -3064,7 +3064,7 @@ export function buildWeaveCommands(
           "weave.frame.setSizing: a Hug axis requires at least one child",
         );
       }
-      const nextLayout: AutoFlexSpec = { ...(layout as AutoFlexSpec), sizing: input.sizing };
+      const nextLayout: LayoutSpec = { ...layout, sizing: input.sizing } as LayoutSpec;
       return ok(undefined, [
         {
           type: "item.attrs",
@@ -3098,10 +3098,13 @@ export function buildWeaveCommands(
       if (child === undefined) {
         return fail("item-not-found", `weave.item.resizeHug: no item "${input.itemId}"`);
       }
-      const curPolicy = (child.attrs as { layoutChild?: AutoFlexChildPolicy }).layoutChild;
-      const nextPolicy =
-        curPolicy?.kind === "auto-flex"
-          ? { ...curPolicy, sizePx: input.sizePx }
+      // WI-042 P4 — preserve the child's existing policy KIND (auto-flex OR
+      // auto-grid) when authoring its px intrinsic; both carry `sizePx`. Only a
+      // policy-less child defaults to a fresh auto-flex policy.
+      const curPolicy = (child.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild;
+      const nextPolicy: LayoutChildPolicy =
+        curPolicy?.kind === "auto-flex" || curPolicy?.kind === "auto-grid"
+          ? ({ ...curPolicy, sizePx: input.sizePx } as LayoutChildPolicy)
           : createAutoFlexChildPolicy({ sizePx: input.sizePx });
 
       const reflow = LAYOUT_FEATURE_ENABLED

@@ -510,3 +510,105 @@ test("P3 ①(unified 3-way): toolbar Fill routes to layoutChild.grow (dual-routi
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("P4: a Hug auto-GRID grows to its cell content (toolbar Hug + resize, live)", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  // A 2-column auto-grid frame G with two children placed in columns 1 and 2.
+  const G = await addFrame(page, rootId, { x: 0.1, y: 0.1, width: 0.5, height: 0.3, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: G,
+    layout: {
+      kind: "auto-grid",
+      columns: [
+        { kind: "fr", value: 1 },
+        { kind: "fr", value: 1 },
+      ],
+      rows: [{ kind: "fr", value: 1 }],
+      columnGap: 0,
+      rowGap: 0,
+      justify: "stretch",
+      align: "stretch",
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    },
+  });
+  await page.waitForFunction((id) => {
+    let ok = false;
+    const walk = (n: N & { attrs: { layout?: { kind?: string } } }) => {
+      if (String(n.id) === id) ok = n.attrs.layout?.kind === "auto-grid";
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return ok;
+  }, G);
+  const A = await addFrame(page, G, { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 });
+  const B = await addFrame(page, G, { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 });
+  await exec(page, "weave.item.setLayoutChild", {
+    itemId: A,
+    policy: { kind: "auto-grid", column: 1, columnSpan: 1, row: 1, rowSpan: 1 },
+  });
+  await exec(page, "weave.item.setLayoutChild", {
+    itemId: B,
+    policy: { kind: "auto-grid", column: 2, columnSpan: 1, row: 1, rowSpan: 1 },
+  });
+
+  // Select G → the unified sizing control mounts for the GRID container (P4).
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, G);
+  await page.locator('[data-testid="frame-sizing-controls"]').first().waitFor();
+
+  // Toolbar "내용맞춤" (Hug) on the width → grid container sizing accepts grid.
+  await page
+    .locator('[aria-label="Container width sizing"]')
+    .locator('[aria-label="내용맞춤"]')
+    .click();
+  await page.waitForFunction((id) => {
+    let w: string | undefined;
+    const walk = (n: N & { attrs: { layout?: { sizing?: { width?: string } } } }) => {
+      if (String(n.id) === id) w = n.attrs.layout?.sizing?.width;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return w === "hug";
+  }, G);
+
+  const design = await page.evaluate(() => {
+    const d = (window as unknown as { __weaveDesign?: { width: number; height: number } })
+      .__weaveDesign;
+    return { w: d?.width ?? 0, h: d?.height ?? 0 };
+  });
+  expect(design.w).toBeGreaterThan(0);
+
+  // Resize cell A's content to 300px. The Hug grid grows its column 1 track to
+  // fit (B's column 2 has no authored content ⇒ 0). Grid width = 300 ÷ design w.
+  await exec(page, "weave.item.resizeHug", {
+    itemId: A,
+    sizePx: { w: 300, h: 40 },
+    designWidth: design.w,
+    designHeight: design.h,
+  });
+  await page.waitForFunction(
+    ({ id, target }) => {
+      let w: number | undefined;
+      const walk = (n: N) => {
+        if (String(n.id) === id) w = n.attrs.frame?.width;
+        for (const c of n.children) walk(c);
+      };
+      walk((window as unknown as W).__weaveDoc.root as unknown as N);
+      return w !== undefined && Math.abs(w - target) < 2e-3;
+    },
+    { id: G, target: 300 / design.w },
+  );
+
+  const gw = (await findFrame(page, G)).width ?? 0;
+  expect(gw, `G.width=${gw} expected≈${300 / design.w}`).toBeCloseTo(300 / design.w, 2);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
