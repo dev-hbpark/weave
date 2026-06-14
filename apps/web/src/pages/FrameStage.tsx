@@ -1887,7 +1887,21 @@ export function FrameStage(props: FrameStageProps) {
             // text/surface variables stay readable against this background no
             // matter which UI theme the editor chrome uses.
             style={{
-              background,
+              // WI-153 P4 fix — page-bounded: the gray matte is painted by the
+              // OUTER (un-scaled) container so it always covers the viewport,
+              // no matter how far the user zooms out. The page-edge crispness +
+              // page fill come from an in-plane backstop rect below (the design
+              // plane is transparent — a page with no fill unit would otherwise
+              // show this container's color, so the matte color is safe here
+              // only BECAUSE that rect restores `background` over the page box).
+              // Previously the matte was a `box-shadow` on the SCALED design
+              // plane; its fixed 100000px spread shrank with the zoom-out scale
+              // and stopped covering the viewport (gray area "broke"). Infinite
+              // canvas (pageChrome false) keeps the design background, unchanged.
+              background:
+                view.pageChrome && visibleFrameIds !== undefined
+                  ? "var(--canvas-matte, #6f737b)"
+                  : background,
               touchAction: "none",
               // Disable native text-range selection across the design surface.
               // Without this, dragging that starts on a text label (frame
@@ -2003,27 +2017,19 @@ export function FrameStage(props: FrameStageProps) {
                       x: planeTxMV,
                       y: planeTyMV,
                       scale: planeScaleMV,
-                      // WI-153 P3 — page-chrome mode (ViewPolicy): matte EVERYTHING
-                      // outside the page (this design-plane box) as a non-editable gray
-                      // region. A single huge box-shadow halo tracks the plane's pan/zoom
-                      // transform and is paint-only (does not capture pointer events).
-                      // Free-placement flavors are unaffected (pageChrome false); the
-                      // `visibleFrameIds !== undefined` leg keeps the empty-deck edge
-                      // (page-bounded with no page yet → no matte, as before).
+                      // WI-153 P3 — page-chrome mode (ViewPolicy): the gray matte
+                      // outside the page now lives on the OUTER container (see its
+                      // `background` above) so it is zoom-independent; this scaled
+                      // plane only owns the page-edge CLIP.
                       //
                       // `overflow: clip` is the page-edge CLIP (DR-111 D5): bleed is
                       // allowed in the doc (items may extend past the page box; the soft
                       // clamp keeps part of them on-page) but the off-page part is cut at
                       // the edge, WYSIWYG with present/export. The plane box == the page
                       // box for the FULL_FRAME pages page-bounded formats use (P2.4 note).
-                      // The element's OWN box-shadow (the matte) is not affected by its
-                      // own overflow, and selection chrome portals to document.body, so
-                      // neither is clipped.
+                      // Selection chrome portals to document.body, so it is not clipped.
                       ...(view.pageChrome && visibleFrameIds !== undefined
-                        ? {
-                            boxShadow: "0 0 0 100000px var(--canvas-matte, #6f737b)",
-                            overflow: "clip" as const,
-                          }
+                        ? { overflow: "clip" as const }
                         : {}),
                       // WI-037 / DR-018 — only hint will-change while a
                       // zoom/pan gesture is active. See the comment on
@@ -2032,6 +2038,27 @@ export function FrameStage(props: FrameStageProps) {
                       willChange: gestureActive ? "transform" : undefined,
                     }}
                   >
+                    {/* WI-153 P4 fix — page fill backstop. The design plane is
+                      transparent and a page frame paints `transparent` when it
+                      carries no fill unit (FrameBlock), so the page interior used
+                      to show the outer container's `background` directly. Now that
+                      the outer container paints the gray matte (page-bounded), this
+                      paint-only rect restores `background` over the page box so a
+                      fill-less page stays its design color instead of turning gray.
+                      A page's own decoration.fill (per-slide background) paints in
+                      `planeChildren` on top of this. Free-placement flavors skip it
+                      (the matte never replaces the outer background there). */}
+                    {view.pageChrome && visibleFrameIds !== undefined ? (
+                      <div
+                        aria-hidden
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          background,
+                          pointerEvents: "none",
+                        }}
+                      />
+                    ) : null}
                     {planeChildren}
                     {/* WI-074 D8b — the crop dim is no longer a plane-level overlay.
                       It is a spotlight (box-shadow hole) rendered inside the
@@ -2063,18 +2090,17 @@ export function FrameStage(props: FrameStageProps) {
               // panned or zoomed. The visual rect is portalled back into the
               // design plane so its design-pixel coords get the same transform
               // chain as the frames they create.
-              // Empty-region acceptance — same filter for both layers. The
-              // marquee starts on truly empty design-plane background only;
-              // pressing on a frame/shape/handle defers to inner bindings.
-              const emptyRegionAccept = (target: Element) => {
+              // Empty-region acceptance. The base check is shared by both
+              // layers: the idle-mode gate plus "not on a frame child" (a
+              // shape / handle / contenteditable / input keeps its own pointer
+              // flow). The page-bounds gate (`acceptWithinPage`) is applied to
+              // the rubber band ONLY — see the split below.
+              const emptyRegionBase = (target: Element) => {
                 // Idle-only gate. Hand / panning / rubber-band / frame-manipulating
                 // / text-editing / context-menu all need to keep ownership of the
                 // pointer flow; the marquee (and the alt-rubber-band downstream)
                 // must not start under any of those modes.
                 if (!selectionAllowedOuter) return false;
-                // WI-153 P4 — page-bounded: no marquee/rubber-band start on the
-                // matte (outside the page). Infinite canvas → always passes.
-                if (!acceptWithinPage(target)) return false;
                 if (!(target instanceof HTMLElement)) return true;
                 // WI-034 — frame body 의 빈 영역도 OK. RubberBand 의
                 // commit adapter (`adaptWeaveCapabilityToAgocraft`) 가
@@ -2093,6 +2119,18 @@ export function FrameStage(props: FrameStageProps) {
                   target.closest("input, textarea, button, a") === null
                 );
               };
+              // Marquee MULTI-SELECT is selection-only — it merely READS the
+              // page's geometry to compute the hit set, places nothing. So on
+              // page-bounded flavors it MAY start on the matte (outside the
+              // page) and sweep onto the page: starting a multi-select drag
+              // from outside the artboard is the expected Figma/Canva gesture.
+              const marqueeAccept = emptyRegionBase;
+              // Rubber-band drag-to-ADD PLACES a new item, so its start must
+              // stay inside the page (WI-153 P4): a matte start would resolve
+              // the container to a stray ROOT frame — an accidental new page.
+              // Infinite canvas → `acceptWithinPage` always passes, unchanged.
+              const rubberBandAccept = (target: Element) =>
+                emptyRegionBase(target) && acceptWithinPage(target);
               return editor !== undefined ? (
                 // Marquee is the OUTER layer: plain drag (alt forbidden) hits it
                 // first. When Alt is held, the modifier predicate fails and the
@@ -2190,7 +2228,7 @@ export function FrameStage(props: FrameStageProps) {
                         })
                     );
                   }}
-                  acceptTarget={emptyRegionAccept}
+                  acceptTarget={marqueeAccept}
                   onSelectIntent={(intent, ids) => {
                     onMarqueeSelect?.(intent, ids);
                   }}
@@ -2220,7 +2258,7 @@ export function FrameStage(props: FrameStageProps) {
                     // `requireAltKey` once in its capability and BOTH the
                     // gesture gate AND the hover hint update together.
                     requireAltKey={designCapability?.requireAltKey === true}
-                    acceptTarget={emptyRegionAccept}
+                    acceptTarget={rubberBandAccept}
                     style={{ position: "absolute", inset: 0 }}
                   >
                     {planeSubtree}

@@ -192,6 +192,65 @@ test("marquee drag selects items INSIDE the page, never the page", async ({ page
   await expect.poll(async () => (await selectionState(page)).itemId).toBe(shapeId);
 });
 
+test("marquee STARTED ON THE MATTE (outside the page) still selects in-page items", async ({
+  page,
+}) => {
+  // Page-bounded: editing/placement is page-bounded, but a MULTI-SELECT drag
+  // is selection-only, so it may START on the matte (outside the page) and
+  // sweep onto the page — the expected Figma/Canva gesture. (Before the fix the
+  // shared `acceptWithinPage` gate rejected any drag start on the matte, so a
+  // marquee could only begin inside the page.)
+  await prepareDesign(page, { flavor: "slide-deck" });
+  const { id: pageId } = await pageInfo(page);
+  const shapeId = await seedShapeInPage(page, pageId);
+
+  const stage = await page.locator('[data-testid="frame-stage"]').boundingBox();
+  const box = await page
+    .locator(`[data-frame-id="${pageId}"]:not([data-thumbnail-id])`)
+    .boundingBox();
+  if (stage === null || box === null) throw new Error("no box");
+  // Start midway between the stage's left edge and the page's left edge — a
+  // point on the matte (paddingFactor < 1 guarantees the matte band exists).
+  const startX = (stage.x + box.x) / 2;
+  expect(startX).toBeLessThan(box.x); // sanity: the start is OUTSIDE the page
+  const py = (ry: number) => box.y + box.height * ry;
+  const px = (rx: number) => box.x + box.width * rx;
+  await page.mouse.move(startX, py(0.45));
+  await page.mouse.down();
+  await page.mouse.move(px(0.45), py(0.75), { steps: 12 });
+  await page.mouse.up();
+
+  await expect.poll(async () => (await selectionState(page)).itemId).toBe(shapeId);
+});
+
+test("page-bounded matte is painted on the un-scaled container so zoom-out can't break it", async ({
+  page,
+}) => {
+  await prepareDesign(page, { flavor: "slide-deck" });
+  // The matte (gray region outside the page) now lives on the OUTER stage
+  // container, which is never scaled — so it covers the viewport at any zoom.
+  // Previously it was a box-shadow on the SCALED design plane whose fixed
+  // 100000px spread shrank with the zoom-out scale and exposed the canvas
+  // behind it (the gray area "broke" on zoom-out).
+  const stageBg = await page
+    .locator('[data-testid="frame-stage"]')
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(stageBg).toBe("rgb(111, 115, 123)"); // var(--canvas-matte, #6f737b)
+  // The scaled design plane no longer carries the matte box-shadow.
+  const planeShadow = await page
+    .locator('[data-design-plane="true"]')
+    .evaluate((el) => getComputedStyle(el).boxShadow);
+  expect(planeShadow).toBe("none");
+});
+
+test("mixed (infinite canvas) keeps the design background, never the matte", async ({ page }) => {
+  await prepareDesign(page, { flavor: "mixed" });
+  const stageBg = await page
+    .locator('[data-testid="frame-stage"]')
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(stageBg).not.toBe("rgb(111, 115, 123)");
+});
+
 test("rail thumbnail hover paints NO hover affordance on the page (WI-164)", async ({ page }) => {
   await prepareDesign(page, { flavor: "slide-deck" });
   const { id: pageId } = await pageInfo(page);
