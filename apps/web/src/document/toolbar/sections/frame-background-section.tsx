@@ -51,6 +51,8 @@ import {
   TrackSizeEditor,
 } from "@weave/design-system";
 import type { ReactElement } from "react";
+import { absoluteFrameBox } from "../../agocraft-mirror.js";
+import { useDesignDims } from "../../style/resolver-context.js";
 import { batchPerItem } from "../multi-edit.js";
 import { FlipControls } from "./flip-controls.js";
 import { FillControl, StrokeControl } from "./shadow-controls.js";
@@ -145,14 +147,17 @@ const PADDING_LABEL: Record<(typeof PADDING_SIDES)[number], string> = {
   left: "Left",
 };
 
-/** Padding 4-side sub-form. Shared by Flex + Grid Bar.More — both specs
- *  carry a `{ top, right, bottom, left }` ratio object. */
+/** Padding 4-side sub-form. Shared by Flex + Grid Bar.More. WI-220 — values are
+ *  DESIGN PX (px-first + ratio mirror, consistent with the WI-219 canvas handles
+ *  and the WI-043 engine); the host computes px from each side's ratio × frame box. */
 function PaddingFields({
-  padding,
+  pxOf,
+  max,
   onSideChange,
 }: {
-  readonly padding: { top: number; right: number; bottom: number; left: number };
-  readonly onSideChange: (side: (typeof PADDING_SIDES)[number], value: number) => void;
+  readonly pxOf: (side: (typeof PADDING_SIDES)[number]) => number;
+  readonly max: number;
+  readonly onSideChange: (side: (typeof PADDING_SIDES)[number], px: number) => void;
 }): ReactElement {
   return (
     <Bar.Field label="여백">
@@ -163,12 +168,12 @@ function PaddingFields({
               {PADDING_LABEL[side]}
             </span>
             <NumberSlider
-              value={padding[side]}
+              value={pxOf(side)}
               onValueChange={(v) => onSideChange(side, v)}
               min={0}
-              max={0.25}
-              step={0.005}
-              format={(v) => `${Math.round(v * 1000) / 10}%`}
+              max={max}
+              step={1}
+              suffix="px"
               aria-label={`Padding ${side}`}
               className="flex-1"
             />
@@ -179,7 +184,14 @@ function PaddingFields({
   );
 }
 
-export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items, ids }) => {
+export const FrameBackgroundSection: ToolbarSectionComponent = ({
+  editor,
+  items,
+  ids,
+  document,
+}) => {
+  // WI-220 — px-first gap/padding authoring needs the design plane (px↔ratio).
+  const dims = useDesignDims();
   // WI-095 follow-up — a frame's background is a `decoration.fill` UNIT now
   // (DR-028 parity with shapes), not `attrs.background`. The same FillControl /
   // StrokeControl shapes use edit it, so frames get solid / gradient fills and
@@ -229,6 +241,105 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
     );
   };
 
+  // ── WI-220 px-first gap/padding (DR-139) ───────────────────────────────────
+  // Author the px field directly + mirror the ratio (px ÷ frame absolute px), and
+  // thread design dims so the engine reflows at fixed px (WI-043 P6). Per-frame in
+  // multi-select (each frame has its own box). `dims === null` (no design plane) ⇒
+  // fall back to the legacy ratio sliders is not needed: px display reads 0 and the
+  // writer keeps the prior ratio.
+  const dimsInput = dims !== null ? { designWidth: dims.width, designHeight: dims.height } : {};
+  const specOf = (id: string): LayoutSpec | undefined =>
+    (items.find((it) => String(it.id) === id)?.attrs as { layout?: LayoutSpec } | undefined)
+      ?.layout;
+  const boxOf = (id: string): { w: number; h: number } | null => {
+    if (dims === null) return null;
+    const b = absoluteFrameBox(document, id, dims.width, dims.height);
+    return b !== null ? { w: b.w, h: b.h } : null;
+  };
+  const firstBox = firstItem !== undefined ? boxOf(String(firstItem.id)) : null;
+
+  /** Patch one px-authored layout change across the selection, per-frame. */
+  const patchPx = (build: (spec: LayoutSpec, box: { w: number; h: number } | null) => LayoutSpec) =>
+    batchPerItem(editor, ids, (id) => {
+      const spec = specOf(id);
+      if (spec === undefined) return;
+      editor.exec("weave.frame.setLayout", {
+        itemId: id,
+        layout: build(spec, boxOf(id)),
+        ...dimsInput,
+      });
+    });
+
+  const setFlexGapPx = (px: number) =>
+    patchPx((spec, box) => {
+      if (spec.kind !== "auto-flex") return spec;
+      const mainPx = box !== null ? (spec.direction === "row" ? box.w : box.h) : 0;
+      const ratio = mainPx > 0 ? px / mainPx : spec.gap;
+      return { ...spec, gap: ratio, gapPx: px };
+    });
+  const setGridGapPx = (axis: "column" | "row", px: number) =>
+    patchPx((spec, box) => {
+      if (spec.kind !== "auto-grid") return spec;
+      const axisPx = box !== null ? (axis === "column" ? box.w : box.h) : 0;
+      const ratio = axisPx > 0 ? px / axisPx : axis === "column" ? spec.columnGap : spec.rowGap;
+      return axis === "column"
+        ? { ...spec, columnGap: ratio, columnGapPx: px }
+        : { ...spec, rowGap: ratio, rowGapPx: px };
+    });
+  const setPaddingSidePx = (side: "top" | "right" | "bottom" | "left", px: number) =>
+    patchPx((spec, box) => {
+      if (!("padding" in spec)) return spec;
+      const horizontal = side === "left" || side === "right";
+      const axisPx = box !== null ? (horizontal ? box.w : box.h) : 0;
+      const ratio = axisPx > 0 ? px / axisPx : spec.padding[side];
+      const curPx = spec.paddingPx ?? {
+        top: spec.padding.top * (box?.h ?? 0),
+        right: spec.padding.right * (box?.w ?? 0),
+        bottom: spec.padding.bottom * (box?.h ?? 0),
+        left: spec.padding.left * (box?.w ?? 0),
+      };
+      return {
+        ...spec,
+        padding: { ...spec.padding, [side]: ratio },
+        paddingPx: { ...curPx, [side]: px },
+      };
+    });
+
+  // px display values from the homogeneous (shared) spec + first frame's box.
+  const round = (n: number): number => Math.round(n);
+  const flexMainPx =
+    homogeneousSpec?.kind === "auto-flex" && firstBox !== null
+      ? homogeneousSpec.direction === "row"
+        ? firstBox.w
+        : firstBox.h
+      : 0;
+  const flexGapPxDisplay =
+    homogeneousSpec?.kind === "auto-flex"
+      ? round(homogeneousSpec.gapPx ?? homogeneousSpec.gap * flexMainPx)
+      : 0;
+  const gridColGapPxDisplay =
+    homogeneousSpec?.kind === "auto-grid"
+      ? round(homogeneousSpec.columnGapPx ?? homogeneousSpec.columnGap * (firstBox?.w ?? 0))
+      : 0;
+  const gridRowGapPxDisplay =
+    homogeneousSpec?.kind === "auto-grid"
+      ? round(homogeneousSpec.rowGapPx ?? homogeneousSpec.rowGap * (firstBox?.h ?? 0))
+      : 0;
+  const paddingPxOf = (side: "top" | "right" | "bottom" | "left"): number => {
+    if (homogeneousSpec === undefined || !("padding" in homogeneousSpec)) return 0;
+    const px = homogeneousSpec.paddingPx?.[side];
+    if (px !== undefined) return round(px);
+    const axisPx = side === "left" || side === "right" ? (firstBox?.w ?? 0) : (firstBox?.h ?? 0);
+    return round(homogeneousSpec.padding[side] * axisPx);
+  };
+  // px slider ceilings (≈ the old ratio caps × the frame box).
+  const gapMax = round(Math.max(80, flexMainPx * 0.5));
+  const colGapMax = round(Math.max(80, (firstBox?.w ?? 0) * 0.5));
+  const rowGapMax = round(Math.max(80, (firstBox?.h ?? 0) * 0.5));
+  const padMax = round(
+    Math.max(80, Math.min(firstBox?.w ?? Infinity, firstBox?.h ?? Infinity) * 0.45),
+  );
+
   const onFlexFieldChange = <K extends keyof AutoFlexSpec>(key: K, value: AutoFlexSpec[K]) => {
     if (homogeneousSpec?.kind !== "auto-flex") return;
     patchLayoutSpec({ ...homogeneousSpec, [key]: value } as AutoFlexSpec);
@@ -249,20 +360,6 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
   const onGridAlignPad = (justify: GridJustify, align: GridAlign) => {
     if (homogeneousSpec?.kind !== "auto-grid") return;
     patchLayoutSpec({ ...homogeneousSpec, justify, align });
-  };
-
-  /** Padding 4-side override helper — preserves the other 3 sides. Used by
-   *  both Flex and Grid Bar.More (same 4-side shape, RISK-002 C2.4). */
-  const onPaddingSideChange = (side: "top" | "right" | "bottom" | "left", value: number) => {
-    if (homogeneousSpec === undefined) return;
-    // Branch on the *capability* (does this spec carry padding?), not on the
-    // kind — `absolute-constraints` has none; the two padding-bearing kinds
-    // (auto-flex / auto-grid) used identical bodies (AUDIT-005 task #6).
-    if (!("padding" in homogeneousSpec)) return;
-    patchLayoutSpec({
-      ...homogeneousSpec,
-      padding: { ...homogeneousSpec.padding, [side]: value },
-    });
   };
 
   return (
@@ -326,12 +423,13 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                   </Bar.Field>
                   <Bar.Field label="간격">
                     <NumberSlider
-                      value={homogeneousSpec.gap}
-                      onValueChange={(v) => onFlexFieldChange("gap", v)}
+                      value={flexGapPxDisplay}
+                      onValueChange={setFlexGapPx}
                       min={0}
-                      max={0.2}
-                      step={0.005}
-                      format={(v) => `${Math.round(v * 1000) / 10}%`}
+                      max={gapMax}
+                      step={1}
+                      suffix="px"
+                      aria-label="간격"
                       className="w-full"
                     />
                   </Bar.Field>
@@ -404,10 +502,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                   </Bar.Field>
                 </AccordionItem>
                 <AccordionItem label="여백" data-testid="frame-flex-padding-group">
-                  <PaddingFields
-                    padding={homogeneousSpec.padding}
-                    onSideChange={onPaddingSideChange}
-                  />
+                  <PaddingFields pxOf={paddingPxOf} max={padMax} onSideChange={setPaddingSidePx} />
                 </AccordionItem>
               </>
             ) : null}
@@ -431,23 +526,25 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                   </Bar.Field>
                   <Bar.Field label="열 간격">
                     <NumberSlider
-                      value={homogeneousSpec.columnGap}
-                      onValueChange={(v) => onGridFieldChange("columnGap", v)}
+                      value={gridColGapPxDisplay}
+                      onValueChange={(v) => setGridGapPx("column", v)}
                       min={0}
-                      max={0.2}
-                      step={0.005}
-                      format={(v) => `${Math.round(v * 1000) / 10}%`}
+                      max={colGapMax}
+                      step={1}
+                      suffix="px"
+                      aria-label="열 간격"
                       className="w-full"
                     />
                   </Bar.Field>
                   <Bar.Field label="행 간격">
                     <NumberSlider
-                      value={homogeneousSpec.rowGap}
-                      onValueChange={(v) => onGridFieldChange("rowGap", v)}
+                      value={gridRowGapPxDisplay}
+                      onValueChange={(v) => setGridGapPx("row", v)}
                       min={0}
-                      max={0.2}
-                      step={0.005}
-                      format={(v) => `${Math.round(v * 1000) / 10}%`}
+                      max={rowGapMax}
+                      step={1}
+                      suffix="px"
+                      aria-label="행 간격"
                       className="w-full"
                     />
                   </Bar.Field>
@@ -531,10 +628,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({ editor, items,
                   </Bar.Field>
                 </AccordionItem>
                 <AccordionItem label="여백" data-testid="frame-grid-padding-group">
-                  <PaddingFields
-                    padding={homogeneousSpec.padding}
-                    onSideChange={onPaddingSideChange}
-                  />
+                  <PaddingFields pxOf={paddingPxOf} max={padMax} onSideChange={setPaddingSidePx} />
                 </AccordionItem>
               </>
             ) : null}

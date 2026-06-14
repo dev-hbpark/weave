@@ -310,11 +310,9 @@ test("P3 ①: toolbar Fixed/Hug segment sets a frame's container sizing", async 
   // Starts unset (defaults to fixed/fixed).
   expect(await sizingOf(F)).toBeNull();
 
-  // Click the WIDTH "내용맞춤" (Hug) segment.
-  await page
-    .locator('[aria-label="Container width sizing"]')
-    .locator('[aria-label="내용맞춤"]')
-    .click();
+  // Open the WIDTH sizing combobox → pick "내용맞춤" (Hug).
+  await page.locator('[data-testid="frame-sizing-width"]').click();
+  await page.locator('[data-testid="frame-sizing-width-option-hug"]').click();
   await page.waitForFunction((id) => {
     let w: string | undefined;
     const walk = (n: N & { attrs: { layout?: { sizing?: { width?: string } } } }) => {
@@ -455,10 +453,10 @@ test("P3 ①(unified 3-way): toolbar Fill routes to layoutChild.grow (dual-routi
   }, F);
   await page.locator('[data-testid="frame-sizing-controls"]').first().waitFor();
 
-  // The Fill segment exists ONLY because F has a flex parent.
-  const fillSeg = page
-    .locator('[aria-label="Container width sizing"]')
-    .locator('[aria-label="채움"]');
+  // The Fill option exists ONLY because F has a flex parent. Open the WIDTH
+  // sizing combobox → pick "채움" (Fill).
+  await page.locator('[data-testid="frame-sizing-width"]').click();
+  const fillSeg = page.locator('[data-testid="frame-sizing-width-option-fill"]');
   await expect.poll(() => fillSeg.count()).toBe(1);
   await fillSeg.click();
 
@@ -565,10 +563,8 @@ test("P4: a Hug auto-GRID grows to its cell content (toolbar Hug + resize, live)
   await page.locator('[data-testid="frame-sizing-controls"]').first().waitFor();
 
   // Toolbar "내용맞춤" (Hug) on the width → grid container sizing accepts grid.
-  await page
-    .locator('[aria-label="Container width sizing"]')
-    .locator('[aria-label="내용맞춤"]')
-    .click();
+  await page.locator('[data-testid="frame-sizing-width"]').click();
+  await page.locator('[data-testid="frame-sizing-width-option-hug"]').click();
   await page.waitForFunction((id) => {
     let w: string | undefined;
     const walk = (n: N & { attrs: { layout?: { sizing?: { width?: string } } } }) => {
@@ -776,11 +772,9 @@ test("P4 ①: cross-Fill via the 3-way hides the redundant align-self control", 
   // Before: align-self control visible (cross not filling).
   await expect.poll(() => alignField.count()).toBe(1);
 
-  // Set the CROSS axis (height, in a row) to Fill via the 3-way → alignSelf=stretch.
-  await page
-    .locator('[aria-label="Container height sizing"]')
-    .locator('[aria-label="채움"]')
-    .click();
+  // Set the CROSS axis (height, in a row) to Fill via the combobox → alignSelf=stretch.
+  await page.locator('[data-testid="frame-sizing-height"]').click();
+  await page.locator('[data-testid="frame-sizing-height-option-fill"]').click();
   await page.waitForFunction((id) => {
     let a: string | undefined;
     const walk = (n: N & { attrs: { layoutChild?: { alignSelf?: string } } }) => {

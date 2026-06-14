@@ -39,7 +39,7 @@ import {
   type LayoutSpec,
 } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
-import { ContextualToolbar as Bar, SegmentedControl } from "@weave/design-system";
+import { ContextualToolbar as Bar, Select } from "@weave/design-system";
 import type { JSX } from "react";
 import { nn } from "../../../lib/nn.js";
 import { findItemDeep, findParentAndIndex } from "../../agocraft-mirror.js";
@@ -177,19 +177,21 @@ export function FrameSizingSection({
       className="inline-flex items-end gap-2 ml-1 pl-2 border-l border-l-[color:var(--surface-overlay-border)]"
     >
       <Bar.Field label="너비">
-        <SegmentedControl<Sizing3>
+        <Select<Sizing3>
           value={axisValue("width")}
           onValueChange={(v) => apply("width", v)}
           options={options}
           aria-label="Container width sizing"
+          data-testid="frame-sizing-width"
         />
       </Bar.Field>
       <Bar.Field label="높이">
-        <SegmentedControl<Sizing3>
+        <Select<Sizing3>
           value={axisValue("height")}
           onValueChange={(v) => apply("height", v)}
           options={options}
           aria-label="Container height sizing"
+          data-testid="frame-sizing-height"
         />
       </Bar.Field>
     </div>
