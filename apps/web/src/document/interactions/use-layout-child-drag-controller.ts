@@ -29,6 +29,11 @@ import { designPlaneFromTarget, frameIdFromTarget } from "./use-reparent-drag-co
 
 const SWAP_TARGET_ATTR = "data-layout-swap-target";
 
+/** Pointer travel (CSS px) before a press becomes a DRAG. Below this it is a
+ *  plain click — never a drop commit. Critical for grid: a click inside a
+ *  MERGED (spanned) child must not relocate it (WI-227 / agocraft WI-049). */
+const DRAG_THRESHOLD_PX = 4;
+
 /** A screen-space rectangle (CSS px) for the grid drop-cell preview overlay. */
 export interface DropPreviewRect {
   readonly left: number;
@@ -64,6 +69,12 @@ interface DragSession {
   readonly draggedId: string;
   readonly parentId: string;
   readonly parentKind: string;
+  /** Press origin (CSS px) — the drag-threshold reference. */
+  readonly downX: number;
+  readonly downY: number;
+  /** Set once the pointer travels past DRAG_THRESHOLD_PX — only then is the
+   *  gesture a real drag that commits a drop on pointerup. */
+  moved: boolean;
   lastHighlightedEl: Element | null;
 }
 
@@ -242,6 +253,9 @@ export function useLayoutChildDragController(
         draggedId: hit,
         parentId: parent.parentId,
         parentKind: parent.kind,
+        downX: e.clientX,
+        downY: e.clientY,
+        moved: false,
         lastHighlightedEl: null,
       };
       setState({
@@ -266,6 +280,12 @@ export function useLayoutChildDragController(
         : EMPTY_RESOLUTION;
 
     const onMove = (e: PointerEvent) => {
+      if (!session.moved) {
+        const dx = e.clientX - session.downX;
+        const dy = e.clientY - session.downY;
+        if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+        session.moved = true; // crossed the threshold → this is a drag
+      }
       const r = resolve(e.clientX, e.clientY);
       // Flex highlights the swap-target sibling via a data attr; grid uses the
       // cell-rect overlay (swapTargetId stays null for grid).
@@ -283,8 +303,12 @@ export function useLayoutChildDragController(
       });
     };
     const onUp = (e: PointerEvent) => {
-      const r = resolve(e.clientX, e.clientY);
-      if (r.commit !== null && editor !== null) r.commit(editor);
+      // A press that never crossed the threshold is a CLICK, not a drag — leave
+      // selection alone and commit nothing (no accidental cell relocation).
+      if (session.moved) {
+        const r = resolve(e.clientX, e.clientY);
+        if (r.commit !== null && editor !== null) r.commit(editor);
+      }
       endGesture();
     };
     const onCancel = () => endGesture();
