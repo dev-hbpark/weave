@@ -16,7 +16,8 @@ export type DialogSize = "sm" | "md" | "lg";
 export interface DialogContentProps extends DialogPrimitive.DialogContentProps {
   readonly children: ReactNode;
   /** Surface treatment.
-   *  - "panel" (default) — heavy aurora-glass sheet on `--surface-1`. For
+   *  - "panel" (default) — heavy aurora-glass sheet: a `--surface-1` glass tint
+   *    over an OPAQUE `--bg-page-soft` base (the canvas never shows through). For
    *    settings sheets, confirmation modals, multi-section flows.
    *  - "overlay" — lighter dark-glass on `--surface-overlay`, matching the
    *    surrounding menus (DropdownMenu / Popover). For quick input prompts. */
@@ -70,7 +71,15 @@ export function DialogContent({
                 "p-5",
               ].join(" ")
             : [
-                "rounded-[var(--radius-xl)] bg-[color:var(--surface-1)]",
+                // OPAQUE base + glass tint. The tint (`--surface-1`, ~0.04–0.08
+                // alpha) is layered as a background-IMAGE over the solid
+                // background-COLOR base — a second `bg-[color:…]` would OVERRIDE,
+                // not stack. This keeps the aurora-glass character while the
+                // panel stays opaque, so the user's canvas never shows through a
+                // dialog (the floating-chrome rule in tokens.css: translucent
+                // surfaces disappear over light canvases).
+                "rounded-[var(--radius-xl)] bg-[color:var(--bg-page-soft)]",
+                "bg-[image:linear-gradient(var(--surface-1),var(--surface-1))]",
                 "border border-[color:var(--surface-1-border)]",
                 "backdrop-blur-[var(--surface-blur)] shadow-[var(--shadow-glow)]",
                 "p-6 md:p-8",
