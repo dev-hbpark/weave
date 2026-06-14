@@ -3303,7 +3303,57 @@ export function buildWeaveCommands(
         },
       } as Patch;
 
-      return ok(undefined, [containerPatch, ...descPatches]);
+      // WI-048 #2 — Hug → Fixed BAKE: when an axis flips hug→fixed, freeze each
+      // flex child's CURRENT frame ratio into its policy (basis on the layout's
+      // MAIN axis, crossSize on the CROSS). Hug arranged the children to FILL the
+      // hugged box (e.g. frame 0.49) but left their `basis` at the authored value
+      // (0.12); the Fixed-resize reflow reads `basis`, so WITHOUT the bake the
+      // children snap back to the stale basis and SHRINK on the next resize. Flex
+      // only — grid placement has no basis.
+      const bakePatches: Patch[] = [];
+      const flexDir =
+        layout.kind === "auto-flex"
+          ? (layout as { direction?: "row" | "column" }).direction
+          : undefined;
+      if (flexDir !== undefined) {
+        const oldSizing: AxisSizingPair =
+          (layout as { sizing?: AxisSizingPair }).sizing ?? { width: "fixed", height: "fixed" };
+        const mainAxis: "width" | "height" = flexDir === "row" ? "width" : "height";
+        const crossAxis: "width" | "height" = flexDir === "row" ? "height" : "width";
+        const bakeMain = oldSizing[mainAxis] === "hug" && input.sizing[mainAxis] === "fixed";
+        const bakeCross = oldSizing[crossAxis] === "hug" && input.sizing[crossAxis] === "fixed";
+        if (bakeMain || bakeCross) {
+          for (const c of child.children) {
+            const pol = (c.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild;
+            if (pol !== undefined && pol.kind !== "auto-flex") continue; // grid child
+            const f = (c.attrs as { frame?: ItemFrame }).frame;
+            if (f === undefined) continue;
+            const flexPol = pol?.kind === "auto-flex" ? pol : undefined;
+            const next = createAutoFlexChildPolicy({
+              ...(flexPol !== undefined
+                ? {
+                    grow: flexPol.grow,
+                    shrink: flexPol.shrink,
+                    basis: flexPol.basis,
+                    ...(flexPol.alignSelf !== undefined ? { alignSelf: flexPol.alignSelf } : {}),
+                    ...(flexPol.crossSize !== undefined ? { crossSize: flexPol.crossSize } : {}),
+                    ...(flexPol.sizePx !== undefined ? { sizePx: flexPol.sizePx } : {}),
+                  }
+                : {}),
+              ...(bakeMain ? { basis: f[mainAxis] } : {}),
+              ...(bakeCross ? { crossSize: f[crossAxis] } : {}),
+            });
+            bakePatches.push({
+              type: "item.layoutChild",
+              itemId: c.id,
+              before: pol,
+              after: next,
+            } as Patch);
+          }
+        }
+      }
+
+      return ok(undefined, [containerPatch, ...descPatches, ...bakePatches]);
     },
   };
 

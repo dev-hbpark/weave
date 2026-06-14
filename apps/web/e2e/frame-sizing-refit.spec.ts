@@ -76,3 +76,31 @@ test("setLayout (gap change) re-fits a Hug container (WI-048 #3)", async ({ page
   // a wider gap grows the width-Hug row's box.
   expect(afterGap.w).toBeGreaterThan(beforeGap.w);
 });
+
+test("Hug→Fixed bakes child basis so a later resize keeps child size constant (WI-048 #2)", async ({ page }) => {
+  await boot(page);
+  const root = await page.evaluate(() => String((window as any).__weaveDoc.root.id));
+  const R = await add(page, { kind: "frame", containerId: root, frame: { x: 0.1, y: 0.2, width: 0.6, height: 0.4, rotation: 0 } });
+  await exec(page, "weave.frame.setLayout", { itemId: R, layout: { kind: "auto-flex", direction: "row", gap: 0.005 } });
+  const A = await add(page, { kind: "shape", containerId: R, frame: { x: 0, y: 0, width: 0.12, height: 0.5, rotation: 0 } });
+  await add(page, { kind: "shape", containerId: R, frame: { x: 0, y: 0, width: 0.12, height: 0.5, rotation: 0 } });
+  const dimsIn = { designWidth: design.width, designHeight: design.height };
+  // Hug (container shrinks to fit; children fill it → frame ≫ authored basis).
+  await exec(page, "weave.frame.setSizing", { itemId: R, sizing: { width: "hug", height: "fixed" }, ...dimsIn });
+  await page.waitForTimeout(90);
+  // Back to Fixed — the bake freezes each child's current frame ratio into basis.
+  await exec(page, "weave.frame.setSizing", { itemId: R, sizing: { width: "fixed", height: "fixed" }, ...dimsIn });
+  await page.waitForTimeout(90);
+  const beforeResize = await frameOf(page, R);
+  const childBefore: any = await frameOf(page, A);
+  const childAbsBefore = childBefore.w * beforeResize.w * design.width;
+  // Resize the (Fixed) container width ×2 — the child must keep its ABSOLUTE size.
+  await exec(page, "weave.item.update", { itemId: R, attrs: { frame: { x: 0.1, y: 0.2, width: beforeResize.w * 2, height: beforeResize.h, rotation: 0 } } });
+  await page.waitForTimeout(120);
+  const afterResize = await frameOf(page, R);
+  const childAfter: any = await frameOf(page, A);
+  const childAbsAfter = childAfter.w * afterResize.w * design.width;
+  console.log("#2 child abs before:", childAbsBefore, "after:", childAbsAfter);
+  // Child keeps its absolute width (no shrink). Pre-fix it collapsed ~4×.
+  expect(childAbsAfter).toBeCloseTo(childAbsBefore, 0);
+});
