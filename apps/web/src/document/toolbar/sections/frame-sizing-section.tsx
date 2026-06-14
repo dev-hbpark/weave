@@ -66,6 +66,21 @@ function parentFlexOf(doc: AgocraftDocument, itemId: string): AutoFlexSpec | und
   return layout !== undefined && layout.kind === "auto-flex" ? layout : undefined;
 }
 
+/** The parent CONTAINER's own per-axis sizing (auto-flex / auto-grid), or
+ *  undefined when the parent isn't a sizing container. Used to suppress **Fill**
+ *  on an axis the parent **Hugs** (DR-058 / WI-045 — Figma parity: Fill is
+ *  unavailable on a hugged axis; authoring it produced a 0px disappearing
+ *  child). */
+function parentSizingOf(doc: AgocraftDocument, itemId: string): AxisSizingPair | undefined {
+  const found = findParentAndIndex(doc, itemId);
+  if (found === undefined) return undefined;
+  const layout = (found.parent.attrs as { layout?: LayoutSpec }).layout;
+  if (layout === undefined || (layout.kind !== "auto-flex" && layout.kind !== "auto-grid")) {
+    return undefined;
+  }
+  return (layout as { sizing?: AxisSizingPair }).sizing ?? DEFAULT_AXIS_SIZING;
+}
+
 export function FrameSizingSection({
   editor,
   items,
@@ -84,13 +99,21 @@ export function FrameSizingSection({
   const live = findItemDeep(document, item.id);
   const hasChildren = live !== undefined && live.children.length > 0;
   const parentFlex = parentFlexOf(document, item.id);
+  const parentSizing = parentSizingOf(document, item.id);
+
+  // DR-058 — Fill on an axis the PARENT Hugs is contradictory (it produced a
+  // 0px disappearing frame, WI-045). Figma disables Fill there; we omit the
+  // option so it can't be authored. The engine also demotes any such legacy
+  // state to content, so a frame still filling a now-hugged axis shows Fixed.
+  const parentHugsAxis = (axis: "width" | "height"): boolean =>
+    parentSizing !== undefined && parentSizing[axis] === "hug";
 
   // Available options per axis: Fixed always; Hug with children; Fill with a
-  // flex parent.
-  const options: ReadonlyArray<{ value: Sizing3; label: string }> = [
+  // flex parent that does NOT Hug that axis.
+  const optionsFor = (axis: "width" | "height"): ReadonlyArray<{ value: Sizing3; label: string }> => [
     opt("fixed"),
     ...(hasChildren ? [opt("hug")] : []),
-    ...(parentFlex !== undefined ? [opt("fill")] : []),
+    ...(parentFlex !== undefined && !parentHugsAxis(axis) ? [opt("fill")] : []),
   ];
 
   const ownSizing: AxisSizingPair =
@@ -110,10 +133,11 @@ export function FrameSizingSection({
     return axisIsMain(axis) ? grow > 0 : alignSelf === "stretch";
   };
 
-  /** Display value — Fill (child-role) wins; else own Hug (with children); else
-   *  Fixed. Clamped to a selectable option. */
+  /** Display value — Fill (child-role) wins, UNLESS the parent Hugs that axis
+   *  (then Fill isn't offered and the engine demotes it → show Fixed); else own
+   *  Hug (with children); else Fixed. Clamped to a selectable option. */
   const axisValue = (axis: "width" | "height"): Sizing3 => {
-    if (isFill(axis)) return "fill";
+    if (isFill(axis) && !parentHugsAxis(axis)) return "fill";
     return ownSizing[axis] === "hug" && hasChildren ? "hug" : "fixed";
   };
 
@@ -180,7 +204,7 @@ export function FrameSizingSection({
         <Select<Sizing3>
           value={axisValue("width")}
           onValueChange={(v) => apply("width", v)}
-          options={options}
+          options={optionsFor("width")}
           aria-label="Container width sizing"
           data-testid="frame-sizing-width"
         />
@@ -189,7 +213,7 @@ export function FrameSizingSection({
         <Select<Sizing3>
           value={axisValue("height")}
           onValueChange={(v) => apply("height", v)}
-          options={options}
+          options={optionsFor("height")}
           aria-label="Container height sizing"
           data-testid="frame-sizing-height"
         />

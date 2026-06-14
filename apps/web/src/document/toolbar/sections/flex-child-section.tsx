@@ -16,6 +16,7 @@
 // per-child layout applies to every kind equally.
 
 import {
+  type AxisSizingPair,
   type Document as AgocraftDocument,
   type AutoFlexChildPolicy,
   type AutoFlexSpec,
@@ -23,6 +24,7 @@ import {
   type AutoGridSpec,
   createAutoFlexChildPolicy,
   createAutoGridChildPolicy,
+  DEFAULT_AXIS_SIZING,
   type FlexAlign,
   type GridAlign,
   type GridJustify,
@@ -107,6 +109,18 @@ export function FlexChildSection({
   const mainIsWidth = parentSpec.direction === "row";
   const currentMain = frame !== undefined ? (mainIsWidth ? frame.width : frame.height) : 0;
 
+  // DR-058 / WI-045 — Fill on an axis the PARENT Hugs is contradictory (it
+  // collapsed the child to a 0px sliver). Mirror Figma: suppress the main-axis
+  // Fill (Grow) when the parent Hugs the main axis, and drop the cross Stretch
+  // when it Hugs the cross axis. The engine already demotes any legacy state to
+  // content, so a stale stretch displays as Start.
+  const parentSizing: AxisSizingPair =
+    (parentSpec as { sizing?: AxisSizingPair }).sizing ?? DEFAULT_AXIS_SIZING;
+  const parentHugsMain = parentSizing[mainIsWidth ? "width" : "height"] === "hug";
+  const parentHugsCross = parentSizing[mainIsWidth ? "height" : "width"] === "hug";
+  const showStretch = !ownIsAutoFlex && !parentHugsCross;
+  const shownAlign: FlexAlign = !showStretch && alignSelf === "stretch" ? "start" : alignSelf;
+
   /** Rebuild the policy from the current one with `overrides` applied, then
    *  dispatch through the command (which reflows the parent). */
   const apply = (overrides: Partial<Omit<AutoFlexChildPolicy, "kind">>) => {
@@ -138,7 +152,9 @@ export function FlexChildSection({
       data-testid="flex-child-controls"
       className="inline-flex items-end gap-2 ml-1 pl-2 border-l border-l-[color:var(--surface-overlay-border)]"
     >
-      {ownIsAutoFlex ? null : (
+      {/* DR-058 — Fill (Grow) is unavailable when the parent Hugs the main axis
+          (it produced a 0px disappearing child). */}
+      {ownIsAutoFlex || parentHugsMain ? null : (
         <Bar.Field label={mainIsWidth ? "Width" : "Height"}>
           <SegmentedControl<GrowChoice>
             value={grow}
@@ -159,9 +175,9 @@ export function FlexChildSection({
       {ownIsAutoFlex && alignSelf === "stretch" ? null : (
         <Bar.Field label="자기 정렬">
           <Select<FlexAlign>
-            value={alignSelf}
+            value={shownAlign}
             onValueChange={(v) => apply({ alignSelf: v })}
-            options={ownIsAutoFlex ? ALIGN_SELF_OPTIONS_NO_STRETCH : ALIGN_SELF_OPTIONS}
+            options={showStretch ? ALIGN_SELF_OPTIONS : ALIGN_SELF_OPTIONS_NO_STRETCH}
             aria-label="Flex child align-self"
             triggerClassName="min-w-[88px]"
           />
