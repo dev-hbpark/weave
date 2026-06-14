@@ -133,7 +133,7 @@ export function AkuAssistant({
     ...(onFramesAdded !== undefined ? { onFramesAdded } : {}),
     ...(onPageActivate !== undefined ? { onPageActivate } : {}),
   });
-  const { geometry, beginMove, beginResize } = useAkuGeometry();
+  const { geometry, beginMove, beginResize, moveTo } = useAkuGeometry();
 
   // editFrom loads a past user turn back into the composer (seed); the nonce
   // forces a reload even when the same text is edited twice.
@@ -165,6 +165,12 @@ export function AkuAssistant({
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const openPanel = useCallback(() => setOpen(true), []);
+  // WI — dragging the roaming launcher persists its drop point as the new home
+  // (geometry.x/y feed `home` below), so the user's chosen spot survives reload.
+  const persistHome = useCallback(
+    (p: { readonly x: number; readonly y: number }) => moveTo(p.x, p.y),
+    [moveTo],
+  );
   // Is Aku in a NON-editing "thinking"-class sub-phase (reasoning / connecting / the
   // terminal turn)? Resolve it off the SAME mood arbiter (single source) with the
   // roam-owned inputs neutralized — during streaming celebrate/looking/sleeping are
@@ -198,6 +204,7 @@ export function AkuAssistant({
     boxH: 120,
     home: { x: geometry.x, y: geometry.y },
     onTap: openPanel,
+    onDragEnd: persistHome,
   });
 
   // WI-126 — keep the camera fitted to the top-level root slide of whatever the

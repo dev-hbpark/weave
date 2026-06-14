@@ -1,10 +1,13 @@
 // Aku panel geometry (WI-052) — user-positioned + resizable, persisted.
 //
-// Holds {x,y,w,h} (viewport px, top-left origin). Default = top-left, below the
-// app header. `beginMove` drags the surface (with tap-vs-drag detection so the
+// Holds {x,y,w,h} (viewport px, top-left origin). Default = top-left, clear of
+// the app header AND the launcher's work말풍선 (which floats above the launcher
+// top). `beginMove` drags the surface (with tap-vs-drag detection so the
 // collapsed launcher can be both dragged AND clicked); `beginResize` resizes
-// from the bottom-right corner. Everything is clamped to the viewport and
-// persisted to localStorage so position + size survive collapse/expand/reload.
+// from the bottom-right corner; `moveTo` persists a new top-left (the roaming
+// launcher's drop point becomes the new home/default). Everything is clamped to
+// the viewport and persisted to localStorage so position + size survive
+// collapse/expand/reload.
 
 import {
   type PointerEvent as ReactPointerEvent,
@@ -22,7 +25,10 @@ export interface AkuGeometry {
 }
 
 const STORAGE_KEY = "weave.aku.geometry";
-const DEFAULT: AkuGeometry = { x: 16, y: 72, w: 360, h: 560 };
+// y clears the 48px header (top-0, h-12) PLUS the launcher's caption 말풍선,
+// which renders above the launcher top (~44px). At y:72 the work말풍선 shown
+// during agent runs overlapped the header's logo/title; 112 keeps it clear.
+const DEFAULT: AkuGeometry = { x: 16, y: 112, w: 360, h: 560 };
 const MIN_W = 300;
 const MIN_H = 360;
 const KEEP_ON_SCREEN = 56; // always leave at least this much grabbable
@@ -69,6 +75,9 @@ export interface UseAkuGeometry {
   beginMove(e: ReactPointerEvent, opts?: { readonly onTap?: () => void }): void;
   /** Resize from the bottom-right corner. */
   beginResize(e: ReactPointerEvent): void;
+  /** Persist a new top-left as the home/default (clamped). The roaming launcher
+   *  calls this when the user drops it, so its drop point becomes the new home. */
+  moveTo(x: number, y: number): void;
 }
 
 export function useAkuGeometry(): UseAkuGeometry {
@@ -139,5 +148,14 @@ export function useAkuGeometry(): UseAkuGeometry {
     [persist],
   );
 
-  return { geometry, beginMove, beginResize };
+  const moveTo = useCallback(
+    (x: number, y: number): void => {
+      const next = clampGeom({ ...ref.current, x, y });
+      setGeometry(next);
+      persist(next);
+    },
+    [persist],
+  );
+
+  return { geometry, beginMove, beginResize, moveTo };
 }

@@ -75,8 +75,11 @@ export function useAkuRoam(opts: {
   readonly boxH: number;
   readonly home: { readonly x: number; readonly y: number };
   readonly onTap: () => void;
+  /** Fired with the drop point when the user drags the launcher and releases
+   *  (not on a tap). The host persists it so the drop becomes the new home. */
+  readonly onDragEnd?: (p: { readonly x: number; readonly y: number }) => void;
 }): AkuRoam {
-  const { editor, streaming, thinking, paused, reduce, boxW, boxH, home, onTap } = opts;
+  const { editor, streaming, thinking, paused, reduce, boxW, boxH, home, onTap, onDragEnd } = opts;
   const [state, setState] = useState<{
     x: number;
     y: number;
@@ -162,11 +165,12 @@ export function useAkuRoam(opts: {
         }
         draggingRef.current = false;
         setDragging(false); // roaming resumes from the drop position (posRef)
+        onDragEnd?.(posRef.current); // persist the drop as the new home/default
       };
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [boxW, boxH, onTap],
+    [boxW, boxH, onTap, onDragEnd],
   );
 
   // User-activity watcher — only REAL doc editing counts: a press, a key, a wheel,
