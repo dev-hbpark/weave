@@ -50,7 +50,7 @@ import {
   Switch,
   TrackSizeEditor,
 } from "@weave/design-system";
-import type { ReactElement } from "react";
+import { type ReactElement, useState } from "react";
 import { absoluteFrameBox } from "../../agocraft-mirror.js";
 import { useDesignDims } from "../../style/resolver-context.js";
 import { batchPerItem } from "../multi-edit.js";
@@ -149,36 +149,74 @@ const PADDING_LABEL: Record<(typeof PADDING_SIDES)[number], string> = {
 
 /** Padding 4-side sub-form. Shared by Flex + Grid Bar.More. WI-220 — values are
  *  DESIGN PX (px-first + ratio mirror, consistent with the WI-219 canvas handles
- *  and the WI-043 engine); the host computes px from each side's ratio × frame box. */
+ *  and the WI-043 engine); the host computes px from each side's ratio × frame box.
+ *
+ *  WI-221 — a "개별" (individual) Switch toggles between a LINKED single control
+ *  (one value → all 4 sides, `onAllChange`) and the per-side 4 controls. Default
+ *  follows the data: linked when all 4 sides already match, else individual. */
 function PaddingFields({
   pxOf,
   max,
   onSideChange,
+  onAllChange,
 }: {
   readonly pxOf: (side: (typeof PADDING_SIDES)[number]) => number;
   readonly max: number;
   readonly onSideChange: (side: (typeof PADDING_SIDES)[number], px: number) => void;
+  readonly onAllChange: (px: number) => void;
 }): ReactElement {
+  const sidesEqual =
+    pxOf("top") === pxOf("right") &&
+    pxOf("right") === pxOf("bottom") &&
+    pxOf("bottom") === pxOf("left");
+  const [individual, setIndividual] = useState(() => !sidesEqual);
   return (
     <Bar.Field label="여백">
-      <div className="flex flex-col gap-1 w-full" data-testid="frame-layout-padding">
-        {PADDING_SIDES.map((side) => (
-          <div key={side} className="flex items-center gap-2">
+      <div className="flex flex-col gap-1.5 w-full" data-testid="frame-layout-padding">
+        <span className="flex items-center gap-1.5 self-end text-[11px] text-[color:var(--text-overlay-soft)]">
+          <Switch
+            checked={individual}
+            onCheckedChange={setIndividual}
+            aria-label="개별 여백"
+            data-testid="frame-padding-individual-toggle"
+          />
+          개별
+        </span>
+        {!individual ? (
+          <div className="flex items-center gap-2">
             <span className="text-[11px] text-[color:var(--text-overlay-soft)] w-12 shrink-0">
-              {PADDING_LABEL[side]}
+              All
             </span>
             <NumberSlider
-              value={pxOf(side)}
-              onValueChange={(v) => onSideChange(side, v)}
+              value={pxOf("top")}
+              onValueChange={onAllChange}
               min={0}
               max={max}
               step={1}
               suffix="px"
-              aria-label={`Padding ${side}`}
+              aria-label="Padding all"
               className="flex-1"
             />
           </div>
-        ))}
+        ) : (
+          PADDING_SIDES.map((side) => (
+            <div key={side} className="flex items-center gap-2">
+              <span className="text-[11px] text-[color:var(--text-overlay-soft)] w-12 shrink-0">
+                {PADDING_LABEL[side]}
+              </span>
+              <NumberSlider
+                value={pxOf(side)}
+                onValueChange={(v) => onSideChange(side, v)}
+                min={0}
+                max={max}
+                step={1}
+                suffix="px"
+                aria-label={`Padding ${side}`}
+                className="flex-1"
+              />
+            </div>
+          ))
+        )}
       </div>
     </Bar.Field>
   );
@@ -302,6 +340,18 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({
         ...spec,
         padding: { ...spec.padding, [side]: ratio },
         paddingPx: { ...curPx, [side]: px },
+      };
+    });
+  // WI-221 — linked padding: one px → all 4 sides (per-axis ratio mirror).
+  const setAllPaddingPx = (px: number) =>
+    patchPx((spec, box) => {
+      if (!("padding" in spec)) return spec;
+      const rx = box !== null && box.w > 0 ? px / box.w : spec.padding.left;
+      const ry = box !== null && box.h > 0 ? px / box.h : spec.padding.top;
+      return {
+        ...spec,
+        padding: { top: ry, right: rx, bottom: ry, left: rx },
+        paddingPx: { top: px, right: px, bottom: px, left: px },
       };
     });
 
@@ -502,7 +552,12 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({
                   </Bar.Field>
                 </AccordionItem>
                 <AccordionItem label="여백" data-testid="frame-flex-padding-group">
-                  <PaddingFields pxOf={paddingPxOf} max={padMax} onSideChange={setPaddingSidePx} />
+                  <PaddingFields
+                    pxOf={paddingPxOf}
+                    max={padMax}
+                    onSideChange={setPaddingSidePx}
+                    onAllChange={setAllPaddingPx}
+                  />
                 </AccordionItem>
               </>
             ) : null}
@@ -628,7 +683,12 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({
                   </Bar.Field>
                 </AccordionItem>
                 <AccordionItem label="여백" data-testid="frame-grid-padding-group">
-                  <PaddingFields pxOf={paddingPxOf} max={padMax} onSideChange={setPaddingSidePx} />
+                  <PaddingFields
+                    pxOf={paddingPxOf}
+                    max={padMax}
+                    onSideChange={setPaddingSidePx}
+                    onAllChange={setAllPaddingPx}
+                  />
                 </AccordionItem>
               </>
             ) : null}

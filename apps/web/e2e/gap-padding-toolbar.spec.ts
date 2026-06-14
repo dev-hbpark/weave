@@ -166,32 +166,71 @@ test("typing a gap value in the frame layout popover authors gapPx (px-first)", 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
 
-test("typing a padding value authors paddingPx (px-first, per side)", async ({ page }) => {
+type Pad = { top?: number; right?: number; bottom?: number; left?: number };
+const paddingPxOf = (page: import("@playwright/test").Page, id: string) =>
+  page.evaluate((id) => {
+    let p: Pad | undefined;
+    const walk = (n: N & { attrs: { layout?: { paddingPx?: Pad } } }) => {
+      if (String(n.id) === id) p = n.attrs.layout?.paddingPx;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return p ?? null;
+  }, id);
+
+test("WI-221 linked padding: one value sets all 4 sides; 개별 toggle unlinks", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await bootstrap(page);
   const F = await flexFrameSelected(page);
 
-  // Open More → expand the (collapsed) "여백" group → the Left padding input.
+  // Open More → expand the (collapsed) "여백" group. A fresh frame has equal
+  // (0) sides → LINKED mode by default → a single "Padding all" input.
   await page.locator('[data-testid="toolbar-more-trigger"]').click();
   await page.locator('[data-testid="frame-flex-padding-group-trigger"]').click();
-  const padInput = page.getByLabel("Padding left input");
-  await padInput.waitFor();
-  await padInput.fill("16");
-  await padInput.press("Enter");
+  const allInput = page.getByLabel("Padding all input");
+  await allInput.waitFor();
+  await allInput.fill("12");
+  await allInput.press("Enter");
 
   await page.waitForFunction((id) => {
-    let p: number | undefined;
-    const walk = (n: N & { attrs: { layout?: { paddingPx?: { left?: number } } } }) => {
-      if (String(n.id) === id) p = n.attrs.layout?.paddingPx?.left;
+    let p: Pad | undefined;
+    const walk = (n: N & { attrs: { layout?: { paddingPx?: Pad } } }) => {
+      if (String(n.id) === id) p = n.attrs.layout?.paddingPx;
       for (const c of n.children) walk(c as never);
     };
     walk((window as unknown as W).__weaveDoc.root as never);
-    return typeof p === "number" && p > 0;
+    return p !== undefined && (p.left ?? 0) > 0;
   }, F);
 
-  const after = (await layoutOf(page, F)) as { paddingPx?: { left?: number } } | null;
-  expect(after?.paddingPx?.left, `paddingPx.left=${after?.paddingPx?.left}`).toBeCloseTo(16, 0);
+  const linked = await paddingPxOf(page, F);
+  // All 4 sides set to ~12 by the single control.
+  expect(linked?.top, `top=${linked?.top}`).toBeCloseTo(12, 0);
+  expect(linked?.right).toBeCloseTo(12, 0);
+  expect(linked?.bottom).toBeCloseTo(12, 0);
+  expect(linked?.left).toBeCloseTo(12, 0);
+
+  // Toggle 개별 (individual) ON → per-side inputs appear; set Left only.
+  await page.locator('[data-testid="frame-padding-individual-toggle"]').click();
+  const leftInput = page.getByLabel("Padding left input");
+  await leftInput.waitFor();
+  await leftInput.fill("30");
+  await leftInput.press("Enter");
+
+  await page.waitForFunction((id) => {
+    let p: Pad | undefined;
+    const walk = (n: N & { attrs: { layout?: { paddingPx?: Pad } } }) => {
+      if (String(n.id) === id) p = n.attrs.layout?.paddingPx;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return p !== undefined && Math.round(p.left ?? 0) === 30;
+  }, F);
+
+  const unlinked = await paddingPxOf(page, F);
+  expect(unlinked?.left, `left=${unlinked?.left}`).toBeCloseTo(30, 0); // only Left changed
+  expect(unlinked?.top, "other sides untouched").toBeCloseTo(12, 0);
+  expect(unlinked?.right).toBeCloseTo(12, 0);
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
