@@ -61,6 +61,12 @@ export const NONCANONICAL_AGENT_TOOLS: ReadonlyArray<string> = [
   "weave.frame.removeKeepingChildren",
   // (g) Whole-document reset — a footgun to hand an agent. UI-only.
   "weave.doc.reset",
+  // (h) WI-042 / DR-055 — Figma container sizing (Hug/Fill/Fixed) + Hug px
+  //     resize. WIP (P3): registered + schema'd, but not yet advertised to the
+  //     agent until the authoring UX (toolbar) + exact-hug bootstrap land. The
+  //     UI / direct exec drives them in the meantime.
+  "weave.frame.setSizing",
+  "weave.item.resizeHug",
 ];
 
 /** Free placement (mixed / canvas-board): everything registered EXCEPT the

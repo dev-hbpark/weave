@@ -27,9 +27,13 @@ import type {
   LayoutSpec,
 } from "@agocraft/core";
 import {
+  type AutoFlexChildPolicy,
+  type AutoFlexSpec,
+  type AxisSizingPair,
   type ClipboardTransport,
   type Command,
   type CommandContext,
+  createAutoFlexChildPolicy,
   createAutoFlexSpec,
   createAutoGridSpec,
   createBreakShapeToLineCommand,
@@ -70,6 +74,7 @@ import {
   createSwapFlexOrderCommand,
   createSwapGridCellsCommand,
   gridSpecForChildCount,
+  reflowHugOnResize,
 } from "@agocraft/layout";
 import { nn } from "../lib/nn.js";
 import {
@@ -3031,6 +3036,94 @@ export function buildWeaveCommands(
     enabled: layoutGate,
   });
 
+  // WI-042 / DR-055 / FR-011 — set a frame's per-axis container sizing
+  // (Fixed/Hug/Fill). Requires an auto-flex layout (sizing lives on AutoFlexSpec).
+  // SIZING_RULES: a Hug axis needs ≥1 child (an empty container can't hug).
+  const setFrameSizing: Command<
+    { readonly itemId: string; readonly sizing: AxisSizingPair },
+    void
+  > = {
+    name: "weave.frame.setSizing",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail("item-not-found", `weave.frame.setSizing: no item "${input.itemId}"`);
+      }
+      const layout = (child.attrs as { layout?: LayoutSpec }).layout;
+      if (layout === undefined || layout.kind !== "auto-flex") {
+        return fail(
+          "invalid-input",
+          "weave.frame.setSizing: target needs an auto-flex layout (sizing is a container property)",
+        );
+      }
+      const hugW = input.sizing.width === "hug";
+      const hugH = input.sizing.height === "hug";
+      if ((hugW || hugH) && child.children.length === 0) {
+        return fail(
+          "invalid-input",
+          "weave.frame.setSizing: a Hug axis requires at least one child",
+        );
+      }
+      const nextLayout: AutoFlexSpec = { ...(layout as AutoFlexSpec), sizing: input.sizing };
+      return ok(undefined, [
+        {
+          type: "item.attrs",
+          itemId: child.id,
+          before: child.attrs,
+          after: { ...child.attrs, layout: nextLayout },
+        } as Patch,
+      ]);
+    },
+  };
+
+  // WI-042 / DR-055 / FR-011 — resize a child by its absolute px intrinsic
+  // (option A). Sets the child's `layoutChild.sizePx` and, when it sits inside a
+  // Hug container, folds in `reflowHugOnResize` (the Hug ancestor grows + the
+  // subtree re-arranges) — all in ONE transaction (one undo). Gated: no Hug
+  // ancestor ⇒ only the sizePx is recorded (no layout change → existing path).
+  const resizeHug: Command<
+    { readonly itemId: string; readonly sizePx: { readonly w: number; readonly h: number } },
+    void
+  > = {
+    name: "weave.item.resizeHug",
+    run: (ctx, input) => {
+      const child = findChild(ctx.document, input.itemId);
+      if (child === undefined) {
+        return fail("item-not-found", `weave.item.resizeHug: no item "${input.itemId}"`);
+      }
+      const curPolicy = (child.attrs as { layoutChild?: AutoFlexChildPolicy }).layoutChild;
+      const nextPolicy =
+        curPolicy?.kind === "auto-flex"
+          ? { ...curPolicy, sizePx: input.sizePx }
+          : createAutoFlexChildPolicy({ sizePx: input.sizePx });
+
+      const reflow = LAYOUT_FEATURE_ENABLED
+        ? reflowHugOnResize({ root: ctx.document.root, itemId: child.id, newSizePx: input.sizePx })
+        : [];
+
+      // Merge the child's new sizePx into its reflow frame-patch (one full-attrs
+      // patch — avoids the two-patch clobber where a later frame patch drops the
+      // sizePx). If the reflow didn't touch the child (frame unchanged / no Hug),
+      // emit a standalone sizePx patch.
+      let childPatched = false;
+      const patches: Patch[] = reflow.map((p) => {
+        if (p.type !== "item.attrs" || String(p.itemId) !== String(child.id)) return p;
+        childPatched = true;
+        const after = (p as { after: Record<string, unknown> }).after;
+        return { ...p, after: { ...after, layoutChild: nextPolicy } } as Patch;
+      });
+      if (!childPatched) {
+        patches.push({
+          type: "item.attrs",
+          itemId: child.id,
+          before: child.attrs,
+          after: { ...child.attrs, layoutChild: nextPolicy },
+        } as Patch);
+      }
+      return ok(undefined, patches);
+    },
+  };
+
   const base: ReadonlyArray<Command> = [
     addItem as Command,
     removeItem as Command,
@@ -3089,6 +3182,9 @@ export function buildWeaveCommands(
     swapGridCells as Command,
     swapFlexOrder as Command,
     dropGridCell as Command,
+    // WI-042 / DR-055 — Figma container sizing (Hug/Fill/Fixed) + Hug resize.
+    setFrameSizing as Command,
+    resizeHug as Command,
     // DR-028 — decoration as units (shadow/stroke/fill/filter/opacity). The
     // agocraft kit owns the patch semantics; weave just names + uses it. Same
     // instance reused inline by weave.item.update for one-call styled edits (WI-063).

@@ -595,6 +595,8 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.page.duplicate": "페이지 복제",
   "weave.pages.duplicate": "여러 페이지 복제",
   "weave.frame.setLayout": "레이아웃 설정",
+  "weave.frame.setSizing": "크기 모드 (Fixed/Hug/Fill)",
+  "weave.item.resizeHug": "px 크기 조절 (Hug)",
   "weave.item.setLayoutChild": "레이아웃 자식 정책",
   "weave.item.swapGridCells": "그리드 셀 교환",
   "weave.item.swapFlexOrder": "플렉스 순서 교환",
@@ -1406,6 +1408,36 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       { itemId: STR, layout: LAYOUT_SPEC },
       ["itemId"],
       "Make a FRAME auto-arrange its children like CSS flex/grid. `layout` = an auto-flex (row/column) or auto-grid spec (see layoutKinds). Omit `layout` to clear back to free (absolute) placement. This is the primary layout tool — group items in a nested frame, then set its layout.",
+    ),
+  },
+  // WI-042 / DR-055 — Figma-style per-axis container sizing.
+  "weave.frame.setSizing": {
+    label: label("weave.frame.setSizing"),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        sizing: obj(
+          {
+            width: { type: "string", enum: ["fixed", "hug", "fill"] },
+            height: { type: "string", enum: ["fixed", "hug", "fill"] },
+          },
+          ["width", "height"],
+          "Per-axis sizing mode.",
+        ),
+      },
+      ["itemId", "sizing"],
+      "Set a FRAME's own width/height sizing (Figma-style): `fixed` (explicit size), `hug` (grow to fit its children), `fill` (fill its parent). Requires an auto-flex layout; a Hug axis needs ≥1 child. Hug frames grow when a child grows.",
+    ),
+  },
+  "weave.item.resizeHug": {
+    label: label("weave.item.resizeHug"),
+    inputSchema: obj(
+      {
+        itemId: STR,
+        sizePx: obj({ w: NUM, h: NUM }, ["w", "h"], "Absolute pixel size {w,h}."),
+      },
+      ["itemId", "sizePx"],
+      "Resize a child by ABSOLUTE px (its intrinsic size). When the child sits inside a Hug frame, that frame grows to fit and the subtree re-arranges — all in one undo. Use for a child of a Hug container; for free-placement items use weave.item.update with a ratio frame.",
     ),
   },
   // Set how `itemId` behaves inside its parent frame's layout. Omit `policy` to
