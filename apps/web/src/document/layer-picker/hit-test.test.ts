@@ -1,6 +1,8 @@
-// WI-033 A4 — pure-function tests for `findFramesAtPoint`. The
-// integration with NestedFrame's onContextMenu + the viewport→design-
-// plane coordinate transform is covered by the e2e
+// WI-033 A4 / WI-217 S3 — pure-function tests for `findFramesAtPoint`. The
+// hit-test now delegates to the engine (`computeScene` + `hitTestScene`); these
+// pin the LayerHit contract + parity (depth order, rounding, label fallback,
+// edge-inclusive, frame-kind filter). The integration with the onContextMenu
+// request + the viewport→design-plane transform is covered by the e2e
 // (figma-right-click-layer-picker.spec.ts).
 
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";

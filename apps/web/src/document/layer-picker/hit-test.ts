@@ -1,22 +1,22 @@
-// WI-033 A4 — Layer Picker hit-test. Given a point in design-plane
-// coordinates (px from the design's top-left), return every frame that
-// covers that point, sorted deepest-first.
+// WI-033 A4 / WI-217 S3 (DR-138) — Layer Picker hit-test. Given a point in
+// design-plane coordinates (px from the design's top-left), return every FRAME
+// that covers that point, topmost-first.
 //
-// Pure: no React, no DOM, no vm. Doc + point in, hits out. Testable in
-// isolation; integration with NestedFrame's onContextMenu + the
-// viewport→design-plane coordinate transform lives in FrameStage /
-// DesignPage.
+// Geometry is the engine's: `computeScene` flattens the doc into absolute,
+// rotation-composed boxes and `hitTestScene` does the rotation-aware point-in-box
+// test (topmost-first = reverse paint order). This replaces the hand-rolled
+// ratio walk + axis-aligned bbox test that lived here (the only other place
+// frame geometry was composed in weave) — one geometry owner, and rotated
+// frames now hit-test precisely instead of via their bounding-box cone.
 //
-// v1 simplification — rotation is treated as 0 for hit-test purposes.
-// Rotated frames still report a hit only when the point is inside their
-// axis-aligned bounding box at the rotation = 0 layout. A precise
-// rotated hit-test is v1.x polish; the affordance the menu offers
-// (a "Select layer" list) tolerates the small false-positive cone at
-// rotated frames' corners since the user picks explicitly from the
-// list.
+// Pure: no React, no DOM, no vm. Doc + point in, hits out. Integration with the
+// onContextMenu request + the viewport→design-plane transform lives in
+// FrameStage / DesignPage; the rubber-band adapter reuses it to resolve a drop
+// container.
 
 import type { Document as AgocraftDocument, Item as AgocraftItem } from "@agocraft/core";
-import type { ItemFrame } from "../types.js";
+import { hitTestScene } from "@agocraft/editor";
+import { computeScene } from "@agocraft/layout";
 
 export interface LayerHit {
   /** The frame's id (stringified). */
@@ -27,14 +27,13 @@ export interface LayerHit {
   readonly widthPx: number;
   /** Absolute height in design-plane px (rounded). */
   readonly heightPx: number;
-  /** Nesting depth — 0 for top-level frames, deeper = larger. Used to
-   *  sort deepest-first (the user typically wants the leaf they clicked
-   *  on at the top of the picker). */
+  /** Nesting depth — 0 for top-level frames, deeper = larger. The picker lists
+   *  topmost-first (the leaf the user is over, then its ancestors). */
   readonly depth: number;
-  /** Absolute bbox in design-plane px (unrounded). Used by the rubber-
-   *  band adapter to re-ratio drag rects into the container's local
-   *  frame coords so a drag inside a nested frame produces a child
-   *  whose frame ratios are container-local (not design-plane-local). */
+  /** Absolute box in design-plane px (the item's own unrotated footprint at its
+   *  scene centre). Used by the rubber-band adapter to re-ratio drag rects into
+   *  the container's local frame coords so a drag inside a nested frame produces
+   *  a child whose ratios are container-local (not design-plane-local). */
   readonly box: AbsoluteFrame;
 }
 
@@ -45,52 +44,28 @@ export interface AbsoluteFrame {
   readonly height: number;
 }
 
-function isFrameKind(item: AgocraftItem): boolean {
-  return item.kind === "frame";
-}
-
-function frameAttrs(item: AgocraftItem): ItemFrame | undefined {
-  const attrs = item.attrs as Readonly<Record<string, unknown>>;
-  const f = attrs.frame;
-  if (
-    f === undefined ||
-    f === null ||
-    typeof f !== "object" ||
-    !("x" in f) ||
-    !("y" in f) ||
-    !("width" in f) ||
-    !("height" in f)
-  ) {
-    return undefined;
-  }
-  return f as ItemFrame;
-}
-
 function frameLabel(item: AgocraftItem): string {
   const attrs = item.attrs as Readonly<Record<string, unknown>>;
   const label = attrs.label;
   return typeof label === "string" && label.length > 0 ? label : "Frame";
 }
 
-function composeAbsolute(parent: AbsoluteFrame, child: ItemFrame): AbsoluteFrame {
-  return {
-    x: parent.x + child.x * parent.width,
-    y: parent.y + child.y * parent.height,
-    width: child.width * parent.width,
-    height: child.height * parent.height,
+/** Index every item by id → its kind + label (one walk; the scene entries carry
+ *  only ids, and the picker needs the kind filter + label). */
+function indexItems(root: AgocraftItem): Map<string, { kind: string; label: string }> {
+  const idx = new Map<string, { kind: string; label: string }>();
+  const walk = (n: AgocraftItem): void => {
+    idx.set(String(n.id), { kind: n.kind, label: frameLabel(n) });
+    for (const c of n.children) walk(c);
   };
+  walk(root);
+  return idx;
 }
 
-function pointInRect(px: number, py: number, rect: AbsoluteFrame): boolean {
-  return px >= rect.x && px <= rect.x + rect.width && py >= rect.y && py <= rect.y + rect.height;
-}
-
-/** Walk the doc tree, collect every frame whose absolute bbox covers
- *  (designX, designY), and return them sorted deepest-first (the leaf
- *  the user is over, then its ancestors).
- *
- *  The root item is excluded — it's the synthetic design wrapper, not
- *  a selectable frame. */
+/** Every FRAME whose rotation-aware box covers (designX, designY), topmost-first
+ *  (the leaf the user clicked, then its ancestors). The synthetic design root is
+ *  never emitted by `computeScene`, and non-frame kinds (text / image / shape /
+ *  chart) are filtered out — the picker offers selectable container frames. */
 export function findFramesAtPoint(
   doc: AgocraftDocument,
   designX: number,
@@ -98,40 +73,25 @@ export function findFramesAtPoint(
   designWidth: number,
   designHeight: number,
 ): ReadonlyArray<LayerHit> {
-  const hits: Array<LayerHit & { readonly _depth: number }> = [];
-
-  const rootBox: AbsoluteFrame = {
-    x: 0,
-    y: 0,
-    width: designWidth,
-    height: designHeight,
-  };
-
-  function walk(item: AgocraftItem, parentBox: AbsoluteFrame, depth: number): void {
-    for (const child of item.children) {
-      if (!isFrameKind(child)) continue;
-      const cFrame = frameAttrs(child);
-      if (cFrame === undefined) continue;
-      const cBox = composeAbsolute(parentBox, cFrame);
-      if (pointInRect(designX, designY, cBox)) {
-        hits.push({
-          id: String(child.id),
-          label: frameLabel(child),
-          widthPx: Math.round(cBox.width),
-          heightPx: Math.round(cBox.height),
-          depth,
-          box: cBox,
-          _depth: depth,
-        });
-      }
-      walk(child, cBox, depth + 1);
-    }
+  const scene = computeScene(doc.root as unknown as AgocraftItem, designWidth, designHeight);
+  const idx = indexItems(doc.root as unknown as AgocraftItem);
+  const out: LayerHit[] = [];
+  for (const e of hitTestScene(scene, { x: designX, y: designY })) {
+    const meta = idx.get(String(e.itemId));
+    if (meta === undefined || meta.kind !== "frame") continue;
+    out.push({
+      id: String(e.itemId),
+      label: meta.label,
+      widthPx: Math.round(e.box.w),
+      heightPx: Math.round(e.box.h),
+      depth: e.depth,
+      box: {
+        x: e.center.x - e.box.w / 2,
+        y: e.center.y - e.box.h / 2,
+        width: e.box.w,
+        height: e.box.h,
+      },
+    });
   }
-
-  walk(doc.root, rootBox, 0);
-
-  // Sort deepest-first; ties keep DOM order (later child paints above
-  // earlier ones, which is what the user expects at the top of the list).
-  hits.sort((a, b) => b._depth - a._depth);
-  return hits.map(({ _depth: _, ...rest }) => rest);
+  return out;
 }

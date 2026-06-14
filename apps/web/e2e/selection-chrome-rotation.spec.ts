@@ -34,41 +34,59 @@ async function bootstrap(page: import("@playwright/test").Page): Promise<void> {
   await page.locator('[data-design-plane="true"]').first().waitFor();
 }
 
+/** All item ids in the live doc (deep). */
+async function allIds(page: import("@playwright/test").Page): Promise<string[]> {
+  return await page.evaluate(() => {
+    type N = { id: string | number; children: N[] };
+    const root = (window as unknown as { __weaveDoc: { root: N } }).__weaveDoc.root;
+    const out: string[] = [];
+    const walk = (n: N) => {
+      out.push(String(n.id));
+      for (const c of n.children) walk(c);
+    };
+    walk(root);
+    return out;
+  });
+}
+
 async function addFrame(
   page: import("@playwright/test").Page,
   frame: { x: number; y: number; width: number; height: number; rotation: number },
+  containerId?: string,
 ): Promise<string> {
   // `__weaveDoc` updates ASYNC after exec (ChangeStream → applyChange → setAgoDoc
-  // → React), so the new id must be read after the child count grows — reading it
-  // synchronously returns the stale doc's last child.
-  const before = await page.evaluate(
-    () =>
-      (window as unknown as { __weaveDoc: { root: { children: unknown[] } } }).__weaveDoc.root
-        .children.length,
+  // → React), so the new id must be read after a NEW id appears — reading it
+  // synchronously returns the stale doc. Diff the full id set so this works for
+  // both root-level and nested (containerId) adds.
+  const before = new Set(await allIds(page));
+  await page.evaluate(
+    ({ frame, containerId }) => {
+      const w = window as unknown as {
+        __weaveEditor: { exec: (n: string, i: unknown) => unknown };
+        __weaveDoc: { root: { id: string | number } };
+      };
+      w.__weaveEditor.exec("weave.item.add", {
+        kind: "frame",
+        containerId: containerId ?? String(w.__weaveDoc.root.id),
+        frame,
+      });
+    },
+    { frame, containerId: containerId ?? null },
   );
-  await page.evaluate((frame) => {
-    const w = window as unknown as {
-      __weaveEditor: { exec: (n: string, i: unknown) => unknown };
-      __weaveDoc: { root: { id: string | number } };
+  await page.waitForFunction((knownLen) => {
+    type N = { id: string | number; children: N[] };
+    const root = (window as unknown as { __weaveDoc: { root: N } }).__weaveDoc.root;
+    let count = 0;
+    const walk = (n: N) => {
+      count++;
+      for (const c of n.children) walk(c);
     };
-    w.__weaveEditor.exec("weave.item.add", {
-      kind: "frame",
-      containerId: String(w.__weaveDoc.root.id),
-      frame,
-    });
-  }, frame);
-  await page.waitForFunction(
-    (n) =>
-      (window as unknown as { __weaveDoc: { root: { children: unknown[] } } }).__weaveDoc.root
-        .children.length > n,
-    before,
-  );
-  const id = await page.evaluate(() => {
-    const kids = (
-      window as unknown as { __weaveDoc: { root: { children: { id: string | number }[] } } }
-    ).__weaveDoc.root.children;
-    return String(kids[kids.length - 1].id);
-  });
+    walk(root);
+    return count > knownLen;
+  }, before.size);
+  const after = await allIds(page);
+  const id = after.find((x) => !before.has(x));
+  if (id === undefined) throw new Error("addFrame: no new id appeared");
   // `weave.item.add` does not persist rotation; set the full frame explicitly,
   // then wait for the model to carry it.
   if (frame.rotation !== 0) {
@@ -237,6 +255,45 @@ test("S3: selection handles sit on the (rotation-aware) scene corners", async ({
     20,
   );
   expect(distAabb).toBeGreaterThan(15);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
+
+// WI-217 S3 — the right-click layer picker's hit-test now delegates to the
+// engine scene (`computeScene` + `hitTestScene`) behind the same
+// `findFramesAtPoint` signature. Live-confirm the wiring still resolves an
+// overlapping (nested) stack end-to-end in the running app.
+test("S3: layer picker lists the nested overlap via the engine hit-test", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  await bootstrap(page);
+
+  const parent = await addFrame(page, { x: 0.2, y: 0.2, width: 0.55, height: 0.55, rotation: 0 });
+  // Nested child, ratio-of-parent, comfortably inside so its centre is a clean
+  // two-frame overlap (child + parent).
+  const child = await addFrame(
+    page,
+    { x: 0.25, y: 0.25, width: 0.5, height: 0.5, rotation: 0 },
+    parent,
+  );
+
+  // Right-click the child (locator form synthesises the contextmenu event).
+  await page
+    .locator(`[data-testid="block-frame"][data-frame-id="${child}"]`)
+    .click({ button: "right", position: { x: 6, y: 6 } });
+
+  // The context menu opened (delete row present) and the Select-layer section
+  // lists BOTH frames — proving findFramesAtPoint returned the engine-composed
+  // overlap stack.
+  await expect(page.getByTestId("ctx-delete-frame")).toBeVisible();
+  await expect(page.getByTestId(`layer-pick-${child}`)).toBeVisible();
+  await expect(page.getByTestId(`layer-pick-${parent}`)).toBeVisible();
+  // Deepest-first: the child row sits above the parent row.
+  const cBox = await page.getByTestId(`layer-pick-${child}`).boundingBox();
+  const pBox = await page.getByTestId(`layer-pick-${parent}`).boundingBox();
+  if (cBox === null || pBox === null) throw new Error("layer rows have no box");
+  expect(cBox.y).toBeLessThan(pBox.y);
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
