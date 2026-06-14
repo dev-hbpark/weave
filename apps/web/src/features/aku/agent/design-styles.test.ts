@@ -131,6 +131,56 @@ describe("composeStyleTask", () => {
     expect(line).toContain("끌려가지 마세요"); // commit tail
     expect(line).toContain("[이번 변주 #3]");
   });
+
+  // WI-228 — the concrete design lock must be injected (not just prose), so the
+  // agent applies exact palette/fonts/effects instead of guessing → converging.
+  it("injects the concrete spec block with the style's literal palette + fonts", () => {
+    const style = nn(styleById("cyberpunk"));
+    const line = composeStyleTask(style, 3);
+    expect(line).toContain("[디자인 스펙");
+    expect(line).toContain(style.spec.bg); // #0a0e1a
+    expect(line).toContain(style.spec.accent); // #ff2bd6
+    expect(line).toContain(style.spec.accent2); // #00f0ff
+    expect(line).toContain(style.spec.fonts.split(" ")[1] ?? ""); // a font family
+  });
+});
+
+describe("StyleSpec concrete lock (WI-228)", () => {
+  it("every style carries a complete concrete spec (no field left blank)", () => {
+    const fields = [
+      "bg",
+      "surface",
+      "accent",
+      "accent2",
+      "textStrong",
+      "textBody",
+      "line",
+      "background",
+      "shadow",
+      "radius",
+      "fonts",
+      "effects",
+    ] as const;
+    for (const s of DESIGN_STYLES) {
+      expect(s.spec, s.id).toBeDefined();
+      for (const f of fields) {
+        expect(typeof s.spec[f], `${s.id}.${f}`).toBe("string");
+        expect(s.spec[f].length, `${s.id}.${f}`).toBeGreaterThan(0);
+      }
+      // The signature palette colours are literal CSS (hex / rgba / transparent),
+      // never a var(--token) — the style must read the same regardless of theme.
+      expect(s.spec.bg).not.toContain("var(");
+      expect(s.spec.accent).not.toContain("var(");
+    }
+  });
+
+  it("auto catalog carries a one-line concrete signature per style (palette + font)", () => {
+    const dir = autoStyleDirective(1);
+    for (const s of DESIGN_STYLES) {
+      expect(dir, s.id).toContain(s.spec.bg);
+      expect(dir, s.id).toContain(s.spec.accent);
+    }
+  });
 });
 
 describe("autoStyleDirective (content-aware)", () => {
