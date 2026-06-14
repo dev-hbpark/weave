@@ -61,12 +61,14 @@ export const NONCANONICAL_AGENT_TOOLS: ReadonlyArray<string> = [
   "weave.frame.removeKeepingChildren",
   // (g) Whole-document reset — a footgun to hand an agent. UI-only.
   "weave.doc.reset",
-  // (h) WI-042 / DR-055 — Figma container sizing (Hug/Fill/Fixed) + Hug px
-  //     resize. WIP (P3): registered + schema'd, but not yet advertised to the
-  //     agent until the authoring UX (toolbar) + exact-hug bootstrap land. The
-  //     UI / direct exec drives them in the meantime.
-  "weave.frame.setSizing",
-  "weave.item.resizeHug",
+  // NOTE (WI-042 / DR-055): weave.frame.setSizing + weave.item.resizeHug were
+  // held here as WIP "(h)" while the authoring UX (frame-sizing-section toolbar)
+  // and the exact-hug bootstrap (resizeHug designWidth/Height) were unfinished.
+  // Both landed (WI-042 P1–P6), so the Figma container-sizing pair now GRADUATES
+  // to the canonical agent surface — they ARE the canonical way to author
+  // Hug/Fill/Fixed, taught in weave-capabilities (layoutKinds + domain §0). They
+  // are enlisted in PAGE_PASSTHROUGH_TOOLS below and flow to free placement via
+  // this { allExcept } pass-through.
 ];
 
 /** Free placement (mixed / canvas-board): everything registered EXCEPT the
@@ -381,6 +383,13 @@ const PAGE_PASSTHROUGH_TOOLS: ReadonlyArray<string> = [
   // same command, plus clone activation (WI-169).
   "weave.frame.setLayout",
   "weave.item.setLayoutChild",
+  // WI-042 / DR-055 — Figma container sizing (Hug/Fill/Fixed). Plain
+  // pass-through: both act on an EXISTING frame/child by itemId (no containerId
+  // retargeting), like setLayout/setLayoutChild. A nested layout frame inside a
+  // page can hug its content or fill its cell; resizeHug authors a child's px
+  // intrinsic so its Hug ancestor regrows.
+  "weave.frame.setSizing",
+  "weave.item.resizeHug",
 ];
 
 /** Page-editing prompt fragment — short by design: the wrapped tools carry

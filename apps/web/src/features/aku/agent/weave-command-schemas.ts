@@ -1426,7 +1426,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         ),
       },
       ["itemId", "sizing"],
-      "Set a FRAME's own width/height sizing (Figma-style): `fixed` (explicit size), `hug` (grow to fit its children), `fill` (fill its parent). Requires an auto-flex layout; a Hug axis needs ≥1 child. Hug frames grow when a child grows.",
+      "Set a FRAME's own width/height sizing (Figma-style): `fixed` (keep its attrs.frame size), `hug` (grow to fit its children), `fill` (fill its parent's free space along that axis). Requires an auto-flex OR auto-grid layout (sizing is a container property); a Hug axis needs ≥1 child. Hug frames re-grow when a child grows; a Hug auto-grid sizes every track to its cell contents. gap/padding/tracks stay 0..1 ratios regardless of sizing.",
     ),
   },
   "weave.item.resizeHug": {

@@ -3084,7 +3084,8 @@ export function buildWeaveCommands(
   });
 
   // WI-042 / DR-055 / FR-011 — set a frame's per-axis container sizing
-  // (Fixed/Hug/Fill). Requires an auto-flex layout (sizing lives on AutoFlexSpec).
+  // (Fixed/Hug/Fill). Requires an auto-flex OR auto-grid layout (P4 — sizing is
+  // a container property of both AutoFlexSpec and AutoGridSpec).
   // SIZING_RULES: a Hug axis needs ≥1 child (an empty container can't hug).
   const setFrameSizing: Command<
     { readonly itemId: string; readonly sizing: AxisSizingPair },
