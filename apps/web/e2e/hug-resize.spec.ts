@@ -329,3 +329,92 @@ test("P3 ①: toolbar Fixed/Hug segment sets a frame's container sizing", async 
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("P3 ①(fill bridge): a Hug row hugs ONLY its fixed child; a grow sibling contributes 0", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  const F = await addFrame(page, rootId, { x: 0.2, y: 0.2, width: 0.3, height: 0.2, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: F,
+    layout: { kind: "auto-flex", direction: "row" },
+  });
+  await page.waitForFunction((id) => {
+    let has = false;
+    const walk = (n: N & { attrs: { layout?: unknown } }) => {
+      if (String(n.id) === id) has = (n.attrs as { layout?: unknown }).layout !== undefined;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return has;
+  }, F);
+  const A = await addFrame(page, F, { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 });
+  const B = await addFrame(page, F, { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 });
+  await exec(page, "weave.frame.setSizing", {
+    itemId: F,
+    sizing: { width: "hug", height: "fixed" },
+  });
+
+  // Make B FILL the main axis (grow 1) while carrying a non-zero sizePx that the
+  // bridge MUST exclude from the Hug measure. Stored verbatim by the engine.
+  await exec(page, "weave.item.setLayoutChild", {
+    itemId: B,
+    policy: { kind: "auto-flex", grow: 1, shrink: 1, basis: "auto", sizePx: { w: 80, h: 30 } },
+  });
+  // Precondition: B really carries grow + sizePx (else the test wouldn't be a
+  // bridge test — a 0-sizePx child contributes 0 anyway).
+  const bPolicy = await page.evaluate((id) => {
+    let p: { grow?: number; sizePx?: { w?: number } } | undefined;
+    const walk = (
+      n: N & { attrs: { layoutChild?: { grow?: number; sizePx?: { w?: number } } } },
+    ) => {
+      if (String(n.id) === id) p = n.attrs.layoutChild;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return p ?? null;
+  }, B);
+  expect(bPolicy?.grow).toBe(1);
+  expect(bPolicy?.sizePx?.w).toBe(80);
+
+  const design = await page.evaluate(() => {
+    const d = (window as unknown as { __weaveDesign?: { width: number; height: number } })
+      .__weaveDesign;
+    return { w: d?.width ?? 0, h: d?.height ?? 0 };
+  });
+  expect(design.w).toBeGreaterThan(0);
+
+  // Resize the FIXED child A to 240px. The Hug width must be A's 240 ONLY — the
+  // grow sibling B is main-axis fill (contributes 0). Without the bridge it would
+  // be 240 + 80 = 320.
+  await exec(page, "weave.item.resizeHug", {
+    itemId: A,
+    sizePx: { w: 240, h: 40 },
+    designWidth: design.w,
+    designHeight: design.h,
+  });
+  await page.waitForFunction(
+    ({ id, target }) => {
+      let w: number | undefined;
+      const walk = (n: N) => {
+        if (String(n.id) === id) w = n.attrs.frame?.width;
+        for (const c of n.children) walk(c);
+      };
+      walk((window as unknown as W).__weaveDoc.root as unknown as N);
+      return w !== undefined && Math.abs(w - target) < 1e-3;
+    },
+    { id: F, target: 240 / design.w },
+  );
+
+  const fw = (await findFrame(page, F)).width ?? 0;
+  const msg = `F.width=${fw} expected≈${240 / design.w} (NOT ${320 / design.w})`;
+  expect(fw, msg).toBeCloseTo(240 / design.w, 3); // hug = A only
+  expect(fw, msg).not.toBeCloseTo(320 / design.w, 3); // B excluded
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
