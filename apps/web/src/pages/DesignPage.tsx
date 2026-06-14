@@ -7,12 +7,14 @@ import {
   createAutoGridSpec,
   defaultShapeSubAttrs,
   FILL_UNIT_KIND,
+  type ItemId,
   type LayoutSpec,
   type SerializedItem,
   type ShapeSubKind,
   trackFr,
 } from "@agocraft/core";
 import { EditorProvider } from "@agocraft/editor/react";
+import { findHugReflowRoot } from "@agocraft/layout";
 import {
   Banner,
   CommandHostProvider,
@@ -146,6 +148,7 @@ import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
 import { type LayerHit, LayerPickerMenu } from "../document/layer-picker/index.js";
+import { LAYOUT_FEATURE_ENABLED } from "../document/layout/registry.js";
 import { MigrationResultBanner } from "../document/MigrationResultBanner.js";
 import { computeAlignedFrames } from "../document/multi/align-ops.js";
 import { type ArrangeLayout, computeArrangedFrames } from "../document/multi/layout-arrange.js";
@@ -1007,6 +1010,43 @@ function DesignPageBody() {
   // so the item-add hook and other lazy consumers can set the selection without
   // closing over a value created later in this function. Assigned below.
   const setSelectedFrameIdRef = useRef<((id: string | null) => void) | null>(null);
+
+  // WI-042 / DR-055 — the parent box (design px) of a Hug-context resize, captured
+  // at GESTURE START and reused for the gesture's lifetime. A Hug ancestor grows on
+  // every resize commit, so reading the LIVE parent box each tick would feed that
+  // growth back into the next tick's ratio→px conversion and overshoot. The resize
+  // sink (FrameStage) captures `orig` + the parent rect ONCE at pointerdown and
+  // computes every tick's ratio against that fixed parent, so the matching px anchor
+  // is the gesture-start parent box — keyed by the per-gesture sessionId.
+  const hugResizeParentRef = useRef<{
+    readonly sessionId: string;
+    readonly box: { readonly w: number; readonly h: number };
+  } | null>(null);
+  const hugParentBoxFor = useCallback(
+    (
+      itemId: string,
+      sessionId: string | undefined,
+      doc: AgocraftDocument,
+    ): { readonly w: number; readonly h: number } | undefined => {
+      const compute = (): { readonly w: number; readonly h: number } | undefined => {
+        const parentId = findParentAndIndex(doc, itemId)?.parent.id;
+        if (parentId === undefined || String(parentId) === String(doc.root.id)) {
+          return { w: design.width, h: design.height };
+        }
+        const box = absoluteFrameBox(doc, String(parentId), design.width, design.height);
+        return box === null ? undefined : { w: box.w, h: box.h };
+      };
+      // No session (programmatic commit) — no feedback loop to guard; read live.
+      if (sessionId === undefined) return compute();
+      if (hugResizeParentRef.current?.sessionId === sessionId) {
+        return hugResizeParentRef.current.box;
+      }
+      const box = compute();
+      if (box !== undefined) hugResizeParentRef.current = { sessionId, box };
+      return box;
+    },
+    [design.width, design.height],
+  );
 
   // Pending media-src modal. Three actions:
   //   - "add" : create a new image/video item with the entered URL
@@ -2860,7 +2900,46 @@ function DesignPageBody() {
                                           itemId,
                                           nextFrame: ItemFrame,
                                           sessionId?: string,
-                                        ) =>
+                                        ) => {
+                                          // WI-042 / DR-055 — a resize INSIDE a Hug
+                                          // context is authored as the child's
+                                          // ABSOLUTE px (option A), and the engine
+                                          // grows the Hug ancestor to fit (upward
+                                          // propagation). `findHugReflowRoot` →
+                                          // defined ⇒ this item has a Hug ancestor.
+                                          // Convert the gesture's parent-relative
+                                          // ratio to design px against the
+                                          // gesture-start parent box (stable; see
+                                          // hugParentBoxFor), then bake via
+                                          // weave.item.resizeHug. No Hug ancestor ⇒
+                                          // the existing ratio path is unchanged.
+                                          const doc = docInAgocraftRef.current;
+                                          if (
+                                            LAYOUT_FEATURE_ENABLED &&
+                                            doc !== undefined &&
+                                            findHugReflowRoot(
+                                              doc.root as unknown as AgocraftItem,
+                                              itemId as unknown as ItemId,
+                                            ) !== undefined
+                                          ) {
+                                            const parentBox = hugParentBoxFor(
+                                              String(itemId),
+                                              sessionId,
+                                              doc,
+                                            );
+                                            if (parentBox !== undefined) {
+                                              void editor.exec("weave.item.resizeHug", {
+                                                itemId,
+                                                sizePx: {
+                                                  w: nextFrame.width * parentBox.w,
+                                                  h: nextFrame.height * parentBox.h,
+                                                },
+                                                designWidth: design.width,
+                                                designHeight: design.height,
+                                              });
+                                              return;
+                                            }
+                                          }
                                           // DR-053 (d) — thread the resize-gesture
                                           // sessionId so the engine restores
                                           // descendants on shrink→grow.
@@ -2874,8 +2953,8 @@ function DesignPageBody() {
                                               } as typeof prev.attrs,
                                             }),
                                             ...(sessionId !== undefined ? { sessionId } : {}),
-                                          })
-                                        }
+                                          });
+                                        }}
                                         renderFrameMenu={renderFrameMenu}
                                       />
                                     </div>
