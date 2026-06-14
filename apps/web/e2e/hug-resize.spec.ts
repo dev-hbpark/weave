@@ -679,3 +679,61 @@ test("P4(px 일원화): a Hug row honors its RATIO gap (derived px, live)", asyn
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("P4: a Hug axis disables its own resize handles (Figma parity)", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  const F = await addFrame(page, rootId, { x: 0.2, y: 0.2, width: 0.3, height: 0.2, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: F,
+    layout: { kind: "auto-flex", direction: "row" },
+  });
+  await page.waitForFunction((id) => {
+    let has = false;
+    const walk = (n: N & { attrs: { layout?: unknown } }) => {
+      if (String(n.id) === id) has = (n.attrs as { layout?: unknown }).layout !== undefined;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return has;
+  }, F);
+  await addFrame(page, F, { x: 0, y: 0, width: 1, height: 1, rotation: 0 });
+  // Hug WIDTH, Fixed HEIGHT → width handles (e/w + corners) disabled, height
+  // handles (n/s) kept.
+  await exec(page, "weave.frame.setSizing", {
+    itemId: F,
+    sizing: { width: "hug", height: "fixed" },
+  });
+
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, F);
+
+  const handleIds = async (): Promise<string[]> =>
+    page.evaluate((id) => {
+      const out: string[] = [];
+      document.querySelectorAll(`[data-selection-handle-item-id="${id}"]`).forEach((n) => {
+        const h = n.getAttribute("data-selection-handle-id");
+        if (h !== null) out.push(h);
+      });
+      return out;
+    }, F);
+
+  await expect.poll(async () => (await handleIds()).length).toBeGreaterThan(0);
+  const ids = await handleIds();
+  const msg = `handles=${ids.join(",")}`;
+  // Width (Hug) handles gone; the corners touch width so they go too.
+  expect(ids, msg).not.toContain("resize-e");
+  expect(ids, msg).not.toContain("resize-w");
+  expect(ids, msg).not.toContain("resize-ne");
+  expect(ids, msg).not.toContain("resize-sw");
+  // Height (Fixed) handles remain.
+  expect(ids, msg).toContain("resize-n");
+  expect(ids, msg).toContain("resize-s");
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});

@@ -65,7 +65,10 @@ import {
 } from "../../document/interactions/viewport-cull-context.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "../../document/layout/registry.js";
 import { FrameContent } from "../../document/render/FrameContent.js";
-import { applyLayoutConstraintFilter } from "../../document/selection-chrome/layout-constraint-filter.js";
+import {
+  applyLayoutConstraintFilter,
+  type LayoutChildConstraints,
+} from "../../document/selection-chrome/layout-constraint-filter.js";
 import { FLIP_ALLOWED_KINDS, flipTransform, readFlip } from "../../document/transform-flip.js";
 import type { FrameStageProps } from "../FrameStage.js";
 
@@ -122,6 +125,38 @@ interface SceneFrameProps {
   readonly artboardId?: string | undefined;
   readonly roles: RolePolicy;
   readonly hit: HitPolicy;
+}
+
+/** WI-042 P4 — a frame's OWN container sizing pins the resize handles on a Hug
+ *  axis (content-driven). Returns undefined for a non-Hug / non-container frame
+ *  (no own-sizing constraint). Rotate is unaffected by sizing. */
+function ownSizingConstraints(item: AgocraftItem): LayoutChildConstraints | undefined {
+  const layout = (
+    item.attrs as { layout?: { kind?: string; sizing?: { width?: string; height?: string } } }
+  ).layout;
+  if (layout?.kind !== "auto-flex" && layout?.kind !== "auto-grid") return undefined;
+  const sizing = layout.sizing;
+  if (sizing === undefined) return undefined;
+  return {
+    canResizeWidth: sizing.width !== "hug",
+    canResizeHeight: sizing.height !== "hug",
+    canRotate: true,
+  };
+}
+
+/** AND two optional constraint sets (a handle survives only if BOTH allow it).
+ *  Either undefined ⇒ the other (undefined ⇒ undefined = pass-through). */
+function andConstraints(
+  a: LayoutChildConstraints | undefined,
+  b: LayoutChildConstraints | undefined,
+): LayoutChildConstraints | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return {
+    canResizeWidth: a.canResizeWidth && b.canResizeWidth,
+    canResizeHeight: a.canResizeHeight && b.canResizeHeight,
+    canRotate: a.canRotate && b.canRotate,
+  };
 }
 
 function SceneFrameImpl({
@@ -331,10 +366,18 @@ function SceneFrameImpl({
       unitKinds: item.units.map((u) => u.kind),
     };
     const doc = docRef?.current;
-    const constraints =
+    const parentConstraints =
       LAYOUT_FEATURE_ENABLED && doc !== undefined
         ? getLayoutEngine().getChildConstraints({ root: doc.root, itemId: item.id })
         : undefined;
+    // WI-042 P4 — a frame's OWN Hug axis is content-driven, so its resize handle
+    // on that axis is disabled (Figma parity): you switch Hug→Fixed in the
+    // toolbar to resize. ANDed with the parent-layout constraints (a child can be
+    // pinned by BOTH its parent's layout and its own Hug sizing). Fill is already
+    // covered by the parent constraints (a growing child isn't resizable).
+    const constraints = LAYOUT_FEATURE_ENABLED
+      ? andConstraints(parentConstraints, ownSizingConstraints(item))
+      : parentConstraints;
     const locked = isItemLocked(item);
     const noCanvasHandles = doc !== undefined && !capabilityOf(roles, doc, itemId).canvasHandles;
     const specs = noCanvasHandles
@@ -428,7 +471,14 @@ function SceneFrameImpl({
       const lp = project(
         resolveHandleGeometry(sceneEntry, { type: "corner", corner: "nw" }, { scale: sx }),
       );
-      handles.push({ id: "lock-badge", itemId, x: lp.x, y: lp.y, interactive: false, node: lockBadgeNode });
+      handles.push({
+        id: "lock-badge",
+        itemId,
+        x: lp.x,
+        y: lp.y,
+        interactive: false,
+        node: lockBadgeNode,
+      });
     }
     return handles;
   };
@@ -451,7 +501,14 @@ function SceneFrameImpl({
     });
     if (locked) {
       const lp = resolveAnchor({ type: "corner", corner: "nw" }, bounds);
-      handles.push({ id: "lock-badge", itemId, x: lp.x, y: lp.y, interactive: false, node: lockBadgeNode });
+      handles.push({
+        id: "lock-badge",
+        itemId,
+        x: lp.x,
+        y: lp.y,
+        interactive: false,
+        node: lockBadgeNode,
+      });
     }
     return handles;
   };
