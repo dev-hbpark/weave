@@ -46,7 +46,7 @@ import {
   useFrameSelectionAllowed,
   useInteractionMode,
 } from "../document";
-import { findItemDeep, isDomainItem } from "../document/agocraft-mirror.js";
+import { findItemDeep, findParentAndIndex, isDomainItem } from "../document/agocraft-mirror.js";
 import { resizeCropWindow, setStraighten } from "../document/crop-geometry.js";
 import {
   type CameraPolicy,
@@ -1195,33 +1195,52 @@ export function FrameStage(props: FrameStageProps) {
         return { ...o, rotation: next } as unknown as FrameGeom;
       },
       parentRectOf(itemId) {
-        const el = findFrameElement(itemId);
-        const parent = el?.parentElement;
-        if (parent === null || parent === undefined) return { width: 1, height: 1 };
-        const r = parent.getBoundingClientRect();
+        // WI-217/DR-138 — the scene renderer is FLAT: every frame is a sibling
+        // under the design plane, so `el.parentElement` is the PLANE for every
+        // item, not its logical parent. Resolve the logical parent from the doc
+        // and read THAT frame's rendered rect (a nested item's frame is a ratio
+        // of its parent frame, not of the whole plane). Using the plane for a
+        // nested item made `dx / parentWidth` divide by a too-large width, so the
+        // item resized far less than the pointer moved (the reported bug).
+        const doc = docRef.current;
+        const parentId =
+          doc !== undefined ? findParentAndIndex(doc, String(itemId))?.parent.id : undefined;
+        const parentIsRoot =
+          doc !== undefined && (parentId === undefined || String(parentId) === String(doc.root.id));
+        const parentEl: HTMLElement | null = parentIsRoot
+          ? designPlaneRef.current
+          : parentId !== undefined
+            ? ((document.querySelector(
+                `[data-frame-id="${CSS.escape(String(parentId))}"]`,
+              ) as HTMLElement | null) ?? designPlaneRef.current)
+            : (findFrameElement(itemId)?.parentElement ?? null);
+        if (parentEl === null) return { width: 1, height: 1 };
+        const r = parentEl.getBoundingClientRect();
         // WI-153 P3 (DR-111 D6) — page-bounded soft-clamp context. When the
-        // item's nearest frame ancestor IS the active page, smuggle the
-        // min-overlap spec through the opaque parent rect (the same dunder
-        // idiom readFrame uses for __origFontSize) so computeMove can clamp
-        // without new plumbing. The ~PAGE_MIN_OVERLAP_DESIGN_PX design px are
-        // converted to a parent ratio via the live plane scale, so the felt
-        // minimum is zoom-independent.
+        // item's logical parent IS an active page, smuggle the min-overlap spec
+        // through the opaque parent rect (the same dunder idiom readFrame uses
+        // for __origFontSize) so computeMove can clamp without new plumbing. The
+        // ~PAGE_MIN_OVERLAP_DESIGN_PX design px are converted to a parent ratio
+        // via the live plane scale, so the felt minimum is zoom-independent.
         const pages = visibleFrameIdsRef.current;
-        if (pages !== undefined && r.width > 0 && r.height > 0) {
-          const pageId = parent.closest("[data-frame-id]")?.getAttribute("data-frame-id");
-          if (pageId !== null && pageId !== undefined && pages.has(pageId)) {
-            const plane = designPlaneRef.current?.getBoundingClientRect();
-            const scale = plane !== undefined && plane.width > 0 ? plane.width / designWidth : 1;
-            const minScreen = PAGE_MIN_OVERLAP_DESIGN_PX * scale;
-            return {
-              width: r.width,
-              height: r.height,
-              __pageClamp: {
-                minX: minScreen / r.width,
-                minY: minScreen / r.height,
-              } satisfies PageClampSpec,
-            } as { width: number; height: number };
-          }
+        if (
+          pages !== undefined &&
+          r.width > 0 &&
+          r.height > 0 &&
+          parentId !== undefined &&
+          pages.has(String(parentId))
+        ) {
+          const plane = designPlaneRef.current?.getBoundingClientRect();
+          const scale = plane !== undefined && plane.width > 0 ? plane.width / designWidth : 1;
+          const minScreen = PAGE_MIN_OVERLAP_DESIGN_PX * scale;
+          return {
+            width: r.width,
+            height: r.height,
+            __pageClamp: {
+              minX: minScreen / r.width,
+              minY: minScreen / r.height,
+            } satisfies PageClampSpec,
+          } as { width: number; height: number };
         }
         return { width: r.width, height: r.height };
       },
@@ -1265,16 +1284,20 @@ export function FrameStage(props: FrameStageProps) {
           const boxes: RatioBox[] = [];
           let pageAspect: number | undefined;
           for (const id of movingItemIds) {
-            const el = document.querySelector(`[data-frame-id="${CSS.escape(String(id))}"]`);
-            const pageEl = el?.parentElement?.closest("[data-frame-id]");
-            const pageId = pageEl?.getAttribute("data-frame-id");
-            if (pageId === null || pageId === undefined || !pages.has(pageId)) continue;
+            // WI-217/DR-138 — flat DOM: resolve the LOGICAL parent (page) from the
+            // doc, not `el.parentElement.closest` (which is the plane for every
+            // item). Page-direct = the item's logical parent IS an active page.
+            const pageId = findParentAndIndex(d, String(id))?.parent.id;
+            if (pageId === undefined || !pages.has(String(pageId))) continue;
             const frame = (findItemDeep(d, String(id))?.attrs as { frame?: ItemFrame } | undefined)
               ?.frame;
             if (frame === undefined) continue;
-            if (pageAspect === undefined && pageEl !== null && pageEl !== undefined) {
-              const r = pageEl.getBoundingClientRect();
-              pageAspect = r.height > 0 ? r.width / r.height : 1;
+            if (pageAspect === undefined) {
+              const pageEl = document.querySelector(
+                `[data-frame-id="${CSS.escape(String(pageId))}"]`,
+              );
+              const r = pageEl?.getBoundingClientRect();
+              if (r !== undefined && r.height > 0) pageAspect = r.width / r.height;
             }
             boxes.push(rotatedAabb(frame, pageAspect ?? 1));
           }
