@@ -34,9 +34,23 @@
         승인된 측정 카브아웃) ② hotspot 영역 드래그의 parent rect 읽기(별개 기능, S3 범위 외).
   - **검증**: `e2e/selection-chrome-rotation.spec.ts` 4 테스트(networkidle 회피)=핸들 회전코너·코너반경
         회전그립·레이아웃에딧 라인·레이어피커, 전부 green·페이지예외0. tsc/biome 클린, 단위 1374 green.
-- **S4 · Decommission Sweep**
-  - [ ] grid-spec.ts/grownGridSpec/enforceGridCapacity 배선/cascadeReflowFromSiblingPatches/normalizeLayoutSpec
-        제거(엔진이 흡수). derive-text-auto-resize→layoutChildForContentAuto 재배선. 테스트 이관, green.
+- **S4 · Decommission Sweep (DONE — 정밀감사로 범위 정정)**
+  - **감사 결론(중요)**: S4 계획이 over-scope였음. 6정책 중 실제 제거가능=①②뿐. ③④⑤는 *중복 아닌
+    load-bearing*(엔진 디스패처/가드/브리지), ⑥은 의도 카브아웃 — 삭제하면 회귀.
+  - [x] **① grid track ⌈√n⌉ de-dup**: weave `layout/grid-spec.ts`(gridDimsForChildCount/gridSpecForChildCount)는
+        엔진 export와 **byte-identical** → 파일+테스트 삭제, 2 importer(commands setLayout·design-root insertable)를
+        `@agocraft/layout`로 재지정. (엔진이 동일 함수 테스트 보유.)
+  - [x] **② grid auto-grow → 엔진 위임**: weave `grownGridSpec`(≡엔진 `grownAutoGridSpec`, byte-identical) +
+        수동 pre-grow 블록 제거. `onChildAdd({growToFit: enforceGridCapacity})`로 위임, 엔진의 `parentPatch`를
+        gridGrowPatch로 사용(엔진이 grown 스펙 소유·item.layout 반환). 동작 동일.
+  - **유지(load-bearing/carve-out, 삭제 금지)**: ③ `cascadeReflowFromSiblingPatches`=DR-053 이후 *얇은
+    디스패처*(엔진 reflowSubtree를 nested 컨테이너마다 재진입; 엔진은 1레벨/호출이라 호스트 와이어 필요).
+    ④ `normalizeLayoutSpec`=에이전트 부분스펙 방어가드(엔진은 read시 padding 무가드 → 크래시 방지).
+    ⑤ `derive-text-auto-resize`=레거시 3모드↔엔진 2축 브리지(툴바/렌더 의존; 2축 마이그레이션은 별도 대공사).
+    ⑥ min/0면적 가드=의도 카브아웃.
+  - **검증**: tsc/biome 클린, 단위 1368 green(−6=삭제된 grid-spec 테스트). grid auto-grow는
+    `commands-layout-relayout.test.ts`가 권위검증(2×2→3컬럼 grow + item.layout 패치 + no-grow 케이스 +
+    nested cascade, 전부 실엔진 경유). 라이브 스모크=selection-chrome-rotation 4 e2e(add/setLayout 경로) green.
 - **S5 · 검증·통합**: e2e + WEAVE_PERF=1(WI-197/198 기준) + main 통합.
 
 ## Acceptance
@@ -47,5 +61,6 @@
 ## Progress
 
 S2 DONE(스모크 검증). **S3 DONE**(S3-1 핸들/아웃라인 + S3-2 hit-test + S3-3 freeform 버스, 3커밋,
-라이브검증 4 e2e). 다음 **S4**(엔진이 흡수한 grid-spec/enforceGridCapacity/cascade/normalizeLayoutSpec
-배선 제거 — agocraft 측은 이미 흡수, weave 잔여 배선 정리) → S5(perf 회귀확인 + main 통합).
+라이브검증 4 e2e). **S4 DONE**(범위정정: ①grid-spec de-dup + ②grid-grow 엔진위임만 제거가능, ③④⑤⑥은
+load-bearing/carve-out 유지; 단위 1368 green, commands-layout-relayout 권위검증). 다음 **S5**(WEAVE_PERF
+회귀확인 + main 통합).

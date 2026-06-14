@@ -13,9 +13,9 @@
 // (those are added afterwards via the QuickActionBar "+" inside the frame).
 
 import { createAutoFlexSpec, type LayoutSpec } from "@agocraft/core";
+import { gridSpecForChildCount } from "@agocraft/layout";
 import { IconLayoutAbsolute, IconLayoutFlex, IconLayoutGrid } from "@weave/design-system";
 import { createElement, type ReactNode } from "react";
-import { gridSpecForChildCount } from "../layout/grid-spec.js";
 import type { InsertableCapability, InsertableRecommendation } from "./types.js";
 
 type FrameLayoutId = "frame-absolute" | "frame-flex" | "frame-grid";

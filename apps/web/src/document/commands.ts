@@ -24,7 +24,6 @@ import type {
   Item as AgocraftItem,
   BuiltinItemFrame as AgocraftItemFrame,
   Unit as AgocraftUnit,
-  AutoGridSpec,
   LayoutSpec,
 } from "@agocraft/core";
 import {
@@ -70,6 +69,7 @@ import {
   createSetItemLayoutChildCommand,
   createSwapFlexOrderCommand,
   createSwapGridCellsCommand,
+  gridSpecForChildCount,
 } from "@agocraft/layout";
 import { nn } from "../lib/nn.js";
 import {
@@ -103,7 +103,6 @@ import {
   readDatasetPayload,
 } from "./dataset/dataset-store.js";
 import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
-import { gridSpecForChildCount } from "./layout/grid-spec.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import {
   ALIGN_OPS_ORDER,
@@ -724,14 +723,17 @@ function normalizeLayoutSpec(layout: LayoutSpec | undefined): LayoutSpec | undef
 }
 
 // ── WI-199 / DR-128 — nested-layout add support ──────────────────────────────
-// The @agocraft/layout engine reflows ONE level only (onChildAdd / onFrameChanged
-// reposition a parent's DIRECT children, never grandchildren), and onChildAdd
-// reads the parent's STORED grid spec (it never grows the track count). So adding
-// an item to a nested grid/flex left grandchildren stale and overflowed a grid's
-// cells — visibly broken until the user resized a container (which re-runs that
-// one level). These host-side helpers close both gaps without re-implementing any
-// layout math: grid-grow regenerates the spec via the same gridSpecForChildCount
-// used at creation; the cascade re-enters the engine's own onFrameChanged top-down.
+// The @agocraft/layout engine reflows ONE level per call (onChildAdd /
+// onFrameChanged reposition a parent's DIRECT children, never grandchildren). So
+// adding an item to a NESTED grid/flex left grandchildren stale — visibly broken
+// until the user resized a container (which re-runs that one level). The cascade
+// helper below closes that gap without re-implementing layout math: it re-enters
+// the engine's own reflowSubtree top-down for each nested container the add
+// shifted.
+//
+// WI-217 S4 (DR-138): grid auto-grow is no longer a host helper — `onChildAdd`
+// now OWNS it via the `growToFit` flag (engine returns the grown spec as
+// `parentPatch`), so the former host-side `grownGridSpec` was removed.
 
 function frameEqualsRatio(
   a: AgocraftItemFrame | undefined,
@@ -767,29 +769,6 @@ function isReflowContainer(item: AgocraftItem | undefined): boolean {
 function frameFromAttrsPatch(p: Patch): AgocraftItemFrame | undefined {
   if (p.type !== "item.attrs") return undefined;
   return (p as { after?: { frame?: AgocraftItemFrame } }).after?.frame;
-}
-
-/** #3 — when adding to an "auto-managed" auto-grid would exceed its current track
- *  capacity (so the new child stacks onto the last cell), return a grown spec
- *  sized for the new child count; otherwise undefined. `current` is the normalized
- *  stored spec. A deliberately-configured grid (template `areas` or auto-`*Repeat`)
- *  is never grown — its track count is left to the author. */
-function grownGridSpec(
-  current: LayoutSpec | undefined,
-  newChildCount: number,
-): AutoGridSpec | undefined {
-  if (current === undefined || current.kind !== "auto-grid") return undefined;
-  const g = current as AutoGridSpec;
-  if (g.areas !== undefined || g.columnsRepeat !== undefined || g.rowsRepeat !== undefined) {
-    return undefined;
-  }
-  const capacity = Math.max(1, g.columns.length) * Math.max(1, g.rows.length);
-  if (newChildCount <= capacity) return undefined;
-  const grown = gridSpecForChildCount(newChildCount, g);
-  if (grown.columns.length === g.columns.length && grown.rows.length === g.rows.length) {
-    return undefined;
-  }
-  return grown;
 }
 
 /** #1 — given the sibling-shift patches an add produced, cascade a subtree reflow
@@ -988,43 +967,35 @@ export function buildWeaveCommands(
       }
       let stagedItem: AgocraftItem = agoItem;
       let layoutSiblingPatches: ReadonlyArray<Patch> = [];
-      // WI-199 / DR-128 — when a grid grows to fit the new child (#3) we emit an
-      // `item.layout` patch so the bigger track count persists & inverts.
+      // WI-199 / DR-128 — when a grid grows to fit the new child the engine emits
+      // an `item.layout` patch (its `parentPatch`) so the bigger track count
+      // persists & inverts.
       let gridGrowPatch: Patch | undefined;
       if (LAYOUT_FEATURE_ENABLED && containerItem !== undefined) {
-        // Normalize the parent's layout for the engine read: @agocraft/layout's
-        // onParentResize dereferences spec.padding.left unguarded, so a parent
-        // whose stored layout lacks padding would crash onChildAdd. This guards
-        // ANY parent (even a layout stored before normalize-on-set landed).
+        // Normalize the parent's layout for the engine read (④ guard, KEPT):
+        // @agocraft/layout's onParentResize dereferences spec.padding.left
+        // unguarded, so a parent whose stored layout lacks padding would crash
+        // onChildAdd. This guards ANY parent (even a layout stored before
+        // normalize-on-set landed, or a partial agent-supplied spec).
         const parentLayout = (containerItem.attrs as { layout?: LayoutSpec } | undefined)?.layout;
         const normalizedLayout = normalizeLayoutSpec(parentLayout);
-        // WI-199 / DR-128 #3 — AGENT-ONLY grid-capacity grow. If adding this child
-        // would overflow an auto-managed grid's tracks (→ stack onto the last
-        // cell), regenerate the spec for the new child count and run onChildAdd
-        // against the grown spec so the new child + siblings land in real cells.
-        let effectiveLayout = normalizedLayout;
-        if (input.enforceGridCapacity === true) {
-          const grown = grownGridSpec(normalizedLayout, container.children.length + 1);
-          if (grown !== undefined) {
-            effectiveLayout = grown;
-            gridGrowPatch = {
-              type: "item.layout",
-              itemId: containerItem.id,
-              before: parentLayout,
-              after: grown,
-            };
-          }
-        }
         const safeParent =
-          effectiveLayout !== undefined
-            ? {
-                ...containerItem,
-                attrs: { ...containerItem.attrs, layout: effectiveLayout },
-              }
+          normalizedLayout !== undefined
+            ? { ...containerItem, attrs: { ...containerItem.attrs, layout: normalizedLayout } }
             : containerItem;
-        const result = getLayoutEngine().onChildAdd({ parent: safeParent, newChild: agoItem });
+        // WI-217 S4 (DR-138) — grid auto-grow is the ENGINE's via `growToFit`: it
+        // regenerates the auto-grid track count for the new child count, lays the
+        // child + siblings into real cells, and returns the grown spec as
+        // `parentPatch`. AGENT-ONLY — only the aku transformInput sets
+        // `enforceGridCapacity`; manual toolbar adds keep the author's tracks.
+        const result = getLayoutEngine().onChildAdd({
+          parent: safeParent,
+          newChild: agoItem,
+          growToFit: input.enforceGridCapacity === true,
+        });
         stagedItem = result.stagedChild as AgocraftItem;
         layoutSiblingPatches = result.siblingPatches;
+        gridGrowPatch = result.parentPatch;
       }
 
       // WI-147 — AGENT-ONLY min-size guard. We compute the STAGED frame (post
