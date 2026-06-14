@@ -297,9 +297,13 @@ interface GapGripSpec {
   readonly cy: number;
 }
 
-/** Grid gap grips: one per column boundary (drag x → columnGap) + per row boundary
- *  (drag y → rowGap), each centered in the inner region of the cross axis so it is
- *  visually + hit-wise distinct from the full-extent track-boundary line. */
+/** Grid gap grips: ONE column-gap grip (drag x → columnGap) + ONE row-gap grip
+ *  (drag y → rowGap). `columnGap` / `rowGap` are a single UNIFORM value per axis,
+ *  so a diamond at every inter-track boundary was redundant — they all authored
+ *  the same number. We render one grip per axis at the FIRST boundary (its
+ *  boundary-0 drag factor makes the diamond follow the pointer 1:1), centred in
+ *  its own cross-axis lane so it stays visually + hit-wise distinct from the
+ *  full-extent track-boundary line. A single-track axis has no boundary → no grip. */
 function gridGapGrips(
   fs: FrameScreen,
   spec: AutoGridSpec,
@@ -322,24 +326,27 @@ function gridGapGrips(
   const innerWpx = colAvail * fs.w;
   const colLaneY = innerTopPx + Math.min(GRIP_LANE_PX, innerHpx / 2);
   const rowLaneX = innerLeftPx + Math.min(GRIP_LANE_PX, innerWpx / 2);
-  colB.forEach((off, i) => {
+  // One grip per axis at the first gap (uniform value → no need for the rest).
+  const firstCol = colB[0];
+  if (firstCol !== undefined) {
     grips.push({
-      key: `gap-col-${i}`,
+      key: "gap-col-0",
       axis: "column",
-      boundaryIndex: i,
-      cx: fs.left + (pad.l + off) * fs.w,
+      boundaryIndex: 0,
+      cx: fs.left + (pad.l + firstCol) * fs.w,
       cy: colLaneY,
     });
-  });
-  rowB.forEach((off, i) => {
+  }
+  const firstRow = rowB[0];
+  if (firstRow !== undefined) {
     grips.push({
-      key: `gap-row-${i}`,
+      key: "gap-row-0",
       axis: "row",
-      boundaryIndex: i,
+      boundaryIndex: 0,
       cx: rowLaneX,
-      cy: fs.top + (pad.t + off) * fs.h,
+      cy: fs.top + (pad.t + firstRow) * fs.h,
     });
-  });
+  }
   return grips;
 }
 
