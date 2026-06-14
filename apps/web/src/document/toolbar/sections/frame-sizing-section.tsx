@@ -155,8 +155,13 @@ export function FrameSizingSection({
       height: axis === "height" ? ownFor(choice) : safe(ownSizing.height),
     };
 
+    // WI-048 — thread design dims so setSizing re-fits the container NOW (EXACT
+    // path). Without them the sizing attr flips but the box only re-fits on the
+    // next reflow (the reported "doesn't fit until I move a child").
+    const dimsInput =
+      dims !== null ? { designWidth: dims.width, designHeight: dims.height } : {};
     const ops: Array<{ command: string; input: unknown }> = [
-      { command: "weave.frame.setSizing", input: { itemId: item.id, sizing: pair } },
+      { command: "weave.frame.setSizing", input: { itemId: item.id, sizing: pair, ...dimsInput } },
     ];
 
     // ── 2. child-role fill (only meaningful with a flex parent). MAIN axis →

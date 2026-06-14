@@ -2702,6 +2702,77 @@ export function buildWeaveCommands(
     pasteSpecial: PASTE_SPECIAL_HANDLERS as Readonly<Record<string, StyleHandler>>,
   });
 
+  // WI-224 — paste must honor the DESTINATION layout's add-rule. The @agocraft
+  // core clipboard kit appends every pasted item at the container's end with a
+  // stacking / pointer FRAME — right for an absolute / no-layout canvas, but
+  // inside a flex / grid parent that frame OVERLAPS the existing cells: the item
+  // only snaps into a real cell when the container frame is later MOVED and the
+  // engine reflows (the reported bug). This decorator routes each pasted item
+  // through the SAME layout placement `weave.item.add` uses
+  // (`getLayoutEngine().onChildAdd`): grid → the next FREE cell (a full grid
+  // grows its tracks via `growToFit`, so the paste never stacks on the last
+  // cell), flex → the next slot (sized by distribute). Absolute / no-layout /
+  // root → the kit's free placement stands, unchanged. All patches ride the kit's
+  // one transaction → one Cmd+Z. Mirrors the `removeItems` kit-decorator pattern.
+  const clipboardPastePlaced: typeof clipboardPaste =
+    clipboardPaste === undefined
+      ? undefined
+      : {
+          name: clipboardPaste.name,
+          run: (ctx, input) => {
+            const result = clipboardPaste.run(ctx, input);
+            // paste-special modes (style/text/size/…) emit attr patches, not
+            // item.create — nothing to place. Same for a failed paste.
+            if (!result.ok || !LAYOUT_FEATURE_ENABLED) return result;
+            const containerId = input.containerId;
+            if (containerId === undefined || containerId === String(ctx.document.root.id)) {
+              return result; // root canvas → free placement (kit stands)
+            }
+            const container = findItemDeep(ctx.document, containerId);
+            if (container === undefined) return result;
+            const layout = normalizeLayoutSpec(
+              (container.attrs as { layout?: LayoutSpec }).layout,
+            );
+            if (layout === undefined || (layout.kind !== "auto-flex" && layout.kind !== "auto-grid")) {
+              return result; // absolute / no layout → free placement (kit stands)
+            }
+            const engine = getLayoutEngine();
+            // Thread a synthetic parent whose children + (grown) layout accumulate
+            // across the batch, so each pasted item is placed against the PRIOR
+            // placements — one free cell / slot per item, never the same twice.
+            let pendingChildren: AgocraftItem[] = [...container.children];
+            let effLayout: LayoutSpec = layout;
+            const layoutExtra: Patch[] = [];
+            const placed = result.patches.map((p): Patch => {
+              if (p.type !== "item.create" || String(p.parentId) !== String(container.id)) {
+                return p;
+              }
+              const syntheticParent: AgocraftItem = {
+                ...container,
+                attrs: { ...container.attrs, layout: effLayout } as AgocraftItem["attrs"],
+                children: pendingChildren,
+              };
+              const res = engine.onChildAdd({
+                parent: syntheticParent,
+                newChild: p.item as unknown as AgocraftItem,
+                // paste into a FULL auto-grid grows its tracks so the item lands
+                // in its own cell instead of stacking onto the last one.
+                growToFit: true,
+              });
+              layoutExtra.push(...res.siblingPatches);
+              if (res.parentPatch !== undefined) {
+                layoutExtra.push(res.parentPatch);
+                effLayout = (res.parentPatch as { after: LayoutSpec }).after;
+              }
+              pendingChildren = [...pendingChildren, res.stagedChild as AgocraftItem];
+              // `stagedChild` is the kit's SerializedItem with only its frame +
+              // layoutChild re-stamped by the engine → reuse it as the create item.
+              return { ...p, item: res.stagedChild as unknown as typeof p.item };
+            });
+            return ok(result.value, [...placed, ...layoutExtra]);
+          },
+        };
+
   // WI-025 (DR-025 S3 increment 3) — duplicate (single + batch) absorbed into
   // the editing-command kit. Deep-clone (fresh ids) → nudge the root frame →
   // stage as a sibling via self-contained item.create; one transaction → one
@@ -3050,18 +3121,68 @@ export function buildWeaveCommands(
       // WI-043 P6 — resolve the frame's absolute box so a FIXED-px gap/padding
       // spec lays children at exact px on the paradigm switch (not ratio). Omit
       // ⇒ ratio (no regression for callers that don't pass design dims).
-      const box =
+      const hasDims =
         typeof input.designWidth === "number" &&
         typeof input.designHeight === "number" &&
         input.designWidth > 0 &&
-        input.designHeight > 0
-          ? absoluteFrameBox(ctx.document, String(input.itemId), input.designWidth, input.designHeight)
-          : null;
-      return rawSetFrameLayout.run(ctx, {
+        input.designHeight > 0;
+      const box = hasDims
+        ? absoluteFrameBox(ctx.document, String(input.itemId), input.designWidth as number, input.designHeight as number)
+        : null;
+      const result = rawSetFrameLayout.run(ctx, {
         ...input,
         layout,
         ...(box !== null ? { parentPx: { w: box.w, h: box.h } } : {}),
       });
+      if (!result.ok) return result;
+
+      // WI-048 — a HUG container also re-fits its BOX when its layout changes
+      // (gap / direction / padding / justify). `onLayoutChange` (above) only
+      // re-arranges children in the container's CURRENT box; for a Hug container
+      // that box is itself derived from the children, so it must be recomputed.
+      // refitHugContainer (staged with the new layout) does the full re-fit +
+      // re-arrange; its patches supersede onLayoutChange's child arrangement (the
+      // container's layout + new frame fold into one patch for a clean undo).
+      const cont = findChild(ctx.document, String(input.itemId));
+      const isHugNew =
+        layout !== undefined &&
+        (layout.kind === "auto-flex" || layout.kind === "auto-grid") &&
+        ((layout as { sizing?: AxisSizingPair }).sizing?.width === "hug" ||
+          (layout as { sizing?: AxisSizingPair }).sizing?.height === "hug");
+      if (LAYOUT_FEATURE_ENABLED && hasDims && cont !== undefined && isHugNew) {
+        const refit = refitHugContainer({
+          root: mapItemDeep(ctx.document.root, cont.id, (it) => ({
+            ...it,
+            attrs: { ...it.attrs, layout },
+          })),
+          containerId: cont.id,
+          designWidth: input.designWidth as number,
+          designHeight: input.designHeight as number,
+        });
+        if (refit.length > 0) {
+          const cid = String(cont.id);
+          const patchItemId = (p: Patch): string | undefined =>
+            "itemId" in p ? String((p as { itemId: unknown }).itemId) : undefined;
+          const containerRefit = refit.find((p) => patchItemId(p) === cid) as
+            | { after: { frame?: ItemFrame } }
+            | undefined;
+          const desc = refit.filter((p) => patchItemId(p) !== cid);
+          const containerPatch: Patch = {
+            type: "item.attrs",
+            itemId: cont.id,
+            before: cont.attrs,
+            after: {
+              ...cont.attrs,
+              layout,
+              ...(containerRefit?.after.frame !== undefined
+                ? { frame: containerRefit.after.frame }
+                : {}),
+            },
+          } as Patch;
+          return ok(undefined, [containerPatch, ...desc]);
+        }
+      }
+      return result;
     },
   };
   const setItemLayoutChild = createSetItemLayoutChildCommand({
@@ -3279,7 +3400,7 @@ export function buildWeaveCommands(
     insertPresetSlide as Command,
     clipboardCopy as Command,
     clipboardCut as Command,
-    clipboardPaste as Command,
+    clipboardPastePlaced as Command,
     duplicateItem as Command,
     duplicateItems as Command,
     // WI-183 — Alt-drag duplicate (offset 0; the original keeps moving).

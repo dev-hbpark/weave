@@ -230,6 +230,10 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({
 }) => {
   // WI-220 — px-first gap/padding authoring needs the design plane (px↔ratio).
   const dims = useDesignDims();
+  // WI-048 — thread design dims into EVERY setLayout so a Hug container re-fits
+  // its box immediately on a direction/gap/justify/align change (not just on the
+  // next reflow). Defined here so all setLayout call sites can spread it.
+  const dimsInput = dims !== null ? { designWidth: dims.width, designHeight: dims.height } : {};
   // WI-095 follow-up — a frame's background is a `decoration.fill` UNIT now
   // (DR-028 parity with shapes), not `attrs.background`. The same FillControl /
   // StrokeControl shapes use edit it, so frames get solid / gradient fills and
@@ -255,7 +259,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({
     // per-item mergeKey only folds rapid flips on the SAME frame; `batchPerItem`
     // groups a multi-frame change into one undo entry (single id runs directly).
     batchPerItem(editor, ids, (id) =>
-      editor.exec("weave.frame.setLayout", { itemId: id, layout: nextSpec }),
+      editor.exec("weave.frame.setLayout", { itemId: id, layout: nextSpec, ...dimsInput }),
     );
   };
 
@@ -275,7 +279,7 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({
 
   const patchLayoutSpec = (next: LayoutSpec) => {
     batchPerItem(editor, ids, (id) =>
-      editor.exec("weave.frame.setLayout", { itemId: id, layout: next }),
+      editor.exec("weave.frame.setLayout", { itemId: id, layout: next, ...dimsInput }),
     );
   };
 
@@ -285,7 +289,6 @@ export const FrameBackgroundSection: ToolbarSectionComponent = ({
   // multi-select (each frame has its own box). `dims === null` (no design plane) ⇒
   // fall back to the legacy ratio sliders is not needed: px display reads 0 and the
   // writer keeps the prior ratio.
-  const dimsInput = dims !== null ? { designWidth: dims.width, designHeight: dims.height } : {};
   const specOf = (id: string): LayoutSpec | undefined =>
     (items.find((it) => String(it.id) === id)?.attrs as { layout?: LayoutSpec } | undefined)
       ?.layout;

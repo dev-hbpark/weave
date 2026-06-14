@@ -56,3 +56,23 @@ test("UNDO restores the container box after a Hug re-fit", async ({ page }) => {
   console.log("UNDO R before:", JSON.stringify(before), "afterUndo:", JSON.stringify(afterUndo));
   expect(afterUndo.w).toBeCloseTo(before.w, 2);
 });
+
+test("setLayout (gap change) re-fits a Hug container (WI-048 #3)", async ({ page }) => {
+  await boot(page);
+  const root = await page.evaluate(() => String((window as any).__weaveDoc.root.id));
+  const R = await add(page, { kind: "frame", containerId: root, frame: { x: 0.1, y: 0.2, width: 0.6, height: 0.4, rotation: 0 } });
+  await exec(page, "weave.frame.setLayout", { itemId: R, layout: { kind: "auto-flex", direction: "row", gap: 0.005 } });
+  await add(page, { kind: "shape", containerId: R, frame: { x: 0, y: 0, width: 0.12, height: 0.5, rotation: 0 } });
+  await add(page, { kind: "shape", containerId: R, frame: { x: 0, y: 0, width: 0.12, height: 0.5, rotation: 0 } });
+  await exec(page, "weave.frame.setSizing", { itemId: R, sizing: { width: "hug", height: "fixed" }, designWidth: design.width, designHeight: design.height });
+  await page.waitForTimeout(100);
+  const beforeGap = await frameOf(page, R);
+  // bump the gap, PRESERVING the layout (incl. sizing) like the real toolbar.
+  const spec = await page.evaluate((id: string) => { let l: any; const w = (n: any) => { if (String(n.id) === id) l = n.attrs.layout; for (const c of n.children) w(c); }; w((window as any).__weaveDoc.root); return l; }, R);
+  await exec(page, "weave.frame.setLayout", { itemId: R, layout: { ...spec, gap: 0.08 }, designWidth: design.width, designHeight: design.height });
+  await page.waitForTimeout(120);
+  const afterGap = await frameOf(page, R);
+  console.log("gap-refit R before:", JSON.stringify(beforeGap), "after:", JSON.stringify(afterGap));
+  // a wider gap grows the width-Hug row's box.
+  expect(afterGap.w).toBeGreaterThan(beforeGap.w);
+});
