@@ -760,8 +760,26 @@ export function FrameStage(props: FrameStageProps) {
       }
     };
     el.addEventListener("wheel", handler, { passive: false });
+    // Selection-chrome handles portal to `document.body` — siblings of the
+    // canvas `el` in the DOM, NOT descendants — so a wheel whose target is an
+    // interactive handle never bubbles to the listener above. The result: with
+    // the pointer over a handle, pinch-zoom / trackpad pan freezes (the canvas
+    // listener is bypassed and the browser's default page-zoom fires instead).
+    // A document-level CAPTURE listener forwards those wheels into the SAME
+    // camera logic. Gated on the handle markers so ordinary canvas wheels
+    // (already handled above) never double-fire; pointer-events:none chrome
+    // (hover affordances, outline + snap layers) is never a wheel target, so it
+    // already passes through to the canvas untouched and needs no forwarding.
+    const onHandleWheel = (e: WheelEvent) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest("[data-handle-kind],[data-selection-handle-id]") === null) return;
+      handler(e);
+    };
+    document.addEventListener("wheel", onHandleWheel, { passive: false, capture: true });
     return () => {
       el.removeEventListener("wheel", handler);
+      document.removeEventListener("wheel", onHandleWheel, { capture: true });
     };
   }, [camera, bumpWheel]);
 

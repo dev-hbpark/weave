@@ -15,7 +15,7 @@
 //      listener attaches and a two-finger wheel pans the camera.
 
 import { expect, test } from "@playwright/test";
-import { prepareDesign } from "./helpers";
+import { addFrame, prepareDesign, setSelection } from "./helpers";
 
 // The infinite-canvas pan transform lives on the element that wraps the
 // `data-design-plane` node — `translate(${pan.tx}px, ${pan.ty}px) scale(...)`
@@ -70,6 +70,48 @@ test("canvas-board pans the camera on a two-finger wheel (listener attaches)", a
   const after = await readPanXY(page);
   expect(after).not.toBeNull();
   // The camera translates by the inverse of the wheel delta.
+  expect(Math.abs((after?.tx ?? 0) - 120)).toBeLessThan(5);
+  expect(Math.abs((after?.ty ?? 0) - 90)).toBeLessThan(5);
+});
+
+test("wheel over a selection handle still pans the camera (handles portal to body)", async ({
+  page,
+}) => {
+  // Regression: selection-chrome handles `createPortal` into `document.body`,
+  // so they are DOM siblings of the canvas — NOT descendants of the element
+  // the wheel listener is bound to. A wheel whose target is a handle never
+  // bubbled to that listener, so hovering a handle froze pinch-zoom / pan and
+  // let the browser's default page-zoom through. A document capture forwarder
+  // routes handle wheels into the same camera logic.
+  await prepareDesign(page, { flavor: "canvas-board" });
+  await addFrame(page, "frame", {
+    frame: { x: 0.35, y: 0.35, width: 0.3, height: 0.3, rotation: 0 },
+  });
+
+  // Select the just-added frame so its handles render (portaled to <body>).
+  const id = await page.evaluate(() => {
+    type N = { id: string | number; children: N[] };
+    const root = (window as unknown as { __weaveDoc: { root: N } }).__weaveDoc.root;
+    return root.children.length > 0 ? String(root.children[root.children.length - 1].id) : null;
+  });
+  if (id === null) throw new Error("no frame added");
+  await setSelection(page, [id]);
+  const handle = page.getByRole("button", { name: "Resize se", exact: true }).first();
+  await expect(handle).toBeVisible();
+  const hbox = await handle.boundingBox();
+  if (hbox === null) throw new Error("no handle box");
+
+  const before = await readPanXY(page);
+  expect(before).toEqual({ tx: 0, ty: 0 });
+
+  // Pointer parked squarely over the handle, then a plain two-finger wheel.
+  await page.mouse.move(hbox.x + hbox.width / 2, hbox.y + hbox.height / 2);
+  await page.mouse.wheel(-120, -90);
+  await page.waitForTimeout(120);
+
+  const after = await readPanXY(page);
+  expect(after).not.toBeNull();
+  // Pre-fix the wheel never reached the camera → pan stays at {0,0}.
   expect(Math.abs((after?.tx ?? 0) - 120)).toBeLessThan(5);
   expect(Math.abs((after?.ty ?? 0) - 90)).toBeLessThan(5);
 });
