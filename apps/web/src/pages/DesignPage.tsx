@@ -2942,7 +2942,10 @@ function DesignPageBody() {
                                           }
                                           // DR-053 (d) — thread the resize-gesture
                                           // sessionId so the engine restores
-                                          // descendants on shrink→grow.
+                                          // descendants on shrink→grow. WI-043 P4 —
+                                          // pass design dims so a flex/grid
+                                          // container with fixed-px gap/padding
+                                          // reflows in px (else ratio, unchanged).
                                           void editor.exec("weave.item.update", {
                                             itemId,
                                             patch: (prev: AgocraftItem) => ({
@@ -2953,6 +2956,8 @@ function DesignPageBody() {
                                               } as typeof prev.attrs,
                                             }),
                                             ...(sessionId !== undefined ? { sessionId } : {}),
+                                            designWidth: design.width,
+                                            designHeight: design.height,
                                           });
                                         }}
                                         renderFrameMenu={renderFrameMenu}

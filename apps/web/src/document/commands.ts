@@ -253,6 +253,11 @@ export interface UpdateItemInput {
    *  shrink→grow restores them to their mouse-down sizes. Omit for non-gesture
    *  programmatic frame writes. */
   readonly sessionId?: string;
+  /** WI-043 P4 — design-plane px basis. When supplied, the engine reflow lays
+   *  auto-flex/grid containers with FIXED-px gap/padding (`spec.gapPx`/`paddingPx`)
+   *  instead of the legacy ratio gap/padding. Omit ⇒ ratio (no change). */
+  readonly designWidth?: number;
+  readonly designHeight?: number;
 }
 
 /** WI-055 — rectangle corner radius. Targets `attrs.subAttrs.cornerRadii`
@@ -1240,6 +1245,9 @@ export function buildWeaveCommands(
             oldFrame,
             newFrame,
             ...(input.sessionId !== undefined ? { gestureId: input.sessionId } : {}),
+            // WI-043 P4 — fixed-px gap/padding when the host supplies a design basis.
+            ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
+            ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
           })
         : [];
     return extraPatches.length > 0 ? [patch, ...extraPatches] : [patch];
