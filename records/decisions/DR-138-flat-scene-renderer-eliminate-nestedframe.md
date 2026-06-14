@@ -32,20 +32,36 @@ DOM(`getBoundingClientRect`/`offsetWidth`)으로 되읽어 셀렉션 핸들 지�
 **3. flip 단순화.** frame은 FLIP_ALLOWED_KINDS 제외이고 평면 렌더에선 자식이 별도 엔트리라, flip은
 leaf 콘텐츠만 감싼다(과거 children-flip 분기는 죽은 코드 → 제거).
 
-## 단계 경계
+## 단계 경계 + S3 결과(2026-06-14, 3커밋, 라이브검증)
 
-- **이번(S2)**: 위치는 scene이 소유. 셀렉션 핸들 지오메트리는 **아직 SelectionLayer가 selfRef DOM 측정**
-  (resolveAnchor) — S3에서 `resolveHandleGeometry(scene)`로 전환.
-- 텍스트 auto-resize `composeTextBounds`도 S3에서 scene로.
+**S3 — 셀렉션 크롬 scene 순수화.** 핵심 통찰: S2 이후 렌더 요소는 scene의 순수 투영이므로, 크롬이
+요소를 측정하든 scene 구조를 직접 읽든 *기하학적으로 동일*. 실제 동작버그가 있던 두 곳만 행동변화가
+있고(나머지는 소싱 변경):
+
+- **위치 버그(수정)**: 핸들·아웃라인이 **회전 프레임에서 AABB 위치**였음(SelectionLayer가 회전요소의
+  `getBoundingClientRect`=축정렬 bbox 측정). → S3-1: 기본 변형 핸들/아웃라인/잠금배지를
+  `resolveHandleGeometry`(회전인지 design px) + 라이브 `[data-design-plane]` rect 투영으로. 아웃라인=
+  회전 rect placement(`hideOutline` + SelectionLayer **`interactive` 플래그** 신설: 박스-스팬 데코 placement가
+  하단 아이템 클릭을 가로채는 회귀 차단).
+- **hit-test 버그(수정)**: `findFramesAtPoint`가 rotation=0 AABB 콘 가정(자체 비율수학). → S3-2: 엔진
+  `computeScene`+`hitTestScene`로 위임(동일 시그니처·호출부 무변경). 회전 프레임 hit/레이어피커 정확.
+- **소싱만 변경(행동 동일)**: freeform 핸들(poly-vertex/코너반경/레이아웃에딧)은 이미 회전인지였고(요소에서
+  θ·offset 읽어 정확수학) S2 이후 그 DOM이 scene 미러. → S3-3: scene-geom 버스(`chrome-geom.ts`)로
+  소싱 전환(+DOM 폴백 유지, 무회귀). 차트는 이미 scene bounds 사용.
+
+**카브아웃(의도, 측정 성격)**: ① 텍스트 자동너비/높이 chrome=라이브 콘텐츠 DOM(엔진 글리프 미측정 —
+DR-053 측정 카브아웃과 동류) ② hotspot 영역 드래그 parent rect(별개 기능). 둘 다 scene-순수화 대상 아님.
 
 ## 검증
 
-- weave 타입체크 클린 + 단위 1377/1377 green.
-- 라이브(playwright 헤드리스): 슬라이드 에디터 마운트, 페이지 프레임 `left:0;top:0;1920×1080` 정확 배치,
-  JS 예외 0(유일 에러=무관 404 KV/asset). data-frame-* 속성·이벤트 의미 보존(e2e 셀렉터 무영향).
-- 잔여 라이브 검증(블록 선택칩 위치·회전·드래그)은 S3/S5에서.
+- S2: weave 타입체크 + 단위 1377 green + 라이브 스모크(에디터 마운트·페이지 프레임 정확·예외0).
+- S3: tsc/biome 클린 + 단위 1374 green(−3=제거된 `recoverUnrotatedSize` 테스트) + 라이브
+  `e2e/selection-chrome-rotation.spec.ts` 4 테스트(networkidle 회피 부트스트랩): 핸들 회전코너(rotated SE가
+  AABB SE보다 >20px 이격·드래그 발화), 코너반경 회전그립, 레이아웃에딧 flex 라인, 레이어피커 중첩 — 전부
+  green·페이지예외0. poly-vertex는 동일 버스 패턴(transitive) + 커널 단위테스트로 커버.
 
 ## Consequences
 
 - NestedFrame.tsx 삭제. 호스트는 (a)사용자 의도 (b)콘텐츠 intrinsic (c)표시정책 오버레이만 제공.
-- 회전-인지 hit-test 가능(엔진 `hitTestScene`) — S3에서 `findFramesAtPoint` 대체.
+- 회전-인지 hit-test 가능(엔진 `hitTestScene`) — S3에서 `findFramesAtPoint` 대체 완료.
+- 셀렉션 크롬 지오메트리 단일소유=엔진 scene. weave 잔여 DOM 측정=의도된 2개 카브아웃 + no-publish 폴백.
