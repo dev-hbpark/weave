@@ -49,8 +49,9 @@ the engine reads px as authoritative, so the subtree is stable.
 
 ## Remaining (follow-up)
 
-- Adding a child to an ALREADY-Hug container doesn't grow the container (re-Hug then
+- **[WI-226](WI-226-add-to-hug-container-grow.md)** (BACKLOG, deferred): adding a
+  child to an ALREADY-Hug container doesn't grow the container (re-Hug then
   shrinks). Needs an `item.add` Hug re-fit + new-child pin — separate, deeper than
-  this change. The common flow (add → Hug) is fully covered.
+  this change. The common flow (add → Hug) is fully covered here.
 - (Optional) promote pinning into `weave.frame.setLayout` / `weave.item.add` for
   full boundary coverage.
