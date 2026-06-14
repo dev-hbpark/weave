@@ -199,3 +199,52 @@ test("resizing inside a ROTATED parent grows width along the parent's local x", 
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("MOVING a child of a ROTATED parent follows the cursor (no drift)", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  // O rotated 90°, child I inside. Dragging I screen-RIGHT must move it
+  // screen-right (follow the cursor). Without de-rotating the delta into the
+  // parent's local axes, I would drift screen-DOWN (the parent's local +x).
+  const O = await addFrame(page, rootId, {
+    x: 0.3,
+    y: 0.25,
+    width: 0.3,
+    height: 0.3,
+    rotation: Math.PI / 2,
+  });
+  const I = await addFrame(page, O, { x: 0.3, y: 0.3, width: 0.3, height: 0.3, rotation: 0 });
+
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, I);
+
+  const centerOf = async (): Promise<{ x: number; y: number }> => {
+    const b = await page.locator(`[data-frame-id="${I}"]`).first().boundingBox();
+    if (b === null) throw new Error("no I box");
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const before = await centerOf();
+
+  // Drag I's body screen-RIGHT by D.
+  const D = 120;
+  await page.mouse.move(before.x, before.y);
+  await page.mouse.down();
+  await page.mouse.move(before.x + D, before.y, { steps: 14 });
+  await page.mouse.up();
+
+  const after = await centerOf();
+  const dxScreen = after.x - before.x;
+  const dyScreen = after.y - before.y;
+  const msg = `dxScreen=${dxScreen} dyScreen=${dyScreen} expected≈(${D},0)`;
+  // Follows the cursor: screen-x tracks the drag, screen-y barely moves. With
+  // the bug the item drifted screen-DOWN instead (dxScreen≈0, dyScreen≈D).
+  expect(dxScreen, msg).toBeGreaterThan(D * 0.7);
+  expect(Math.abs(dyScreen), msg).toBeLessThan(D * 0.3);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});

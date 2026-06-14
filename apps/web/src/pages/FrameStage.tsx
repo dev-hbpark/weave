@@ -1123,8 +1123,22 @@ export function FrameStage(props: FrameStageProps) {
         const o = orig as unknown as ItemFrame;
         const w = parent.width > 0 ? parent.width : 1;
         const h = parent.height > 0 ? parent.height : 1;
-        let nx = o.x + dx / w;
-        let ny = o.y + dy / h;
+        // WI-218 follow-up — the frame is a ratio of the parent's LOCAL
+        // (unrotated) box, but the drag delta is in screen axes. De-rotate it by
+        // the parent's absolute rotation so a child of a rotated parent follows
+        // the cursor instead of drifting along the parent's local axes. rotation
+        // 0 ⇒ identity (the common case is unchanged).
+        const pr = (parent as { __rotation?: number }).__rotation ?? 0;
+        let ldx = dx;
+        let ldy = dy;
+        if (pr !== 0) {
+          const c = Math.cos(-pr);
+          const s = Math.sin(-pr);
+          ldx = dx * c - dy * s;
+          ldy = dx * s + dy * c;
+        }
+        let nx = o.x + ldx / w;
+        let ny = o.y + ldy / h;
         // WI-153 P3 (DR-111 D6) — soft min-overlap clamp. `parentRectOf` rides
         // a `__pageClamp` spec through the opaque parent rect when the moved
         // item is a direct child of the active page (page-bounded formats
@@ -1199,51 +1213,60 @@ export function FrameStage(props: FrameStageProps) {
         // WI-217/DR-138 — the scene renderer is FLAT: every frame is a sibling
         // under the design plane, so `el.parentElement` is the PLANE for every
         // item, not its logical parent. Resolve the logical parent from the doc
-        // and read THAT frame's rendered rect (a nested item's frame is a ratio
-        // of its parent frame, not of the whole plane). Using the plane for a
-        // nested item made `dx / parentWidth` divide by a too-large width, so the
-        // item resized far less than the pointer moved (the reported bug).
+        // and read its EXACT local box (computeScene design px × plane scale) —
+        // a nested item's frame is a ratio of its parent frame, not of the whole
+        // plane (using the plane made `dx/parentWidth` divide by a too-large
+        // width). `getBoundingClientRect` would also give a rotated parent's
+        // inflated AABB; the scene box is rotation-invariant. `__rotation` (the
+        // parent's absolute rotation) rides through so computeMove can de-rotate
+        // the drag delta into the parent's local axes. Called once per target at
+        // gesture start (not per tick), so one computeScene is fine.
         const doc = docRef.current;
-        const parentId =
-          doc !== undefined ? findParentAndIndex(doc, String(itemId))?.parent.id : undefined;
-        const parentIsRoot =
-          doc !== undefined && (parentId === undefined || String(parentId) === String(doc.root.id));
-        const parentEl: HTMLElement | null = parentIsRoot
-          ? designPlaneRef.current
-          : parentId !== undefined
-            ? ((document.querySelector(
-                `[data-frame-id="${CSS.escape(String(parentId))}"]`,
-              ) as HTMLElement | null) ?? designPlaneRef.current)
-            : (findFrameElement(itemId)?.parentElement ?? null);
-        if (parentEl === null) return { width: 1, height: 1 };
-        const r = parentEl.getBoundingClientRect();
+        const planeRect = designPlaneRef.current?.getBoundingClientRect();
+        if (doc === undefined || planeRect === undefined || planeRect.width <= 0) {
+          const r = findFrameElement(itemId)?.parentElement?.getBoundingClientRect();
+          return r !== undefined ? { width: r.width, height: r.height } : { width: 1, height: 1 };
+        }
+        const scale = planeRect.width / designWidth;
+        const parentId = findParentAndIndex(doc, String(itemId))?.parent.id;
+        const parentIsRoot = parentId === undefined || String(parentId) === String(doc.root.id);
+        let boxW = designWidth;
+        let boxH = designHeight;
+        let rotation = 0;
+        if (!parentIsRoot && parentId !== undefined) {
+          const e = computeScene(doc.root, designWidth, designHeight).byId.get(parentId);
+          if (e !== undefined) {
+            boxW = e.box.w;
+            boxH = e.box.h;
+            rotation = e.rotation;
+          }
+        }
+        const width = boxW * scale;
+        const height = boxH * scale;
         // WI-153 P3 (DR-111 D6) — page-bounded soft-clamp context. When the
         // item's logical parent IS an active page, smuggle the min-overlap spec
         // through the opaque parent rect (the same dunder idiom readFrame uses
-        // for __origFontSize) so computeMove can clamp without new plumbing. The
-        // ~PAGE_MIN_OVERLAP_DESIGN_PX design px are converted to a parent ratio
-        // via the live plane scale, so the felt minimum is zoom-independent.
+        // for __origFontSize) so computeMove can clamp without new plumbing.
         const pages = visibleFrameIdsRef.current;
         if (
           pages !== undefined &&
-          r.width > 0 &&
-          r.height > 0 &&
+          width > 0 &&
+          height > 0 &&
           parentId !== undefined &&
           pages.has(String(parentId))
         ) {
-          const plane = designPlaneRef.current?.getBoundingClientRect();
-          const scale = plane !== undefined && plane.width > 0 ? plane.width / designWidth : 1;
           const minScreen = PAGE_MIN_OVERLAP_DESIGN_PX * scale;
           return {
-            width: r.width,
-            height: r.height,
+            width,
+            height,
+            __rotation: rotation,
             __pageClamp: {
-              minX: minScreen / r.width,
-              minY: minScreen / r.height,
+              minX: minScreen / width,
+              minY: minScreen / height,
             } satisfies PageClampSpec,
           } as { width: number; height: number };
         }
-        return { width: r.width, height: r.height };
+        return { width, height, __rotation: rotation } as { width: number; height: number };
       },
     };
   }, []);

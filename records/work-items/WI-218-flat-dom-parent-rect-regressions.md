@@ -55,6 +55,21 @@ top-level 아이템은 정상; **중첩일수록 심함**.
 검증: e2e `nested-resize.spec.ts` 2번째(90° 회전 부모: 보이는 east 핸들=화면 수직, 드래그 시 width 성장; **수정 전엔
 width 불변=0.4 → 회귀 가드**) + 기존 1:1 테스트 + hug-resize 8 + page-group-clamp 3 + weave unit 1368 전부 green.
 
+## 이동(move) 회전 후속 DONE (2026-06-14, 브랜치 `fix/rotated-parent-move`)
+
+회전된 부모 안의 자식을 **드래그-이동**하면 커서를 안 따라오고 부모-로컬 축으로 드리프트(예: 90° 부모에서 화면-오른쪽
+드래그 → 자식이 화면-아래로 이동)하던 문제. 리사이즈와 동일 계열(프레임=부모-로컬 ratio, 화면 델타 미투영).
+
+수정(호스트 국소, 벤더 바인딩 무변경):
+- `parentRectOf`를 scene 기반으로 재작성 — 부모 **EXACT 로컬 박스**(computeScene design px × 플레인 스케일,
+  회전-불변) + **`__rotation`**(부모 절대 회전)을 opaque parent rect로 전달(`__pageClamp` 옆에). bbox(회전 시
+  팽창) 대신 정확 dims. 제스처 시작에 타깃당 1회만 호출(틱당 아님)이라 computeScene 1회 OK.
+- `computeMove`가 `parent.__rotation`으로 화면 델타를 부모-로컬 축으로 역회전 후 ratio 변환. 회전 0 → 항등(공통 경로
+  무변경). (이동 방향엔 부모 회전만 관여 — 아이템 자기 회전은 WI-160 AABB 클램프에만.)
+
+검증: e2e `nested-resize.spec.ts` 3번째(90° 부모 자식 화면-오른쪽 드래그 → 화면-x 추적·y≈0; **수정 전 dx=0,dy=207
+드리프트 → 회귀 가드**) + page-group-clamp 3(회전 WI-160 포함)·page-artboard 무회귀 + weave unit 1368 green.
+
 ## 잔여
 
 - 비-균일 스케일(현재 플레인 aspect-보존이라 균일 가정) 및 회전+aspect-lock 코너의 상호작용은 더 깊은 케이스 —
