@@ -67,9 +67,11 @@ test("setLayout (gap change) re-fits a Hug container (WI-048 #3)", async ({ page
   await exec(page, "weave.frame.setSizing", { itemId: R, sizing: { width: "hug", height: "fixed" }, designWidth: design.width, designHeight: design.height });
   await page.waitForTimeout(100);
   const beforeGap = await frameOf(page, R);
-  // bump the gap, PRESERVING the layout (incl. sizing) like the real toolbar.
+  // Bump the gap as the real toolbar does — author the PX field (gapPx). The gap
+  // is px-pinned (WI-224), so the ratio mirror alone is a no-op; gapPx is what
+  // the engine reads. Preserve the rest of the layout (incl. sizing).
   const spec = await page.evaluate((id: string) => { let l: any; const w = (n: any) => { if (String(n.id) === id) l = n.attrs.layout; for (const c of n.children) w(c); }; w((window as any).__weaveDoc.root); return l; }, R);
-  await exec(page, "weave.frame.setLayout", { itemId: R, layout: { ...spec, gap: 0.08 }, designWidth: design.width, designHeight: design.height });
+  await exec(page, "weave.frame.setLayout", { itemId: R, layout: { ...spec, gapPx: (spec.gapPx ?? 0) + 80 }, designWidth: design.width, designHeight: design.height });
   await page.waitForTimeout(120);
   const afterGap = await frameOf(page, R);
   console.log("gap-refit R before:", JSON.stringify(beforeGap), "after:", JSON.stringify(afterGap));
@@ -103,4 +105,46 @@ test("Hug→Fixed bakes child basis so a later resize keeps child size constant 
   console.log("#2 child abs before:", childAbsBefore, "after:", childAbsAfter);
   // Child keeps its absolute width (no shrink). Pre-fix it collapsed ~4×.
   expect(childAbsAfter).toBeCloseTo(childAbsBefore, 0);
+});
+
+test("WI-224 px-pin: repeated Hug with a gap is STABLE (no growth)", async ({ page }) => {
+  await boot(page);
+  const root = await page.evaluate(() => String((window as any).__weaveDoc.root.id));
+  const R = await add(page, { kind: "frame", containerId: root, frame: { x: 0.05, y: 0.05, width: 0.5, height: 0.4, rotation: 0 } });
+  await exec(page, "weave.frame.setLayout", { itemId: R, layout: { kind: "auto-flex", direction: "row", gap: 0.3 } });
+  for (let i = 0; i < 4; i++) await add(page, { kind: "shape", containerId: R, frame: { x: 0, y: 0, width: 0.1, height: 0.5, rotation: 0 } });
+  const widths: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    await exec(page, "weave.frame.setSizing", { itemId: R, sizing: { width: "hug", height: "fixed" }, designWidth: design.width, designHeight: design.height });
+    await page.waitForTimeout(60);
+    const f: any = await frameOf(page, R);
+    widths.push(f.w);
+  }
+  console.log("gap-stable widths:", JSON.stringify(widths));
+  // pre-fix this DIVERGED (gap re-derived from the growing box); now constant.
+  expect(widths[4]).toBeCloseTo(widths[0], 3);
+});
+
+test("WI-224: moving a Hug container leaves its children unchanged", async ({ page }) => {
+  await boot(page);
+  const root = await page.evaluate(() => String((window as any).__weaveDoc.root.id));
+  const R = await add(page, { kind: "frame", containerId: root, frame: { x: 0.1, y: 0.2, width: 0.6, height: 0.4, rotation: 0 } });
+  await exec(page, "weave.frame.setLayout", { itemId: R, layout: { kind: "auto-flex", direction: "row", gap: 0.01 } });
+  const A = await add(page, { kind: "shape", containerId: R, frame: { x: 0, y: 0, width: 0.15, height: 0.5, rotation: 0 } });
+  await add(page, { kind: "shape", containerId: R, frame: { x: 0, y: 0, width: 0.15, height: 0.5, rotation: 0 } });
+  await exec(page, "weave.frame.setSizing", { itemId: R, sizing: { width: "hug", height: "hug" }, designWidth: design.width, designHeight: design.height });
+  await page.waitForTimeout(80);
+  const r0: any = await frameOf(page, R);
+  const a0: any = await frameOf(page, A);
+  const absBefore = { w: a0.w * r0.w * design.width, h: a0.h * r0.h * design.height };
+  // MOVE only (same w/h, new x/y).
+  await exec(page, "weave.item.update", { itemId: R, attrs: { frame: { x: 0.4, y: 0.5, width: r0.w, height: r0.h, rotation: 0 } } });
+  await page.waitForTimeout(100);
+  const r1: any = await frameOf(page, R);
+  const a1: any = await frameOf(page, A);
+  const absAfter = { w: a1.w * r1.w * design.width, h: a1.h * r1.h * design.height };
+  console.log("move abs before:", JSON.stringify(absBefore), "after:", JSON.stringify(absAfter));
+  // pre-fix the child shrank ~3× on a pure move; now unchanged.
+  expect(absAfter.w).toBeCloseTo(absBefore.w, 0);
+  expect(absAfter.h).toBeCloseTo(absBefore.h, 0);
 });

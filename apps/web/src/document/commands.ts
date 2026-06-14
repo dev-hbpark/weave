@@ -110,6 +110,7 @@ import {
 } from "./dataset/dataset-store.js";
 import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
+import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
 import {
   ALIGN_OPS_ORDER,
   type AlignInput,
@@ -1257,16 +1258,20 @@ export function buildWeaveCommands(
     // return no reflow patches, so the overwrite was invisible there).
     const oldFrame = (child.attrs as { frame?: AgocraftItemFrame }).frame;
     const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
-    const frameChanged =
+    // WI-224 — only a SIZE change (width/height/rotation) re-lays-out the
+    // children; a position-only MOVE does not. A child's size is a ratio of its
+    // parent's SIZE, so moving the parent leaves every child unchanged — they
+    // travel with it. Reflowing on a pure move ran the children through the
+    // engine's ratio adapter and SHRANK them (Hug containers especially, whose
+    // px hug measure must not re-derive on a move).
+    const sizeChanged =
       oldFrame !== undefined &&
       newFrame !== undefined &&
-      (oldFrame.x !== newFrame.x ||
-        oldFrame.y !== newFrame.y ||
-        oldFrame.width !== newFrame.width ||
+      (oldFrame.width !== newFrame.width ||
         oldFrame.height !== newFrame.height ||
         oldFrame.rotation !== newFrame.rotation);
     const extraPatches: ReadonlyArray<Patch> =
-      LAYOUT_FEATURE_ENABLED && frameChanged && oldFrame !== undefined && newFrame !== undefined
+      LAYOUT_FEATURE_ENABLED && sizeChanged && oldFrame !== undefined && newFrame !== undefined
         ? getLayoutEngine().onFrameChanged({
             root: ctx.document.root,
             itemId: child.id,
@@ -3255,105 +3260,90 @@ export function buildWeaveCommands(
         );
       }
       const nextLayout: LayoutSpec = { ...layout, sizing: input.sizing } as LayoutSpec;
-
-      // WI-048 — IMMEDIATE re-fit: recompute the container's Hug box + re-arrange
-      // its subtree right now, against the doc AS IF the new sizing were applied
-      // (mapItemDeep stages it). Without this, setting Hug only flips the attr and
-      // the container keeps its stale box until a child is resized. Needs design
-      // dims (exact path); without them the sizing attr still changes (the box
-      // re-fits on the next reflow).
-      const refitPatches: ReadonlyArray<Patch> =
-        LAYOUT_FEATURE_ENABLED &&
+      const cid = String(child.id);
+      const hasDims =
         typeof input.designWidth === "number" &&
         typeof input.designHeight === "number" &&
         input.designWidth > 0 &&
-        input.designHeight > 0
-          ? refitHugContainer({
-              root: mapItemDeep(ctx.document.root, child.id, (it) => ({
-                ...it,
-                attrs: { ...it.attrs, layout: nextLayout },
-              })),
-              containerId: child.id,
-              designWidth: input.designWidth,
-              designHeight: input.designHeight,
-            })
-          : [];
+        input.designHeight > 0;
 
-      // The re-fit may patch the container's OWN frame (it grew/shrank to its hug
-      // size). Fold that into a SINGLE container patch carrying BOTH the new
-      // layout AND the new frame, with `before` == the ORIGINAL attrs — so undo
-      // restores layout + frame in one clean step (two full-attrs patches on the
-      // same item would clobber each other's undo). Descendant re-arrange patches
-      // pass through untouched (their `before` is the original descendant attrs).
-      const cid = String(child.id);
+      // No design basis ⇒ just flip the sizing attr (the box re-fits on the next
+      // reflow). px-pin + exact re-fit both need a design basis.
+      if (!(LAYOUT_FEATURE_ENABLED && hasDims)) {
+        return ok(undefined, [
+          {
+            type: "item.attrs",
+            itemId: child.id,
+            before: child.attrs,
+            after: { ...child.attrs, layout: nextLayout },
+          } as Patch,
+        ]);
+      }
+      const dW = input.designWidth as number;
+      const dH = input.designHeight as number;
+
+      // WI-224 — PIN px from the CURRENT geometry (BEFORE a Hug re-fit shrinks the
+      // box): each direct child gets a stable `sizePx` + explicit basis/crossSize,
+      // the container gets `gapPx`/`paddingPx`. This breaks the ratio↔px
+      // circularity that made the container GROW (gap re-derived from its own
+      // growing size), SHRINK on move, and drift — the engine reads the pinned px
+      // as authoritative. Subsumes the prior hug→fixed basis bake (pin sets an
+      // explicit basis from the current frame on every sizing change).
+      const pinned = pinAutoLayoutPx(ctx.document, child, nextLayout, dW, dH);
+
+      // Re-fit the Hug box against the PINNED doc (stable px) so the arrange is
+      // exact + non-circular.
+      const refitPatches = refitHugContainer({
+        root: stagePinned(ctx.document.root, child.id, pinned, mapItemDeep),
+        containerId: child.id,
+        designWidth: dW,
+        designHeight: dH,
+      });
+
       const patchItemId = (p: Patch): string | undefined =>
         "itemId" in p ? String((p as { itemId: unknown }).itemId) : undefined;
-      const containerRefit = refitPatches.find((p) => patchItemId(p) === cid) as
-        | { after: { frame?: ItemFrame } }
-        | undefined;
-      const descPatches = refitPatches.filter((p) => patchItemId(p) !== cid);
+      const directIds = new Set(child.children.map((c) => String(c.id)));
+      const refitFrameOf = new Map<string, ItemFrame>();
+      const grandchildPatches: Patch[] = [];
+      let containerFrame: ItemFrame | undefined;
+      for (const p of refitPatches) {
+        const pid = patchItemId(p);
+        const frame = (p as { after?: { frame?: ItemFrame } }).after?.frame;
+        if (pid === cid) containerFrame = frame;
+        else if (pid !== undefined && directIds.has(pid) && frame !== undefined)
+          refitFrameOf.set(pid, frame);
+        else grandchildPatches.push(p); // nested descendant — staged `before` == original
+      }
+
+      // Container: pinned layout (sizing + gap/padding px) + re-fit frame, one
+      // patch with `before` == original (clean undo).
       const containerPatch: Patch = {
         type: "item.attrs",
         itemId: child.id,
         before: child.attrs,
         after: {
           ...child.attrs,
-          layout: nextLayout,
-          ...(containerRefit?.after.frame !== undefined ? { frame: containerRefit.after.frame } : {}),
+          layout: pinned.layout,
+          ...(containerFrame !== undefined ? { frame: containerFrame } : {}),
         },
       } as Patch;
 
-      // WI-048 #2 — Hug → Fixed BAKE: when an axis flips hug→fixed, freeze each
-      // flex child's CURRENT frame ratio into its policy (basis on the layout's
-      // MAIN axis, crossSize on the CROSS). Hug arranged the children to FILL the
-      // hugged box (e.g. frame 0.49) but left their `basis` at the authored value
-      // (0.12); the Fixed-resize reflow reads `basis`, so WITHOUT the bake the
-      // children snap back to the stale basis and SHRINK on the next resize. Flex
-      // only — grid placement has no basis.
-      const bakePatches: Patch[] = [];
-      const flexDir =
-        layout.kind === "auto-flex"
-          ? (layout as { direction?: "row" | "column" }).direction
-          : undefined;
-      if (flexDir !== undefined) {
-        const oldSizing: AxisSizingPair =
-          (layout as { sizing?: AxisSizingPair }).sizing ?? { width: "fixed", height: "fixed" };
-        const mainAxis: "width" | "height" = flexDir === "row" ? "width" : "height";
-        const crossAxis: "width" | "height" = flexDir === "row" ? "height" : "width";
-        const bakeMain = oldSizing[mainAxis] === "hug" && input.sizing[mainAxis] === "fixed";
-        const bakeCross = oldSizing[crossAxis] === "hug" && input.sizing[crossAxis] === "fixed";
-        if (bakeMain || bakeCross) {
-          for (const c of child.children) {
-            const pol = (c.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild;
-            if (pol !== undefined && pol.kind !== "auto-flex") continue; // grid child
-            const f = (c.attrs as { frame?: ItemFrame }).frame;
-            if (f === undefined) continue;
-            const flexPol = pol?.kind === "auto-flex" ? pol : undefined;
-            const next = createAutoFlexChildPolicy({
-              ...(flexPol !== undefined
-                ? {
-                    grow: flexPol.grow,
-                    shrink: flexPol.shrink,
-                    basis: flexPol.basis,
-                    ...(flexPol.alignSelf !== undefined ? { alignSelf: flexPol.alignSelf } : {}),
-                    ...(flexPol.crossSize !== undefined ? { crossSize: flexPol.crossSize } : {}),
-                    ...(flexPol.sizePx !== undefined ? { sizePx: flexPol.sizePx } : {}),
-                  }
-                : {}),
-              ...(bakeMain ? { basis: f[mainAxis] } : {}),
-              ...(bakeCross ? { crossSize: f[crossAxis] } : {}),
-            });
-            bakePatches.push({
-              type: "item.layoutChild",
-              itemId: c.id,
-              before: pol,
-              after: next,
-            } as Patch);
-          }
-        }
+      // Each direct child: ONE patch merging its pinned policy + re-fit frame,
+      // `before` == original attrs.
+      const childPatches: Patch[] = [];
+      for (const c of child.children) {
+        const pol = pinned.childPolicies.get(String(c.id));
+        if (pol === undefined) continue;
+        const frame = refitFrameOf.get(String(c.id));
+        childPatches.push({
+          type: "item.attrs",
+          itemId: c.id,
+          before: c.attrs,
+          after: { ...c.attrs, layoutChild: pol, ...(frame !== undefined ? { frame } : {}) },
+        } as Patch);
       }
 
-      return ok(undefined, [containerPatch, ...descPatches, ...bakePatches]);
+      return ok(undefined, [containerPatch, ...childPatches, ...grandchildPatches]);
     },
   };
 
