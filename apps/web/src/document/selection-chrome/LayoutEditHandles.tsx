@@ -283,10 +283,17 @@ function LayoutLine({
         // boundary follows the cursor 1:1 (no grow children); without it the common
         // 2-child case moves at half the cursor speed.
         const factor = line.boundaryIndex + 0.5;
-        const nextGap = layout.gap + deltaDesign / Math.max(1, frameMain) / factor;
+        // WI-043 P5 — author a FIXED-px gap (Figma). The pointer delta is design
+        // px, so gapPx grows by deltaDesign/factor directly. A ratio mirror
+        // (gapPx ÷ the frame's current main px) keeps the immediate (no-dims)
+        // reflow correct; on a later container resize the engine reads gapPx so
+        // the gap stays fixed px instead of scaling with the container.
+        const gapPxNow = layout.gapPx ?? layout.gap * frameMain;
+        const nextGapPx = Math.max(0, gapPxNow + deltaDesign / factor);
+        const nextGapRatio = frameMain > 0 ? nextGapPx / frameMain : 0;
         editor.exec("weave.frame.setLayout", {
           itemId: frameId,
-          layout: setFlexGap(layout, nextGap),
+          layout: { ...setFlexGap(layout, nextGapRatio), gapPx: nextGapPx },
         });
         return;
       }

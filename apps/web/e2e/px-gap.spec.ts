@@ -12,6 +12,7 @@ type W = {
   __weaveEditor: { exec: (n: string, i: unknown) => unknown };
   __weaveDoc: { root: { id: string | number; children: N[] } };
   __weaveDesign?: { width: number; height: number };
+  __weaveVm?: { itemSelection: { set: (x: unknown) => void } };
 };
 type N = {
   id: string | number;
@@ -142,6 +143,68 @@ test("auto-flex fixed-px gap stays constant in design px across container sizes"
   const msg = `gap@0.5=${wide}px gap@0.25=${narrow}px (expected ≈40 both)`;
   expect(wide, msg).toBeCloseTo(40, 0); // fixed px, not ratio
   expect(narrow, msg).toBeCloseTo(40, 0); // SAME px at half the width
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
+
+test("P5: dragging the flex gap line authors a fixed-px gap (gapPx)", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  const F = await addFrame(page, rootId, { x: 0.1, y: 0.2, width: 0.4, height: 0.3, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: F,
+    layout: { kind: "auto-flex", direction: "row" },
+  });
+  await addFrame(page, F, { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 });
+  await addFrame(page, F, { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 });
+
+  // Select F → the on-canvas layout-edit (gap line) handle mounts.
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, F);
+
+  const gapPxOf = () =>
+    page.evaluate((id) => {
+      let g: number | undefined;
+      const walk = (n: N & { attrs: { layout?: { gapPx?: number } } }) => {
+        if (String(n.id) === id) g = n.attrs.layout?.gapPx;
+        for (const c of n.children) walk(c as never);
+      };
+      walk((window as unknown as W).__weaveDoc.root as never);
+      return g;
+    }, F);
+
+  expect(await gapPxOf()).toBeUndefined(); // no px gap authored yet
+
+  const line = page.locator('[data-testid^="layout-line-"]').first();
+  await expect.poll(() => line.count()).toBeGreaterThan(0);
+  const box = await line.boundingBox();
+  if (box === null) throw new Error("no gap line");
+
+  // Drag the (vertical, row) gap line right → the gap widens.
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 40, cy, { steps: 10 });
+  await page.mouse.up();
+
+  await page.waitForFunction((id) => {
+    let g: number | undefined;
+    const walk = (n: N & { attrs: { layout?: { gapPx?: number } } }) => {
+      if (String(n.id) === id) g = n.attrs.layout?.gapPx;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return typeof g === "number" && g > 0;
+  }, F);
+
+  const gp = await gapPxOf();
+  expect(gp ?? 0, `gapPx=${gp}`).toBeGreaterThan(0); // authored as fixed px
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
