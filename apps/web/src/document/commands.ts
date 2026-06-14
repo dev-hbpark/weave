@@ -2752,9 +2752,19 @@ export function buildWeaveCommands(
                 attrs: { ...container.attrs, layout: effLayout } as AgocraftItem["attrs"],
                 children: pendingChildren,
               };
+              // Strip the SOURCE's per-child policy: a copied item carries the
+              // cell / slot of the item it was copied from, and onChildAdd keeps
+              // a same-paradigm policy as-is — which would place the paste back on
+              // the source's cell (overlap). Clearing it makes onChildAdd assign a
+              // FRESH placement (grid → next free cell, flex → default slot).
+              const srcItem = p.item as unknown as AgocraftItem;
+              const newChild: AgocraftItem = {
+                ...srcItem,
+                attrs: { ...srcItem.attrs, layoutChild: undefined } as AgocraftItem["attrs"],
+              };
               const res = engine.onChildAdd({
                 parent: syntheticParent,
-                newChild: p.item as unknown as AgocraftItem,
+                newChild,
                 // paste into a FULL auto-grid grows its tracks so the item lands
                 // in its own cell instead of stacking onto the last one.
                 growToFit: true,

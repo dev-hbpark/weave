@@ -12,6 +12,8 @@ import type {
 } from "@agocraft/core";
 import {
   CapabilityRegistryToken,
+  createAutoGridChildPolicy as makeGridChildPolicy,
+  createAutoGridSpec as makeGridSpec,
   createCapabilityRegistry,
   createUuidV7Generator,
   defaultClock,
@@ -19,6 +21,7 @@ import {
   FILL_UNIT_KIND,
   IdGeneratorToken,
   itemId as makeItemId,
+  trackFr as makeTrackFr,
 } from "@agocraft/core";
 import { describe, expect, it, vi } from "vitest";
 import { nn } from "../lib/nn.js";
@@ -3085,6 +3088,117 @@ describe("weave.items.group (WI-185 ⑭)", () => {
     const empty = groupCmd().run(makeGroupCtx(), { itemIds: [] });
     expect(empty.ok).toBe(false);
     if (!empty.ok) expect(empty.error.code).toBe("empty-input");
+  });
+});
+
+// WI-224 — paste honors the destination layout's add-rule (routes through the
+// engine's onChildAdd instead of the kit's stacking frame).
+describe("weave.clipboard.paste — layout add-rule placement (WI-224)", () => {
+  const META9 = { createdAt: META_DATE, updatedAt: META_DATE, schemaVersion: 9 };
+  const cell = (id: string, col: number, row: number): AgocraftItem =>
+    ({
+      id: makeItemId(id),
+      kind: "frame",
+      attrs: {
+        frame: { x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0 },
+        layoutChild: makeGridChildPolicy({ column: col, columnSpan: 1, row, rowSpan: 1 }),
+      },
+      units: [],
+      children: [],
+      meta: { ...META9 },
+    }) as unknown as AgocraftItem;
+
+  function makeFullGridCtx(): CommandContext {
+    // A full 2×2 auto-grid (4 cells occupied) at root.
+    const gridFrame = {
+      id: "grid-1",
+      kind: "frame",
+      attrs: {
+        frame: FULL_FRAME,
+        layout: makeGridSpec({
+          columns: [makeTrackFr(1), makeTrackFr(1)],
+          rows: [makeTrackFr(1), makeTrackFr(1)],
+        }),
+      },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const weave: WeaveDocument = {
+      id: "doc-grid",
+      title: "Grid",
+      items: [gridFrame],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    let doc = toAgocraftDocument(weave);
+    for (const [id, col, row] of [
+      ["c0", 1, 1],
+      ["c1", 2, 1],
+      ["c2", 1, 2],
+      ["c3", 2, 2],
+    ] as const) {
+      doc = addChild(doc, cell(id, col, row), "grid-1");
+    }
+    const idGen = createUuidV7Generator(defaultClock, defaultRandom);
+    return {
+      document: doc,
+      resolve: ((token: Token<unknown>) =>
+        token === IdGeneratorToken ? idGen : null) as CommandContext["resolve"],
+      skipRelations: false,
+    };
+  }
+
+  it("places a paste into a FULL grid in its OWN new cell (grows tracks) — never the source overlap frame", () => {
+    // ONE command set so copy + paste share the clipboard transport closure.
+    const cmds = buildWeaveCommands(spyTargets());
+    const copy = nn(cmds.find((c) => c.name === "weave.clipboard.copy"));
+    const paste = nn(cmds.find((c) => c.name === "weave.clipboard.paste"));
+    const ctx = makeFullGridCtx();
+
+    const copyRes = copy.run(ctx, { itemIds: ["c0"] });
+    expect(copyRes.ok).toBe(true);
+
+    const pasteRes = paste.run(ctx, {
+      containerId: "grid-1",
+      containerSizePx: { width: 800, height: 600 },
+    });
+    expect(pasteRes.ok).toBe(true);
+    if (!pasteRes.ok) return;
+
+    // The pasted item is created under the grid…
+    const create = pasteRes.patches.find((p) => p.type === "item.create");
+    if (create === undefined || create.type !== "item.create") throw new Error("no item.create");
+    expect(String(create.parentId)).toBe("grid-1");
+
+    // …with a GRID cell policy (routed through onChildAdd), not the bare
+    // stacking frame — and that cell is the next free one (row 3, the grid grew).
+    const policy = (create.item.attrs as { layoutChild?: { kind?: string; row?: number } })
+      .layoutChild;
+    expect(policy?.kind).toBe("auto-grid");
+    expect(policy?.row).toBe(3); // 2×2 full → grew to 2×3, new item in the fresh row
+
+    // The grid's track count grew (parentPatch / item.layout), proving it didn't
+    // stack the paste onto the last existing cell.
+    const grew = pasteRes.patches.find(
+      (p) => p.type === "item.layout" && String(p.itemId) === "grid-1",
+    );
+    expect(grew).toBeDefined();
+  });
+
+  it("leaves a paste into the ROOT canvas as free placement (no grid policy)", () => {
+    const cmds = buildWeaveCommands(spyTargets());
+    const copy = nn(cmds.find((c) => c.name === "weave.clipboard.copy"));
+    const paste = nn(cmds.find((c) => c.name === "weave.clipboard.paste"));
+    const ctx = makeFullGridCtx();
+    copy.run(ctx, { itemIds: ["grid-1"] });
+    const pasteRes = paste.run(ctx, { containerSizePx: { width: 800, height: 600 } });
+    expect(pasteRes.ok).toBe(true);
+    if (!pasteRes.ok) return;
+    const create = pasteRes.patches.find((p) => p.type === "item.create");
+    if (create === undefined || create.type !== "item.create") throw new Error("no item.create");
+    expect(String(create.parentId)).toBe(String(ctx.document.root.id));
+    // No layout re-stamp at the root (free placement).
+    expect((create.item.attrs as { layoutChild?: unknown }).layoutChild).toBeUndefined();
   });
 });
 
