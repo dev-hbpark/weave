@@ -262,3 +262,70 @@ test("P3: dragging a child's resize HANDLE grows its Hug frame (real pipeline)",
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("P3 ①: toolbar Fixed/Hug segment sets a frame's container sizing", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  // An auto-flex frame with one child (Hug needs ≥1 child).
+  const F = await addFrame(page, rootId, { x: 0.2, y: 0.2, width: 0.3, height: 0.2, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: F,
+    layout: { kind: "auto-flex", direction: "row" },
+  });
+  await page.waitForFunction((id) => {
+    let has = false;
+    const walk = (n: N & { attrs: { layout?: unknown } }) => {
+      if (String(n.id) === id) has = (n.attrs as { layout?: unknown }).layout !== undefined;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return has;
+  }, F);
+  await addFrame(page, F, { x: 0, y: 0, width: 1, height: 1, rotation: 0 });
+
+  // Select the FRAME → the contextual toolbar + container-sizing controls mount.
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, F);
+
+  await page.locator('[data-testid="frame-sizing-controls"]').first().waitFor();
+
+  const sizingOf = (id: string) =>
+    page.evaluate((fid) => {
+      let s: { width?: string; height?: string } | undefined;
+      const walk = (
+        n: N & { attrs: { layout?: { sizing?: { width?: string; height?: string } } } },
+      ) => {
+        if (String(n.id) === fid) s = n.attrs.layout?.sizing;
+        for (const c of n.children) walk(c as never);
+      };
+      walk((window as unknown as W).__weaveDoc.root as never);
+      return s ?? null;
+    }, id);
+
+  // Starts unset (defaults to fixed/fixed).
+  expect(await sizingOf(F)).toBeNull();
+
+  // Click the WIDTH "내용맞춤" (Hug) segment.
+  await page
+    .locator('[aria-label="Container width sizing"]')
+    .locator('[aria-label="내용맞춤"]')
+    .click();
+  await page.waitForFunction((id) => {
+    let w: string | undefined;
+    const walk = (n: N & { attrs: { layout?: { sizing?: { width?: string } } } }) => {
+      if (String(n.id) === id) w = n.attrs.layout?.sizing?.width;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return w === "hug";
+  }, F);
+  expect((await sizingOf(F))?.width).toBe("hug");
+  expect((await sizingOf(F))?.height).toBe("fixed"); // other axis carried forward
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});

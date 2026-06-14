@@ -25,6 +25,7 @@ import type { JSX } from "react";
 import { nn } from "../../lib/nn.js";
 import type { ItemSnapshot } from "./multi-edit.js";
 import { FlexChildSection, GridChildSection } from "./sections/flex-child-section.js";
+import { FrameSizingSection } from "./sections/frame-sizing-section.js";
 import { toolbarSectionRegistry } from "./sections/index.js";
 import { LinkSection } from "./sections/link-section.js";
 
@@ -86,6 +87,9 @@ export function ContextualToolbar({
         onEditMediaSrc={onEditMediaSrc}
         onEditShapeFill={onEditShapeFill}
       />
+      {/* WI-042 / DR-055 — per-CONTAINER sizing (Fixed/Hug); shown only when the
+          single selected frame HAS an auto-flex layout. */}
+      <FrameSizingSection editor={editor} items={selectedItems} document={document} />
       {/* Cross-kind per-child layout controls — shown only when the single
           selected item is a child of an auto-flex / auto-grid frame. Each
           renders nothing for the other paradigm (or any non-layout parent). */}
