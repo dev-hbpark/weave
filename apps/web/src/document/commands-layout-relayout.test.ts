@@ -641,7 +641,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       return { grid, children };
     }
 
-    it("grows tracks (2×2 → 3 columns) and persists an item.layout patch when the grid would overflow", () => {
+    it("grows ROWS (2×2 → 2×3, columns preserved) and persists an item.layout patch when the grid would overflow", () => {
       const { grid, children } = full2x2();
       const ctx = makeCtxChildren(grid, children);
       const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
@@ -657,15 +657,16 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       const layoutPatches = result.patches.filter((p) => p.type === "item.layout");
       expect(layoutPatches).toHaveLength(1);
       const after = (layoutPatches[0] as { after?: AutoGridSpec }).after;
-      // 5 children → ⌈√5⌉ = 3 columns × 2 rows.
-      expect(after?.columns).toHaveLength(3);
-      expect(after?.rows).toHaveLength(2);
+      // WI-044/DR-057 — column count is PRESERVED; the grid grows a ROW.
+      // 5 children in a 2-col grid → 2 columns × ⌈5/2⌉ = 3 rows.
+      expect(after?.columns).toHaveLength(2);
+      expect(after?.rows).toHaveLength(3);
 
-      // The new child lands in a REAL free cell (3,1) → x = 2/3, NOT stacked on
-      // the last existing cell.
+      // The new child (5th, index 4) lands in a REAL free cell at row 2, col 0
+      // (row-major) → x = 0, y = 2/3 — NOT stacked on the last existing cell.
       const staged = createdFrame(result.patches);
-      expect(staged?.x).toBeCloseTo(2 / 3, 5);
-      expect(staged?.width).toBeCloseTo(1 / 3, 5);
+      expect(staged?.x).toBeCloseTo(0, 5);
+      expect(staged?.width).toBeCloseTo(1 / 2, 5);
     });
 
     it("does NOT grow (or emit item.layout) without the agent flag — manual adds keep their track count", () => {
@@ -717,11 +718,12 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
   "weave.item.add — #1 cascade relayout into nested containers",
   () => {
     it("reflows the GRANDCHILDREN of a nested flex container reshaped by the add", () => {
-      // Outer grid full at 2×2; cell (1,1) is a nested flex-COLUMN container whose
+      // Outer grid full at 2×2; cell (1,1) is a nested flex-ROW container whose
       // children carry an intrinsic crossSize. Adding a 5th child grows the grid to
-      // 3 columns → the nested container's WIDTH (its flex cross axis) shrinks
-      // 0.5 → 1/3, so its children's cross ratios must be recomputed. Without the
-      // cascade those grandchildren stay sized for the old 0.5-wide box.
+      // 2×3 (WI-044 — columns PRESERVED, a ROW is added) → the nested container's
+      // HEIGHT (its flex cross axis, since direction:row) shrinks 0.5 → 1/3, so its
+      // children's cross ratios must be recomputed. Without the cascade those
+      // grandchildren stay sized for the old 0.5-tall box.
       const grid = createAutoGridSpec({
         columns: [trackFr(1), trackFr(1)],
         rows: [trackFr(1), trackFr(1)],
@@ -729,7 +731,7 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
         align: "stretch",
       });
       const nestedFlex = createAutoFlexSpec({
-        direction: "column",
+        direction: "row",
         justify: "start",
         align: "start",
       });
@@ -785,15 +787,16 @@ describe.runIf(WI020_LAYOUT_VARIANTS_ENABLED)(
       // …and the cascade reflowed F1's CHILDREN against its new (narrower) box.
       expect(attrsById.has("gc1")).toBe(true);
       expect(attrsById.has("gc2")).toBe(true);
-      // The grandchild's stored cross (width) ratio was 0.8, sized for F1's old
-      // 0.5-wide box. The cascade recomputed it against F1's new (1/3-wide) box, so
-      // it must NO LONGER be the stale 0.8 — that recompute is the bug fix. (Here
-      // the preserved absolute cross overflows the narrower box and clamps to 1.0.)
+      // The grandchild's stored cross (HEIGHT, direction:row) ratio was 0.8, sized
+      // for F1's old 0.5-tall box. The cascade recomputed it against F1's new
+      // (1/3-tall) box, so it must NO LONGER be the stale 0.8 — that recompute is
+      // the bug fix. (The preserved absolute cross overflows the shorter box and
+      // clamps to 1.0.)
       const gc1Frame = patchFrame(nn(attrsById.get("gc1")));
       expect(gc1Frame).toBeDefined();
-      expect(nn(gc1Frame).width).not.toBeCloseTo(0.8, 5);
-      expect(nn(gc1Frame).width).toBeGreaterThan(0);
-      expect(nn(gc1Frame).width).toBeLessThanOrEqual(1);
+      expect(nn(gc1Frame).height).not.toBeCloseTo(0.8, 5);
+      expect(nn(gc1Frame).height).toBeGreaterThan(0);
+      expect(nn(gc1Frame).height).toBeLessThanOrEqual(1);
     });
 
     it("is a NO-OP when the reshaped siblings are leaves (no nested containers)", () => {
