@@ -1,5 +1,10 @@
 # DR-design-031 — 패딩 + 그리드 gap authoring 핸들
 
+> **Refined by DR-design-033** (2026-06-14): "그립이 flat/미완성" 인정분을 마감.
+> GapGrip에 elevation shadow(`0 1px 4px rgba(0,0,0,0.22)`, resize 핸들과 parity)
+> + `borderRadius: 2` 추가, gap/track 라인 opacity 0.55→0.42, padding dash
+> 0.7→0.6 — 그립=primary 타깃 / 라인=secondary guide 위계 확립. 색/토큰/기하 무변경.
+
 ## Metadata
 
 | Field | Value |

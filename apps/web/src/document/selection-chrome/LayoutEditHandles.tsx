@@ -39,6 +39,19 @@ import {
 
 const LINE_THICK = 3; // hit + visual thickness (screen px)
 const GRIP_SIZE = 12; // gap-grip diamond size (screen px) — DR-design-031
+// DR-design-033 — minimum screen-px inset a padding edge is drawn at. A ~0
+// padding edge would otherwise sit ON the frame edge (over the solid selection
+// ring) and produce the "외곽 점선과 실선이 겹쳐서 잘 안 보임" fringe. We instead
+// pin it just INSIDE the ring (and clear of the corner resize handles) so it
+// stays a grabbable handle even at 0 padding — dragging still authors from the
+// live cursor, so the small resting offset costs nothing functionally.
+const MIN_PADDING_EDGE_INSET_PX = 6;
+// DR-design-033 — column gap grips ride a lane this far below the top edge; row
+// gap grips a lane this far right of the left edge. Keeping the two axes in
+// disjoint lanes (instead of both at the cross-centre) means a column-gap and a
+// row-gap diamond can never stack on the same point — each stays independently
+// visible + clickable, which the centred placement broke on symmetric grids.
+const GRIP_LANE_PX = 18;
 /** 4-side px padding (matches core FlexPadding / GridPadding shape). */
 type Pad4Px = { top: number; right: number; bottom: number; left: number };
 
@@ -220,18 +233,29 @@ interface PaddingEdgeSpec {
   readonly crossLen: number;
 }
 
-/** The 4 padding edges of a flex/grid frame, at the current padded inset. */
+/** The 4 padding edges of a flex/grid frame, at the current padded inset.
+ *  DR-design-033 — each side's inset is clamped to ≥ MIN_PADDING_EDGE_INSET_PX
+ *  (screen px) so a ~0 padding edge renders just INSIDE the selection ring
+ *  (never on it) and clear of the corner resize handles, staying grabbable. The
+ *  cross-axis extent uses the same clamped insets so the line never reaches the
+ *  corners. Drag math reads the live cursor, so this resting offset is visual
+ *  only. */
 function paddingEdges(fs: FrameScreen, pad: LayoutFrameInfo["pad"]): PaddingEdgeSpec[] {
-  const innerTop = fs.top + pad.t * fs.h;
-  const innerH = Math.max(0, 1 - pad.t - pad.b) * fs.h;
-  const innerLeft = fs.left + pad.l * fs.w;
-  const innerW = Math.max(0, 1 - pad.l - pad.r) * fs.w;
+  const m = MIN_PADDING_EDGE_INSET_PX;
+  const leftPx = Math.max(m, pad.l * fs.w);
+  const rightPx = Math.max(m, pad.r * fs.w);
+  const topPx = Math.max(m, pad.t * fs.h);
+  const bottomPx = Math.max(m, pad.b * fs.h);
+  const innerTop = fs.top + topPx;
+  const innerH = Math.max(0, fs.h - topPx - bottomPx);
+  const innerLeft = fs.left + leftPx;
+  const innerW = Math.max(0, fs.w - leftPx - rightPx);
   return [
     {
       key: "pad-left",
       side: "left",
       vertical: true,
-      pos: fs.left + pad.l * fs.w,
+      pos: fs.left + leftPx,
       crossStart: innerTop,
       crossLen: innerH,
     },
@@ -239,7 +263,7 @@ function paddingEdges(fs: FrameScreen, pad: LayoutFrameInfo["pad"]): PaddingEdge
       key: "pad-right",
       side: "right",
       vertical: true,
-      pos: fs.left + (1 - pad.r) * fs.w,
+      pos: fs.left + fs.w - rightPx,
       crossStart: innerTop,
       crossLen: innerH,
     },
@@ -247,7 +271,7 @@ function paddingEdges(fs: FrameScreen, pad: LayoutFrameInfo["pad"]): PaddingEdge
       key: "pad-top",
       side: "top",
       vertical: false,
-      pos: fs.top + pad.t * fs.h,
+      pos: fs.top + topPx,
       crossStart: innerLeft,
       crossLen: innerW,
     },
@@ -255,7 +279,7 @@ function paddingEdges(fs: FrameScreen, pad: LayoutFrameInfo["pad"]): PaddingEdge
       key: "pad-bottom",
       side: "bottom",
       vertical: false,
-      pos: fs.top + (1 - pad.b) * fs.h,
+      pos: fs.top + fs.h - bottomPx,
       crossStart: innerLeft,
       crossLen: innerW,
     },
@@ -287,15 +311,23 @@ function gridGapGrips(
   const rowSizes = resolveTrackSizes(spec.rows, spec.rowGap, rowAvail);
   const colB = boundaryOffsets(colSizes, spec.columnGap);
   const rowB = boundaryOffsets(rowSizes, spec.rowGap);
-  const innerCenterY = fs.top + (pad.t + rowAvail / 2) * fs.h;
-  const innerCenterX = fs.left + (pad.l + colAvail / 2) * fs.w;
+  // DR-design-033 — disjoint lanes: column grips hug the TOP, row grips the
+  // LEFT, so a column-gap and a row-gap diamond never stack on the same point
+  // (which happened at the cross-centre for symmetric grids — the user couldn't
+  // tell them apart or grab the lower one). Each axis now sits in its own lane.
+  const innerTopPx = fs.top + pad.t * fs.h;
+  const innerLeftPx = fs.left + pad.l * fs.w;
+  const innerHpx = rowAvail * fs.h;
+  const innerWpx = colAvail * fs.w;
+  const colLaneY = innerTopPx + Math.min(GRIP_LANE_PX, innerHpx / 2);
+  const rowLaneX = innerLeftPx + Math.min(GRIP_LANE_PX, innerWpx / 2);
   colB.forEach((off, i) => {
     grips.push({
       key: `gap-col-${i}`,
       axis: "column",
       boundaryIndex: i,
       cx: fs.left + (pad.l + off) * fs.w,
-      cy: innerCenterY,
+      cy: colLaneY,
     });
   });
   rowB.forEach((off, i) => {
@@ -303,7 +335,7 @@ function gridGapGrips(
       key: `gap-row-${i}`,
       axis: "row",
       boundaryIndex: i,
-      cx: innerCenterX,
+      cx: rowLaneX,
       cy: fs.top + (pad.t + off) * fs.h,
     });
   });
@@ -461,15 +493,20 @@ function LayoutLine({
         height: vertical ? line.crossLen : LINE_THICK,
         transform: vertical ? "translateX(-50%)" : "translateY(-50%)",
         background: "var(--accent, #4f46e5)",
-        opacity: 0.55,
+        // DR-design-033 — the track/gap line is a SECONDARY guide; the diamond
+        // grip is the primary grab target. Softened from 0.55 → 0.42 so the
+        // elevated grip clearly dominates the line.
+        opacity: 0.42,
         border: "none",
         padding: 0,
         margin: 0,
         cursor: vertical ? "col-resize" : "row-resize",
         touchAction: "none",
-        // WI-196 — selection-chrome layer (z 40, same as the SelectionLayer
-        // resize/rotate handles + rubber-band), so contextual menus (z 50) and
-        // the Aku panel (z 48) draw ABOVE these inner-element layout handles.
+        // WI-196 — selection-chrome layer. DR-design-033: the SelectionLayer
+        // ring + resize/rotate handles moved UP to z 43 (top-most non-menu
+        // chrome), so these inner layout lines stay at z 40 and no longer risk
+        // occluding the square resize handles. Menus (z 50) / Aku (z 48) /
+        // toolbar (z 46) still draw above everything here.
         zIndex: 40,
       }}
     />,
@@ -566,13 +603,15 @@ function PaddingEdge({
         backgroundImage: edge.vertical
           ? "repeating-linear-gradient(to bottom, var(--accent, #4f46e5) 0 5px, transparent 5px 9px)"
           : "repeating-linear-gradient(to right, var(--accent, #4f46e5) 0 5px, transparent 5px 9px)",
-        opacity: 0.7,
+        // DR-design-033 — padding dash is a secondary guide; softened
+        // 0.7 → 0.6 to match the track-line guide weight.
+        opacity: 0.6,
         border: "none",
         padding: 0,
         margin: 0,
         cursor: edge.vertical ? "col-resize" : "row-resize",
         touchAction: "none",
-        zIndex: 40, // WI-196 selection-chrome layer
+        zIndex: 40, // WI-196 selection-chrome layer (resize handles at z 43, DR-design-033)
       }}
     />,
     document.body,
@@ -652,8 +691,16 @@ function GapGrip({
         width: GRIP_SIZE,
         height: GRIP_SIZE,
         transform: "translate(-50%, -50%) rotate(45deg)", // diamond
-        background: "var(--surface-1, #fff)",
+        // DR-design-033 — OPAQUE white fill (parity with the square resize
+        // handles' `#ffffff`), not the translucent `--surface-1` glass: a
+        // see-through grip let the track/gap lines cross visibly through it and
+        // read as hollow/unfinished. Solid fill + accent border + elevation
+        // shadow makes it the obvious grab TARGET while the lines stay
+        // secondary guides. radius softens the diamond tips.
+        background: "#ffffff",
         border: "2px solid var(--accent, #4f46e5)",
+        borderRadius: 2,
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.22)",
         padding: 0,
         margin: 0,
         cursor: column ? "col-resize" : "row-resize",
@@ -683,7 +730,9 @@ function LayoutEditHandles({
   const lines = isFlex
     ? flexLines(itemId, fs, info.layout as AutoFlexSpec)
     : gridLines(fs, info.layout as AutoGridSpec, info.pad);
-  // WI-219 — padding edges (both kinds) + grid gap grips (grid only).
+  // WI-219 — padding edges (both kinds) + grid gap grips (grid only). The edges
+  // are always rendered (DR-design-033 — they stay grabbable even at 0 padding;
+  // paddingEdges() pins them just inside the ring so they no longer overlap it).
   const edges = paddingEdges(fs, info.pad);
   const grips = isGrid ? gridGapGrips(fs, info.layout as AutoGridSpec, info.pad) : [];
   return (

@@ -1,5 +1,11 @@
 # DR-design-016 — HoverAffordanceLayer (3-tier hover overlay)
 
+> **Refined by DR-design-033** (2026-06-14): the descendant tier no longer reuses
+> the focal `--hover-affordance-stroke-hovered` token. It now uses its own
+> de-emphasized `--hover-affordance-stroke-descendant` (~55% accent), 1px (was
+> 2px) dashed, with `outlineOffset: -1px` so dense selected grids stay legible
+> against the selection ring. Focal + parent tiers unchanged.
+
 ## Metadata
 
 | Field | Value |

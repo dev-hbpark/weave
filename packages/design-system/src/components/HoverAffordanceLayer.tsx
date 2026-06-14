@@ -96,8 +96,9 @@ const LAYER_STYLE: CSSProperties = {
   width: 0,
   height: 0,
   pointerEvents: "none",
-  // Sits below SelectionLayer (z 40) and MarqueeSelectionLayer (z 42)
-  // so selection chrome paints on top of hover affordance.
+  // Sits below SelectionLayer (z 43 — DR-design-033) and
+  // MarqueeSelectionLayer (z 42) so selection chrome paints on top of hover
+  // affordance.
   zIndex: 35,
 };
 
@@ -191,16 +192,18 @@ export function HoverAffordanceLayer({
           key={rect.id ?? `descendant-${i}-${rect.x}x${rect.y}`}
           data-hover-tier="descendant"
           style={{
-            // Same accent + weight as the focal tier so descendants
-            // read as "part of the same hover target", but DASHED so
-            // the focal hovered (solid + glow) keeps its visual
-            // hierarchy as the primary target. User-confirmed
-            // 2026-05-27. Glow is dropped on purpose — stacking glows
-            // on nested children would create a halo soup; the focal
-            // tier owns the single glow.
+            // DR-design-033 — descendants are a DE-EMPHASIZED guide, not a
+            // co-equal target. Dashed signals "part of the same hover tree",
+            // but its own lower-chroma token (~55% accent) + 1px weight keeps
+            // it quiet, and a negative outlineOffset tucks the stroke INSIDE
+            // each cell so a cell flush to the container edge no longer
+            // straddles / clashes with the selection ring's solid stroke.
+            // The focal hovered tier (full accent, 2px solid + glow) stays the
+            // single primary target. Glow stays dropped here — stacking glows
+            // on nested children would be halo soup. Refines DR-design-016.
             ...tierStyle(rect, host),
-            outline: "2px dashed var(--hover-affordance-stroke-hovered)",
-            outlineOffset: "0px",
+            outline: "1px dashed var(--hover-affordance-stroke-descendant)",
+            outlineOffset: "-1px",
           }}
         />
       ))}
