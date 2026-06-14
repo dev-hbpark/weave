@@ -328,6 +328,54 @@ test("S3: layout-edit line is placed from scene child geometry", async ({ page }
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
 
+// WI-217 S5 — chrome stays glued through a live camera zoom: the SelectionLayer
+// re-reads the design-plane rect each rAF, so after a ctrl+wheel zoom the handle
+// must re-project onto the (now larger) SE corner. Exercises the S3-1 camera
+// projection path under interaction (the canonical FPS specs are networkidle-
+// blocked in this sandbox; this is the functional camera-glue smoke).
+test("S5: selection chrome re-projects correctly through a live zoom", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  await bootstrap(page);
+
+  const id = await addFrame(page, { x: 0.3, y: 0.3, width: 0.25, height: 0.2, rotation: 0 });
+  await page.locator('[data-design-plane="true"]').locator(`[data-frame-id="${id}"]`).click();
+  const se = page.getByRole("button", { name: "Resize se", exact: true }).first();
+  await expect(se).toBeVisible();
+
+  // Plane scale before the zoom (offsetWidth = designWidth, rect.width = scaled).
+  const scaleOf = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('[data-design-plane="true"]') as HTMLElement;
+      return el.getBoundingClientRect().width / el.offsetWidth;
+    });
+  const scaleBefore = await scaleOf();
+
+  // ctrl+wheel zoom-in burst, anchored at the viewport centre.
+  const vp = page.viewportSize();
+  const cx = vp ? vp.width / 2 : 640;
+  const cy = vp ? vp.height / 2 : 360;
+  await page.mouse.move(cx, cy);
+  await page.keyboard.down("Control");
+  for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -240);
+  await page.keyboard.up("Control");
+  await page.waitForFunction((s0) => {
+    const el = document.querySelector('[data-design-plane="true"]') as HTMLElement;
+    return el.getBoundingClientRect().width / el.offsetWidth > s0 * 1.1;
+  }, scaleBefore);
+
+  // After the zoom the handle re-projects onto the SE corner at the NEW scale
+  // (expectedCorner reads the live plane rect, so it tracks the zoom).
+  const exp = await expectedCorner(page, id, 1, 1);
+  const seBox = await se.boundingBox();
+  if (seBox === null) throw new Error("se handle has no box after zoom");
+  const seCenter = { x: seBox.x + seBox.width / 2, y: seBox.y + seBox.height / 2 };
+  expect(Math.hypot(seCenter.x - exp.rotated.x, seCenter.y - exp.rotated.y)).toBeLessThan(12);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
+
 // WI-217 S3 — the right-click layer picker's hit-test now delegates to the
 // engine scene (`computeScene` + `hitTestScene`) behind the same
 // `findFramesAtPoint` signature. Live-confirm the wiring still resolves an
