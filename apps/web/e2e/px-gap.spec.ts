@@ -147,6 +147,83 @@ test("auto-flex fixed-px gap stays constant in design px across container sizes"
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
 
+test("P6: adding a child AFTER a resize keeps the fixed-px gap (onChildAdd parentPx)", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+  const design = await page.evaluate(() => {
+    const d = (window as unknown as W).__weaveDesign;
+    return { w: d?.width ?? 0, h: d?.height ?? 0 };
+  });
+  expect(design.w).toBeGreaterThan(0);
+
+  // Auto-flex row, FIXED 40px gap, two children.
+  const F = await addFrame(page, rootId, { x: 0.1, y: 0.2, width: 0.3, height: 0.2, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: F,
+    layout: { kind: "auto-flex", direction: "row", gapPx: 40 },
+  });
+  await addFrame(page, F, { x: 0, y: 0, width: 0.3, height: 1, rotation: 0 });
+  const B = await addFrame(page, F, { x: 0.3, y: 0, width: 0.3, height: 1, rotation: 0 });
+
+  // Resize F WIDER (pass design dims so the engine reflows with px gap).
+  await exec(page, "weave.item.update", {
+    itemId: F,
+    attrs: { frame: { x: 0.1, y: 0.2, width: 0.6, height: 0.25, rotation: 0 } },
+    designWidth: design.w,
+    designHeight: design.h,
+  });
+  await page.waitForFunction(
+    (id) => {
+      let fw: number | undefined;
+      const walk = (n: N) => {
+        if (String(n.id) === id) fw = n.attrs.frame?.width;
+        for (const c of n.children) walk(c);
+      };
+      walk((window as unknown as W).__weaveDoc.root as unknown as N);
+      return fw !== undefined && Math.abs(fw - 0.6) < 1e-6;
+    },
+    F,
+  );
+
+  // Add a THIRD child to the RESIZED container, passing design dims → the engine
+  // resolves F's NEW absolute box and lays C at the fixed 40px gap (not a ratio
+  // scaled by the bigger container).
+  const before = new Set(await allIds(page));
+  await exec(page, "weave.item.add", {
+    kind: "frame",
+    containerId: F,
+    frame: { x: 0, y: 0, width: 0.3, height: 1, rotation: 0 },
+    designWidth: design.w,
+    designHeight: design.h,
+  });
+  await page.waitForFunction((n) => {
+    const ids: string[] = [];
+    const walk = (x: N) => {
+      ids.push(String(x.id));
+      for (const c of x.children) walk(c);
+    };
+    walk((window as unknown as W).__weaveDoc.root as unknown as N);
+    return ids.length > n;
+  }, before.size);
+  const C = (await allIds(page)).find((x) => !before.has(x));
+  if (C === undefined) throw new Error("no new child");
+
+  // Gap between B and C, converted to DESIGN px (F width 0.6, F is at root).
+  const fW = 0.6;
+  const b = await xframe(page, B);
+  const c = await xframe(page, C);
+  const gapRatioOfF = c.x - (b.x + b.width);
+  const gapDesignPx = gapRatioOfF * fW * design.w;
+  expect(gapDesignPx, `add-after-resize gap=${gapDesignPx}px (expected ≈40)`).toBeCloseTo(40, 0);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
+
 test("P5: dragging the flex gap line authors a fixed-px gap (gapPx)", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));

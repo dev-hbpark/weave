@@ -324,6 +324,11 @@ export interface SetFrameLayoutInput {
   readonly itemId: string;
   /** New `LayoutSpec`, or `undefined` to clear the policy. */
   readonly layout: import("@agocraft/core").LayoutSpec | undefined;
+  /** WI-043 P6 — live design px. When supplied, a FIXED-px gap/padding
+   *  (`gapPx`/`paddingPx`) container lays children at exact px on the paradigm
+   *  switch (the host resolves the frame's absolute box). Omit ⇒ ratio. */
+  readonly designWidth?: number;
+  readonly designHeight?: number;
 }
 
 /** WI-020 / WI-043 — explicit child-policy mutation. Targets
@@ -332,6 +337,10 @@ export interface SetItemLayoutChildInput {
   readonly itemId: string;
   /** New `LayoutChildPolicy`, or `undefined` to clear. */
   readonly policy: import("@agocraft/core").LayoutChildPolicy | undefined;
+  /** WI-043 P6 — live design px. When supplied, the parent re-lays-out with
+   *  FIXED-px gap/padding (the engine resolves the parent box). Omit ⇒ ratio. */
+  readonly designWidth?: number;
+  readonly designHeight?: number;
 }
 
 /** WI-043 — two layout siblings exchange positions (drag-to-swap UX):
@@ -997,10 +1006,27 @@ export function buildWeaveCommands(
         // child + siblings into real cells, and returns the grown spec as
         // `parentPatch`. AGENT-ONLY — only the aku transformInput sets
         // `enforceGridCapacity`; manual toolbar adds keep the author's tracks.
+        // WI-043 P6 — when the host knows the design plane (agent surface passes
+        // design px), resolve the container's ABSOLUTE box so a FIXED-px gap/
+        // padding container lays the new child (+ shifted siblings) at the exact
+        // px gap, not a ratio that scales with the container. Omit ⇒ ratio.
+        const parentBox =
+          typeof input.designWidth === "number" &&
+          typeof input.designHeight === "number" &&
+          input.designWidth > 0 &&
+          input.designHeight > 0
+            ? absoluteFrameBox(
+                ctx.document,
+                String(container.id),
+                input.designWidth,
+                input.designHeight,
+              )
+            : null;
         const result = getLayoutEngine().onChildAdd({
           parent: safeParent,
           newChild: agoItem,
           growToFit: input.enforceGridCapacity === true,
+          ...(parentBox !== null ? { parentPx: { w: parentBox.w, h: parentBox.h } } : {}),
         });
         stagedItem = result.stagedChild as AgocraftItem;
         layoutSiblingPatches = result.siblingPatches;
@@ -3006,7 +3032,7 @@ export function buildWeaveCommands(
     name: "weave.frame.setLayout",
     getEngine: getLayoutEngine,
   });
-  const setFrameLayout: typeof rawSetFrameLayout = {
+  const setFrameLayout: Command<SetFrameLayoutInput, void> = {
     ...rawSetFrameLayout,
     run: (ctx, input) => {
       let layout = normalizeLayoutSpec(input.layout);
@@ -3019,7 +3045,21 @@ export function buildWeaveCommands(
         const frame = findChild(ctx.document, String(input.itemId));
         layout = gridSpecForChildCount(frame?.children.length ?? 0, layout);
       }
-      return rawSetFrameLayout.run(ctx, { ...input, layout });
+      // WI-043 P6 — resolve the frame's absolute box so a FIXED-px gap/padding
+      // spec lays children at exact px on the paradigm switch (not ratio). Omit
+      // ⇒ ratio (no regression for callers that don't pass design dims).
+      const box =
+        typeof input.designWidth === "number" &&
+        typeof input.designHeight === "number" &&
+        input.designWidth > 0 &&
+        input.designHeight > 0
+          ? absoluteFrameBox(ctx.document, String(input.itemId), input.designWidth, input.designHeight)
+          : null;
+      return rawSetFrameLayout.run(ctx, {
+        ...input,
+        layout,
+        ...(box !== null ? { parentPx: { w: box.w, h: box.h } } : {}),
+      });
     },
   };
   const setItemLayoutChild = createSetItemLayoutChildCommand({
