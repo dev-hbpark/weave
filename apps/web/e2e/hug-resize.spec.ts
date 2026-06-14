@@ -612,3 +612,70 @@ test("P4: a Hug auto-GRID grows to its cell content (toolbar Hug + resize, live)
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("P4(px 일원화): a Hug row honors its RATIO gap (derived px, live)", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  // F at width 0.3, an auto-flex row with a RATIO gap (0.05) — NO gapPx authored.
+  const F = await addFrame(page, rootId, { x: 0.2, y: 0.2, width: 0.3, height: 0.2, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: F,
+    layout: { kind: "auto-flex", direction: "row", gap: 0.05 },
+  });
+  await page.waitForFunction((id) => {
+    let has = false;
+    const walk = (n: N & { attrs: { layout?: unknown } }) => {
+      if (String(n.id) === id) has = (n.attrs as { layout?: unknown }).layout !== undefined;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return has;
+  }, F);
+  const A = await addFrame(page, F, { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 });
+  await addFrame(page, F, { x: 0.5, y: 0, width: 0.5, height: 1, rotation: 0 });
+  await exec(page, "weave.frame.setSizing", {
+    itemId: F,
+    sizing: { width: "hug", height: "fixed" },
+  });
+
+  const design = await page.evaluate(() => {
+    const d = (window as unknown as { __weaveDesign?: { width: number; height: number } })
+      .__weaveDesign;
+    return { w: d?.width ?? 0, h: d?.height ?? 0 };
+  });
+  expect(design.w).toBeGreaterThan(0);
+
+  // Resize A to 300px. The Hug width must include the gap DERIVED from the ratio
+  // gap × F's current px width (0.05 × 0.3·designW). B has no authored content (0).
+  //   F.width = (300 + gapPx) / designW = 300/designW + 0.05·0.3 = 300/designW + 0.015.
+  await exec(page, "weave.item.resizeHug", {
+    itemId: A,
+    sizePx: { w: 300, h: 40 },
+    designWidth: design.w,
+    designHeight: design.h,
+  });
+  const expected = 300 / design.w + 0.015;
+  await page.waitForFunction(
+    ({ id, target }) => {
+      let w: number | undefined;
+      const walk = (n: N) => {
+        if (String(n.id) === id) w = n.attrs.frame?.width;
+        for (const c of n.children) walk(c);
+      };
+      walk((window as unknown as W).__weaveDoc.root as unknown as N);
+      return w !== undefined && Math.abs(w - target) < 2e-3;
+    },
+    { id: F, target: expected },
+  );
+
+  const fw = (await findFrame(page, F)).width ?? 0;
+  const msg = `F.width=${fw} expected≈${expected} (gap honored; NOT ${300 / design.w})`;
+  expect(fw, msg).toBeCloseTo(expected, 2); // ratio gap derived to px
+  expect(fw, msg).toBeGreaterThan(300 / design.w + 0.005); // strictly more than no-gap
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
