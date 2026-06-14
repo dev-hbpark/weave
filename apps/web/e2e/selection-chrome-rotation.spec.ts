@@ -121,10 +121,11 @@ async function addFrame(
 async function expectedCorner(
   page: import("@playwright/test").Page,
   frameId: string,
-  corner: "se" | "nw",
+  signX: number,
+  signY: number,
 ): Promise<{ rotated: { x: number; y: number }; aabb: { x: number; y: number } }> {
   return await page.evaluate(
-    ({ frameId, corner }) => {
+    ({ frameId, signX, signY }) => {
       type Frame = { x: number; y: number; width: number; height: number; rotation: number };
       type Node = {
         id: string | number;
@@ -156,9 +157,8 @@ async function expectedCorner(
       const cy = (f.y + f.height / 2) * dh;
       const hw = (f.width * dw) / 2;
       const hh = (f.height * dh) / 2;
-      const sign = corner === "se" ? { x: 1, y: 1 } : { x: -1, y: -1 };
-      const lx = sign.x * hw;
-      const ly = sign.y * hh;
+      const lx = signX * hw;
+      const ly = signY * hh;
       const cos = Math.cos(f.rotation);
       const sin = Math.sin(f.rotation);
       const rx = cx + lx * cos - ly * sin;
@@ -168,7 +168,7 @@ async function expectedCorner(
         aabb: { x: r.left + (cx + lx) * sx, y: r.top + (cy + ly) * sy },
       };
     },
-    { frameId, corner },
+    { frameId, signX, signY },
   );
 }
 
@@ -186,7 +186,7 @@ test("S3: selection handles sit on the (rotation-aware) scene corners", async ({
   const seA = page.getByRole("button", { name: "Resize se", exact: true }).first();
   await expect(seA).toBeVisible();
 
-  const expA = await expectedCorner(page, idA, "se");
+  const expA = await expectedCorner(page, idA, 1, 1);
   const seABox = await seA.boundingBox();
   if (seABox === null) throw new Error("se handle (A) has no box");
   const seACenter = { x: seABox.x + seABox.width / 2, y: seABox.y + seABox.height / 2 };
@@ -241,7 +241,7 @@ test("S3: selection handles sit on the (rotation-aware) scene corners", async ({
   const seB = page.getByRole("button", { name: "Resize se", exact: true }).first();
   await expect(seB).toBeVisible();
 
-  const expB = await expectedCorner(page, idB, "se");
+  const expB = await expectedCorner(page, idB, 1, 1);
   const seBBox = await seB.boundingBox();
   if (seBBox === null) throw new Error("se handle (B) has no box");
   const seBCenter = { x: seBBox.x + seBBox.width / 2, y: seBBox.y + seBBox.height / 2 };
@@ -255,6 +255,75 @@ test("S3: selection handles sit on the (rotation-aware) scene corners", async ({
     20,
   );
   expect(distAabb).toBeGreaterThan(15);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
+
+// WI-217 S3 — the corner-radius grip's screen geometry now comes from the scene
+// bus + design-plane projection (`boxGeomFromScene`), not the item's DOM box.
+// Confirm the top-right grip sits on the ROTATED top-right corner (inset inward).
+test("S3: corner-radius grip follows the rotated corner via the scene bus", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  await bootstrap(page);
+
+  const id = await addFrame(page, { x: 0.45, y: 0.4, width: 0.24, height: 0.18, rotation: 0.5 });
+  await page.locator('[data-design-plane="true"]').locator(`[data-frame-id="${id}"]`).click();
+
+  const grip = page.getByTestId("corner-radius-handle-tr");
+  await expect(grip).toBeVisible();
+  const gBox = await grip.boundingBox();
+  if (gBox === null) throw new Error("corner-radius grip has no box");
+  const gCenter = { x: gBox.x + gBox.width / 2, y: gBox.y + gBox.height / 2 };
+
+  // TR corner = signs (+x, -y). The grip is inset ~16px inward along the diagonal,
+  // so allow generous tolerance, but it must hug the ROTATED corner and be clearly
+  // off the axis-aligned one.
+  const tr = await expectedCorner(page, id, 1, -1);
+  const distRotated = Math.hypot(gCenter.x - tr.rotated.x, gCenter.y - tr.rotated.y);
+  const distAabb = Math.hypot(gCenter.x - tr.aabb.x, gCenter.y - tr.aabb.y);
+  expect(Math.hypot(tr.rotated.x - tr.aabb.x, tr.rotated.y - tr.aabb.y)).toBeGreaterThan(20);
+  expect(distRotated).toBeLessThan(30); // ≤ inset (~16) + grip half + slack
+  expect(distRotated).toBeLessThan(distAabb);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
+
+// WI-217 S3 — layout-edit boundary lines are placed from the scene's direct-child
+// geometry (`childBoxesFromScene` + `frameScreenFromScene`), not child DOM boxes.
+// Confirm a flex frame with two children yields a boundary line, end-to-end.
+test("S3: layout-edit line is placed from scene child geometry", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  await bootstrap(page);
+
+  const frame = await addFrame(page, { x: 0.15, y: 0.2, width: 0.6, height: 0.4, rotation: 0 });
+  await addFrame(page, { x: 0.05, y: 0.1, width: 0.4, height: 0.8, rotation: 0 }, frame);
+  await addFrame(page, { x: 0.55, y: 0.1, width: 0.4, height: 0.8, rotation: 0 }, frame);
+  // Make it an auto-flex row; the engine relays the two children into a row.
+  await page.evaluate((id) => {
+    (
+      window as unknown as { __weaveEditor: { exec: (n: string, i: unknown) => unknown } }
+    ).__weaveEditor.exec("weave.frame.setLayout", {
+      itemId: id,
+      layout: { kind: "auto-flex", direction: "row" },
+    });
+  }, frame);
+
+  // Select the flex frame via the vm (its children fill it, so a centre click
+  // would land on a child).
+  await page.evaluate((id) => {
+    (
+      window as unknown as { __weaveVm: { itemSelection: { set: (x: unknown) => void } } }
+    ).__weaveVm.itemSelection.set(id);
+  }, frame);
+
+  // At least one inter-child boundary line is rendered (the scene-sourced flex
+  // boundary). Its presence proves childBoxesFromScene produced ≥2 child boxes.
+  const line = page.getByTestId("layout-line-flex-0");
+  await expect(line).toBeVisible();
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });

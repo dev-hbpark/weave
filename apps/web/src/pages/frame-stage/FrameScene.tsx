@@ -11,8 +11,13 @@
 
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { computeScene } from "@agocraft/layout";
+import { useLayoutEffect } from "react";
 import type { ItemFrame } from "../../document";
 import type { HitPolicy, RolePolicy } from "../../document/editor-mode/types.js";
+import {
+  publishSceneGeom,
+  type SceneItemGeom,
+} from "../../document/selection-chrome/chrome-geom.js";
 import type { FrameStageProps } from "../FrameStage.js";
 import { SceneFrame } from "./SceneFrame.js";
 
@@ -71,6 +76,30 @@ export function FrameScene(props: FrameSceneProps) {
     for (const c of it.children) walk(c);
   };
   for (const f of frames) walk(f);
+
+  // S3 / DR-138 — publish the scene's per-item DESIGN-px geometry + direct-child
+  // linkage so the selection-chrome view-models (poly-vertex, corner-radius,
+  // layout-edit) read engine geometry instead of measuring the rendered DOM box.
+  const geomMap = new Map<string, SceneItemGeom>();
+  for (const e of scene.entries) {
+    geomMap.set(String(e.itemId), {
+      cx: e.center.x,
+      cy: e.center.y,
+      w: e.box.w,
+      h: e.box.h,
+      rotation: e.rotation,
+    });
+  }
+  const childrenMap = new Map<string, ReadonlyArray<string>>();
+  for (const it of itemById.values()) {
+    const kids = it.children.map((c) => String(c.id)).filter((id) => geomMap.has(id));
+    if (kids.length > 0) childrenMap.set(String(it.id), kids);
+  }
+  // Publish after commit (before paint / the chrome rAF) so consumers read the
+  // current frame's geometry. Maps are fresh each render → runs each render.
+  useLayoutEffect(() => {
+    publishSceneGeom({ geom: geomMap, children: childrenMap });
+  }, [geomMap, childrenMap]);
 
   return (
     <>

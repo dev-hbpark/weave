@@ -19,6 +19,13 @@ import type { AutoFlexSpec, AutoGridSpec, LayoutSpec } from "@agocraft/core";
 import type { Editor, ItemSelectionViewModel, SelectionBounds } from "@agocraft/editor";
 import { type JSX, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  type PlaneProjection,
+  planeProjection,
+  type SceneItemGeom,
+  sceneChildFramesOf,
+  sceneGeomFor,
+} from "./chrome-geom.js";
 import { startHandleGesture, toHandlePointer } from "./handle-gesture-runner.js";
 import { boundaryOffsets, projectPointer, resolveTrackSizes } from "./layout-handle-geometry.js";
 import { resizeGridAxis, setFlexGap } from "./layout-spec-edit.js";
@@ -61,6 +68,46 @@ function readFrameScreen(el: HTMLElement): FrameScreen | null {
   return { left: rect.left, top: rect.top, w: rect.width, h: rect.height, zoom, dw, dh };
 }
 
+/** S3 / DR-138 — the frame's screen box straight from the engine scene (design
+ *  px) + the live design-plane projection. Layout frames are axis-aligned in
+ *  practice (rotation ~0), so the unrotated box top-left is the screen top-left. */
+function frameScreenFromScene(g: SceneItemGeom, proj: PlaneProjection): FrameScreen {
+  const zoom = proj.scale;
+  return {
+    left: proj.left + (g.cx - g.w / 2) * zoom,
+    top: proj.top + (g.cy - g.h / 2) * zoom,
+    w: g.w * zoom,
+    h: g.h * zoom,
+    zoom,
+    dw: g.w,
+    dh: g.h,
+  };
+}
+
+interface ChildBox {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+/** Direct child frame screen boxes from the engine scene (no child DOM query).
+ *  Returns null when the scene isn't published yet (caller falls back to DOM). */
+function childBoxesFromScene(frameId: string): ChildBox[] | null {
+  const proj = planeProjection();
+  const childIds = sceneChildFramesOf(frameId);
+  if (proj === undefined || childIds.length === 0) return null;
+  const boxes: ChildBox[] = [];
+  for (const id of childIds) {
+    const g = sceneGeomFor(id);
+    if (g === undefined) continue;
+    const left = proj.left + (g.cx - g.w / 2) * proj.scale;
+    const top = proj.top + (g.cy - g.h / 2) * proj.scale;
+    boxes.push({ left, top, right: left + g.w * proj.scale, bottom: top + g.h * proj.scale });
+  }
+  return boxes;
+}
+
 /** One boundary line spec in screen coords (vertical or horizontal). */
 interface LineSpec {
   readonly key: string;
@@ -77,19 +124,24 @@ interface LineSpec {
  *  the main axis. Returns lines + the live spec for the drag sink. */
 function flexLines(frameId: string, fs: FrameScreen, spec: AutoFlexSpec): LineSpec[] {
   const row = spec.direction === "row";
-  // Collect DIRECT child frame boxes (a descendant [data-frame-id] whose nearest
-  // [data-frame-id] ancestor IS this frame).
-  const frameEl = document.querySelector<HTMLElement>(`[data-frame-id="${CSS.escape(frameId)}"]`);
-  if (frameEl === null) return [];
-  const childBoxes: DOMRect[] = [];
-  const seen = new Set<Element>();
-  for (const node of frameEl.querySelectorAll<HTMLElement>("[data-frame-id]")) {
-    // only DIRECT child frames: nearest ancestor [data-frame-id] is the frame
-    const parent = node.parentElement?.closest("[data-frame-id]");
-    if (parent === frameEl && !seen.has(node)) {
-      seen.add(node);
-      childBoxes.push(node.getBoundingClientRect());
+  // Direct child frame boxes from the engine scene (S3 / DR-138). Fallback: walk
+  // the DOM for direct child `[data-frame-id]` boxes (a descendant whose nearest
+  // `[data-frame-id]` ancestor IS this frame).
+  let childBoxes = childBoxesFromScene(frameId);
+  if (childBoxes === null) {
+    const frameEl = document.querySelector<HTMLElement>(`[data-frame-id="${CSS.escape(frameId)}"]`);
+    if (frameEl === null) return [];
+    const fromDom: ChildBox[] = [];
+    const seen = new Set<Element>();
+    for (const node of frameEl.querySelectorAll<HTMLElement>("[data-frame-id]")) {
+      const parent = node.parentElement?.closest("[data-frame-id]");
+      if (parent === frameEl && !seen.has(node)) {
+        seen.add(node);
+        const r = node.getBoundingClientRect();
+        fromDom.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      }
     }
+    childBoxes = fromDom;
   }
   childBoxes.sort((a, b) => (row ? a.left - b.left : a.top - b.top));
   const lines: LineSpec[] = [];
@@ -150,9 +202,20 @@ function useFrameTick(frameId: string, getFrame: LayoutEditHandlesDeps["getFrame
     let raf = 0;
     let prevKey = "";
     const tick = (): void => {
-      const el = document.querySelector<HTMLElement>(`[data-frame-id="${CSS.escape(frameId)}"]`);
       const info = getFrame(frameId);
-      if (el === null || info === null) {
+      // Scene path (S3 / DR-138): frame box from the published scene + the live
+      // design-plane projection. Fallback: measure the rendered element.
+      const g = sceneGeomFor(frameId);
+      const proj = planeProjection();
+      const el =
+        g !== undefined && proj !== undefined
+          ? null
+          : document.querySelector<HTMLElement>(`[data-frame-id="${CSS.escape(frameId)}"]`);
+      if (
+        info === null ||
+        (g === undefined && el === null) ||
+        (proj === undefined && el === null)
+      ) {
         if (prevKey !== "") {
           prevKey = "";
           setState(null);
@@ -160,7 +223,12 @@ function useFrameTick(frameId: string, getFrame: LayoutEditHandlesDeps["getFrame
         raf = requestAnimationFrame(tick);
         return;
       }
-      const fs = readFrameScreen(el);
+      const fs =
+        g !== undefined && proj !== undefined
+          ? frameScreenFromScene(g, proj)
+          : el !== null
+            ? readFrameScreen(el)
+            : null;
       if (fs === null) {
         raf = requestAnimationFrame(tick);
         return;

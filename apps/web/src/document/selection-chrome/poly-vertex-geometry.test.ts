@@ -5,7 +5,6 @@ import {
   localToScreen,
   type PolyFrame,
   parseRotationFromTransform,
-  recoverUnrotatedSize,
   refitFrameToPoints,
   screenToLocal,
 } from "./poly-vertex-geometry.js";
@@ -25,28 +24,6 @@ describe("parseRotationFromTransform", () => {
     const b = Math.sin(rad);
     const t = `matrix(${a}, ${b}, ${-b}, ${a}, 0, 0)`;
     expect(parseRotationFromTransform(t)).toBeCloseTo(rad);
-  });
-});
-
-describe("recoverUnrotatedSize", () => {
-  it("returns the AABB-implied size unchanged at θ=0 (denom = r)", () => {
-    // r = 2, aabbWidth = 200 → h = 200/2 = 100, w = 200.
-    const { w, h } = recoverUnrotatedSize(200, 2, 0, { w: 0, h: 0 });
-    expect(w).toBeCloseTo(200);
-    expect(h).toBeCloseTo(100);
-  });
-
-  it("is exact at 45° where the AABB-only solve is singular", () => {
-    // Square (r=1) rotated 45°: AABBw = W·√2 → W = AABBw/√2.
-    const aabb = 141.421356; // 100·√2
-    const { w, h } = recoverUnrotatedSize(aabb, 1, Math.PI / 4, { w: 0, h: 0 });
-    expect(w).toBeCloseTo(100, 3);
-    expect(h).toBeCloseTo(100, 3);
-  });
-
-  it("falls back when the aspect ratio yields a degenerate denominator", () => {
-    const fallback = { w: 7, h: 9 };
-    expect(recoverUnrotatedSize(100, 0, 0, fallback)).toEqual(fallback);
   });
 });
 

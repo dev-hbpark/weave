@@ -36,6 +36,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { nn } from "../../lib/nn.js";
+import { sceneGeomFor } from "./chrome-geom.js";
 import { startHandleGesture, toHandlePointer } from "./handle-gesture-runner.js";
 import {
   type FrameGeom,
@@ -43,7 +44,6 @@ import {
   type PolyFrame,
   type PolyVertex,
   parseRotationFromTransform,
-  recoverUnrotatedSize,
   refitFrameToPoints,
   screenToLocal,
 } from "./poly-vertex-geometry.js";
@@ -124,26 +124,27 @@ const MIDPOINT_PX = 9;
  *  shared snap tolerance; the engine defaults to this too. */
 const ENDPOINT_SNAP_PX = 6;
 
-/** DOM read: derive the {@link FrameGeom} (center, un-rotated size, rotation)
- *  from the item's `[data-frame-id]` element + the SelectionLayer AABB bounds.
- *  The math is delegated to the pure `poly-vertex-geometry` kernel; only the
- *  `getComputedStyle` / `querySelector` / `offsetWidth/Height` reads live here. */
+/** Derive the {@link FrameGeom} (screen centre, un-rotated screen size, rotation)
+ *  from the engine scene (S3 / DR-138). `bounds` is the item's UNROTATED box
+ *  projected to screen (the host's scene-derived SelectionLayer bounds), so its
+ *  w/h are already the unrotated screen size and its centre is the visual centre
+ *  — only the rotation comes from the published scene geometry. No element read.
+ *  Fallback (no published geom — non-scene host / pre-publish race): read just
+ *  the rotation angle off the rendered element's transform. */
 function frameGeom(itemId: string, bounds: SelectionBounds): FrameGeom {
   const cx = bounds.left + bounds.width / 2;
   const cy = bounds.top + bounds.height / 2;
+  const g = sceneGeomFor(itemId);
+  if (g !== undefined) {
+    return { cx, cy, w: bounds.width, h: bounds.height, theta: g.rotation };
+  }
   const el =
     typeof document === "undefined"
       ? null
       : document.querySelector(`[data-frame-id="${CSS.escape(itemId)}"]`);
-  if (el === null) return { cx, cy, w: bounds.width, h: bounds.height, theta: 0 };
-
-  const theta = parseRotationFromTransform(getComputedStyle(el).transform);
-  const fallback = { w: bounds.width, h: bounds.height };
-  const { w, h } =
-    el instanceof HTMLElement && el.offsetWidth > 0 && el.offsetHeight > 0
-      ? recoverUnrotatedSize(bounds.width, el.offsetWidth / el.offsetHeight, theta, fallback)
-      : fallback;
-  return { cx, cy, w, h, theta };
+  const theta =
+    el instanceof HTMLElement ? parseRotationFromTransform(getComputedStyle(el).transform) : 0;
+  return { cx, cy, w: bounds.width, h: bounds.height, theta };
 }
 
 /** DR-033 — a single point handle. SHAPE encodes the point TYPE (smooth = round,

@@ -1,9 +1,13 @@
 // WI-063 (AUDIT-006 F-3) — pure geometry kernel for the poly/line vertex
 // handles. Extracted from `poly-vertex-handle.tsx` so the rotation-aware
-// math (un-rotated size recovery, rotated-basis local↔screen transforms,
-// DR-024 frame refit, endpoint similarity) is unit-testable independently
-// of React/DOM. The `.tsx` keeps only the DOM reads (`getComputedStyle`,
-// `querySelector`, `offsetWidth/Height`) and the handle rendering.
+// math (rotated-basis local↔screen transforms, DR-024 frame refit, endpoint
+// similarity) is unit-testable independently of React/DOM.
+//
+// WI-217 S3 (DR-138): the handle now sources its FrameGeom from the engine
+// scene (centre / unrotated size / rotation) via the chrome-geom bus, not from
+// the rendered element — so the AABB→unrotated-size recovery this kernel used to
+// carry was removed. `parseRotationFromTransform` remains for the rotation-only
+// DOM fallback when no scene geometry is published.
 
 export interface PolyVertex {
   readonly x: number;
@@ -45,25 +49,6 @@ export function parseRotationFromTransform(transform: string | null | undefined)
   const b = parts[1];
   if (a === undefined || b === undefined) return 0;
   return Math.atan2(b, a);
-}
-
-/** Recover the UN-rotated frame size (screen px) from the AABB width, the
- *  element's transform-invariant aspect ratio (offsetWidth/offsetHeight),
- *  and the rotation. AABBw = W·|cos| + H·|sin| = H·(r·|cos| + |sin|), so
- *  H = AABBw / (r·|cos| + |sin|), W = r·H. The denominator is > 0 at EVERY
- *  angle, so this is exact even at 45° (where solving W,H from the AABB
- *  alone is singular: cos 2θ = 0). Returns `fallback` when the aspect ratio
- *  is unusable (degenerate denominator). */
-export function recoverUnrotatedSize(
-  aabbWidth: number,
-  aspectRatio: number,
-  theta: number,
-  fallback: { readonly w: number; readonly h: number },
-): { w: number; h: number } {
-  const denom = aspectRatio * Math.abs(Math.cos(theta)) + Math.abs(Math.sin(theta));
-  if (!(denom > 1e-6)) return { w: fallback.w, h: fallback.h };
-  const h = aabbWidth / denom;
-  return { w: aspectRatio * h, h };
 }
 
 /** Project a local (0..1 of frame) vertex to screen px through the rotated

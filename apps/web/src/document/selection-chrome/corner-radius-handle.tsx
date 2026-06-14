@@ -26,6 +26,12 @@ import { createPortal } from "react-dom";
 import { type CornerKey, type CornerRadii, isUniformRadii } from "../corner-radius.js";
 import { cornerRadiusAdapter } from "../corner-radius-adapters.js";
 import { cornerRadiusModeStore } from "../corner-radius-mode.js";
+import {
+  type PlaneProjection,
+  planeProjection,
+  type SceneItemGeom,
+  sceneGeomFor,
+} from "./chrome-geom.js";
 import { startHandleGesture, toHandlePointer } from "./handle-gesture-runner.js";
 
 interface Pt {
@@ -88,6 +94,35 @@ function readBoxGeom(el: HTMLElement, rotationRad: number): BoxGeom | null {
   return { corners, center: { x: cx, y: cy }, zoom, halfShortScreen: Math.min(hw, hh) };
 }
 
+/** S3 / DR-138 — the rotation-aware screen corners + zoom straight from the
+ *  engine scene geometry (design px) + the live design-plane projection. No
+ *  element read; the geometry is the same the renderer used for the box. */
+function boxGeomFromScene(g: SceneItemGeom, proj: PlaneProjection): BoxGeom {
+  const zoom = proj.scale;
+  const cx = proj.left + g.cx * zoom;
+  const cy = proj.top + g.cy * zoom;
+  const hw = (g.w * zoom) / 2;
+  const hh = (g.h * zoom) / 2;
+  const cosT = Math.cos(g.rotation);
+  const sinT = Math.sin(g.rotation);
+  const at = (sx: number, sy: number): Pt => {
+    const lx = sx * hw;
+    const ly = sy * hh;
+    return { x: cx + lx * cosT - ly * sinT, y: cy + lx * sinT + ly * cosT };
+  };
+  return {
+    corners: {
+      tl: at(CORNER_SIGN.tl.sx, CORNER_SIGN.tl.sy),
+      tr: at(CORNER_SIGN.tr.sx, CORNER_SIGN.tr.sy),
+      br: at(CORNER_SIGN.br.sx, CORNER_SIGN.br.sy),
+      bl: at(CORNER_SIGN.bl.sx, CORNER_SIGN.bl.sy),
+    },
+    center: { x: cx, y: cy },
+    zoom,
+    halfShortScreen: Math.min(hw, hh),
+  };
+}
+
 /** Unit vector from a corner toward the box center (the inward diagonal). */
 function inwardUnit(corner: Pt, center: Pt): Pt {
   const dx = center.x - corner.x;
@@ -115,9 +150,17 @@ function useLive(
     let raf = 0;
     let prevKey = "";
     const tick = (): void => {
-      const el = document.querySelector(`[data-frame-id="${CSS.escape(itemId)}"]`);
       const item = getItem(itemId);
-      if (!(el instanceof HTMLElement) || item === null) {
+      // Scene path (S3 / DR-138): geometry from the published scene + the live
+      // design-plane projection. Fallback: read the rendered element's box.
+      const g = sceneGeomFor(itemId);
+      const proj = planeProjection();
+      const el =
+        g !== undefined && proj !== undefined
+          ? null
+          : document.querySelector(`[data-frame-id="${CSS.escape(itemId)}"]`);
+      const haveGeomSource = (g !== undefined && proj !== undefined) || el instanceof HTMLElement;
+      if (!haveGeomSource || item === null) {
         if (prevKey !== "") {
           prevKey = "";
           setLive(null);
@@ -126,7 +169,12 @@ function useLive(
         return;
       }
       const rotation = (item.attrs.frame as { rotation?: number } | undefined)?.rotation ?? 0;
-      const geom = readBoxGeom(el, rotation);
+      const geom =
+        g !== undefined && proj !== undefined
+          ? boxGeomFromScene(g, proj)
+          : el instanceof HTMLElement
+            ? readBoxGeom(el, rotation)
+            : null;
       const radii = adapter.read(item.attrs);
       if (geom === null) {
         raf = requestAnimationFrame(tick);
