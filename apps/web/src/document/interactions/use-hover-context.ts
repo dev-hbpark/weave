@@ -15,6 +15,7 @@
 // dozens of listener registrations.
 
 import { useEffect, useRef, useState } from "react";
+import { pointerWithinRects } from "./handle-hysteresis.js";
 
 /** Recognised hover surfaces. Add a new kind by:
  *    1. Adding a `data-hover-kind="<name>"` attribute on the DOM
@@ -104,6 +105,12 @@ function readHoverInfo(target: EventTarget | null): HoverContext {
       el.getAttribute("data-frame-id") ??
       el.getAttribute("data-shape-id") ??
       el.getAttribute("data-hotspot-id") ??
+      // A handle reports the item it BELONGS to, not the handle-kind
+      // string. SelectionLayer wraps every registry handle in a div
+      // carrying `data-selection-handle-item-id`, so a handle hover
+      // resolves to its owning item — this lets the hysteresis below
+      // recognise "still on my own handle" without geometry.
+      el.closest("[data-selection-handle-item-id]")?.getAttribute("data-selection-handle-item-id") ??
       value;
     const role = el.getAttribute("data-hover-role") ?? probe.kind;
     return { hoveredKind: kind, hoveredId: id ?? undefined, hoveredRole: role };
@@ -116,6 +123,31 @@ function readHoverInfo(target: EventTarget | null): HoverContext {
  *  grace the bar collapses mid-trajectory and the click is lost. 200ms
  *  matches Figma / Radix HoverCard defaults. */
 const HOVER_GRACE_MS = 200;
+
+/** Live bounding rects of every mounted handle owned by `itemId`. Empty
+ *  when the item shows no handles (e.g. an unhovered item in a multi-
+ *  selection) — hysteresis then does not apply and hover switches
+ *  immediately, exactly as before. */
+function handleRectsForItem(itemId: string): DOMRect[] {
+  if (typeof document === "undefined") return [];
+  const esc =
+    typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(itemId) : itemId;
+  const rects: DOMRect[] = [];
+  document.querySelectorAll(`[data-selection-handle-item-id="${esc}"]`).forEach((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) rects.push(r);
+  });
+  return rects;
+}
+
+/** Is the pointer still within reach of `itemId`'s handles? Tests each
+ *  handle rect grown by the hysteresis margin so the body↔handle gap and
+ *  the handle itself both count as "still here". Body rect is
+ *  deliberately excluded so hovering a NESTED inner item (which lives in
+ *  the body interior) still switches the hover to it. */
+function pointerWithinHandleAffordance(x: number, y: number, itemId: string): boolean {
+  return pointerWithinRects(x, y, handleRectsForItem(itemId));
+}
 
 /** Subscribe to hover state under `hostRef`. Returns the current
  *  context as React state so re-renders happen on transitions. Designed
@@ -157,6 +189,24 @@ export function useHoverContext(hostRef: { readonly current: HTMLElement | null 
       // host-scoped pointermove and the bar collapses.
       cancelGrace();
       const info = readHoverInfo(e.target);
+      // Handle-area hysteresis. Once an item is hovered and its handles
+      // are mounted, keep it as the hover target while the pointer is
+      // still within reach of those handles — even when it has drifted
+      // off the body onto bare canvas or grazed an adjacent item. This
+      // is what lets the user travel from the body to a corner / rotate
+      // handle without the chrome (and the handle) vanishing first.
+      // Skipped when the new target IS the current item (normal tracking)
+      // and naturally inert when the item has no mounted handles.
+      const sticky = lastRef.current;
+      if (
+        sticky.hoveredId !== undefined &&
+        sticky.hoveredKind !== "none" &&
+        sticky.hoveredKind !== "background" &&
+        info.hoveredId !== sticky.hoveredId &&
+        pointerWithinHandleAffordance(e.clientX, e.clientY, sticky.hoveredId)
+      ) {
+        return;
+      }
       // Limit the publish to surfaces we own (frame / bar / shape /
       // hotspot / handle). Anything outside the canvas host (toolbar,
       // header, body) should not poison the hover state.

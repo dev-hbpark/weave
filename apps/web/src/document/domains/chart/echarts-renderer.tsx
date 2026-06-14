@@ -31,6 +31,30 @@ import {
   type ChartRenderInput,
   DEFAULT_BAR_FRAC,
 } from "./echarts-option.js";
+import { pointerWithinRects } from "../../interactions/handle-hysteresis.js";
+
+/** Viewport rects of this chart's currently-visible datum handles. Chart
+ *  handles are portaled `<button data-chart-handle="<id>">` elements that
+ *  drop `data-handle-hidden` while revealed. Used by the hover-clear path
+ *  for handle-area hysteresis (parity with the general selection handles
+ *  in `handle-hysteresis`): the hovered datum is kept while the pointer is
+ *  still within reach of its handles, so the user can travel from the mark
+ *  onto a handle without it vanishing first. */
+function visibleChartHandleRects(chartItemId: string): DOMRect[] {
+  if (typeof document === "undefined") return [];
+  const esc =
+    typeof CSS !== "undefined" && typeof CSS.escape === "function"
+      ? CSS.escape(chartItemId)
+      : chartItemId;
+  const rects: DOMRect[] = [];
+  document
+    .querySelectorAll(`[data-chart-handle="${esc}"]:not([data-handle-hidden])`)
+    .forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) rects.push(r);
+    });
+  return rects;
+}
 
 // WI-092 — CustomChart powers the per-bar-width single-series bar (renderItem).
 use([
@@ -135,6 +159,9 @@ export default function EChartView(props: EChartViewProps): JSX.Element {
   // Read by the mount-once effect so a late-arriving id still registers correctly.
   const itemIdRef = useRef(props.chartItemId);
   itemIdRef.current = props.chartItemId;
+  // Latest pointer position in viewport coords, fed to the hover-clear
+  // hysteresis so it can tell whether the pointer drifted onto a handle.
+  const pointerRef = useRef({ x: 0, y: 0 });
 
   // Mount once: init the SVG-rendered instance + track frame resizes + wire the
   // mark-click → onElementClick bridge.
@@ -215,11 +242,48 @@ export default function EChartView(props: EChartViewProps): JSX.Element {
     // debounce on `mouseout` lets a bar→bar move (out then over) not flicker and
     // lets a handle's own hover pin it before the clear fires.
     let hoverClear: ReturnType<typeof setTimeout> | undefined;
+    // Track the pointer in viewport coords so the clear path can run the
+    // handle-area hysteresis (chart handles are position:fixed, i.e. in
+    // client coords).
+    const trackPointer = (e: PointerEvent): void => {
+      pointerRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("pointermove", trackPointer, { passive: true, capture: true });
+    // The pointer leaving the viewport entirely (not onto a portaled
+    // handle, which stays inside the document) must drop the hover at once
+    // — the hysteresis poll below would otherwise keep re-evaluating a
+    // stale pointer position. Moving onto a handle button does NOT fire
+    // this, so it does not defeat the hysteresis.
+    const forceClear = (): void => {
+      const id = itemIdRef.current;
+      if (id === undefined) return;
+      clearTimeout(hoverClear);
+      chartHoverStore.clearItem(id);
+    };
+    document.documentElement.addEventListener("pointerleave", forceClear);
     const clearHoverSoon = (): void => {
       const id = itemIdRef.current;
       if (id === undefined) return;
       clearTimeout(hoverClear);
-      hoverClear = setTimeout(() => chartHoverStore.clearItem(id), 60);
+      // Handle-area hysteresis: while the pointer is still within reach of
+      // THIS chart's visible handles, defer the clear (re-poll) instead of
+      // dropping the hovered datum — otherwise the handle unmounts the
+      // instant the pointer leaves the mark and can never be clicked
+      // (user report 2026-06-14, parity with the general selection
+      // handles). Once the pointer fully leaves the handle area the poll
+      // finds no rect in reach and clears. The handle's own pointerEnter
+      // `pin` takes over once it is actually reached.
+      const tick = (): void => {
+        const cid = itemIdRef.current;
+        if (cid === undefined) return;
+        const p = pointerRef.current;
+        if (pointerWithinRects(p.x, p.y, visibleChartHandleRects(cid))) {
+          hoverClear = setTimeout(tick, 60);
+          return;
+        }
+        chartHoverStore.clearItem(cid);
+      };
+      hoverClear = setTimeout(tick, 60);
     };
     // WI-092 — a click on the BLANK plot (zrender click with no shape target;
     // the high-level `chart.on("click")` above only fires for marks) drops the
@@ -270,6 +334,8 @@ export default function EChartView(props: EChartViewProps): JSX.Element {
       ro.disconnect();
       unregister?.();
       clearTimeout(hoverClear);
+      window.removeEventListener("pointermove", trackPointer, { capture: true });
+      document.documentElement.removeEventListener("pointerleave", forceClear);
       if (itemIdRef.current !== undefined) chartHoverStore.clearItem(itemIdRef.current);
       chart.dispose();
       chartRef.current = null;
