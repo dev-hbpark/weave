@@ -51,6 +51,17 @@ const ALIGN_SELF_OPTIONS: ReadonlyArray<{ value: FlexAlign; label: string }> = [
   { value: "stretch", label: "Stretch" },
 ];
 
+// WI-042 P4 ① — for an auto-flex FRAME the cross-axis "Fill" lives in the unified
+// FrameSizingSection (Fill ⇒ alignSelf=stretch). So a frame's align-self control
+// is PURE alignment (no Stretch — that's the 3-way's job), removing the
+// two-labels-one-effect dual path. A NON-frame child has no FrameSizingSection,
+// so it keeps Stretch here (its only cross-fill control).
+const ALIGN_SELF_OPTIONS_NO_STRETCH: ReadonlyArray<{ value: FlexAlign; label: string }> = [
+  { value: "start", label: "Start" },
+  { value: "center", label: "Center" },
+  { value: "end", label: "End" },
+];
+
 interface FlexChildSectionProps {
   readonly editor: Editor;
   readonly items: ReadonlyArray<ItemSnapshot>;
@@ -141,15 +152,21 @@ export function FlexChildSection({
           />
         </Bar.Field>
       )}
-      <Bar.Field label="자기 정렬">
-        <Select<FlexAlign>
-          value={alignSelf}
-          onValueChange={(v) => apply({ alignSelf: v })}
-          options={ALIGN_SELF_OPTIONS}
-          aria-label="Flex child align-self"
-          triggerClassName="min-w-[88px]"
-        />
-      </Bar.Field>
+      {/* WI-042 P4 ① — for a frame currently cross-FILLING (alignSelf=stretch,
+          set via the 3-way's cross Fill), alignment is moot ⇒ hide it. It
+          reappears the moment the cross axis is Fixed/Hug. Non-frame children
+          keep their full alignment (incl. Stretch). */}
+      {ownIsAutoFlex && alignSelf === "stretch" ? null : (
+        <Bar.Field label="자기 정렬">
+          <Select<FlexAlign>
+            value={alignSelf}
+            onValueChange={(v) => apply({ alignSelf: v })}
+            options={ownIsAutoFlex ? ALIGN_SELF_OPTIONS_NO_STRETCH : ALIGN_SELF_OPTIONS}
+            aria-label="Flex child align-self"
+            triggerClassName="min-w-[88px]"
+          />
+        </Bar.Field>
+      )}
     </div>
   );
 }

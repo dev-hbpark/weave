@@ -737,3 +737,62 @@ test("P4: a Hug axis disables its own resize handles (Figma parity)", async ({ p
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("P4 ①: cross-Fill via the 3-way hides the redundant align-self control", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  // Auto-flex ROW parent P ⊃ auto-flex frame F. F is both a flex CHILD (→ the
+  // align-self control) and a container (→ the unified 3-way). Cross axis = height.
+  const P = await addFrame(page, rootId, { x: 0.1, y: 0.1, width: 0.7, height: 0.5, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: P,
+    layout: { kind: "auto-flex", direction: "row" },
+  });
+  const F = await addFrame(page, P, { x: 0, y: 0, width: 0.4, height: 0.6, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: F,
+    layout: { kind: "auto-flex", direction: "row" },
+  });
+  await page.waitForFunction((id) => {
+    let ok = false;
+    const walk = (n: N & { attrs: { layout?: { kind?: string } } }) => {
+      if (String(n.id) === id) ok = n.attrs.layout?.kind === "auto-flex";
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return ok;
+  }, F);
+
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, F);
+  await page.locator('[data-testid="frame-sizing-controls"]').first().waitFor();
+
+  const alignField = page.locator('[data-testid="flex-child-controls"]').getByText("자기 정렬");
+  // Before: align-self control visible (cross not filling).
+  await expect.poll(() => alignField.count()).toBe(1);
+
+  // Set the CROSS axis (height, in a row) to Fill via the 3-way → alignSelf=stretch.
+  await page
+    .locator('[aria-label="Container height sizing"]')
+    .locator('[aria-label="채움"]')
+    .click();
+  await page.waitForFunction((id) => {
+    let a: string | undefined;
+    const walk = (n: N & { attrs: { layoutChild?: { alignSelf?: string } } }) => {
+      if (String(n.id) === id) a = n.attrs.layoutChild?.alignSelf;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return a === "stretch";
+  }, F);
+
+  // After: the redundant align-self control is gone (the 3-way owns cross-Fill).
+  await expect.poll(() => alignField.count()).toBe(0);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
