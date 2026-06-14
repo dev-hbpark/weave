@@ -40,7 +40,22 @@ top-level 아이템은 정상; **중첩일수록 심함**.
 - `layout-constraints-verify` 7 실패는 **선재 베이스라인**(networkidle 샌드박스; 핸들-존재/reparent/메뉴,
   리사이즈 델타·클램프 무관) — 본 수정과 무관.
 
+## 회전 후속 DONE (2026-06-14, 브랜치 `fix/rotated-parent-resize`)
+
+회전된 부모에서의 리사이즈를 정확화. 두 결함이었음: (a) `getBoundingClientRect`는 회전 부모의 **팽창된 AABB**
+반환 → 스케일 오차, (b) `computeResizeFrame`은 화면 델타를 부모-로컬 x로 그대로 써서 **방향** 미투영(회전 0에서만
+정상). 수정(리사이즈 sink 국소, `parentRectOf`/이동 무변경):
+
+- 제스처 시작에 `computeScene`로 **부모 EXACT 로컬 박스**(design px × 플레인 스케일; 회전-불변 w/h) + 아이템
+  **절대 회전**(own+조상) 캡처.
+- 매 틱 화면 델타를 `-절대회전`으로 **역회전**해 아이템 로컬 축으로 투영 후 `computeResizeFrame`에 전달.
+  (스크린 y-down ↔ 표준행렬 부호는 `cos(-θ)/sin(-θ)`로 흡수; 90° 검증.)
+- 회전 0이면 cos1/sin0 + 박스=bbox와 동치 → **공통 경로 무변경**(언로테이트 1:1 e2e 통과로 확인).
+
+검증: e2e `nested-resize.spec.ts` 2번째(90° 회전 부모: 보이는 east 핸들=화면 수직, 드래그 시 width 성장; **수정 전엔
+width 불변=0.4 → 회귀 가드**) + 기존 1:1 테스트 + hug-resize 8 + page-group-clamp 3 + weave unit 1368 전부 green.
+
 ## 잔여
 
-- 회전된 부모의 정확 박스(현 bbox 근사) — `computeScene` 기반 회전-인지 부모 박스는 후속(리사이즈 수학 자체가
-  회전 부모 미지원이라 동일 스코프 아님).
+- 비-균일 스케일(현재 플레인 aspect-보존이라 균일 가정) 및 회전+aspect-lock 코너의 상호작용은 더 깊은 케이스 —
+  필요 시 후속.

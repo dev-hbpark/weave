@@ -129,3 +129,73 @@ test("resizing a nested item's handle tracks the pointer 1:1 in screen px", asyn
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("resizing inside a ROTATED parent grows width along the parent's local x", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  // Outer frame O rotated 90°, inner frame I inside it. The item's east handle
+  // therefore points screen-VERTICAL; dragging it must still grow the item's
+  // (parent-local) width. Without the rotation-aware delta the east drag has a
+  // zero local-x component → the item wouldn't resize at all.
+  const O = await addFrame(page, rootId, {
+    x: 0.25,
+    y: 0.2,
+    width: 0.4,
+    height: 0.4,
+    rotation: Math.PI / 2,
+  });
+  const I = await addFrame(page, O, { x: 0.1, y: 0.1, width: 0.4, height: 0.4, rotation: 0 });
+
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, I);
+
+  const frameRatio = async (): Promise<{ width: number; height: number }> =>
+    page.evaluate((id) => {
+      let f: { width: number; height: number } | undefined;
+      const walk = (n: N & { attrs?: { frame?: { width: number; height: number } } }) => {
+        if (String(n.id) === id) f = n.attrs?.frame;
+        for (const c of n.children) walk(c as never);
+      };
+      walk((window as unknown as W).__weaveDoc.root as never);
+      return { width: f?.width ?? 0, height: f?.height ?? 0 };
+    }, I);
+
+  const east = page.locator(`[data-selection-handle-item-id="${I}"] [data-handle-dir="e"]`).first();
+  await expect.poll(() => east.count()).toBeGreaterThan(0);
+  const itemBox = await page.locator(`[data-frame-id="${I}"]`).first().boundingBox();
+  const hb = await east.boundingBox();
+  if (itemBox === null || hb === null) throw new Error("no boxes");
+
+  const before = await frameRatio();
+
+  // Drag the handle further along the item-center → handle direction (the item's
+  // rendered local +x, screen-vertical for a 90° parent), by ~120 screen px.
+  const cx0 = itemBox.x + itemBox.width / 2;
+  const cy0 = itemBox.y + itemBox.height / 2;
+  const hx = hb.x + hb.width / 2;
+  const hy = hb.y + hb.height / 2;
+  const len = Math.hypot(hx - cx0, hy - cy0) || 1;
+  const ux = (hx - cx0) / len;
+  const uy = (hy - cy0) / len;
+  const D = 120;
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+  await page.mouse.move(hx + ux * D, hy + uy * D, { steps: 12 });
+  await page.mouse.up();
+
+  const after = await frameRatio();
+  const msg = `before=${JSON.stringify(before)} after=${JSON.stringify(after)} u=(${ux.toFixed(2)},${uy.toFixed(2)})`;
+  // Width (parent-local ratio) grows; height stays ~constant (pure east drag in
+  // local space). Without the rotation-aware delta, the width delta would be ~0.
+  expect(after.width - before.width, msg).toBeGreaterThan(0.05);
+  expect(Math.abs(after.height - before.height), msg).toBeLessThan(0.02);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});

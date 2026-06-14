@@ -27,6 +27,7 @@ import {
   GESTURE_PRIORITY_FALLBACK,
   type ResizeDir,
 } from "@agocraft/editor";
+import { computeScene } from "@agocraft/layout";
 import { motion, useMotionValue } from "motion/react";
 import type React from "react";
 import {
@@ -1632,7 +1633,40 @@ export function FrameStage(props: FrameStageProps) {
       }
       const orig = frameAccess.readFrame(itemId);
       if (orig === undefined) return;
-      const parent = frameAccess.parentRectOf(itemId);
+      // WI-218 follow-up — rotation-aware parent box + delta. The resize math is
+      // ratio-of-parent in the parent's LOCAL (axis-aligned) space, but the
+      // pointer delta is in screen axes. Capture, at gesture start:
+      //   • the parent's EXACT local box (computeScene design px × plane scale) —
+      //     `getBoundingClientRect` would give a rotated parent's inflated AABB;
+      //   • the item's ABSOLUTE rotation (own + ancestors) — to de-rotate the
+      //     screen delta into the item's local frame axes before dividing.
+      // Both default to the plain (unrotated) behavior at rotation 0, so the
+      // common case is unchanged. Falls back to parentRectOf if the scene/plane
+      // is unavailable.
+      const resizeCtx = ((): {
+        readonly parent: { width: number; height: number };
+        readonly cos: number;
+        readonly sin: number;
+      } => {
+        const doc = docRef.current;
+        const planeRect = designPlaneRef.current?.getBoundingClientRect();
+        if (doc === undefined || planeRect === undefined || planeRect.width <= 0) {
+          return { parent: frameAccess.parentRectOf(itemId), cos: 1, sin: 0 };
+        }
+        const scene = computeScene(doc.root, designWidth, designHeight);
+        const scale = planeRect.width / designWidth;
+        const parentId = findParentAndIndex(doc, String(itemId))?.parent.id;
+        const parentBox =
+          parentId === undefined || String(parentId) === String(doc.root.id)
+            ? { w: designWidth, h: designHeight }
+            : (scene.byId.get(parentId)?.box ?? { w: designWidth, h: designHeight });
+        const absRot = scene.byId.get(itemId)?.rotation ?? 0;
+        return {
+          parent: { width: parentBox.w * scale, height: parentBox.h * scale },
+          cos: Math.cos(-absRot),
+          sin: Math.sin(-absRot),
+        };
+      })();
       const sessionId = `${String(itemId)}/resize/${seq++}`;
       startHandleGesture({
         kind: "frame-resize",
@@ -1643,19 +1677,28 @@ export function FrameStage(props: FrameStageProps) {
           // WI-183 — resize modifiers read live off the pointer: Shift =
           // corner aspect lock, Alt = resize from center. Calls the shared
           // pure helper directly (the FrameAccess interface is 5-arg).
-          update: (p) =>
+          update: (p) => {
+            // De-rotate the screen delta into the item's local frame axes.
+            const sdx = p.clientX - origin.clientX;
+            const sdy = p.clientY - origin.clientY;
+            const ldx = sdx * resizeCtx.cos - sdy * resizeCtx.sin;
+            const ldy = sdx * resizeCtx.sin + sdy * resizeCtx.cos;
             frameAccess.commitFrame(
               itemId,
               computeResizeFrame(
                 orig as unknown as ResizeSourceFrame,
                 dir,
-                p.clientX - origin.clientX,
-                p.clientY - origin.clientY,
-                parent,
-                { aspectLock: p.shiftKey, fromCenter: p.altKey },
+                ldx,
+                ldy,
+                resizeCtx.parent,
+                {
+                  aspectLock: p.shiftKey,
+                  fromCenter: p.altKey,
+                },
               ) as unknown as FrameGeom,
               sessionId,
-            ),
+            );
+          },
         },
       });
     };
