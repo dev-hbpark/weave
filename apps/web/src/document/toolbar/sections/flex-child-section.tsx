@@ -78,6 +78,14 @@ export function FlexChildSection({
   const parentSpec = parentFlexSpec(document, item.id);
   if (parentSpec === undefined) return null;
 
+  // WI-042 / DR-055 — an auto-flex FRAME owns its sizing (incl. Fill) through the
+  // unified FrameSizingSection (Fixed/Hug/Fill). Suppress the duplicate Grow
+  // segment here for such frames; keep align-self (alignment, orthogonal). A
+  // NON-frame child (no own layout) keeps Grow — it has no Hug, so this is its
+  // only Fill control.
+  const ownIsAutoFlex =
+    ((item.attrs as { layout?: LayoutSpec }).layout?.kind ?? undefined) === "auto-flex";
+
   const policy = (item.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild;
   const flexPolicy = policy !== undefined && policy.kind === "auto-flex" ? policy : undefined;
   const grow: GrowChoice = (flexPolicy?.grow ?? 0) > 0 ? "fill" : "fixed";
@@ -119,18 +127,20 @@ export function FlexChildSection({
       data-testid="flex-child-controls"
       className="inline-flex items-end gap-2 ml-1 pl-2 border-l border-l-[color:var(--surface-overlay-border)]"
     >
-      <Bar.Field label={mainIsWidth ? "Width" : "Height"}>
-        <SegmentedControl<GrowChoice>
-          value={grow}
-          onValueChange={(v) =>
-            // Fixed → keep the current main size as an explicit basis (so it
-            // doesn't collapse); Fill → grow to take the remaining space.
-            v === "fill" ? apply({ grow: 1, basis: 0 }) : apply({ grow: 0, basis: currentMain })
-          }
-          options={GROW_OPTIONS}
-          aria-label="Flex child grow"
-        />
-      </Bar.Field>
+      {ownIsAutoFlex ? null : (
+        <Bar.Field label={mainIsWidth ? "Width" : "Height"}>
+          <SegmentedControl<GrowChoice>
+            value={grow}
+            onValueChange={(v) =>
+              // Fixed → keep the current main size as an explicit basis (so it
+              // doesn't collapse); Fill → grow to take the remaining space.
+              v === "fill" ? apply({ grow: 1, basis: 0 }) : apply({ grow: 0, basis: currentMain })
+            }
+            options={GROW_OPTIONS}
+            aria-label="Flex child grow"
+          />
+        </Bar.Field>
+      )}
       <Bar.Field label="자기 정렬">
         <Select<FlexAlign>
           value={alignSelf}

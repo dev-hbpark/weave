@@ -418,3 +418,95 @@ test("P3 ①(fill bridge): a Hug row hugs ONLY its fixed child; a grow sibling c
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("P3 ①(unified 3-way): toolbar Fill routes to layoutChild.grow (dual-routing, one undo)", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  // Outer auto-flex ROW O ⊃ inner auto-flex frame F (so F has a flex parent ⇒
+  // the Fill option is offered; width is F's MAIN axis in a row parent).
+  const O = await addFrame(page, rootId, { x: 0.1, y: 0.1, width: 0.6, height: 0.4, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: O,
+    layout: { kind: "auto-flex", direction: "row" },
+  });
+  const F = await addFrame(page, O, { x: 0, y: 0, width: 0.5, height: 1, rotation: 0 });
+  await exec(page, "weave.frame.setLayout", {
+    itemId: F,
+    layout: { kind: "auto-flex", direction: "row" },
+  });
+  await page.waitForFunction((id) => {
+    let ok = false;
+    const walk = (n: N & { attrs: { layout?: { kind?: string } } }) => {
+      if (String(n.id) === id) ok = n.attrs.layout?.kind === "auto-flex";
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return ok;
+  }, F);
+
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, F);
+  await page.locator('[data-testid="frame-sizing-controls"]').first().waitFor();
+
+  // The Fill segment exists ONLY because F has a flex parent.
+  const fillSeg = page
+    .locator('[aria-label="Container width sizing"]')
+    .locator('[aria-label="채움"]');
+  await expect.poll(() => fillSeg.count()).toBe(1);
+  await fillSeg.click();
+
+  // Fill (width = MAIN axis in a row parent) → layoutChild.grow = 1, and the
+  // frame's own width sizing becomes Fixed (filling, not hugging) — both in ONE
+  // batched transaction.
+  const readF = () =>
+    page.evaluate((id) => {
+      let r: { grow?: number; ownW?: string } | undefined;
+      const walk = (
+        n: N & {
+          attrs: {
+            layout?: { sizing?: { width?: string } };
+            layoutChild?: { grow?: number };
+          };
+        },
+      ) => {
+        if (String(n.id) === id)
+          r = { grow: n.attrs.layoutChild?.grow, ownW: n.attrs.layout?.sizing?.width };
+        for (const c of n.children) walk(c as never);
+      };
+      walk((window as unknown as W).__weaveDoc.root as never);
+      return r ?? null;
+    }, F);
+
+  await page.waitForFunction((id) => {
+    let g: number | undefined;
+    const walk = (n: N & { attrs: { layoutChild?: { grow?: number } } }) => {
+      if (String(n.id) === id) g = n.attrs.layoutChild?.grow;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return g === 1;
+  }, F);
+  expect((await readF())?.grow).toBe(1);
+  expect((await readF())?.ownW).toBe("fixed");
+
+  // One undo reverts the whole dual-routed change (grow back to 0).
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
+  await page.waitForFunction((id) => {
+    let g: number | undefined;
+    const walk = (n: N & { attrs: { layoutChild?: { grow?: number } } }) => {
+      if (String(n.id) === id) g = n.attrs.layoutChild?.grow;
+      for (const c of n.children) walk(c as never);
+    };
+    walk((window as unknown as W).__weaveDoc.root as never);
+    return (g ?? 0) === 0;
+  }, F);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});

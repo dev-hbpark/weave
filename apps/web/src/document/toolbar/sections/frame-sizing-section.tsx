@@ -1,56 +1,69 @@
-// WI-042 / DR-055 — per-CONTAINER sizing controls (Fixed / Hug).
+// WI-042 / DR-055 — unified per-axis sizing control (Fixed / Hug / Fill).
 //
-// Shown for a single selected frame that HAS an `auto-flex` layout. Lets the
-// user set the container's OWN size behavior per axis:
-//   • Fixed — the frame keeps its explicit size; children lay out inside it.
-//   • Hug   — the frame shrinks/grows to fit its children (Figma "hug contents").
+// Shown for a single selected frame that HAS an `auto-flex` layout. One control
+// per axis, mirroring Figma's width/height resizing modes:
+//   • Fixed — the frame keeps its explicit size.
+//   • Hug   — the frame shrinks/grows to fit its children ("hug contents").
+//             Available only with ≥1 child (an empty container can't hug).
+//   • Fill  — the frame fills its parent on that axis. Available only when the
+//             parent is itself auto-flex (Figma: Fill needs an auto-layout
+//             parent).
 //
-// Writes `attrs.layout.sizing` via `weave.frame.setSizing`, which the engine
-// reads on a child resize (`reflowHugOnResize`) to grow the container upward.
+// DUAL ROUTING — the two modes write to two different homes, batched into ONE
+// undoable transaction (`weave.batch`):
+//   • Hug / Fixed → the frame's OWN `layout.sizing` (`weave.frame.setSizing`),
+//     read by the Hug reflow (`reflowHugOnResize`).
+//   • Fill        → the frame's child-role in its parent
+//     (`weave.item.setLayoutChild`): grow=1 on the parent's MAIN axis, or
+//     alignSelf="stretch" on the CROSS axis — the same policy the engine's flex
+//     arrange already honors. Picking Fill also sets that axis's own sizing to
+//     Fixed (a filling frame isn't hugging).
 //
-// Scope note (DR-055 P3 ①): FILL is intentionally NOT offered here. A frame
-// FILLS its parent via the per-CHILD grow control (FlexChildSection's
-// "Width/Height: Fill" → `layoutChild.grow`), which already works through the
-// parent's flex layout. A container-level `sizing: "fill"` only takes effect
-// inside a Hug reflow today (the fill basis/grow bridge is ② follow-up), so
-// exposing it here would be a mostly-no-op duplicate of the working Grow
-// control. The unified Figma 3-way (dual-routing Hug→layout.sizing /
-// Fill→layoutChild) waits on the ② bridge.
+// The per-child grow control (FlexChildSection) is suppressed for auto-flex
+// frames (this control owns their sizing); FlexChildSection keeps align-self and
+// still owns sizing for NON-frame children (which have no Hug).
 //
-// This is a cross-kind, single-item layout surface (mirrors FlexChildSection),
-// rendered by ContextualToolbar — not a kind section.
+// This is a single-item layout surface (mirrors FlexChildSection), rendered by
+// ContextualToolbar — not a kind section.
 
 import {
   type Document as AgocraftDocument,
+  type AutoFlexChildPolicy,
   type AutoFlexSpec,
   type AxisSizing,
   type AxisSizingPair,
+  createAutoFlexChildPolicy,
   DEFAULT_AXIS_SIZING,
+  type FlexAlign,
+  type LayoutChildPolicy,
   type LayoutSpec,
 } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { ContextualToolbar as Bar, SegmentedControl } from "@weave/design-system";
 import type { JSX } from "react";
 import { nn } from "../../../lib/nn.js";
-import { findItemDeep } from "../../agocraft-mirror.js";
+import { findItemDeep, findParentAndIndex } from "../../agocraft-mirror.js";
 import type { ItemSnapshot } from "../multi-edit.js";
 
-// Only Fixed / Hug here (see file header — Fill is the per-child Grow control).
-type ContainerSizing = Extract<AxisSizing, "fixed" | "hug">;
+type Sizing3 = AxisSizing; // "fixed" | "hug" | "fill"
 
-const FIXED_ONLY: ReadonlyArray<{ value: ContainerSizing; label: string }> = [
-  { value: "fixed", label: "고정" },
-];
-const FIXED_HUG: ReadonlyArray<{ value: ContainerSizing; label: string }> = [
-  { value: "fixed", label: "고정" },
-  { value: "hug", label: "내용맞춤" },
-];
+const LABELS: Record<Sizing3, string> = { fixed: "고정", hug: "내용맞춤", fill: "채움" };
+const opt = (v: Sizing3) => ({ value: v, label: LABELS[v] });
 
 interface FrameSizingSectionProps {
   readonly editor: Editor;
   readonly items: ReadonlyArray<ItemSnapshot>;
-  /** Live document — needed to read the frame's children count (Hug needs ≥1). */
+  /** Live document — child count (Hug needs ≥1) + parent layout (Fill needs an
+   *  auto-flex parent). */
   readonly document: AgocraftDocument;
+}
+
+/** The parent's auto-flex spec, or undefined when the parent isn't a flex frame. */
+function parentFlexOf(doc: AgocraftDocument, itemId: string): AutoFlexSpec | undefined {
+  const found = findParentAndIndex(doc, itemId);
+  if (found === undefined) return undefined;
+  const layout = (found.parent.attrs as { layout?: LayoutSpec }).layout;
+  return layout !== undefined && layout.kind === "auto-flex" ? layout : undefined;
 }
 
 export function FrameSizingSection({
@@ -58,35 +71,97 @@ export function FrameSizingSection({
   items,
   document,
 }: FrameSizingSectionProps): JSX.Element | null {
-  // Container sizing is a single-frame concern.
+  // Sizing is a single-frame concern.
   if (items.length !== 1) return null;
   const item = nn(items[0]);
   const layout = (item.attrs as { layout?: LayoutSpec }).layout;
-  // Hug is an auto-flex capability (grid container sizing = P4).
+  // Hug/Fill modeling here is an auto-flex capability (grid container sizing = P4).
   if (layout === undefined || layout.kind !== "auto-flex") return null;
 
-  // Children gate the Hug option — an empty container can't hug (and the command
-  // rejects it). Read from the live doc (ItemSnapshot may not carry children).
   const live = findItemDeep(document, item.id);
   const hasChildren = live !== undefined && live.children.length > 0;
-  const options = hasChildren ? FIXED_HUG : FIXED_ONLY;
+  const parentFlex = parentFlexOf(document, item.id);
 
-  const sizing: AxisSizingPair = (layout as AutoFlexSpec).sizing ?? DEFAULT_AXIS_SIZING;
-  // Display value, clamped to a selectable option (a stale "hug" with 0 children
-  // would otherwise show no selection).
-  const shown = (axis: AxisSizing): ContainerSizing =>
-    axis === "hug" && hasChildren ? "hug" : "fixed";
+  // Available options per axis: Fixed always; Hug with children; Fill with a
+  // flex parent.
+  const options: ReadonlyArray<{ value: Sizing3; label: string }> = [
+    opt("fixed"),
+    ...(hasChildren ? [opt("hug")] : []),
+    ...(parentFlex !== undefined ? [opt("fill")] : []),
+  ];
 
-  // Apply a single-axis change. The command takes the full pair, so carry the
-  // OTHER axis forward — defensively clamping a stale "hug" to "fixed" when the
-  // container has no children (else the command rejects the whole pair).
-  const apply = (axis: "width" | "height", next: ContainerSizing) => {
+  const ownSizing: AxisSizingPair = (layout as AutoFlexSpec).sizing ?? DEFAULT_AXIS_SIZING;
+  const policy = (item.attrs as { layoutChild?: LayoutChildPolicy }).layoutChild;
+  const flexPolicy = policy !== undefined && policy.kind === "auto-flex" ? policy : undefined;
+  const grow = flexPolicy?.grow ?? 0;
+  const alignSelf: FlexAlign = flexPolicy?.alignSelf ?? parentFlex?.align ?? "start";
+
+  const axisIsMain = (axis: "width" | "height"): boolean =>
+    parentFlex !== undefined && (axis === "width") === (parentFlex.direction === "row");
+
+  /** Whether the frame currently FILLS its parent on `axis` (child-role truth:
+   *  grow on the main axis, stretch on the cross). */
+  const isFill = (axis: "width" | "height"): boolean => {
+    if (parentFlex === undefined) return false;
+    return axisIsMain(axis) ? grow > 0 : alignSelf === "stretch";
+  };
+
+  /** Display value — Fill (child-role) wins; else own Hug (with children); else
+   *  Fixed. Clamped to a selectable option. */
+  const axisValue = (axis: "width" | "height"): Sizing3 => {
+    if (isFill(axis)) return "fill";
+    return ownSizing[axis] === "hug" && hasChildren ? "hug" : "fixed";
+  };
+
+  const apply = (axis: "width" | "height", choice: Sizing3) => {
+    // ── 1. own sizing pair: Hug → hug; Fixed/Fill → fixed on that axis. Carry
+    // the OTHER axis's own sizing forward, clamping a stale hug (no children).
+    const ownFor = (c: Sizing3): AxisSizing => (c === "hug" ? "hug" : "fixed");
     const safe = (v: AxisSizing): AxisSizing => (v === "hug" && !hasChildren ? "fixed" : v);
     const pair: AxisSizingPair = {
-      width: axis === "width" ? next : safe(sizing.width),
-      height: axis === "height" ? next : safe(sizing.height),
+      width: axis === "width" ? ownFor(choice) : safe(ownSizing.width),
+      height: axis === "height" ? ownFor(choice) : safe(ownSizing.height),
     };
-    editor.exec("weave.frame.setSizing", { itemId: item.id, sizing: pair });
+
+    const ops: Array<{ command: string; input: unknown }> = [
+      { command: "weave.frame.setSizing", input: { itemId: item.id, sizing: pair } },
+    ];
+
+    // ── 2. child-role fill (only meaningful with a flex parent). MAIN axis →
+    // grow; CROSS axis → alignSelf stretch. Preserve the rest of the policy.
+    if (parentFlex !== undefined) {
+      const main = axisIsMain(axis);
+      const nextGrow = main ? (choice === "fill" ? 1 : 0) : grow;
+      let nextAlignSelf = flexPolicy?.alignSelf;
+      if (!main) {
+        if (choice === "fill") nextAlignSelf = "stretch";
+        else if (alignSelf === "stretch") nextAlignSelf = "start"; // leaving cross-fill
+      }
+      const base: Partial<Omit<AutoFlexChildPolicy, "kind">> =
+        flexPolicy !== undefined
+          ? {
+              grow: flexPolicy.grow,
+              shrink: flexPolicy.shrink,
+              basis: flexPolicy.basis,
+              ...(flexPolicy.crossSize !== undefined ? { crossSize: flexPolicy.crossSize } : {}),
+              ...(flexPolicy.sizePx !== undefined ? { sizePx: flexPolicy.sizePx } : {}),
+            }
+          : {};
+      const next = createAutoFlexChildPolicy({
+        ...base,
+        grow: nextGrow,
+        ...(nextAlignSelf !== undefined ? { alignSelf: nextAlignSelf } : {}),
+      });
+      ops.push({ command: "weave.item.setLayoutChild", input: { itemId: item.id, policy: next } });
+    }
+
+    // One transaction → one undo. A single op (no flex parent) dispatches direct.
+    if (ops.length === 1) {
+      const only = nn(ops[0]);
+      editor.exec(only.command, only.input);
+    } else {
+      editor.exec("weave.batch", { ops });
+    }
   };
 
   return (
@@ -98,16 +173,16 @@ export function FrameSizingSection({
       className="inline-flex items-end gap-2 ml-1 pl-2 border-l border-l-[color:var(--surface-overlay-border)]"
     >
       <Bar.Field label="너비">
-        <SegmentedControl<ContainerSizing>
-          value={shown(sizing.width)}
+        <SegmentedControl<Sizing3>
+          value={axisValue("width")}
           onValueChange={(v) => apply("width", v)}
           options={options}
           aria-label="Container width sizing"
         />
       </Bar.Field>
       <Bar.Field label="높이">
-        <SegmentedControl<ContainerSizing>
-          value={shown(sizing.height)}
+        <SegmentedControl<Sizing3>
+          value={axisValue("height")}
           onValueChange={(v) => apply("height", v)}
           options={options}
           aria-label="Container height sizing"
