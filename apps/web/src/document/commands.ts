@@ -74,6 +74,7 @@ import {
   createSwapFlexOrderCommand,
   createSwapGridCellsCommand,
   gridSpecForChildCount,
+  gridSpecWithMinTracks,
   refitHugContainer,
   reflowHugOnResize,
 } from "@agocraft/layout";
@@ -3132,6 +3133,36 @@ export function buildWeaveCommands(
       if (layout?.kind === "auto-grid" && layout.columns.length <= 1 && layout.rows.length <= 1) {
         const frame = findChild(ctx.document, String(input.itemId));
         layout = gridSpecForChildCount(frame?.children.length ?? 0, layout);
+      }
+      // WI-226 — when (re)setting a grid on a frame that ALREADY holds children
+      // with AUTHORED cells, GROW the declared tracks to cover those cells. A
+      // re-issued setLayout carrying a too-small columns/rows (e.g. the agent
+      // re-asserts its original 1-row spec after item.add already grew the grid)
+      // would otherwise push authored cells out of bounds → the auto-grid adapter
+      // clamps them onto the last cell and the items STACK (the "1-row grid, last
+      // column dumping" regression). Coverage keeps the agent's column count.
+      if (layout?.kind === "auto-grid") {
+        const frame = findChild(ctx.document, String(input.itemId));
+        let maxCol = 1;
+        let maxRow = 1;
+        for (const c of frame?.children ?? []) {
+          const p = (
+            c.attrs as {
+              layoutChild?: {
+                kind?: string;
+                column?: number;
+                row?: number;
+                columnSpan?: number;
+                rowSpan?: number;
+              };
+            }
+          ).layoutChild;
+          if (p === undefined || p.kind !== "auto-grid") continue;
+          maxCol = Math.max(maxCol, (p.column ?? 1) + Math.max(1, p.columnSpan ?? 1) - 1);
+          maxRow = Math.max(maxRow, (p.row ?? 1) + Math.max(1, p.rowSpan ?? 1) - 1);
+        }
+        const covered = gridSpecWithMinTracks(layout, maxCol, maxRow);
+        if (covered !== undefined) layout = covered;
       }
       // WI-043 P6 — resolve the frame's absolute box so a FIXED-px gap/padding
       // spec lays children at exact px on the paradigm switch (not ratio). Omit

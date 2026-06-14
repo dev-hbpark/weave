@@ -3200,6 +3200,50 @@ describe("weave.clipboard.paste — layout add-rule placement (WI-224)", () => {
     // No layout re-stamp at the root (free placement).
     expect((create.item.attrs as { layoutChild?: unknown }).layoutChild).toBeUndefined();
   });
+
+  // WI-226 — (re)setting a grid layout covers existing AUTHORED cells so the
+  // agent re-asserting a too-small spec can't push a row-3 child out of bounds
+  // (→ clamp → stack). This is the host-side guard complementing the engine grow.
+  it("setFrameLayout grows the grid to cover an existing high-row child cell", () => {
+    // Grid frame (2×1) holding a child AUTHORED at row 3.
+    const gridFrame = {
+      id: "grid-2",
+      kind: "frame",
+      attrs: {
+        frame: FULL_FRAME,
+        layout: makeGridSpec({ columns: [makeTrackFr(1), makeTrackFr(1)], rows: [makeTrackFr(1)] }),
+      },
+      behaviors: [],
+      createdAt: META_DATE,
+    } as unknown as Item;
+    const weave: WeaveDocument = {
+      id: "doc-grid2",
+      title: "Grid2",
+      items: [gridFrame],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    const doc = addChild(toAgocraftDocument(weave), cell("hi", 2, 3), "grid-2");
+    const ctx: CommandContext = { document: doc, resolve: () => null as never, skipRelations: false };
+
+    const setLayout = nn(
+      buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.frame.setLayout"),
+    );
+    // Re-assert a SMALL 2×1 spec — the guard must grow rows to cover the row-3 cell.
+    const res = setLayout.run(ctx, {
+      itemId: "grid-2",
+      layout: { kind: "auto-grid", columns: [makeTrackFr(1), makeTrackFr(1)], rows: [makeTrackFr(1)] },
+    } as never);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const layoutPatch = res.patches.find((p) => p.type === "item.layout");
+    if (layoutPatch === undefined || layoutPatch.type !== "item.layout") {
+      throw new Error("no item.layout patch");
+    }
+    const after = (layoutPatch as { after: { rows: unknown[]; columns: unknown[] } }).after;
+    expect(after.columns.length).toBe(2); // column count preserved
+    expect(after.rows.length).toBeGreaterThanOrEqual(3); // grown to cover row 3
+  });
 });
 
 type ItemFrameLike = { x: number; y: number; width: number; height: number };
