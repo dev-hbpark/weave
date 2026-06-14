@@ -29,7 +29,7 @@ overrides:
   "@agocraft/editor": "file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260614000000.tgz"
   "@agocraft/input": "file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz"
   "@agocraft/interaction": "file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz"
-  "@agocraft/layout": "file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260614110000.tgz"
+  "@agocraft/layout": "file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260614120000.tgz"
   "@agocraft/manipulation": "file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz"
   "@agocraft/plugin-sample-measurement": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-measurement-1.0.0-rc.20260602053511.tgz"
   "@agocraft/plugin-sample-sticky-note": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-sticky-note-1.0.0-rc.20260602053511.tgz"

@@ -248,3 +248,70 @@ test("MOVING a child of a ROTATED parent follows the cursor (no drift)", async (
 
   expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
 });
+
+test("Shift+corner aspect-lock holds on a ROTATED item", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await bootstrap(page);
+
+  const rootId = await page.evaluate(() => String((window as unknown as W).__weaveDoc.root.id));
+
+  // A 45°-rotated item (aspect 2:1). Shift+corner must preserve the aspect ratio
+  // (nw/nh == ow/oh) AND grow it — the WI-218 de-rotation feeds the local delta
+  // into the aspect-lock step, so it works under rotation.
+  const I = await addFrame(page, rootId, {
+    x: 0.3,
+    y: 0.3,
+    width: 0.4,
+    height: 0.2,
+    rotation: Math.PI / 4,
+  });
+
+  await page.evaluate((id) => {
+    (window as unknown as W).__weaveVm?.itemSelection.set(id);
+  }, I);
+
+  const frameRatio = async (): Promise<{ width: number; height: number }> =>
+    page.evaluate((id) => {
+      let f: { width: number; height: number } | undefined;
+      const walk = (n: N & { attrs?: { frame?: { width: number; height: number } } }) => {
+        if (String(n.id) === id) f = n.attrs?.frame;
+        for (const c of n.children) walk(c as never);
+      };
+      walk((window as unknown as W).__weaveDoc.root as never);
+      return { width: f?.width ?? 0, height: f?.height ?? 0 };
+    }, I);
+
+  const before = await frameRatio();
+  const aspectBefore = before.width / before.height; // ≈ 2 (0.4 / 0.2)
+
+  const se = page.locator(`[data-selection-handle-item-id="${I}"] [data-handle-dir="se"]`).first();
+  await expect.poll(() => se.count()).toBeGreaterThan(0);
+  const itemBox = await page.locator(`[data-frame-id="${I}"]`).first().boundingBox();
+  const hb = await se.boundingBox();
+  if (itemBox === null || hb === null) throw new Error("no boxes");
+
+  // Drag the SE corner outward (item-center → handle direction) with Shift held.
+  const cx = itemBox.x + itemBox.width / 2;
+  const cy = itemBox.y + itemBox.height / 2;
+  const hx = hb.x + hb.width / 2;
+  const hy = hb.y + hb.height / 2;
+  const len = Math.hypot(hx - cx, hy - cy) || 1;
+  const D = 120;
+  await page.keyboard.down("Shift");
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+  await page.mouse.move(hx + ((hx - cx) / len) * D, hy + ((hy - cy) / len) * D, { steps: 12 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+
+  const after = await frameRatio();
+  const aspectAfter = after.width / after.height;
+  const msg = `before=${JSON.stringify(before)} after=${JSON.stringify(after)} aspect ${aspectBefore}→${aspectAfter}`;
+  expect(after.width, msg).toBeGreaterThan(before.width); // grew
+  // Aspect ratio preserved under rotation (Shift lock); ~5% tolerance.
+  expect(aspectAfter, msg).toBeGreaterThan(aspectBefore * 0.95);
+  expect(aspectAfter, msg).toBeLessThan(aspectBefore * 1.05);
+
+  expect(errors, `page errors:\n${errors.join("\n")}`).toEqual([]);
+});
