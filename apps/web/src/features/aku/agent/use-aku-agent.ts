@@ -52,6 +52,7 @@ import type {
   AkuMessage,
   AkuStatus,
 } from "../types.js";
+import { applyAgentGuardChain } from "./agent-batch-guard.js";
 import { stampContainerGuard } from "./agent-container-guard.js";
 import { stampGridCapacityGuard } from "./agent-grid-capacity-guard.js";
 import { stampMinSizeGuard } from "./agent-min-size-guard.js";
@@ -546,14 +547,23 @@ export function useAkuAgent(deps: {
         //    design px, so it is stamped before the design-undefined early return).
         transformInput: (commandName, input) => {
           const doc = depsRef.current.getDocument();
-          const sized = fixAgentTextBox(commandName, input, doc);
-          const guarded = stampContainerGuard(commandName, sized);
-          // WI-199 / DR-128 #3 — grow an auto-managed grid's tracks when an agent
-          // add would otherwise overflow & stack onto the last cell.
-          const capped = stampGridCapacityGuard(commandName, guarded);
           const design = depsRef.current.getDesignInfo?.();
-          if (design === undefined) return capped;
-          return stampMinSizeGuard(commandName, capped, design);
+          // The agent-only guard chain for ONE command's input (text-box fix +
+          // container-is-frame + grid-capacity grow + min-size reject).
+          const guardOne = (name: string, opInput: unknown): unknown => {
+            const sized = fixAgentTextBox(name, opInput, doc);
+            const guarded = stampContainerGuard(name, sized);
+            // WI-199 / DR-128 #3 — grow an auto-managed grid's tracks when an agent
+            // add would otherwise overflow & stack onto the last cell.
+            const capped = stampGridCapacityGuard(name, guarded);
+            return design === undefined ? capped : stampMinSizeGuard(name, capped, design);
+          };
+          // WI-226 — a `weave.batch` op calls the INTERNAL command directly,
+          // bypassing this transform, so the guards are applied to EACH inner op
+          // (else a BATCHED grid build never gets `enforceGridCapacity` →
+          // `growToFit` is false → the engine grid grow never runs → authored cells
+          // clamp onto the last cell and STACK, the live "1-row grid" dump).
+          return applyAgentGuardChain(commandName, input, guardOne);
         },
       }),
     [editor],

@@ -3240,7 +3240,9 @@ describe("weave.clipboard.paste — layout add-rule placement (WI-224)", () => {
     if (layoutPatch === undefined || layoutPatch.type !== "item.layout") {
       throw new Error("no item.layout patch");
     }
-    const after = (layoutPatch as { after: { rows: unknown[]; columns: unknown[] } }).after;
+    const after = (
+      layoutPatch as { after: { rows: ReadonlyArray<unknown>; columns: ReadonlyArray<unknown> } }
+    ).after;
     expect(after.columns.length).toBe(2); // column count preserved
     expect(after.rows.length).toBeGreaterThanOrEqual(3); // grown to cover row 3
   });
