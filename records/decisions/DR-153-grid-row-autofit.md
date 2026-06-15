@@ -20,7 +20,19 @@ not its frame — so flex auto-fit SKIPS grid children. The 27-row price table c
 because the grid frame was too short and the `fr` tracks squeezed each row below its
 cell text (live: cells 14px box vs 18px need).
 
-## Decision
+## Decision (revised after live verification)
+
+**Revised**: the grow-the-grid-frame approach (below) under-fit (gap/padding + fr
+distribution + cap) and was timing-flaky. Operator's call for #1: a grid cell that
+overflows its track simply **SHRINKS its own font to fit** (keeps the table compact,
+never overflows the slide). Routing still happens in the provider by REAL parent
+layout: `auto-grid` parent → `shrinkFontTarget(currentFontPx, boxPx, contentPx)`
+(scale font down by the overflow, floored at MIN_FIT_FONT_PX, never up) → write
+`fontSizeSpec` on the cell; non-grid → grow the box (WI-237). Plus a **120ms settle
+debounce** on the DOM measurement (in TextBlock) so it acts on the QUIESCED layout,
+not transient mid-reflow frames — fixing the run-to-run non-determinism on reparent.
+
+### (superseded) original grow approach
 
 A grid cell that overflows its track asks the engine to **grow the GRID FRAME**
 (so the tracks get room), not to resize the cell:

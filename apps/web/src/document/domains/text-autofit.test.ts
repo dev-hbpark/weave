@@ -1,26 +1,27 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   clampRefitPx,
-  gridGrowTarget,
   isTextAutofitEnabled,
   shouldRefitHeight,
+  shrinkFontTarget,
 } from "./text-autofit.js";
 
-describe("gridGrowTarget (WI-238)", () => {
-  it("grows the grid frame by the worst cell overflow", () => {
-    // worst cell needs 1.5× its box → frame 0.4 → 0.6
-    expect(gridGrowTarget(0.4, 1.5)).toBeCloseTo(0.6, 5);
+describe("shrinkFontTarget (WI-238 rev — grid cell shrink-to-fit)", () => {
+  it("shrinks the font by the overflow so content fits the cell box", () => {
+    // 22px font, content 60px in a 40px box → 22 × 40/60 ≈ 14.67
+    expect(shrinkFontTarget(22, 40, 60)).toBeCloseTo(14.67, 1);
   });
-  it("caps growth so the frame can't overflow its parent", () => {
-    expect(gridGrowTarget(0.8, 2.0, 0.98)).toBe(0.98); // 1.6 capped to 0.98
+  it("never shrinks below the readable floor", () => {
+    expect(shrinkFontTarget(22, 10, 100, 11)).toBe(11); // would be 2.2 → floored
   });
-  it("does NOT grow when nothing overflows (ratio ≤ 1) — convergent", () => {
-    expect(gridGrowTarget(0.5, 1)).toBe(0.5);
-    expect(gridGrowTarget(0.5, 0.8)).toBe(0.5);
+  it("does NOT shrink when content already fits (≤ box) — convergent, never grows", () => {
+    expect(shrinkFontTarget(22, 40, 40)).toBe(22);
+    expect(shrinkFontTarget(22, 40, 20)).toBe(22); // never scales UP
   });
   it("returns current for non-ready inputs", () => {
-    expect(gridGrowTarget(0, 1.5)).toBe(0);
-    expect(gridGrowTarget(0.5, Number.NaN)).toBe(0.5);
+    expect(shrinkFontTarget(0, 40, 60)).toBe(0);
+    expect(shrinkFontTarget(22, 0, 60)).toBe(22);
+    expect(shrinkFontTarget(22, 40, Number.NaN)).toBe(22);
   });
 });
 

@@ -133,7 +133,7 @@ import {
 } from "../document/interactions/cropping-state.js";
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
-import { clampRefitPx, gridGrowTarget } from "../document/domains/text-autofit.js";
+import { clampRefitPx, shrinkFontTarget } from "../document/domains/text-autofit.js";
 import {
   type RequestTextFit,
   type TextFitReport,
@@ -724,17 +724,14 @@ function DesignPageBody() {
   // WI-237/DR-152 (flex) + WI-238/DR-153 (grid) — text auto-fit coalescing channel.
   // TextBlocks measure content overflow in the DOM; we dedupe a burst and flush on
   // rAF as ONE `editor.runBatch` (a single undo entry + a single save per settle).
-  //  • refitText — flex/absolute text: write the text's own corrected frame.height.
-  //  • refitGrid — a grid CELL overflows its track: resolve the parent GRID frame and
-  //    grow ITS height by the worst cell overflow (capped) so the tracks get room.
-  // (True zero-undo "system" origin needs agocraft to surface applySystemPatches —
-  // HANDOFF-026, deferred; the vendored Editor exposes exec + runBatch only.)
-  // text item id → corrected frame (flex/absolute path); grid frame id → max cell
-  // overflow ratio (grid path). Routing is decided HERE from each item's REAL parent
-  // layout, so it's correct even when the child's own layoutChild is stale (e.g.
-  // reparented into a grid — WI-238 follow-up).
-  const refitTextPendingRef = useRef(new Map<string, ItemFrame>());
-  const refitGridPendingRef = useRef(new Map<string, number>());
+  // Routing is decided HERE from each item's REAL parent layout (so it's correct
+  // even when the child's own layoutChild is stale, e.g. reparented into a grid):
+  //  • flex/absolute → correct the text's own frame.height (grow the box to content).
+  //  • auto-grid cell → the row track owns the height, so the box can't grow; SHRINK
+  //    the cell's FONT to fit instead (keeps the table compact, never overflows the
+  //    slide — operator's choice for #1).
+  const refitTextPendingRef = useRef(new Map<string, ItemFrame>()); // id → grown frame
+  const refitFontPendingRef = useRef(new Map<string, number>()); // grid cell id → font px
   const refitRafRef = useRef<number | null>(null);
   const docForRefitRef = useRef(docInAgocraft);
   docForRefitRef.current = docInAgocraft;
@@ -742,22 +739,17 @@ function DesignPageBody() {
     refitRafRef.current = null;
     const textReqs = [...refitTextPendingRef.current.entries()];
     refitTextPendingRef.current.clear();
-    const gridReqs = [...refitGridPendingRef.current.entries()];
-    refitGridPendingRef.current.clear();
-    if (textReqs.length === 0 && gridReqs.length === 0) return;
-    const doc = docForRefitRef.current;
+    const fontReqs = [...refitFontPendingRef.current.entries()];
+    refitFontPendingRef.current.clear();
+    if (textReqs.length === 0 && fontReqs.length === 0) return;
     editor.runBatch(() => {
       for (const [id, frame] of textReqs) {
         editor.exec("weave.item.update", { itemId: id, attrs: { frame } });
       }
-      for (const [gridId, maxRatio] of gridReqs) {
-        const frame = (findItemDeep(doc, gridId)?.attrs as { frame?: ItemFrame } | undefined)?.frame;
-        if (frame === undefined) continue;
-        const target = gridGrowTarget(frame.height, maxRatio);
-        if (Math.abs(target - frame.height) < 1e-4) continue;
+      for (const [cellId, value] of fontReqs) {
         editor.exec("weave.item.update", {
-          itemId: gridId,
-          attrs: { frame: { ...frame, height: target } },
+          itemId: cellId,
+          attrs: { fontSizeSpec: { kind: "px", value } },
         });
       }
     });
@@ -767,15 +759,20 @@ function DesignPageBody() {
   }, [flushRefits]);
   const requestTextFit = useCallback<RequestTextFit>(
     (report: TextFitReport) => {
-      const found = findParentAndIndex(docForRefitRef.current, report.itemId);
-      const parentLayout = (found?.parent.attrs as { layout?: { kind?: string } } | undefined)
-        ?.layout;
-      if (parentLayout?.kind === "auto-grid" && found !== undefined) {
-        // Grid cell: the row track owns the height — grow the parent GRID frame.
+      const doc = docForRefitRef.current;
+      const parentLayout = (findParentAndIndex(doc, report.itemId)?.parent.attrs as
+        | { layout?: { kind?: string } }
+        | undefined)?.layout;
+      if (parentLayout?.kind === "auto-grid") {
+        // Grid cell: can't grow the box — SHRINK the font to fit the cell.
         if (report.contentPx <= report.boxPx + 2) return;
-        const gridId = String(found.parent.id);
-        const prev = refitGridPendingRef.current.get(gridId) ?? 1;
-        refitGridPendingRef.current.set(gridId, Math.max(prev, report.contentPx / report.boxPx));
+        const fs = (findItemDeep(doc, report.itemId)?.attrs as
+          | { fontSizeSpec?: { kind?: string; value?: number } }
+          | undefined)?.fontSizeSpec;
+        if (fs?.kind !== "px" || typeof fs.value !== "number") return;
+        const target = shrinkFontTarget(fs.value, report.boxPx, report.contentPx);
+        if (target >= fs.value - 0.5) return; // already minimal / no meaningful shrink
+        refitFontPendingRef.current.set(report.itemId, target);
         scheduleRefitFlush();
         return;
       }

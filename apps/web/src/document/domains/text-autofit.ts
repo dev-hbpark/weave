@@ -55,22 +55,28 @@ export function shouldRefitHeight(
   return Math.abs(target - currentPx) > threshold;
 }
 
-/** WI-238/DR-153 — grid row auto-fit. A grid cell can't size its own box (the row
- *  track owns it), so an overflowing cell grows the GRID FRAME instead. Given the
- *  grid frame's current height (ratio of ITS parent) and the worst cell overflow
- *  ratio (contentPx / cellBoxPx) among its cells, return the grown height: scale by
- *  the worst overflow so the tightest row just fits, capped so the frame can't blow
- *  past its parent (no surprise slide overflow). Returns `currentRatio` unchanged
- *  when nothing overflows (ratio ≤ 1) or inputs are not ready. Convergent: once the
- *  frame is tall enough the worst overflow ratio drops to ≤ 1 → no further growth. */
-export function gridGrowTarget(
-  currentRatio: number,
-  maxOverflowRatio: number,
-  capRatio = 0.98,
+/** Readable floor for shrink-to-fit — never shrink a font below this design-px. */
+export const MIN_FIT_FONT_PX = 11;
+
+/** WI-238 (rev) / DR-153 — grid cell shrink-to-fit. A grid cell can't grow its box
+ *  (the row track owns it), so an overflowing cell SHRINKS its font to fit instead
+ *  (keeps the table compact, never overflows the slide). Given the cell's current
+ *  font px and its content vs box height, return the font px that fits: scale down
+ *  by the overflow, floored at MIN_FIT_FONT_PX, never UP (≤ current). Returns the
+ *  current px when it already fits (content ≤ box) or inputs aren't ready.
+ *  Convergent: after shrinking, the content scales down with the font → fits → no
+ *  further shrink. */
+export function shrinkFontTarget(
+  currentPx: number,
+  boxPx: number,
+  contentPx: number,
+  minPx = MIN_FIT_FONT_PX,
 ): number {
-  if (!Number.isFinite(currentRatio) || !(currentRatio > 0)) return currentRatio;
-  if (!Number.isFinite(maxOverflowRatio) || maxOverflowRatio <= 1) return currentRatio;
-  return Math.min(capRatio, currentRatio * maxOverflowRatio);
+  if (!Number.isFinite(currentPx) || !(currentPx > 0)) return currentPx;
+  if (!Number.isFinite(boxPx) || !Number.isFinite(contentPx)) return currentPx;
+  if (!(boxPx > 0) || contentPx <= boxPx) return currentPx; // already fits
+  const scaled = currentPx * (boxPx / contentPx);
+  return Math.max(minPx, Math.min(currentPx, scaled));
 }
 
 /** The height to actually write: the measured content height, clamped to [min, max].

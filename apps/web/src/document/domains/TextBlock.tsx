@@ -344,11 +344,24 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       refitAttempts.current += 1;
       requestFit({ itemId: selfId, boxPx, contentPx, currentFrame: a.frame });
     };
-    measure();
-    const ro = new ResizeObserver(measure);
+    // Debounce so we measure the SETTLED layout, not transient frames mid-reflow
+    // (e.g. during a reparent) — measuring transients made the result vary run to
+    // run. The ResizeObserver just resets the timer; the actual measure fires once
+    // the box has been stable for `SETTLE_MS`.
+    const SETTLE_MS = 120;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleMeasure = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(measure, SETTLE_MS);
+    };
+    scheduleMeasure();
+    const ro = new ResizeObserver(scheduleMeasure);
     ro.observe(box);
     ro.observe(content);
-    return () => ro.disconnect();
+    return () => {
+      if (timer !== undefined) clearTimeout(timer);
+      ro.disconnect();
+    };
     // a.frame.height re-runs the effect after a resize lands (drives convergence).
   }, [requestFit, selfId, isEditing, item, a.frame, refitKey]);
 
