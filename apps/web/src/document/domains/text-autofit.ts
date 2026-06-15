@@ -23,6 +23,24 @@ export interface RefitOptions {
 
 const DEFAULT_THRESHOLD_PX = 2;
 
+/** WI-237 iteration 2 — runtime feature flag, default OFF. Toggle live (no rebuild)
+ *  from the browser console: `localStorage.setItem("weave.textAutofit","on")` then
+ *  reload; `removeItem` (or any non-"on" value) disables it. Read per-measure so it
+ *  can be flipped without restarting the dev server. The area was removed for
+ *  instability, so this stays opt-in until live-verified. */
+export function isTextAutofitEnabled(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("weave.textAutofit") === "on";
+  } catch {
+    return false;
+  }
+}
+
+/** The maximum auto-fit writes per mounted text before giving up — a hard
+ *  loop-breaker so a non-converging case (e.g. a layout that overrides the height
+ *  we set) can never thrash the document. Convergence normally settles in 1. */
+export const MAX_REFIT_ATTEMPTS = 4;
+
 /** True when the box should be refit to the measured content height. Both inputs are
  *  absolute px. Returns false for non-finite / non-positive inputs (measurement not
  *  ready) and when already within `thresholdPx` (converged). */

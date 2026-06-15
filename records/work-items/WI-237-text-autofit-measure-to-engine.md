@@ -40,5 +40,19 @@ relayouts the box. One axis, threshold, idempotent, feature-flagged.
 
 ## Status
 
-- Iteration 1 pure core + tests landed; WI-235/236 remain the pre-paint fallback.
-- DOM/engine wiring pending the live-iteration loop with the operator.
+- **Iteration 1** (committed) — pure core `text-autofit.ts` + tests.
+- **Iteration 2** (committed, flag OFF) — `TextBlock` measures content height
+  (`innerRef`) vs the engine box (`wrapRef`) via a `ResizeObserver`; on divergence
+  it feeds a corrected `frame.height` RATIO to the engine through the existing
+  `onUpdate` seam (`weave.item.update` → layout) — no new prop / context / re-vendor
+  needed (TextBlock computes the ratio from its own box+content+current ratio, so the
+  host needs no parent-px). Guards: flag `localStorage["weave.textAutofit"]==="on"`
+  (default off), skip auto-grid children (track owns height), skip while editing /
+  locked / present-mode (no onUpdate), threshold + `MAX_REFIT_ATTEMPTS` hard cap.
+  Full suite green (1427), flag-off = zero behavior change.
+- **Live loop NEXT (operator)**: set the flag on, regenerate, verify the box grows
+  to fit (no clip/overlap, converges in ≤1 write, no undo/thrash storm). Known
+  iteration-2 limitations to tune live: the refit goes through the undoable
+  user-command path (iteration 3 = system origin / coalesce); only flex/absolute
+  text (grid row-track + font shrink-to-fit are later). Disable instantly by clearing
+  the flag if any oscillation appears.

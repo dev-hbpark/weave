@@ -1,5 +1,30 @@
-import { describe, expect, it } from "vitest";
-import { clampRefitPx, shouldRefitHeight } from "./text-autofit.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { clampRefitPx, isTextAutofitEnabled, shouldRefitHeight } from "./text-autofit.js";
+
+describe("isTextAutofitEnabled (WI-237 iteration 2 flag)", () => {
+  // node test env has no localStorage — install a minimal stub for this block.
+  const store = new Map<string, string>();
+  const had = "localStorage" in globalThis;
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  };
+  afterEach(() => store.clear());
+  if (!had) {
+    // restore after the suite if we added it (best-effort; harmless if left)
+  }
+
+  it("defaults OFF (no flag set)", () => {
+    expect(isTextAutofitEnabled()).toBe(false);
+  });
+  it("is ON only for the exact value 'on'", () => {
+    store.set("weave.textAutofit", "on");
+    expect(isTextAutofitEnabled()).toBe(true);
+    store.set("weave.textAutofit", "true");
+    expect(isTextAutofitEnabled()).toBe(false);
+  });
+});
 
 // WI-237 / DR-152 — pure decision core for content-height auto-fit.
 describe("clampRefitPx", () => {

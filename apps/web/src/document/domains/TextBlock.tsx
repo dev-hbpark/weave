@@ -39,6 +39,12 @@ import { textEditTrigger } from "../interactions/text-edit-trigger.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import { type AgoItem, isItemLocked, type TextAttrs, type WeaveRunStyle } from "../types.js";
 import { ParentFrameHeightContext } from "./parent-frame-context.js";
+import {
+  clampRefitPx,
+  isTextAutofitEnabled,
+  MAX_REFIT_ATTEMPTS,
+  shouldRefitHeight,
+} from "./text-autofit.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -311,6 +317,50 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       setIsEditing(true);
     });
   }, [editable, item, selfId, selectFrame]);
+  // WI-237 / DR-152 iteration 2 — content-height auto-fit (flag OFF by default).
+  // Measure the content's intrinsic height (innerRef, at the engine-bound width)
+  // vs the engine box (wrapRef); when they diverge, feed a corrected frame.height
+  // RATIO to the engine via the existing onUpdate seam (weave.item.update → layout).
+  // Convergent: width is unchanged, so re-measuring after the box is corrected
+  // yields the same value (fixed point); a threshold + a hard attempt cap make a
+  // non-converging case (e.g. an auto-grid track that overrides our height) safe.
+  const refitAttempts = useRef(0);
+  const refitKey = `${selfId}|${a.text}|${resolvedFontSizePx}`;
+  const lastRefitKey = useRef("");
+  if (lastRefitKey.current !== refitKey) {
+    lastRefitKey.current = refitKey;
+    refitAttempts.current = 0; // content/font changed → allow fitting again
+  }
+  const isGridChild = a.layoutChild?.kind === "auto-grid";
+  useEffect(() => {
+    if (!isTextAutofitEnabled()) return undefined;
+    if (onUpdate === undefined || isEditing || isItemLocked(item) || isGridChild) return undefined;
+    const box = wrapRef.current;
+    const content = innerRef.current;
+    if (box === null || content === null) return undefined;
+    const currentRatio = a.frame?.height;
+    if (typeof currentRatio !== "number" || !(currentRatio > 0)) return undefined;
+    const measure = (): void => {
+      if (refitAttempts.current >= MAX_REFIT_ATTEMPTS) return;
+      const boxPx = box.clientHeight;
+      const contentPx = content.scrollHeight;
+      if (!(boxPx > 0) || !(contentPx > 0)) return;
+      if (!shouldRefitHeight(boxPx, contentPx)) return;
+      // box = currentRatio × parentPx ⇒ parentPx = boxPx / currentRatio.
+      const parentPx = boxPx / currentRatio;
+      const targetRatio = clampRefitPx(contentPx, { minPx: 1, maxPx: parentPx * 0.99 }) / parentPx;
+      if (!(targetRatio > 0) || Math.abs(targetRatio - currentRatio) < 1e-4) return;
+      refitAttempts.current += 1;
+      onUpdate({ frame: { ...a.frame, height: targetRatio } });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    ro.observe(content);
+    return () => ro.disconnect();
+    // a.frame.height re-runs the effect after our own write (drives convergence).
+  }, [onUpdate, isEditing, isGridChild, item, a.frame, refitKey]);
+
   // DR-057 — WYSIWYG: the editor surface renders in the item's resolved base
   // typography. Inline toggleables are forced NEUTRAL here so the seeded
   // per-node formats (and Lexical's `font-bold`/`italic`/`underline` theme
