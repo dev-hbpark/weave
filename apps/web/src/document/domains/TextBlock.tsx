@@ -39,6 +39,7 @@ import { textEditTrigger } from "../interactions/text-edit-trigger.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import { type AgoItem, isItemLocked, type TextAttrs, type WeaveRunStyle } from "../types.js";
 import { ParentFrameHeightContext } from "./parent-frame-context.js";
+import { useTextRefit } from "./text-autofit-context.js";
 import {
   clampRefitPx,
   isTextAutofitEnabled,
@@ -324,6 +325,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // Convergent: width is unchanged, so re-measuring after the box is corrected
   // yields the same value (fixed point); a threshold + a hard attempt cap make a
   // non-converging case (e.g. an auto-grid track that overrides our height) safe.
+  const requestRefit = useTextRefit();
   const refitAttempts = useRef(0);
   const refitKey = `${selfId}|${a.text}|${resolvedFontSizePx}`;
   const lastRefitKey = useRef("");
@@ -351,7 +353,11 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       const targetRatio = clampRefitPx(contentPx, { minPx: 1, maxPx: parentPx * 0.99 }) / parentPx;
       if (!(targetRatio > 0) || Math.abs(targetRatio - currentRatio) < 1e-4) return;
       refitAttempts.current += 1;
-      onUpdate({ frame: { ...a.frame, height: targetRatio } });
+      const after = { ...a.frame, height: targetRatio };
+      // iteration 3: prefer the system-origin channel (no undo / coalesced); fall
+      // back to onUpdate (undoable) only when no provider is mounted.
+      if (requestRefit !== null) requestRefit({ itemId: selfId, before: a.frame, after });
+      else onUpdate({ frame: after });
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -359,7 +365,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     ro.observe(content);
     return () => ro.disconnect();
     // a.frame.height re-runs the effect after our own write (drives convergence).
-  }, [onUpdate, isEditing, isGridChild, item, a.frame, refitKey]);
+  }, [onUpdate, requestRefit, selfId, isEditing, isGridChild, item, a.frame, refitKey]);
 
   // DR-057 — WYSIWYG: the editor surface renders in the item's resolved base
   // typography. Inline toggleables are forced NEUTRAL here so the seeded

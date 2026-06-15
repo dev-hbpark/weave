@@ -133,6 +133,10 @@ import {
 } from "../document/interactions/cropping-state.js";
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
+import {
+  TextRefitProvider,
+  type TextRefitRequest,
+} from "../document/domains/text-autofit-context.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import { frameHoverStore } from "../document/interactions/frame-hover-store.js";
 import {
@@ -711,6 +715,33 @@ function DesignPageBody() {
   const setDesignBackgroundViaEditor = useCallback(
     (color: string) => {
       editor.exec("weave.design.setBackground", { color });
+    },
+    [editor],
+  );
+
+  // WI-237 iteration 3 (DR-152) — text auto-fit coalescing channel. TextBlocks
+  // measure content overflow in the DOM and request a corrected frame.height; we
+  // dedupe a burst per item (last-wins) and flush on rAF as ONE `runBatch` — so the
+  // whole settle is a SINGLE undo entry and a SINGLE save, not one per fit. (True
+  // zero-undo "system" origin needs agocraft to surface `applySystemPatches` on the
+  // public Editor — deferred; the vendored Editor exposes exec + runBatch only.)
+  const refitPendingRef = useRef(new Map<string, TextRefitRequest>());
+  const refitRafRef = useRef<number | null>(null);
+  const requestTextRefit = useCallback(
+    (req: TextRefitRequest) => {
+      refitPendingRef.current.set(req.itemId, req);
+      if (refitRafRef.current !== null) return;
+      refitRafRef.current = requestAnimationFrame(() => {
+        refitRafRef.current = null;
+        const reqs = [...refitPendingRef.current.values()];
+        refitPendingRef.current.clear();
+        if (reqs.length === 0) return;
+        editor.runBatch(() => {
+          for (const r of reqs) {
+            editor.exec("weave.item.update", { itemId: r.itemId, attrs: { frame: r.after } });
+          }
+        });
+      });
     },
     [editor],
   );
@@ -2662,6 +2693,7 @@ function DesignPageBody() {
                   >
                     <ModeAwareTooltipSurface>
                       <EditorProvider editor={editor}>
+                       <TextRefitProvider value={requestTextRefit}>
                         <DocumentForResolutionProvider document={docInAgocraft}>
                           <DatasetProvider doc={docInAgocraft} editor={editor}>
                             <ChartElementSelectionProvider>
@@ -3530,6 +3562,7 @@ function DesignPageBody() {
                             </ChartElementSelectionProvider>
                           </DatasetProvider>
                         </DocumentForResolutionProvider>
+                       </TextRefitProvider>
                       </EditorProvider>
                     </ModeAwareTooltipSurface>
                   </CommandHostProvider>

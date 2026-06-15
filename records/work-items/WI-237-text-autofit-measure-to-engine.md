@@ -50,9 +50,19 @@ relayouts the box. One axis, threshold, idempotent, feature-flagged.
   (default off), skip auto-grid children (track owns height), skip while editing /
   locked / present-mode (no onUpdate), threshold + `MAX_REFIT_ATTEMPTS` hard cap.
   Full suite green (1427), flag-off = zero behavior change.
-- **Live loop NEXT (operator)**: set the flag on, regenerate, verify the box grows
-  to fit (no clip/overlap, converges in ≤1 write, no undo/thrash storm). Known
-  iteration-2 limitations to tune live: the refit goes through the undoable
-  user-command path (iteration 3 = system origin / coalesce); only flex/absolute
-  text (grid row-track + font shrink-to-fit are later). Disable instantly by clearing
-  the flag if any oscillation appears.
+- **Iteration 2** live-verified by operator: flag on → boxes grow to fit, no
+  clip/overlap, no oscillation. ✓
+- **Iteration 3** (committed) — COALESCE + collapse undo churn. A new
+  `TextRefitProvider` (DesignPage) dedupes a burst per item (last-wins) and flushes
+  on rAF inside `editor.runBatch` → the whole settle is ONE undo entry + ONE save
+  (not one per fit). TextBlock routes through the `useTextRefit` context, falling
+  back to `onUpdate` when no provider (tests/present). 1429 green, flag still OFF.
+  - **Honest limit**: the vendored `@agocraft/editor` Editor surfaces only
+    `exec` + `runBatch` — NOT `applySystemPatches` (that lives on the internal
+    `TransactionRunner`). So the refit is still a (single, benign) UNDO entry, not a
+    true zero-undo system-origin change. TRUE system origin = an agocraft change to
+    expose `applySystemPatches` on the public Editor → **HANDOFF-AUTOFIT** (deferred,
+    iteration 4). runBatch is the best the current editor allows.
+- **Still NEXT**: operator re-verifies iter 3 (Cmd+Z now reverts a whole settle in
+  ONE press; saves coalesced). Then: default-ON consideration, grid row-track
+  auto-fit, font shrink-to-fit for genuinely fixed cells.
