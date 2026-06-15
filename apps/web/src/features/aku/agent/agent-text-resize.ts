@@ -64,8 +64,78 @@
 // `layoutChild` the agent already set.
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
-import { findItemDeep } from "../../../document/agocraft-mirror.js";
+import { findItemDeep, findParentAndIndex } from "../../../document/agocraft-mirror.js";
 import { layoutChildFromTextAutoResize } from "../../../document/domains/derive-text-auto-resize.js";
+
+/** Canvas px the agent sizes fonts against (design VM). */
+export interface DesignPx {
+  readonly width: number;
+  readonly height: number;
+}
+
+// WI-236/DR-151 — measurement-lite content height for agent-added text. weave has
+// NO text auto-height (TextBlock removed the render-time measure-and-write-back),
+// so the agent guesses frame.height and gets it wrong both ways (a 2-line title
+// clipped to 40px; a 1-line heading ballooned to 450px). This estimates the box
+// height from the text's line count instead — explicit \n lines + a rough wrap
+// estimate — so the box tracks the content. One-shot at add (not a render loop),
+// so it does NOT reintroduce the removed feedback instability.
+
+/** Container's absolute px box: walk root→containerId multiplying frame ratios ×
+ *  canvas px. Returns undefined when the container / a frame can't be resolved. */
+function containerAbsPx(
+  doc: AgocraftDocument,
+  containerId: string,
+  canvas: DesignPx,
+): { readonly wPx: number; readonly hPx: number } | undefined {
+  let wRatio = 1;
+  let hRatio = 1;
+  let cur: string | undefined = containerId;
+  const rootId = String(doc.root.id);
+  for (let guard = 0; cur !== undefined && cur !== rootId && guard < 64; guard += 1) {
+    const item = findItemDeep(doc, cur);
+    const fr = (item?.attrs as { frame?: { width?: number; height?: number } } | undefined)?.frame;
+    if (fr === undefined || typeof fr.width !== "number" || typeof fr.height !== "number") {
+      return undefined;
+    }
+    wRatio *= fr.width;
+    hRatio *= fr.height;
+    const pi = findParentAndIndex(doc, cur);
+    cur = pi?.parent !== undefined ? String(pi.parent.id) : undefined;
+  }
+  const wPx = wRatio * canvas.width;
+  const hPx = hRatio * canvas.height;
+  if (!(wPx > 0) || !(hPx > 0)) return undefined;
+  return { wPx, hPx };
+}
+
+/** Estimated text box height as a ratio of the container's px height. Lines =
+ *  explicit `\n` count + a per-line wrap estimate against the usable width.
+ *  Capped to a sane band so a bad input can never set an absurd box. */
+export function estimateTextHeightRatio(
+  text: string,
+  fontPx: number,
+  lineHeightMult: number,
+  parentWPx: number,
+  parentHPx: number,
+): number | undefined {
+  if (!(fontPx > 0) || !(parentHPx > 0)) return undefined;
+  const lh = lineHeightMult > 0 ? lineHeightMult : 1.2;
+  // Usable text width ≈ the column minus typical horizontal padding (~0.84).
+  const usableW = parentWPx > 0 ? parentWPx * 0.84 : Number.POSITIVE_INFINITY;
+  // ~0.6·fontPx average glyph advance (latin ~0.5, CJK ~1.0 → middle).
+  const charPx = fontPx * 0.6;
+  let lines = 0;
+  for (const seg of text.split("\n")) {
+    const segW = seg.length * charPx;
+    const wrapped = Number.isFinite(usableW) && usableW > 0 ? Math.ceil(segW / usableW) : 1;
+    lines += Math.max(1, wrapped);
+  }
+  const contentPx = lines * fontPx * lh;
+  const ratio = contentPx / parentHPx;
+  // Never below a readable floor, never absurdly tall.
+  return Math.min(0.95, Math.max(0.02, ratio));
+}
 
 // The canonical Fixed-box policy (left × top anchor → derives to "NONE"/Fixed).
 const FIXED_LAYOUT_CHILD = layoutChildFromTextAutoResize("NONE");
@@ -187,6 +257,7 @@ export function fixAgentTextBox(
   commandName: string,
   input: unknown,
   doc: AgocraftDocument,
+  design?: DesignPx,
 ): unknown {
   if (commandName !== "weave.item.add" || !isObj(input)) return input;
   const attrs = isObj(input.attrsOverride) ? input.attrsOverride : {};
@@ -203,6 +274,29 @@ export function fixAgentTextBox(
     attrsOverride: { ...attrs, layoutChild: policy },
   });
 
+  // WI-236/DR-151 — estimate a content height for COLUMN text so the box tracks
+  // the text (no clip, no 450px balloon). undefined when we lack canvas/container
+  // px or a px font; callers fall back to the WI-235 share policy.
+  const estColHeight = (): number | undefined => {
+    if (design === undefined || containerId === undefined || input.kind !== "text") return undefined;
+    const box = containerAbsPx(doc, containerId, design);
+    if (box === undefined) return undefined;
+    const text = typeof attrs.text === "string" ? attrs.text : "";
+    const fsSpec = attrs.fontSizeSpec as { kind?: string; value?: number } | undefined;
+    const fontPx =
+      fsSpec?.kind === "px" && typeof fsSpec.value === "number" ? fsSpec.value : undefined;
+    if (fontPx === undefined) return undefined;
+    const lh = (attrs.lineHeightSpec as { value?: number } | undefined)?.value ?? 1.2;
+    return estimateTextHeightRatio(text, fontPx, lh, box.wPx, box.hPx);
+  };
+  /** withChild + an estimated frame.height merged in (so basis:"auto" reads it). */
+  const withChildSized = (policy: unknown, estH: number | undefined): Record<string, unknown> => {
+    const base = withChild(policy);
+    if (estH === undefined) return base;
+    const cf = isObj(input.frame) ? input.frame : {};
+    return { ...base, frame: { x: 0, y: 0, width: 1, rotation: 0, ...cf, height: estH } };
+  };
+
   if (input.kind === "text") {
     // A text whose WIDTH is not bound to its cell collapses to a vertical sliver.
     // In a flex COLUMN / auto-GRID the agent often sets a `layoutChild` for cell
@@ -210,22 +304,26 @@ export function fixAgentTextBox(
     // (preserving its placement) instead of bailing — unless the agent chose its
     // own cross/column-axis alignment, which we respect.
     if (container === "flex-col") {
-      // No explicit height → the FULL_FRAME seed would collapse to the floor (WI-235);
-      // share the column height instead. An explicit height is respected (basis:auto).
+      // WI-236: a content-estimated height (basis:"auto" then reads it). When we
+      // can't estimate (no canvas/container px), fall back to WI-235: an explicit
+      // height → basis:auto; otherwise SHARE so the FULL_FRAME seed can't collapse.
+      const estH = estColHeight();
       if (existingLc === undefined) {
-        return withChild(
-          hasExplicitMainSize(input, "flex-col")
+        const policy =
+          estH !== undefined || hasExplicitMainSize(input, "flex-col")
             ? { ...FLEX_COL_TEXT }
-            : { ...FLEX_COL_TEXT_SHARE },
-        );
+            : { ...FLEX_COL_TEXT_SHARE };
+        return withChildSized(policy, estH);
       }
       if (
         isObj(existingLc) &&
         existingLc.kind === "auto-flex" &&
         existingLc.alignSelf === undefined
       ) {
-        return withChild({ ...existingLc, alignSelf: "stretch" });
+        return withChildSized({ ...existingLc, alignSelf: "stretch" }, estH);
       }
+      // Existing policy with its own alignSelf — still apply the estimated height.
+      if (estH !== undefined) return withChildSized(existingLc, estH);
       return input;
     }
     if (container === "grid") {

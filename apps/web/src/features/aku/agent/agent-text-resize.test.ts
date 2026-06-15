@@ -2,7 +2,7 @@
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import { describe, expect, it } from "vitest";
-import { fixAgentTextBox } from "./agent-text-resize.js";
+import { estimateTextHeightRatio, fixAgentTextBox } from "./agent-text-resize.js";
 
 const frame = (x: number, y: number, w: number, h: number) => ({
   x,
@@ -276,5 +276,88 @@ describe("fixAgentTextBox", () => {
       makeDoc(),
     );
     expect(ov(out).layoutChild).toEqual(FIXED);
+  });
+});
+
+// WI-236/DR-151 — measurement-lite content height for agent column text.
+describe("estimateTextHeightRatio (WI-236)", () => {
+  it("a 1-line text in a 540px column ≈ fontPx·lineHeight / 540", () => {
+    // 30px × 1.2 = 36px → 36/540 = 0.0667
+    expect(estimateTextHeightRatio("Nearest", 30, 1.2, 960, 540)).toBeCloseTo(0.0667, 3);
+  });
+
+  it("an explicit 2-line (\\n) title is ~2× a 1-line of the same size", () => {
+    const one = estimateTextHeightRatio("Methods", 60, 1.2, 960, 540) ?? 0;
+    const two = estimateTextHeightRatio("Image\nMethods", 60, 1.2, 960, 540) ?? 0;
+    expect(two).toBeGreaterThan(one * 1.6); // 2 lines clearly taller (wrap may add more)
+  });
+
+  it("caps an absurd input to ≤ 0.95 and floors a tiny one at 0.02", () => {
+    const huge = estimateTextHeightRatio("x".repeat(5000), 200, 2, 100, 10) ?? 0;
+    expect(huge).toBeLessThanOrEqual(0.95);
+    const tiny = estimateTextHeightRatio("·", 4, 1, 100000, 100000) ?? 0;
+    expect(tiny).toBeGreaterThanOrEqual(0.02);
+  });
+
+  it("returns undefined without a usable font / container px", () => {
+    expect(estimateTextHeightRatio("x", 0, 1.2, 960, 540)).toBeUndefined();
+    expect(estimateTextHeightRatio("x", 30, 1.2, 960, 0)).toBeUndefined();
+  });
+});
+
+describe("fixAgentTextBox — flex-COLUMN content height (WI-236)", () => {
+  // makeDoc().flexFrame is an auto-flex COLUMN at frame {0.5,0,0.5,0.5}; with a
+  // 1920×1080 canvas its box is 960×540 px.
+  const CANVAS = { width: 1920, height: 1080 };
+
+  it("stamps an estimated frame.height + basis:auto for column text (no clip, no balloon)", () => {
+    const input = {
+      kind: "text",
+      containerId: "flexFrame",
+      attrsOverride: { text: "Nearest", fontSizeSpec: { kind: "px", value: 30 } },
+    };
+    const out = fixAgentTextBox("weave.item.add", input, makeDoc(), CANVAS) as {
+      frame?: { height?: number };
+      attrsOverride?: { layoutChild?: unknown };
+    };
+    // basis:auto so the engine reads the height we set
+    expect(ov(out).layoutChild).toMatchObject({ kind: "auto-flex", basis: "auto" });
+    // ≈ 30·1.2 / 540 = 0.0667
+    expect(out.frame?.height).toBeCloseTo(0.0667, 2);
+  });
+
+  it("a 2-line title gets a taller box than a 1-line caption (same column)", () => {
+    const doc = makeDoc();
+    const title = fixAgentTextBox(
+      "weave.item.add",
+      {
+        kind: "text",
+        containerId: "flexFrame",
+        attrsOverride: { text: "입원 준비물\n가격표", fontSizeSpec: { kind: "px", value: 68 } },
+      },
+      doc,
+      CANVAS,
+    ) as { frame?: { height?: number } };
+    const caption = fixAgentTextBox(
+      "weave.item.add",
+      {
+        kind: "text",
+        containerId: "flexFrame",
+        attrsOverride: { text: "부제", fontSizeSpec: { kind: "px", value: 22 } },
+      },
+      doc,
+      CANVAS,
+    ) as { frame?: { height?: number } };
+    expect((title.frame?.height ?? 0) > (caption.frame?.height ?? 0)).toBe(true);
+  });
+
+  it("falls back to WI-235 share when NO design px is provided (no height stamped)", () => {
+    const out = fixAgentTextBox("weave.item.add", {
+      kind: "text",
+      containerId: "flexFrame",
+      attrsOverride: { text: "hi" },
+    }, makeDoc()) as { frame?: unknown };
+    expect(ov(out).layoutChild).toMatchObject({ kind: "auto-flex", grow: 1, basis: 0 });
+    expect(out.frame).toBeUndefined();
   });
 });

@@ -551,7 +551,7 @@ export function useAkuAgent(deps: {
           // The agent-only guard chain for ONE command's input (text-box fix +
           // container-is-frame + grid-capacity grow + min-size reject).
           const guardOne = (name: string, opInput: unknown): unknown => {
-            const sized = fixAgentTextBox(name, opInput, doc);
+            const sized = fixAgentTextBox(name, opInput, doc, design);
             const guarded = stampContainerGuard(name, sized);
             // WI-199 / DR-128 #3 — grow an auto-managed grid's tracks when an agent
             // add would otherwise overflow & stack onto the last cell.
