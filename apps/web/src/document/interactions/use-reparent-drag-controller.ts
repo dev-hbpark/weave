@@ -290,6 +290,16 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
                 .map((x) => x.itemId)
             : [];
         editor.runBatch(() => {
+          // Set the cross-stretch policy BEFORE the reparent so the reparent's own
+          // layout pass (engine.onReparent) arranges the item WITH the stretch in
+          // place — setLayoutChild only emits the policy patch (no re-arrange), so
+          // applying it after left the box un-stretched until a manual resize.
+          for (const id of fillTextIds) {
+            editor.exec("weave.item.setLayoutChild", {
+              itemId: id,
+              policy: { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto", alignSelf: "stretch" },
+            });
+          }
           editor.exec("weave.item.reparent", {
             entries: session.entries.map((x) => ({
               itemId: x.itemId,
@@ -297,15 +307,8 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
             })),
             ...(size !== undefined ? { designWidth: size.width, designHeight: size.height } : {}),
           });
-          for (const id of fillTextIds) {
-            editor.exec("weave.item.setLayoutChild", {
-              itemId: id,
-              policy: { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto", alignSelf: "stretch" },
-            });
-          }
-          // Re-apply the parent's layout to force an IMMEDIATE re-arrange so the
-          // cross-stretch takes effect now (not only on the next manual resize) —
-          // setLayoutChild sets the policy but does not itself re-arrange the parent.
+          // Belt-and-suspenders: re-apply the parent layout to force a re-arrange in
+          // case onReparent did not re-stretch.
           if (fillTextIds.length > 0 && parentLayout !== undefined) {
             editor.exec("weave.frame.setLayout", { itemId: candidateId, layout: parentLayout });
           }
