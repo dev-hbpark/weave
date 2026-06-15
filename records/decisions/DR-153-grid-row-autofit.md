@@ -20,7 +20,22 @@ not its frame — so flex auto-fit SKIPS grid children. The 27-row price table c
 because the grid frame was too short and the `fr` tracks squeezed each row below its
 cell text (live: cells 14px box vs 18px need).
 
-## Decision (revised after live verification)
+## Decision (rev 2 — render-level shrink-to-fit, box untouched)
+
+Operator's precise ask: "if the text's bound + font exceed the cell/grid height, fit
+it in" and "don't shrink the BOX too small — let it fill the flex/cell height, just
+shrink the font." So auto-fit is now **purely render-level** in TextBlock and does
+NOT touch the doc/box at all:
+- `fitFontScale(boxH, naturalH, boxW, naturalW, minScale)` → CSS `transform: scale`
+  on the content (full-font layout, so the measured size stays natural → loop-free,
+  deterministic). The BOX is untouched (keeps filling its cell/slot); only the font
+  visually shrinks to fit. Floored at `MIN_FIT_FONT_PX`. Works for grid AND flex AND
+  present mode (no provider / no doc write / no undo / no save). 80ms settle debounce.
+- The earlier doc-write paths (grow the flex box / grow the grid frame / shrink the
+  grid fontSizeSpec via the provider) are SUPERSEDED — they shrank the box too small
+  and were timing-flaky. The TextFitProvider is now dormant (cleanup pending).
+
+## Decision (rev 1 — superseded)
 
 **Revised**: the grow-the-grid-frame approach (below) under-fit (gap/padding + fr
 distribution + cap) and was timing-flaky. Operator's call for #1: a grid cell that

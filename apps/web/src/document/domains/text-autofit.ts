@@ -58,6 +58,29 @@ export function shouldRefitHeight(
 /** Readable floor for shrink-to-fit — never shrink a font below this design-px. */
 export const MIN_FIT_FONT_PX = 11;
 
+/** WI-238 (rev2) / DR-153 — render-level shrink-to-fit scale. When a text's natural
+ *  (full-font) content is taller/wider than its box (grid cell / region), return the
+ *  scale (< 1) to shrink it so it fits; 1 when it already fits (NEVER scales up).
+ *  Height-driven in practice (width is layout-bound so the text wraps to the box
+ *  width); width guard covers nowrap/short boxes. Floored at `minScale` so text can't
+ *  go microscopic. Pure — TextBlock applies the result as a CSS transform (no doc
+ *  write, no engine round-trip → deterministic, no undo/save churn). */
+export function fitFontScale(
+  boxH: number,
+  naturalH: number,
+  boxW: number,
+  naturalW: number,
+  minScale: number,
+): number {
+  if (!Number.isFinite(boxH) || !Number.isFinite(naturalH)) return 1;
+  if (!(boxH > 0) || !(naturalH > 0)) return 1;
+  const byH = boxH / naturalH;
+  const byW = boxW > 0 && naturalW > 0 ? boxW / naturalW : 1;
+  const raw = Math.min(byH, byW);
+  if (raw >= 1) return 1; // already fits — never scale UP
+  return Math.max(minScale, raw);
+}
+
 /** WI-238 (rev) / DR-153 — grid cell shrink-to-fit. A grid cell can't grow its box
  *  (the row track owns it), so an overflowing cell SHRINKS its font to fit instead
  *  (keeps the table compact, never overflows the slide). Given the cell's current

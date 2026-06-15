@@ -39,8 +39,7 @@ import { textEditTrigger } from "../interactions/text-edit-trigger.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import { type AgoItem, isItemLocked, type TextAttrs, type WeaveRunStyle } from "../types.js";
 import { ParentFrameHeightContext } from "./parent-frame-context.js";
-import { useTextFit } from "./text-autofit-context.js";
-import { isTextAutofitEnabled, MAX_REFIT_ATTEMPTS, shouldRefitHeight } from "./text-autofit.js";
+import { fitFontScale, isTextAutofitEnabled, MIN_FIT_FONT_PX } from "./text-autofit.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -320,50 +319,55 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // frame; flex/absolute → correct the text's own height) — so it is correct even
   // when the child's own `layoutChild` is stale (e.g. reparented into a grid).
   // Convergent (width fixed) + threshold + a hard attempt cap (no thrash).
-  const requestFit = useTextFit();
-  const refitAttempts = useRef(0);
-  const refitKey = `${selfId}|${a.text}|${resolvedFontSizePx}`;
-  const lastRefitKey = useRef("");
-  if (lastRefitKey.current !== refitKey) {
-    lastRefitKey.current = refitKey;
-    refitAttempts.current = 0; // content/font changed → allow fitting again
-  }
+  // WI-238 rev2 / DR-153 — render-level shrink-to-fit. If the text's natural
+  // (full-font) content is taller/wider than its box (a grid cell / a bounded flex
+  // slot), SCALE THE FONT DOWN (CSS transform on the content) so it FITS — the box
+  // is left untouched (it keeps filling its cell/slot; we don't shrink the box).
+  // Pure render: no doc write, no engine round-trip → deterministic, no undo/save
+  // churn, no measure-write loop (the transform is visual, so the measured layout
+  // size stays the full-font natural → a fixed point). Skipped while editing (the
+  // caret edits at full size) and when content already fits (scale 1).
+  const [fitScale, setFitScale] = useState(1);
+  const minFitScale = resolvedFontSizePx > 0 ? Math.max(0.3, MIN_FIT_FONT_PX / resolvedFontSizePx) : 0.3;
   useEffect(() => {
-    if (!isTextAutofitEnabled() || requestFit === null) return undefined;
-    if (isEditing || isItemLocked(item)) return undefined;
+    if (!isTextAutofitEnabled() || isEditing) {
+      setFitScale(1);
+      return undefined;
+    }
     const box = wrapRef.current;
     const content = innerRef.current;
     if (box === null || content === null) return undefined;
-    if (typeof a.frame?.height !== "number" || !(a.frame.height > 0)) return undefined;
-    const measure = (): void => {
-      if (refitAttempts.current >= MAX_REFIT_ATTEMPTS) return;
-      const boxPx = box.clientHeight;
-      const contentPx = content.scrollHeight;
-      if (!(boxPx > 0) || !(contentPx > 0)) return;
-      if (!shouldRefitHeight(boxPx, contentPx)) return; // converged within threshold
-      refitAttempts.current += 1;
-      requestFit({ itemId: selfId, boxPx, contentPx, currentFrame: a.frame });
-    };
-    // Debounce so we measure the SETTLED layout, not transient frames mid-reflow
-    // (e.g. during a reparent) — measuring transients made the result vary run to
-    // run. The ResizeObserver just resets the timer; the actual measure fires once
-    // the box has been stable for `SETTLE_MS`.
-    const SETTLE_MS = 120;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const scheduleMeasure = (): void => {
-      if (timer !== undefined) clearTimeout(timer);
-      timer = setTimeout(measure, SETTLE_MS);
+    const measure = (): void => {
+      // content is laid out at FULL font (the transform is visual only), so its
+      // offset size is the stable natural size — measuring it is loop-free.
+      const next = fitFontScale(
+        box.clientHeight,
+        content.offsetHeight,
+        box.clientWidth,
+        content.offsetWidth,
+        minFitScale,
+      );
+      setFitScale((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
     };
-    scheduleMeasure();
-    const ro = new ResizeObserver(scheduleMeasure);
+    // Settle-debounce so we read the QUIESCED layout, not transient mid-reflow frames
+    // (reparent) — measuring transients made the result vary run to run.
+    const schedule = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(measure, 80);
+    };
+    schedule();
+    const ro = new ResizeObserver(schedule);
     ro.observe(box);
     ro.observe(content);
     return () => {
       if (timer !== undefined) clearTimeout(timer);
       ro.disconnect();
     };
-    // a.frame.height re-runs the effect after a resize lands (drives convergence).
-  }, [requestFit, selfId, isEditing, item, a.frame, refitKey]);
+  }, [isEditing, minFitScale, a.text, a.textRuns]);
+  const fitTransformOrigin = `${
+    horizontalAlign === "center" ? "center" : horizontalAlign === "right" ? "right" : "left"
+  } ${verticalAlign === "CENTER" ? "center" : verticalAlign === "BOTTOM" ? "bottom" : "top"}`;
 
   // DR-057 — WYSIWYG: the editor surface renders in the item's resolved base
   // typography. Inline toggleables are forced NEUTRAL here so the seeded
@@ -527,7 +531,14 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         data-text-content
         // DR-059 — positioning context for the absolute outline back layer
         // (only when outlined, to leave the non-outline DOM untouched).
-        style={showOutline ? { ...textStyle, position: "relative" } : textStyle}
+        // WI-238 rev2 — shrink-to-fit: scale the (full-font) content down to fit its
+        // box. Visual only (transform) so the measured layout size stays natural.
+        style={{
+          ...(showOutline ? { ...textStyle, position: "relative" } : textStyle),
+          ...(fitScale < 1 && !isEditing
+            ? { transform: `scale(${fitScale})`, transformOrigin: fitTransformOrigin }
+            : {}),
+        }}
       >
         {contentNode}
       </div>
