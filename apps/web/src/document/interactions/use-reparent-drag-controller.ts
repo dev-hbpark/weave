@@ -27,7 +27,7 @@
 // and calls `stopImmediatePropagation` when the modifier matches — that
 // preempts the router and the synthetic React handlers underneath.
 
-import type { Document as AgocraftDocument } from "@agocraft/core";
+import type { Document as AgocraftDocument, LayoutSpec } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findDescendantSet, findItemDeep } from "../agocraft-mirror.js";
@@ -268,21 +268,23 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
       const valid = candidateId !== null && !session.blocked.has(candidateId);
       if (valid && candidateId !== null && editor !== null) {
         const size = getDesignSizeRef.current?.();
-        // WI-238 — when reparenting TEXT into a flex frame, make it FILL the slot
-        // (the engine's onReparent leaves it content-sized → the box came in smaller
-        // than the flex). grow:1 + basis:0 fills the main axis, alignSelf:"stretch"
-        // the cross; render-level shrink-to-fit (TextBlock) then sizes the font to
-        // the filled box. Gated by the auto-fit flag so "off" restores plain reparent.
+        // WI-238 — when reparenting TEXT into a flex frame, fill ONLY the CROSS axis
+        // (alignSelf:"stretch"), leaving the MAIN axis content-sized (grow:0,
+        // basis:"auto"). So a ROW fits the HEIGHT (cross) and a COLUMN fits the WIDTH
+        // (cross) — never both. render-level shrink-to-fit (TextBlock) then sizes the
+        // font to the bounded (cross) dimension. Gated by the auto-fit flag so "off"
+        // restores plain reparent.
         const doc = getDocumentRef.current?.();
         const parentLayout = (
           doc !== null && doc !== undefined
-            ? (findItemDeep(doc, candidateId)?.attrs as
-                | { layout?: { kind?: string } }
-                | undefined)?.layout
+            ? (findItemDeep(doc, candidateId)?.attrs as { layout?: LayoutSpec } | undefined)?.layout
             : undefined
-        )?.kind;
+        );
         const fillTextIds =
-          isTextAutofitEnabled() && parentLayout === "auto-flex" && doc !== null && doc !== undefined
+          isTextAutofitEnabled() &&
+          parentLayout?.kind === "auto-flex" &&
+          doc !== null &&
+          doc !== undefined
             ? session.entries
                 .filter((x) => findItemDeep(doc, x.itemId)?.kind === "text")
                 .map((x) => x.itemId)
@@ -298,8 +300,14 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
           for (const id of fillTextIds) {
             editor.exec("weave.item.setLayoutChild", {
               itemId: id,
-              policy: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0, alignSelf: "stretch" },
+              policy: { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto", alignSelf: "stretch" },
             });
+          }
+          // Re-apply the parent's layout to force an IMMEDIATE re-arrange so the
+          // cross-stretch takes effect now (not only on the next manual resize) —
+          // setLayoutChild sets the policy but does not itself re-arrange the parent.
+          if (fillTextIds.length > 0 && parentLayout !== undefined) {
+            editor.exec("weave.frame.setLayout", { itemId: candidateId, layout: parentLayout });
           }
         });
       }
