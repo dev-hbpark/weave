@@ -39,13 +39,8 @@ import { textEditTrigger } from "../interactions/text-edit-trigger.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import { type AgoItem, isItemLocked, type TextAttrs, type WeaveRunStyle } from "../types.js";
 import { ParentFrameHeightContext } from "./parent-frame-context.js";
-import { useTextRefit } from "./text-autofit-context.js";
-import {
-  clampRefitPx,
-  isTextAutofitEnabled,
-  MAX_REFIT_ATTEMPTS,
-  shouldRefitHeight,
-} from "./text-autofit.js";
+import { useTextFit } from "./text-autofit-context.js";
+import { isTextAutofitEnabled, MAX_REFIT_ATTEMPTS, shouldRefitHeight } from "./text-autofit.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -318,13 +313,14 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       setIsEditing(true);
     });
   }, [editable, item, selfId, selectFrame]);
-  // WI-237/DR-152 (flex) + WI-238/DR-153 (grid) — content-height auto-fit (default
-  // ON). Measure content intrinsic height (innerRef, at the engine-bound width) vs
-  // the engine box (wrapRef). FLEX/absolute text: correct its OWN frame.height
-  // (basis reads it). GRID cell: the row track owns the height, so instead report
-  // the overflow so the parent GRID FRAME grows. Convergent (width fixed) + threshold
-  // + a hard attempt cap so a non-converging case can never thrash.
-  const requestRefit = useTextRefit();
+  // WI-237/DR-152 + WI-238/DR-153 — content-height auto-fit (default ON). Measure
+  // the content's intrinsic height (innerRef, at the engine-bound width) vs the
+  // engine box (wrapRef) and, on divergence, REPORT the raw numbers to the provider.
+  // The provider routes by the item's REAL parent layout (grid → grow the grid
+  // frame; flex/absolute → correct the text's own height) — so it is correct even
+  // when the child's own `layoutChild` is stale (e.g. reparented into a grid).
+  // Convergent (width fixed) + threshold + a hard attempt cap (no thrash).
+  const requestFit = useTextFit();
   const refitAttempts = useRef(0);
   const refitKey = `${selfId}|${a.text}|${resolvedFontSizePx}`;
   const lastRefitKey = useRef("");
@@ -332,47 +328,29 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     lastRefitKey.current = refitKey;
     refitAttempts.current = 0; // content/font changed → allow fitting again
   }
-  const isGridChild = a.layoutChild?.kind === "auto-grid";
   useEffect(() => {
-    if (!isTextAutofitEnabled()) return undefined;
+    if (!isTextAutofitEnabled() || requestFit === null) return undefined;
     if (isEditing || isItemLocked(item)) return undefined;
-    // Need SOME write channel: the provider (edit view) or onUpdate (flex fallback).
-    if (requestRefit === null && onUpdate === undefined) return undefined;
     const box = wrapRef.current;
     const content = innerRef.current;
     if (box === null || content === null) return undefined;
-    const currentRatio = a.frame?.height;
-    if (typeof currentRatio !== "number" || !(currentRatio > 0)) return undefined;
+    if (typeof a.frame?.height !== "number" || !(a.frame.height > 0)) return undefined;
     const measure = (): void => {
       if (refitAttempts.current >= MAX_REFIT_ATTEMPTS) return;
       const boxPx = box.clientHeight;
       const contentPx = content.scrollHeight;
       if (!(boxPx > 0) || !(contentPx > 0)) return;
-      if (isGridChild) {
-        // Grid cell: the track owns the cell height — grow the PARENT grid frame.
-        if (contentPx <= boxPx + 2 || requestRefit === null) return;
-        refitAttempts.current += 1;
-        requestRefit.refitGrid(selfId, contentPx / boxPx);
-        return;
-      }
-      if (!shouldRefitHeight(boxPx, contentPx)) return;
-      // box = currentRatio × parentPx ⇒ parentPx = boxPx / currentRatio.
-      const parentPx = boxPx / currentRatio;
-      const targetRatio = clampRefitPx(contentPx, { minPx: 1, maxPx: parentPx * 0.99 }) / parentPx;
-      if (!(targetRatio > 0) || Math.abs(targetRatio - currentRatio) < 1e-4) return;
+      if (!shouldRefitHeight(boxPx, contentPx)) return; // converged within threshold
       refitAttempts.current += 1;
-      const after = { ...a.frame, height: targetRatio };
-      // Prefer the coalesced provider channel; fall back to onUpdate when none.
-      if (requestRefit !== null) requestRefit.refitText({ itemId: selfId, before: a.frame, after });
-      else onUpdate?.({ frame: after });
+      requestFit({ itemId: selfId, boxPx, contentPx, currentFrame: a.frame });
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(box);
     ro.observe(content);
     return () => ro.disconnect();
-    // a.frame.height re-runs the effect after our own write (drives convergence).
-  }, [onUpdate, requestRefit, selfId, isEditing, isGridChild, item, a.frame, refitKey]);
+    // a.frame.height re-runs the effect after a resize lands (drives convergence).
+  }, [requestFit, selfId, isEditing, item, a.frame, refitKey]);
 
   // DR-057 — WYSIWYG: the editor surface renders in the item's resolved base
   // typography. Inline toggleables are forced NEUTRAL here so the seeded

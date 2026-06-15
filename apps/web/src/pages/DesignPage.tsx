@@ -133,11 +133,11 @@ import {
 } from "../document/interactions/cropping-state.js";
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
-import { gridGrowTarget } from "../document/domains/text-autofit.js";
+import { clampRefitPx, gridGrowTarget } from "../document/domains/text-autofit.js";
 import {
-  type TextRefitChannel,
-  TextRefitProvider,
-  type TextRefitRequest,
+  type RequestTextFit,
+  type TextFitReport,
+  TextFitProvider,
 } from "../document/domains/text-autofit-context.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import { frameHoverStore } from "../document/interactions/frame-hover-store.js";
@@ -729,22 +729,26 @@ function DesignPageBody() {
   //    grow ITS height by the worst cell overflow (capped) so the tracks get room.
   // (True zero-undo "system" origin needs agocraft to surface applySystemPatches —
   // HANDOFF-026, deferred; the vendored Editor exposes exec + runBatch only.)
-  const refitTextPendingRef = useRef(new Map<string, TextRefitRequest>());
+  // text item id → corrected frame (flex/absolute path); grid frame id → max cell
+  // overflow ratio (grid path). Routing is decided HERE from each item's REAL parent
+  // layout, so it's correct even when the child's own layoutChild is stale (e.g.
+  // reparented into a grid — WI-238 follow-up).
+  const refitTextPendingRef = useRef(new Map<string, ItemFrame>());
   const refitGridPendingRef = useRef(new Map<string, number>());
   const refitRafRef = useRef<number | null>(null);
   const docForRefitRef = useRef(docInAgocraft);
   docForRefitRef.current = docInAgocraft;
   const flushRefits = useCallback(() => {
     refitRafRef.current = null;
-    const textReqs = [...refitTextPendingRef.current.values()];
+    const textReqs = [...refitTextPendingRef.current.entries()];
     refitTextPendingRef.current.clear();
     const gridReqs = [...refitGridPendingRef.current.entries()];
     refitGridPendingRef.current.clear();
     if (textReqs.length === 0 && gridReqs.length === 0) return;
     const doc = docForRefitRef.current;
     editor.runBatch(() => {
-      for (const r of textReqs) {
-        editor.exec("weave.item.update", { itemId: r.itemId, attrs: { frame: r.after } });
+      for (const [id, frame] of textReqs) {
+        editor.exec("weave.item.update", { itemId: id, attrs: { frame } });
       }
       for (const [gridId, maxRatio] of gridReqs) {
         const frame = (findItemDeep(doc, gridId)?.attrs as { frame?: ItemFrame } | undefined)?.frame;
@@ -761,21 +765,29 @@ function DesignPageBody() {
   const scheduleRefitFlush = useCallback(() => {
     if (refitRafRef.current === null) refitRafRef.current = requestAnimationFrame(flushRefits);
   }, [flushRefits]);
-  const textRefitChannel = useMemo<TextRefitChannel>(
-    () => ({
-      refitText: (req) => {
-        refitTextPendingRef.current.set(req.itemId, req);
-        scheduleRefitFlush();
-      },
-      refitGrid: (cellItemId, overflowRatio) => {
-        const parent = findParentAndIndex(docForRefitRef.current, cellItemId)?.parent;
-        if (parent === undefined) return;
-        const gridId = String(parent.id);
+  const requestTextFit = useCallback<RequestTextFit>(
+    (report: TextFitReport) => {
+      const found = findParentAndIndex(docForRefitRef.current, report.itemId);
+      const parentLayout = (found?.parent.attrs as { layout?: { kind?: string } } | undefined)
+        ?.layout;
+      if (parentLayout?.kind === "auto-grid" && found !== undefined) {
+        // Grid cell: the row track owns the height — grow the parent GRID frame.
+        if (report.contentPx <= report.boxPx + 2) return;
+        const gridId = String(found.parent.id);
         const prev = refitGridPendingRef.current.get(gridId) ?? 1;
-        refitGridPendingRef.current.set(gridId, Math.max(prev, overflowRatio));
+        refitGridPendingRef.current.set(gridId, Math.max(prev, report.contentPx / report.boxPx));
         scheduleRefitFlush();
-      },
-    }),
+        return;
+      }
+      // Flex / absolute text: correct the text's OWN frame.height (basis reads it).
+      const currentRatio = report.currentFrame.height;
+      if (!(currentRatio > 0) || !(report.boxPx > 0)) return;
+      const parentPx = report.boxPx / currentRatio; // box = ratio × parent px
+      const targetRatio = clampRefitPx(report.contentPx, { minPx: 1, maxPx: parentPx * 0.99 }) / parentPx;
+      if (!(targetRatio > 0) || Math.abs(targetRatio - currentRatio) < 1e-4) return;
+      refitTextPendingRef.current.set(report.itemId, { ...report.currentFrame, height: targetRatio });
+      scheduleRefitFlush();
+    },
     [scheduleRefitFlush],
   );
   const setPresentationOrderViaEditor = useCallback(
@@ -2726,7 +2738,7 @@ function DesignPageBody() {
                   >
                     <ModeAwareTooltipSurface>
                       <EditorProvider editor={editor}>
-                       <TextRefitProvider value={textRefitChannel}>
+                       <TextFitProvider value={requestTextFit}>
                         <DocumentForResolutionProvider document={docInAgocraft}>
                           <DatasetProvider doc={docInAgocraft} editor={editor}>
                             <ChartElementSelectionProvider>
@@ -3595,7 +3607,7 @@ function DesignPageBody() {
                             </ChartElementSelectionProvider>
                           </DatasetProvider>
                         </DocumentForResolutionProvider>
-                       </TextRefitProvider>
+                       </TextFitProvider>
                       </EditorProvider>
                     </ModeAwareTooltipSurface>
                   </CommandHostProvider>

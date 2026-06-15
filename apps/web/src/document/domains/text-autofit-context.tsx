@@ -1,37 +1,35 @@
-// WI-237 iteration 3 — system-origin channel for text auto-fit (DR-152).
+// WI-237/238 — measurement→engine channel for text auto-fit (DR-152/153).
 //
-// Iteration 2 fed the refit through `onUpdate` → `weave.item.update` (a USER-command:
-// undoable + a history entry per fit). Iteration 3 routes it through this context to
-// `editor.applySystemPatches` instead: origin.kind === "system" → NOT in undo history
-// (Cmd+Z never reverts an auto-fit), and bursts are coalesced into one transaction.
-// The change still persists/syncs (the box must), just invisibly to the user's undo.
+// TextBlock measures its content vs its box in the DOM and REPORTS the raw numbers;
+// the provider (DesignPage) decides what to do based on the item's REAL parent
+// layout (resolved from the live doc), then feeds the resize to the engine:
+//   • parent is auto-grid → grow the GRID FRAME (the cell's height is the track's).
+//   • else (flex / absolute) → correct the text's OWN frame.height.
+// Routing lives in the provider (not TextBlock) so it is correct regardless of the
+// child's own `layoutChild` — which can be STALE after a reparent into a grid
+// (WI-238 follow-up: the reparented text kept a non-grid policy and auto-fit missed).
 
 import { createContext, useContext } from "react";
 import type { ItemFrame } from "../types.js";
 
-export interface TextRefitRequest {
+export interface TextFitReport {
   readonly itemId: string;
-  /** Current frame (the patch's `before`, for a correct inverse). */
-  readonly before: ItemFrame;
-  /** Frame with the refit height (the patch's `after`). */
-  readonly after: ItemFrame;
+  /** The engine box height (clientHeight) in px. */
+  readonly boxPx: number;
+  /** The content's intrinsic height (scrollHeight) in px. */
+  readonly contentPx: number;
+  /** The text item's current frame (for the text-refit `after`, and its height ratio). */
+  readonly currentFrame: ItemFrame;
 }
 
-export interface TextRefitChannel {
-  /** Flex/absolute text — correct the text's OWN frame.height (WI-237). */
-  readonly refitText: (req: TextRefitRequest) => void;
-  /** WI-238 — a GRID cell overflows its track: grow the parent GRID frame
-   *  instead (the cell's height is the track's, not its own). `overflowRatio` =
-   *  contentPx / cellBoxPx; the provider resolves the parent grid frame. */
-  readonly refitGrid: (cellItemId: string, overflowRatio: number) => void;
-}
+export type RequestTextFit = (report: TextFitReport) => void;
 
-const TextRefitContext = createContext<TextRefitChannel | null>(null);
+const TextFitContext = createContext<RequestTextFit | null>(null);
 
-export const TextRefitProvider = TextRefitContext.Provider;
+export const TextFitProvider = TextFitContext.Provider;
 
-/** The refit channel, or null when no provider is mounted (tests / present-only
- *  trees) — callers then fall back to their normal update path / no-op. */
-export function useTextRefit(): TextRefitChannel | null {
-  return useContext(TextRefitContext);
+/** The auto-fit report channel, or null when no provider is mounted (tests /
+ *  present-only trees) — TextBlock then does nothing. */
+export function useTextFit(): RequestTextFit | null {
+  return useContext(TextFitContext);
 }
