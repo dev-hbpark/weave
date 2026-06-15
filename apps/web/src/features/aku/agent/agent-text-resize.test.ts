@@ -93,12 +93,30 @@ describe("fixAgentTextBox", () => {
     expect(ov(out).layoutChild).toEqual(FIXED);
   });
 
-  it("stamps alignSelf:stretch for text added into a flex COLUMN (WI-215 — bind width, keep auto-height)", () => {
-    // The default column `align` is "start" (not "stretch"), so an unstretched
-    // column-text's WIDTH collapses to its seed → a 1-glyph vertical ribbon.
-    // alignSelf:"stretch" binds the width to the column (text wraps) while
-    // grow:0 + basis:"auto" keep the HEIGHT following content.
+  it("shares the column HEIGHT for text added into a flex COLUMN with NO explicit height (WI-235 — seed→floor collapse fix)", () => {
+    // weave has no text auto-height; a column text left on basis:"auto" reads its
+    // FULL_FRAME 1.0 seed and N texts collapse to the 0.04 floor → glyph overlap.
+    // With no explicit height we stamp the share policy (basis:0 → no over-fill,
+    // grow:1 → roomy even slice) + alignSelf:"stretch" (bind width so it wraps).
     const input = { kind: "text", containerId: "flexFrame", attrsOverride: { text: "hi" } };
+    const out = fixAgentTextBox("weave.item.add", input, makeDoc());
+    expect(ov(out).layoutChild).toEqual({
+      kind: "auto-flex",
+      grow: 1,
+      shrink: 1,
+      basis: 0,
+      alignSelf: "stretch",
+    });
+    expect(ov(out).text).toBe("hi");
+  });
+
+  it("RESPECTS an explicit height for flex-COLUMN text (keeps basis:auto so the given height holds) (WI-235)", () => {
+    const input = {
+      kind: "text",
+      containerId: "flexFrame",
+      attrsOverride: { text: "hi" },
+      frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.2, rotation: 0 },
+    };
     const out = fixAgentTextBox("weave.item.add", input, makeDoc());
     expect(ov(out).layoutChild).toEqual({
       kind: "auto-flex",
@@ -107,7 +125,6 @@ describe("fixAgentTextBox", () => {
       basis: "auto",
       alignSelf: "stretch",
     });
-    expect(ov(out).text).toBe("hi");
   });
 
   it("leaves grid text with NO layoutChild alone (grid auto-places + stretches by default)", () => {

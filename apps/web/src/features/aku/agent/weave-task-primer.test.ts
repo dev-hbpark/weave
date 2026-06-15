@@ -32,3 +32,21 @@ describe("WEAVE_TASK_PRIMER — data representation steering (WI-231/DR-146)", (
     expect(gridAt).toBeGreaterThan(interpretAt);
   });
 });
+
+// WI-234 / DR-149 — composition-quality steering: a card accent must belong to the
+// card (decoration/child), not a free absolute sibling that drifts; and a sparse
+// fixed-height card should hug its content, not be padded out with large/inconsistent
+// gaps (the "absolute drift" + "region too big for the text" reports).
+describe("WEAVE_TASK_PRIMER — accent-belongs-to-card + no whitespace padding (WI-234/DR-149)", () => {
+  it("tells the agent a card accent/header strip must be the card's decoration or child, not a floating absolute sibling", () => {
+    expect(WEAVE_TASK_PRIMER).toMatch(/ACCENT BELONGS TO ITS CARD/);
+    expect(WEAVE_TASK_PRIMER).toMatch(/NEVER a separate absolute shape/);
+    expect(WEAVE_TASK_PRIMER).toMatch(/DRIFTS/);
+  });
+
+  it("tells the agent to hug a sparse card's height and keep gap modest/consistent instead of padding whitespace", () => {
+    expect(WEAVE_TASK_PRIMER).toMatch(/DON'T PAD A REGION WITH WHITESPACE/);
+    expect(WEAVE_TASK_PRIMER).toMatch(/height:'hug'/);
+    expect(WEAVE_TASK_PRIMER).toMatch(/gap MODEST and the SAME across sibling cards/);
+  });
+});

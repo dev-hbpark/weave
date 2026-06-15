@@ -88,6 +88,28 @@ const FLEX_COL_TEXT = {
   alignSelf: "stretch",
 } as const;
 
+// WI-235 — column TEXT added with NO explicit height. weave has NO text
+// auto-height (the render-timing measure-and-write-back was removed — TextBlock.tsx
+// "height is fed into the engine as an input, not measured at render"), so a
+// column text left on `basis:"auto"` reads its FULL_FRAME 1.0 SEED height as its
+// main-axis basis. N such texts in a column = N×1.0 → the flex sees an overflow and
+// shrinks EVERY child to the MIN_MAIN_SHARE (0.04) floor; the fixed-px glyphs then
+// spill out of the collapsed box and OVERLAP the next item (the hero-title overlap,
+// confirmed: box 26px vs needed 57px in a 641px panel — not font-too-big, a
+// seed→floor collapse). This is the COLUMN analogue of the ROW seed-ratchet that
+// FLEX_SHARE already fixes (WI-149): basis:0 contributes nothing to the column's
+// base size (no over-fill → no collapse), grow:1 shares the height evenly so each
+// text gets a roomy slice (whitespace, never overlap), and alignSelf:"stretch"
+// binds the width so it still wraps. When the agent DID pass an explicit height we
+// respect it via FLEX_COL_TEXT (basis:"auto" then reads that real height).
+const FLEX_COL_TEXT_SHARE = {
+  kind: "auto-flex",
+  grow: 1,
+  shrink: 1,
+  basis: 0,
+  alignSelf: "stretch",
+} as const;
+
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
@@ -188,7 +210,15 @@ export function fixAgentTextBox(
     // (preserving its placement) instead of bailing — unless the agent chose its
     // own cross/column-axis alignment, which we respect.
     if (container === "flex-col") {
-      if (existingLc === undefined) return withChild({ ...FLEX_COL_TEXT });
+      // No explicit height → the FULL_FRAME seed would collapse to the floor (WI-235);
+      // share the column height instead. An explicit height is respected (basis:auto).
+      if (existingLc === undefined) {
+        return withChild(
+          hasExplicitMainSize(input, "flex-col")
+            ? { ...FLEX_COL_TEXT }
+            : { ...FLEX_COL_TEXT_SHARE },
+        );
+      }
       if (
         isObj(existingLc) &&
         existingLc.kind === "auto-flex" &&
