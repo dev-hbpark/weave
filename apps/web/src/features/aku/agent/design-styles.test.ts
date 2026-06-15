@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nn } from "../../../lib/nn.js";
+import { archetypeForSeed } from "./composition-archetypes.js";
 import {
   autoStyleDirective,
   composeStyleTask,
@@ -119,6 +120,16 @@ describe("variationLine (within-style diversity)", () => {
     let differing = 0;
     for (let i = 0; i < 12; i += 1) if (strip(i) !== strip(i + 1)) differing += 1;
     expect(differing).toBeGreaterThanOrEqual(10);
+  });
+
+  // WI-233 — the structural variety formerly attempted by four weak adverbs
+  // (비대칭/중앙/그리드/대각선) now rides the composition-archetype axis: every
+  // variation line commits to a concrete MACRO composition that rotates per seed.
+  it("carries the macro-composition archetype axis (structural diversity)", () => {
+    expect(variationLine(5)).toContain("구도(매크로)");
+    expect(variationLine(0)).toContain(archetypeForSeed(0).label);
+    // the structural archetype changes between adjacent seeds.
+    expect(variationLine(0)).not.toBe(variationLine(1).replace("#1", "#0"));
   });
 });
 

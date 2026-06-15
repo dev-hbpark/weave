@@ -11,6 +11,8 @@
 // carries a small-think `register` (DR-043); in auto mode the agent picks the
 // style so the server infers the register instead.
 
+import { composeArchetypeDirective } from "./composition-archetypes.js";
+
 /** Aesthetic register archetypes — mirrors `@small-think/client` SubmitOptions.register. */
 export type AkuRegister = "sober" | "editorial" | "expressive" | "playful";
 
@@ -423,14 +425,13 @@ const COMMIT_TAIL =
   " 위 스펙의 팔레트·배경·그림자·반경·폰트·효과에 일관되게 커밋하세요 — 배경·히어로·강조 영역엔 스펙의 literal 색/효과를 직접 적용하고, 본문 텍스트 등 구조 색만 var(--token)으로 두세요. 현재 활성 테마의 룩에 끌려가지 마세요.";
 
 // ── Per-request within-style variation (keeps diversity without breaking the style) ──
-// Style-safe knobs only: composition / density / emphasis — NOT palette or effects
-// (those are the locked signature). Deterministic in the seed (unit-tested).
-const VAR_COMPOSITION = [
-  "비대칭 구도로",
-  "중앙 정렬로",
-  "그리드 정렬로",
-  "대각선 흐름으로",
-] as const;
+// Style-safe knobs only: macro-composition (the structural ARCHETYPE axis, WI-233) /
+// density / emphasis — NOT palette or effects (those are the locked signature).
+// Deterministic in the seed (unit-tested). The structural axis was previously four
+// weak adverbs (비대칭/중앙/그리드/대각선) that never produced real topological variety —
+// it is now the concrete composition-archetype catalog (full-bleed hero, asymmetric
+// split, layered overlap, big-number focal, …), so a held style re-rolls a genuinely
+// different MACRO layout each run instead of the same band stack in new colors.
 const VAR_DENSITY = ["여백을 넉넉하게", "적당한 밀도로", "타이트하게 패킹해"] as const;
 const VAR_EMPHASIS = ["강조를 한 곳에 집중해", "강조를 절제해", "과감한 포컬 포인트로"] as const;
 
@@ -441,11 +442,14 @@ function pick<T>(list: ReadonlyArray<T>, seed: number, step: number): T {
 }
 
 /** The `[이번 변주]` block — rotates style-safe knobs by `seed` so the SAME style
- *  differs run-to-run (and on regenerate) WITHOUT touching the locked palette/effects. */
+ *  differs run-to-run (and on regenerate) WITHOUT touching the locked palette/effects.
+ *  The structural archetype (WI-233) rotates EVERY seed; density/emphasis are the
+ *  finer knobs on top. */
 export function variationLine(seed: number): string {
   return (
-    `\n\n[이번 변주 #${seed}] ${pick(VAR_COMPOSITION, seed, 1)} · ${pick(VAR_DENSITY, seed, 2)} · ` +
-    `${pick(VAR_EMPHASIS, seed, 3)}. 스펙의 팔레트·폰트·효과는 고정, 구도/밀도/강조 배치만 직전 생성과 분명히 다르게.`
+    `\n\n[이번 변주 #${seed}] ${composeArchetypeDirective(seed)}` +
+    `\n· 밀도: ${pick(VAR_DENSITY, seed, 2)} · 강조: ${pick(VAR_EMPHASIS, seed, 3)}.` +
+    ` 스펙의 팔레트·폰트·효과는 고정, 매크로 구도/밀도/강조 배치만 직전 생성과 분명히 다르게.`
   );
 }
 
