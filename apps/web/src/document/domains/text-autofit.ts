@@ -23,16 +23,15 @@ export interface RefitOptions {
 
 const DEFAULT_THRESHOLD_PX = 2;
 
-/** WI-237 iteration 2 — runtime feature flag, default OFF. Toggle live (no rebuild)
- *  from the browser console: `localStorage.setItem("weave.textAutofit","on")` then
- *  reload; `removeItem` (or any non-"on" value) disables it. Read per-measure so it
- *  can be flipped without restarting the dev server. The area was removed for
- *  instability, so this stays opt-in until live-verified. */
+/** WI-237 — runtime feature flag. DEFAULT ON as of iteration 3 (live-verified:
+ *  boxes fit, no oscillation, coalesced to one undo/save per settle). Escape hatch:
+ *  set `localStorage["weave.textAutofit"] = "off"` to disable (e.g. to debug a
+ *  layout). Read per-measure so it can be flipped live without a rebuild. */
 export function isTextAutofitEnabled(): boolean {
   try {
-    return globalThis.localStorage?.getItem("weave.textAutofit") === "on";
+    return globalThis.localStorage?.getItem("weave.textAutofit") !== "off";
   } catch {
-    return false;
+    return true;
   }
 }
 

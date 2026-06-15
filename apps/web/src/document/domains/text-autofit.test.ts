@@ -15,14 +15,16 @@ describe("isTextAutofitEnabled (WI-237 iteration 2 flag)", () => {
     // restore after the suite if we added it (best-effort; harmless if left)
   }
 
-  it("defaults OFF (no flag set)", () => {
-    expect(isTextAutofitEnabled()).toBe(false);
+  it("defaults ON (no flag set) — iteration 3 default", () => {
+    expect(isTextAutofitEnabled()).toBe(true);
   });
-  it("is ON only for the exact value 'on'", () => {
+  it("is disabled ONLY by the exact value 'off'", () => {
+    store.set("weave.textAutofit", "off");
+    expect(isTextAutofitEnabled()).toBe(false);
     store.set("weave.textAutofit", "on");
     expect(isTextAutofitEnabled()).toBe(true);
-    store.set("weave.textAutofit", "true");
-    expect(isTextAutofitEnabled()).toBe(false);
+    store.set("weave.textAutofit", "anything");
+    expect(isTextAutofitEnabled()).toBe(true);
   });
 });
 

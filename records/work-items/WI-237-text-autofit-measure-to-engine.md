@@ -63,6 +63,11 @@ relayouts the box. One axis, threshold, idempotent, feature-flagged.
     true zero-undo system-origin change. TRUE system origin = an agocraft change to
     expose `applySystemPatches` on the public Editor → **HANDOFF-AUTOFIT** (deferred,
     iteration 4). runBatch is the best the current editor allows.
-- **Still NEXT**: operator re-verifies iter 3 (Cmd+Z now reverts a whole settle in
-  ONE press; saves coalesced). Then: default-ON consideration, grid row-track
-  auto-fit, font shrink-to-fit for genuinely fixed cells.
+- **Iteration 3 re-verified** by operator (save/undo behavior fine) → **DEFAULT ON**
+  as of this change: `isTextAutofitEnabled()` now returns true unless
+  `localStorage["weave.textAutofit"]==="off"` (escape hatch for debugging). Effect
+  still gates on edit-view (onUpdate present, not present mode) + non-grid + flag,
+  so present mode and grid cells are untouched. Full suite 1429 green.
+- **Still NEXT (lower priority)**: grid row-track auto-fit (the 27-row table), font
+  shrink-to-fit for genuinely fixed-area cells, and HANDOFF-026 (true zero-undo
+  system origin) if the single-entry undo ever bothers.
