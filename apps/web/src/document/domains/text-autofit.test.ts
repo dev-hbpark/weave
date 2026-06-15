@@ -1,5 +1,28 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { clampRefitPx, isTextAutofitEnabled, shouldRefitHeight } from "./text-autofit.js";
+import {
+  clampRefitPx,
+  gridGrowTarget,
+  isTextAutofitEnabled,
+  shouldRefitHeight,
+} from "./text-autofit.js";
+
+describe("gridGrowTarget (WI-238)", () => {
+  it("grows the grid frame by the worst cell overflow", () => {
+    // worst cell needs 1.5× its box → frame 0.4 → 0.6
+    expect(gridGrowTarget(0.4, 1.5)).toBeCloseTo(0.6, 5);
+  });
+  it("caps growth so the frame can't overflow its parent", () => {
+    expect(gridGrowTarget(0.8, 2.0, 0.98)).toBe(0.98); // 1.6 capped to 0.98
+  });
+  it("does NOT grow when nothing overflows (ratio ≤ 1) — convergent", () => {
+    expect(gridGrowTarget(0.5, 1)).toBe(0.5);
+    expect(gridGrowTarget(0.5, 0.8)).toBe(0.5);
+  });
+  it("returns current for non-ready inputs", () => {
+    expect(gridGrowTarget(0, 1.5)).toBe(0);
+    expect(gridGrowTarget(0.5, Number.NaN)).toBe(0.5);
+  });
+});
 
 describe("isTextAutofitEnabled (WI-237 iteration 2 flag)", () => {
   // node test env has no localStorage — install a minimal stub for this block.

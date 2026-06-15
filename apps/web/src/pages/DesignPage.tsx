@@ -133,7 +133,9 @@ import {
 } from "../document/interactions/cropping-state.js";
 
 // Default text line-height multiplier (mirrors the TextAttrs seed default).
+import { gridGrowTarget } from "../document/domains/text-autofit.js";
 import {
+  type TextRefitChannel,
   TextRefitProvider,
   type TextRefitRequest,
 } from "../document/domains/text-autofit-context.js";
@@ -719,31 +721,62 @@ function DesignPageBody() {
     [editor],
   );
 
-  // WI-237 iteration 3 (DR-152) — text auto-fit coalescing channel. TextBlocks
-  // measure content overflow in the DOM and request a corrected frame.height; we
-  // dedupe a burst per item (last-wins) and flush on rAF as ONE `runBatch` — so the
-  // whole settle is a SINGLE undo entry and a SINGLE save, not one per fit. (True
-  // zero-undo "system" origin needs agocraft to surface `applySystemPatches` on the
-  // public Editor — deferred; the vendored Editor exposes exec + runBatch only.)
-  const refitPendingRef = useRef(new Map<string, TextRefitRequest>());
+  // WI-237/DR-152 (flex) + WI-238/DR-153 (grid) — text auto-fit coalescing channel.
+  // TextBlocks measure content overflow in the DOM; we dedupe a burst and flush on
+  // rAF as ONE `editor.runBatch` (a single undo entry + a single save per settle).
+  //  • refitText — flex/absolute text: write the text's own corrected frame.height.
+  //  • refitGrid — a grid CELL overflows its track: resolve the parent GRID frame and
+  //    grow ITS height by the worst cell overflow (capped) so the tracks get room.
+  // (True zero-undo "system" origin needs agocraft to surface applySystemPatches —
+  // HANDOFF-026, deferred; the vendored Editor exposes exec + runBatch only.)
+  const refitTextPendingRef = useRef(new Map<string, TextRefitRequest>());
+  const refitGridPendingRef = useRef(new Map<string, number>());
   const refitRafRef = useRef<number | null>(null);
-  const requestTextRefit = useCallback(
-    (req: TextRefitRequest) => {
-      refitPendingRef.current.set(req.itemId, req);
-      if (refitRafRef.current !== null) return;
-      refitRafRef.current = requestAnimationFrame(() => {
-        refitRafRef.current = null;
-        const reqs = [...refitPendingRef.current.values()];
-        refitPendingRef.current.clear();
-        if (reqs.length === 0) return;
-        editor.runBatch(() => {
-          for (const r of reqs) {
-            editor.exec("weave.item.update", { itemId: r.itemId, attrs: { frame: r.after } });
-          }
+  const docForRefitRef = useRef(docInAgocraft);
+  docForRefitRef.current = docInAgocraft;
+  const flushRefits = useCallback(() => {
+    refitRafRef.current = null;
+    const textReqs = [...refitTextPendingRef.current.values()];
+    refitTextPendingRef.current.clear();
+    const gridReqs = [...refitGridPendingRef.current.entries()];
+    refitGridPendingRef.current.clear();
+    if (textReqs.length === 0 && gridReqs.length === 0) return;
+    const doc = docForRefitRef.current;
+    editor.runBatch(() => {
+      for (const r of textReqs) {
+        editor.exec("weave.item.update", { itemId: r.itemId, attrs: { frame: r.after } });
+      }
+      for (const [gridId, maxRatio] of gridReqs) {
+        const frame = (findItemDeep(doc, gridId)?.attrs as { frame?: ItemFrame } | undefined)?.frame;
+        if (frame === undefined) continue;
+        const target = gridGrowTarget(frame.height, maxRatio);
+        if (Math.abs(target - frame.height) < 1e-4) continue;
+        editor.exec("weave.item.update", {
+          itemId: gridId,
+          attrs: { frame: { ...frame, height: target } },
         });
-      });
-    },
-    [editor],
+      }
+    });
+  }, [editor]);
+  const scheduleRefitFlush = useCallback(() => {
+    if (refitRafRef.current === null) refitRafRef.current = requestAnimationFrame(flushRefits);
+  }, [flushRefits]);
+  const textRefitChannel = useMemo<TextRefitChannel>(
+    () => ({
+      refitText: (req) => {
+        refitTextPendingRef.current.set(req.itemId, req);
+        scheduleRefitFlush();
+      },
+      refitGrid: (cellItemId, overflowRatio) => {
+        const parent = findParentAndIndex(docForRefitRef.current, cellItemId)?.parent;
+        if (parent === undefined) return;
+        const gridId = String(parent.id);
+        const prev = refitGridPendingRef.current.get(gridId) ?? 1;
+        refitGridPendingRef.current.set(gridId, Math.max(prev, overflowRatio));
+        scheduleRefitFlush();
+      },
+    }),
+    [scheduleRefitFlush],
   );
   const setPresentationOrderViaEditor = useCallback(
     (order: ReadonlyArray<string>) => {
@@ -2693,7 +2726,7 @@ function DesignPageBody() {
                   >
                     <ModeAwareTooltipSurface>
                       <EditorProvider editor={editor}>
-                       <TextRefitProvider value={requestTextRefit}>
+                       <TextRefitProvider value={textRefitChannel}>
                         <DocumentForResolutionProvider document={docInAgocraft}>
                           <DatasetProvider doc={docInAgocraft} editor={editor}>
                             <ChartElementSelectionProvider>

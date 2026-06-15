@@ -17,14 +17,21 @@ export interface TextRefitRequest {
   readonly after: ItemFrame;
 }
 
-export type RequestTextRefit = (req: TextRefitRequest) => void;
+export interface TextRefitChannel {
+  /** Flex/absolute text — correct the text's OWN frame.height (WI-237). */
+  readonly refitText: (req: TextRefitRequest) => void;
+  /** WI-238 — a GRID cell overflows its track: grow the parent GRID frame
+   *  instead (the cell's height is the track's, not its own). `overflowRatio` =
+   *  contentPx / cellBoxPx; the provider resolves the parent grid frame. */
+  readonly refitGrid: (cellItemId: string, overflowRatio: number) => void;
+}
 
-const TextRefitContext = createContext<RequestTextRefit | null>(null);
+const TextRefitContext = createContext<TextRefitChannel | null>(null);
 
 export const TextRefitProvider = TextRefitContext.Provider;
 
-/** The system-origin refit channel, or null when no provider is mounted (tests /
- *  present-only trees) — callers then fall back to their normal update path. */
-export function useTextRefit(): RequestTextRefit | null {
+/** The refit channel, or null when no provider is mounted (tests / present-only
+ *  trees) — callers then fall back to their normal update path / no-op. */
+export function useTextRefit(): TextRefitChannel | null {
   return useContext(TextRefitContext);
 }

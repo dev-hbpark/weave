@@ -318,13 +318,12 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       setIsEditing(true);
     });
   }, [editable, item, selfId, selectFrame]);
-  // WI-237 / DR-152 iteration 2 — content-height auto-fit (flag OFF by default).
-  // Measure the content's intrinsic height (innerRef, at the engine-bound width)
-  // vs the engine box (wrapRef); when they diverge, feed a corrected frame.height
-  // RATIO to the engine via the existing onUpdate seam (weave.item.update → layout).
-  // Convergent: width is unchanged, so re-measuring after the box is corrected
-  // yields the same value (fixed point); a threshold + a hard attempt cap make a
-  // non-converging case (e.g. an auto-grid track that overrides our height) safe.
+  // WI-237/DR-152 (flex) + WI-238/DR-153 (grid) — content-height auto-fit (default
+  // ON). Measure content intrinsic height (innerRef, at the engine-bound width) vs
+  // the engine box (wrapRef). FLEX/absolute text: correct its OWN frame.height
+  // (basis reads it). GRID cell: the row track owns the height, so instead report
+  // the overflow so the parent GRID FRAME grows. Convergent (width fixed) + threshold
+  // + a hard attempt cap so a non-converging case can never thrash.
   const requestRefit = useTextRefit();
   const refitAttempts = useRef(0);
   const refitKey = `${selfId}|${a.text}|${resolvedFontSizePx}`;
@@ -336,7 +335,9 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const isGridChild = a.layoutChild?.kind === "auto-grid";
   useEffect(() => {
     if (!isTextAutofitEnabled()) return undefined;
-    if (onUpdate === undefined || isEditing || isItemLocked(item) || isGridChild) return undefined;
+    if (isEditing || isItemLocked(item)) return undefined;
+    // Need SOME write channel: the provider (edit view) or onUpdate (flex fallback).
+    if (requestRefit === null && onUpdate === undefined) return undefined;
     const box = wrapRef.current;
     const content = innerRef.current;
     if (box === null || content === null) return undefined;
@@ -347,6 +348,13 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       const boxPx = box.clientHeight;
       const contentPx = content.scrollHeight;
       if (!(boxPx > 0) || !(contentPx > 0)) return;
+      if (isGridChild) {
+        // Grid cell: the track owns the cell height — grow the PARENT grid frame.
+        if (contentPx <= boxPx + 2 || requestRefit === null) return;
+        refitAttempts.current += 1;
+        requestRefit.refitGrid(selfId, contentPx / boxPx);
+        return;
+      }
       if (!shouldRefitHeight(boxPx, contentPx)) return;
       // box = currentRatio × parentPx ⇒ parentPx = boxPx / currentRatio.
       const parentPx = boxPx / currentRatio;
@@ -354,10 +362,9 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       if (!(targetRatio > 0) || Math.abs(targetRatio - currentRatio) < 1e-4) return;
       refitAttempts.current += 1;
       const after = { ...a.frame, height: targetRatio };
-      // iteration 3: prefer the system-origin channel (no undo / coalesced); fall
-      // back to onUpdate (undoable) only when no provider is mounted.
-      if (requestRefit !== null) requestRefit({ itemId: selfId, before: a.frame, after });
-      else onUpdate({ frame: after });
+      // Prefer the coalesced provider channel; fall back to onUpdate when none.
+      if (requestRefit !== null) requestRefit.refitText({ itemId: selfId, before: a.frame, after });
+      else onUpdate?.({ frame: after });
     };
     measure();
     const ro = new ResizeObserver(measure);

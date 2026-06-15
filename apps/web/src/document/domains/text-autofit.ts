@@ -55,6 +55,24 @@ export function shouldRefitHeight(
   return Math.abs(target - currentPx) > threshold;
 }
 
+/** WI-238/DR-153 — grid row auto-fit. A grid cell can't size its own box (the row
+ *  track owns it), so an overflowing cell grows the GRID FRAME instead. Given the
+ *  grid frame's current height (ratio of ITS parent) and the worst cell overflow
+ *  ratio (contentPx / cellBoxPx) among its cells, return the grown height: scale by
+ *  the worst overflow so the tightest row just fits, capped so the frame can't blow
+ *  past its parent (no surprise slide overflow). Returns `currentRatio` unchanged
+ *  when nothing overflows (ratio ≤ 1) or inputs are not ready. Convergent: once the
+ *  frame is tall enough the worst overflow ratio drops to ≤ 1 → no further growth. */
+export function gridGrowTarget(
+  currentRatio: number,
+  maxOverflowRatio: number,
+  capRatio = 0.98,
+): number {
+  if (!Number.isFinite(currentRatio) || !(currentRatio > 0)) return currentRatio;
+  if (!Number.isFinite(maxOverflowRatio) || maxOverflowRatio <= 1) return currentRatio;
+  return Math.min(capRatio, currentRatio * maxOverflowRatio);
+}
+
 /** The height to actually write: the measured content height, clamped to [min, max].
  *  Keeps a degenerate/zero measurement from collapsing or exploding the box. */
 export function clampRefitPx(measuredPx: number, opts: RefitOptions = {}): number {
