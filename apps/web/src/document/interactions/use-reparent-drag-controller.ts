@@ -31,6 +31,7 @@ import type { Document as AgocraftDocument } from "@agocraft/core";
 import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findDescendantSet, findItemDeep } from "../agocraft-mirror.js";
+import { isTextAutofitEnabled } from "../domains/text-autofit.js";
 import { isItemLocked } from "../types.js";
 
 const REPARENT_ACTIVE_ATTR = "data-reparent-drop-target";
@@ -267,14 +268,39 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
       const valid = candidateId !== null && !session.blocked.has(candidateId);
       if (valid && candidateId !== null && editor !== null) {
         const size = getDesignSizeRef.current?.();
-        // Ratio-font visual size is preserved by the `weave.item.reparent`
-        // command itself (WI-135 / DR-086) — no per-gesture handling needed.
-        editor.exec("weave.item.reparent", {
-          entries: session.entries.map((x) => ({
-            itemId: x.itemId,
-            newParentId: candidateId,
-          })),
-          ...(size !== undefined ? { designWidth: size.width, designHeight: size.height } : {}),
+        // WI-238 — when reparenting TEXT into a flex frame, make it FILL the slot
+        // (the engine's onReparent leaves it content-sized → the box came in smaller
+        // than the flex). grow:1 + basis:0 fills the main axis, alignSelf:"stretch"
+        // the cross; render-level shrink-to-fit (TextBlock) then sizes the font to
+        // the filled box. Gated by the auto-fit flag so "off" restores plain reparent.
+        const doc = getDocumentRef.current?.();
+        const parentLayout = (
+          doc !== null && doc !== undefined
+            ? (findItemDeep(doc, candidateId)?.attrs as
+                | { layout?: { kind?: string } }
+                | undefined)?.layout
+            : undefined
+        )?.kind;
+        const fillTextIds =
+          isTextAutofitEnabled() && parentLayout === "auto-flex" && doc !== null && doc !== undefined
+            ? session.entries
+                .filter((x) => findItemDeep(doc, x.itemId)?.kind === "text")
+                .map((x) => x.itemId)
+            : [];
+        editor.runBatch(() => {
+          editor.exec("weave.item.reparent", {
+            entries: session.entries.map((x) => ({
+              itemId: x.itemId,
+              newParentId: candidateId,
+            })),
+            ...(size !== undefined ? { designWidth: size.width, designHeight: size.height } : {}),
+          });
+          for (const id of fillTextIds) {
+            editor.exec("weave.item.setLayoutChild", {
+              itemId: id,
+              policy: { kind: "auto-flex", grow: 1, shrink: 1, basis: 0, alignSelf: "stretch" },
+            });
+          }
         });
       }
       endGesture();
