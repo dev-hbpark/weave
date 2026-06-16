@@ -26,13 +26,39 @@ export function engineTextMeasureEnabled(): boolean {
 
 let cached: MeasureText | undefined;
 
+/** Canvas2D CANNOT resolve a CSS variable in a font family — `ctx.font =
+ *  "24px var(--font-sans)"` is rejected, leaving the canvas at its default ~10px
+ *  font, so the text measures FAR too narrow and the box collapses well below the
+ *  content (the bug: a fresh text's `fontFamily` default IS `var(--font-sans)`). The
+ *  renderer is fine (CSS resolves the var), so only measurement breaks. Resolve
+ *  `var(--x[, fallback])` to a concrete family/stack against the document before
+ *  measuring. A non-var family passes through unchanged. */
+export function resolveCssFontFamily(family: string): string {
+  const m = /^var\((--[\w-]+)(?:,\s*([^)]+))?\)$/.exec(family.trim());
+  if (m === null) return family;
+  const fallback = m[2]?.trim();
+  try {
+    const v = getComputedStyle(document.documentElement)
+      .getPropertyValue(m[1] ?? "")
+      .trim();
+    if (v.length > 0) return v;
+  } catch {
+    /* no DOM → use the var()'s own fallback */
+  }
+  return fallback !== undefined && fallback.length > 0 ? fallback : "sans-serif";
+}
+
 /** The browser text measurer (Pretext + Canvas2D), built once and reused, or
- *  `undefined` when disabled / unavailable (non-browser, no canvas). */
+ *  `undefined` when disabled / unavailable (non-browser, no canvas). Wrapped to
+ *  resolve CSS-variable font families before measuring (see `resolveCssFontFamily`)
+ *  — this is the single point ALL engine text measurement (free-hug, Hug reflow,
+ *  content-auto) flows through, so the fix is central. */
 export function getEngineTextMeasurer(): MeasureText | undefined {
   if (!engineTextMeasureEnabled()) return undefined;
   if (cached === undefined) {
     try {
-      cached = createBrowserTextMeasurer();
+      const base = createBrowserTextMeasurer();
+      cached = (spec) => base({ ...spec, fontFamily: resolveCssFontFamily(spec.fontFamily) });
     } catch {
       return undefined; // no canvas (e.g. SSR / blocked) → engine keeps geometry path
     }

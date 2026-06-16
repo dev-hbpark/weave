@@ -2,7 +2,27 @@
 
 import type { MeasureText } from "@agocraft/layout";
 import { afterEach, describe, expect, it } from "vitest";
-import { engineTextMeasureEnabled, freeTextHugRatio, measureTextInput } from "./text-measurer.js";
+import {
+  engineTextMeasureEnabled,
+  freeTextHugRatio,
+  measureTextInput,
+  resolveCssFontFamily,
+} from "./text-measurer.js";
+
+describe("resolveCssFontFamily (Canvas2D can't resolve CSS vars)", () => {
+  it("passes a concrete family / stack through unchanged", () => {
+    expect(resolveCssFontFamily("Inter")).toBe("Inter");
+    expect(resolveCssFontFamily("Inter, system-ui, sans-serif")).toBe(
+      "Inter, system-ui, sans-serif",
+    );
+  });
+  it("falls back to the var()'s own fallback when the property is unset (no DOM value)", () => {
+    expect(resolveCssFontFamily("var(--font-sans, Arial)")).toBe("Arial");
+  });
+  it("falls back to sans-serif for a bare var with no fallback + no DOM value", () => {
+    expect(resolveCssFontFamily("var(--font-sans)")).toBe("sans-serif");
+  });
+});
 
 describe("freeTextHugRatio (free-placed text content hug)", () => {
   const fake: MeasureText = () => ({ widthPx: 200, heightPx: 60, minContentPx: 40 });
