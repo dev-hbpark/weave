@@ -147,6 +147,7 @@ import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
 import { type LayerHit, LayerPickerMenu } from "../document/layer-picker/index.js";
+import { hugFreeTextAttrs } from "../document/layout/free-text-hug.js";
 import { LAYOUT_FEATURE_ENABLED } from "../document/layout/registry.js";
 import { MigrationResultBanner } from "../document/MigrationResultBanner.js";
 import { computeAlignedFrames } from "../document/multi/align-ops.js";
@@ -1120,10 +1121,19 @@ function DesignPageBody() {
       // Frame / other label attrs are controller-owned → ignore.
       return;
     }
-    updateItem(itemId, (prev) => ({
-      ...prev,
-      attrs: patcher(prev.attrs as unknown as Record<string, unknown>) as never,
-    }));
+    updateItem(itemId, (prev) => {
+      const nextAttrs = patcher(prev.attrs as unknown as Record<string, unknown>);
+      // WI-051 follow-up — re-hug a FREE-placed auto-resize text as it is edited
+      // (flag-gated; non-text / Fixed / engine-managed / off → unchanged).
+      const hugged = hugFreeTextAttrs(
+        docInAgocraftRef.current,
+        itemId,
+        nextAttrs,
+        design.width,
+        design.height,
+      );
+      return { ...prev, attrs: hugged as never };
+    });
   };
 
   // DR-027 / WI-071 Phase 1 — manual cloud save 4-state machine + offline
