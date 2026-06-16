@@ -147,6 +147,7 @@ import { useHoverContext } from "../document/interactions/use-hover-context.js";
 import { useLayoutChildDragController } from "../document/interactions/use-layout-child-drag-controller.js";
 import { useReparentDragController } from "../document/interactions/use-reparent-drag-controller.js";
 import { type LayerHit, LayerPickerMenu } from "../document/layer-picker/index.js";
+import { setDesignDims } from "../document/layout/design-dims.js";
 import { hugFreeTextAttrs } from "../document/layout/free-text-hug.js";
 import { LAYOUT_FEATURE_ENABLED } from "../document/layout/registry.js";
 import { MigrationResultBanner } from "../document/MigrationResultBanner.js";
@@ -1084,6 +1085,12 @@ function DesignPageBody() {
   // WI-139 — persist fetched oEmbed metadata (title + Vimeo/Loom poster) onto
   // embed items (derived projection, bypasses history; once per url, serialized).
   useEmbedMetaSync(reconcileDerived, docInAgocraft);
+
+  // WI-051 follow-up — publish the live design-plane px so command-layer text
+  // measurement (paste / reparent) can resolve ratio↔px (those inputs don't carry it).
+  useEffect(() => {
+    setDesignDims(design.width, design.height);
+  }, [design.width, design.height]);
 
   // WI-078 — inline-editing a chart LABEL text Item must rename the dataset
   // category (the label's text is derived from data). We intercept the

@@ -60,6 +60,7 @@ import {
   moveToTopCommand,
   ok,
   type Patch,
+  resolveFontSize,
   SHAPE_SUB_KINDS,
   type ShapeSubKind,
   serializeItemSubtree,
@@ -110,12 +111,17 @@ import {
   readDatasetPayload,
 } from "./dataset/dataset-store.js";
 import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
-import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
-import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 // WI-051 Step 3 / 3.5 — engine-side text measurement, injected into Hug reflow +
 // the content-auto (non-Hug) `reflowMeasuredText` trigger (OFF by default until
 // live-verified; see `layout/text-measurer.js`).
-import { engineTextMeasureEnabled, measureTextInput } from "./layout/text-measurer.js";
+import { getDesignDims } from "./layout/design-dims.js";
+import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
+import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
+import {
+  engineTextMeasureEnabled,
+  measureFreeTextHugRatio,
+  measureTextInput,
+} from "./layout/text-measurer.js";
 import {
   ALIGN_OPS_ORDER,
   type AlignInput,
@@ -2805,10 +2811,55 @@ export function buildWeaveCommands(
               // the source's cell (overlap). Clearing it makes onChildAdd assign a
               // FRESH placement (grid → next free cell, flex → default slot).
               const srcItem = p.item as unknown as AgocraftItem;
-              const newChild: AgocraftItem = {
+              let newChild: AgocraftItem = {
                 ...srcItem,
                 attrs: { ...srcItem.attrs, layoutChild: undefined } as AgocraftItem["attrs"],
               };
+              // WI-051 follow-up — a pasted TEXT's basis:"auto" reads its CURRENT
+              // (source / root-add) frame size, so the flex first places it at that
+              // size, then reflows to fit → a visible two-step. MEASURE the text now
+              // (model computes it) so its frame is its CONTENT size before onChildAdd
+              // → the flex places it correctly in ONE step. Flag-off ⇒ unchanged.
+              const dims = getDesignDims();
+              if (dims !== undefined && srcItem.kind === "text") {
+                const cbox = absoluteFrameBox(ctx.document, String(container.id), dims.w, dims.h);
+                const at = srcItem.attrs as Record<string, unknown>;
+                const srcFrame = at.frame as AgocraftItemFrame | undefined;
+                if (cbox !== null && srcFrame !== undefined) {
+                  const fontSizePx = resolveFontSize(
+                    at.fontSizeSpec as never,
+                    at.fontSize as never,
+                    cbox.h,
+                  );
+                  const lhSpec = at.lineHeightSpec as { value?: number; unit?: string } | undefined;
+                  const lineHeight =
+                    lhSpec?.unit === "multiplier" && typeof lhSpec.value === "number"
+                      ? lhSpec.value
+                      : typeof at.lineHeight === "number"
+                        ? at.lineHeight
+                        : 1.4;
+                  const hug = measureFreeTextHugRatio(
+                    {
+                      text: typeof at.text === "string" ? at.text : "",
+                      fontFamily: typeof at.fontFamily === "string" ? at.fontFamily : "sans-serif",
+                      fontSizePx,
+                      lineHeight,
+                      letterSpacing: typeof at.letterSpacing === "number" ? at.letterSpacing : 0,
+                    },
+                    cbox.w,
+                    cbox.h,
+                  );
+                  if (hug !== undefined) {
+                    newChild = {
+                      ...newChild,
+                      attrs: {
+                        ...newChild.attrs,
+                        frame: { ...srcFrame, width: hug.wRatio, height: hug.hRatio },
+                      } as AgocraftItem["attrs"],
+                    };
+                  }
+                }
+              }
               const res = engine.onChildAdd({
                 parent: syntheticParent,
                 newChild,
