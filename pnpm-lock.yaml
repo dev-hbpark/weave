@@ -15,7 +15,8 @@ overrides:
   '@agocraft/editor': file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260614000000.tgz
   '@agocraft/input': file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz
   '@agocraft/interaction': file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz
-  '@agocraft/layout': file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260615010000.tgz
+  '@agocraft/layout': file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz
+  '@agocraft/text-measure-browser': file:apps/web/vendor/agocraft/agocraft-text-measure-browser-1.0.0-rc.20260616000000.tgz
   '@agocraft/manipulation': file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz
   '@agocraft/plugin-sample-measurement': file:apps/web/vendor/agocraft/agocraft-plugin-sample-measurement-1.0.0-rc.20260602053511.tgz
   '@agocraft/plugin-sample-sticky-note': file:apps/web/vendor/agocraft/agocraft-plugin-sample-sticky-note-1.0.0-rc.20260602053511.tgz
@@ -68,8 +69,8 @@ importers:
         specifier: file:vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz
         version: file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)
       '@agocraft/layout':
-        specifier: file:vendor/agocraft/agocraft-layout-1.0.0-rc.20260615010000.tgz
-        version: file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260615010000.tgz(typescript@5.9.3)
+        specifier: file:vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz(typescript@5.9.3)
       '@agocraft/manipulation':
         specifier: file:vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz
         version: file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)
@@ -85,6 +86,9 @@ importers:
       '@agocraft/sync':
         specifier: file:vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz
         version: file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)
+      '@agocraft/text-measure-browser':
+        specifier: file:vendor/agocraft/agocraft-text-measure-browser-1.0.0-rc.20260616000000.tgz
+        version: file:apps/web/vendor/agocraft/agocraft-text-measure-browser-1.0.0-rc.20260616000000.tgz(typescript@5.9.3)
       '@anthropic-ai/sdk':
         specifier: ^0.100.1
         version: 0.100.1(zod@3.25.76)
@@ -281,9 +285,9 @@ packages:
     resolution: {integrity: sha512-ayNgIXZSKrQJhu4ByeUDQ+xNu/C1J/R63oN5D1QcNXeK/ipCQn6rI94OVch5zW+YhViQ8OZhqeBgIEMqBJxNOg==, tarball: file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz}
     version: 1.0.0-rc.20260602053511
 
-  '@agocraft/layout@file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260615010000.tgz':
-    resolution: {integrity: sha512-FeYxwZYfiU2KCpNr0Wa46vfw1plknqtcR+Mtle469v97B01oBjOvddiDk+yYktr07SPyoHG2Miu1iOEem0xPXQ==, tarball: file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260615010000.tgz}
-    version: 1.0.0-rc.20260615010000
+  '@agocraft/layout@file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz':
+    resolution: {integrity: sha512-TjD6IuBv1i6kZI0eoY2bsFi+/+dPqqNQwOhWYwQ2Uh8FJX+83stwSaimaycMcx9mfi2BbaSEFBq7yvMEtfwPeg==, tarball: file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz}
+    version: 1.0.0-rc.20260616000000
 
   '@agocraft/manipulation@file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz':
     resolution: {integrity: sha512-GBcPdutjCvIKIVxGtEG3XrbXE2RoEKc8gwaut5kJnQZ/1QdeF0V0pxyZof0KjYQ8/v9LZeCeM0FQR5yFumN0lA==, tarball: file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz}
@@ -312,6 +316,10 @@ packages:
   '@agocraft/testing@file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260602053511.tgz':
     resolution: {integrity: sha512-lWjHPvbguI1WGF5LawidlSjduo9X6fVnyBTFSELVpcywBq1qtG78a7wG5xdctr0UF9eOkHUQEspTffU8hcUExA==, tarball: file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260602053511.tgz}
     version: 1.0.0-rc.20260602053511
+
+  '@agocraft/text-measure-browser@file:apps/web/vendor/agocraft/agocraft-text-measure-browser-1.0.0-rc.20260616000000.tgz':
+    resolution: {integrity: sha512-Y0KaL3aCayUyh6ueY1Fd5K8xZyfaluXZ9fxZghlWfYbJL6RRHl7Psv8LG0/jPCT3I+QaMu0a1lAU67txZrpSBA==, tarball: file:apps/web/vendor/agocraft/agocraft-text-measure-browser-1.0.0-rc.20260616000000.tgz}
+    version: 1.0.0-rc.20260616000000
 
   '@anthropic-ai/sdk@0.100.1':
     resolution: {integrity: sha512-RANcEe7LpiLczkKGOwoXOTuFdPhuubS0i4xaAKOMpcqc55YO0mukgxppV7eygx3DXNjxWT6RYOLPyOy0aIAmwg==}
@@ -492,6 +500,9 @@ packages:
 
   '@bytecodealliance/preview2-shim@0.17.6':
     resolution: {integrity: sha512-n3cM88gTen5980UOBAD6xDcNNL3ocTK8keab21bpx1ONdA+ARj7uD1qoFxOWCyKlkpSi195FH+GeAut7Oc6zZw==}
+
+  '@chenglou/pretext@0.0.8':
+    resolution: {integrity: sha512-yqm2GMxnPI7VHcHwe84P8ZF0JK/2d2DMKPqMN+s95jQhwDMYYXKVFVJUMEaVWckQStdsjdLav/0Vu+d9YbtGxA==}
 
   '@csstools/color-helpers@6.0.2':
     resolution: {integrity: sha512-LMGQLS9EuADloEFkcTBR3BwV/CGHV7zyDxVRtVDTwdI2Ca4it0CCVTT9wCkxSgokjE5Ho41hEPgb8OEUwoXr6Q==}
@@ -3548,7 +3559,7 @@ snapshots:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260614090000.tgz(typescript@5.9.3)
       '@agocraft/input': file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz
       '@agocraft/interaction': file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)
-      '@agocraft/layout': file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260615010000.tgz(typescript@5.9.3)
+      '@agocraft/layout': file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz(typescript@5.9.3)
       '@agocraft/manipulation': file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)
     optionalDependencies:
       react: 18.3.1
@@ -3566,7 +3577,7 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@agocraft/layout@file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260615010000.tgz(typescript@5.9.3)':
+  '@agocraft/layout@file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz(typescript@5.9.3)':
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260614090000.tgz(typescript@5.9.3)
       '@agocraft/spatial': file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz
@@ -3609,6 +3620,13 @@ snapshots:
     dependencies:
       '@agocraft/core': file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260614090000.tgz(typescript@5.9.3)
       '@agocraft/renderer-mock': file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260602053511.tgz(typescript@5.9.3)
+    transitivePeerDependencies:
+      - typescript
+
+  '@agocraft/text-measure-browser@file:apps/web/vendor/agocraft/agocraft-text-measure-browser-1.0.0-rc.20260616000000.tgz(typescript@5.9.3)':
+    dependencies:
+      '@agocraft/layout': file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz(typescript@5.9.3)
+      '@chenglou/pretext': 0.0.8
     transitivePeerDependencies:
       - typescript
 
@@ -3798,6 +3816,8 @@ snapshots:
       css-tree: 3.2.1
 
   '@bytecodealliance/preview2-shim@0.17.6': {}
+
+  '@chenglou/pretext@0.0.8': {}
 
   '@csstools/color-helpers@6.0.2': {}
 

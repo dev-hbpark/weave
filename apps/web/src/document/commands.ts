@@ -110,8 +110,11 @@ import {
   readDatasetPayload,
 } from "./dataset/dataset-store.js";
 import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
-import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
+import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
+// WI-051 Step 3 — engine-side text measurement, injected into Hug reflow (OFF by
+// default until live-verified; see `layout/text-measurer.ts`).
+import { measureTextInput } from "./layout/text-measurer.js";
 import {
   ALIGN_OPS_ORDER,
   type AlignInput,
@@ -2736,10 +2739,11 @@ export function buildWeaveCommands(
             }
             const container = findItemDeep(ctx.document, containerId);
             if (container === undefined) return result;
-            const layout = normalizeLayoutSpec(
-              (container.attrs as { layout?: LayoutSpec }).layout,
-            );
-            if (layout === undefined || (layout.kind !== "auto-flex" && layout.kind !== "auto-grid")) {
+            const layout = normalizeLayoutSpec((container.attrs as { layout?: LayoutSpec }).layout);
+            if (
+              layout === undefined ||
+              (layout.kind !== "auto-flex" && layout.kind !== "auto-grid")
+            ) {
               return result; // absolute / no layout → free placement (kit stands)
             }
             const engine = getLayoutEngine();
@@ -3173,7 +3177,12 @@ export function buildWeaveCommands(
         input.designWidth > 0 &&
         input.designHeight > 0;
       const box = hasDims
-        ? absoluteFrameBox(ctx.document, String(input.itemId), input.designWidth as number, input.designHeight as number)
+        ? absoluteFrameBox(
+            ctx.document,
+            String(input.itemId),
+            input.designWidth as number,
+            input.designHeight as number,
+          )
         : null;
       const result = rawSetFrameLayout.run(ctx, {
         ...input,
@@ -3204,6 +3213,7 @@ export function buildWeaveCommands(
           containerId: cont.id,
           designWidth: input.designWidth as number,
           designHeight: input.designHeight as number,
+          ...measureTextInput(),
         });
         if (refit.length > 0) {
           const cid = String(cont.id);
@@ -3329,6 +3339,7 @@ export function buildWeaveCommands(
         containerId: child.id,
         designWidth: dW,
         designHeight: dH,
+        ...measureTextInput(),
       });
 
       const patchItemId = (p: Patch): string | undefined =>
@@ -3416,6 +3427,7 @@ export function buildWeaveCommands(
             newSizePx: input.sizePx,
             ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
             ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
+            ...measureTextInput(),
           })
         : [];
 

@@ -43,7 +43,7 @@
       "@agocraft/editor": "file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260614000000.tgz",
       "@agocraft/input": "file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz",
       "@agocraft/interaction": "file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz",
-      "@agocraft/layout": "file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260615010000.tgz",
+      "@agocraft/layout": "file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616000000.tgz",
       "@agocraft/manipulation": "file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz",
       "@agocraft/plugin-sample-measurement": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-measurement-1.0.0-rc.20260602053511.tgz",
       "@agocraft/plugin-sample-sticky-note": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-sticky-note-1.0.0-rc.20260602053511.tgz",
@@ -52,7 +52,8 @@
       "@agocraft/renderer-mock": "file:apps/web/vendor/agocraft/agocraft-renderer-mock-1.0.0-rc.20260602053511.tgz",
       "@agocraft/spatial": "file:apps/web/vendor/agocraft/agocraft-spatial-1.0.0-rc.20260602053511.tgz",
       "@agocraft/sync": "file:apps/web/vendor/agocraft/agocraft-sync-1.0.0-rc.20260602053511.tgz",
-      "@agocraft/testing": "file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260602053511.tgz"
+      "@agocraft/testing": "file:apps/web/vendor/agocraft/agocraft-testing-1.0.0-rc.20260602053511.tgz",
+      "@agocraft/text-measure-browser": "file:apps/web/vendor/agocraft/agocraft-text-measure-browser-1.0.0-rc.20260616000000.tgz"
     }
   }
 }
