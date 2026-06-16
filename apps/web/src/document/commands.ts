@@ -117,6 +117,7 @@ import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/cha
 import { getDesignDims } from "./layout/design-dims.js";
 import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
+import { reparentTextHugPatches } from "./layout/reparent-text-hug.js";
 import {
   engineTextMeasureEnabled,
   measureFreeTextHugRatio,
@@ -2318,7 +2319,18 @@ export function buildWeaveCommands(
       const base = baseReparentItem.run(ctx, input as never);
       if (!base.ok || base.patches.length === 0) return base;
       const fontPatches = ratioFontReparentPatches(ctx.document, input.entries, base.patches);
-      return fontPatches.length === 0 ? base : ok(base.value, [...base.patches, ...fontPatches]);
+      // WI-051 follow-up — content-hug each reparented TEXT so its box keeps its
+      // content size (no ratio-shrink / cross-stretch). Flag-gated → off = no-op.
+      const dims = getDesignDims();
+      const hugPatches = reparentTextHugPatches(
+        ctx.document,
+        input.entries,
+        base.patches,
+        dims?.w,
+        dims?.h,
+      ) as typeof base.patches;
+      const extra = [...fontPatches, ...hugPatches];
+      return extra.length === 0 ? base : ok(base.value, [...base.patches, ...extra]);
     },
   };
 
@@ -2380,7 +2392,16 @@ export function buildWeaveCommands(
         newParentId,
       }));
       const fontPatches = ratioFontReparentPatches(ctx.document, entries, base.patches);
-      return fontPatches.length === 0 ? base : ok(base.value, [...base.patches, ...fontPatches]);
+      const dims = getDesignDims();
+      const hugPatches = reparentTextHugPatches(
+        ctx.document,
+        entries,
+        base.patches,
+        dims?.w,
+        dims?.h,
+      ) as typeof base.patches;
+      const extra = [...fontPatches, ...hugPatches];
+      return extra.length === 0 ? base : ok(base.value, [...base.patches, ...extra]);
     },
   };
 

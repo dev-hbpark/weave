@@ -32,6 +32,7 @@ import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findDescendantSet, findItemDeep } from "../agocraft-mirror.js";
 import { isTextAutofitEnabled } from "../domains/text-autofit.js";
+import { engineTextMeasureEnabled } from "../layout/text-measurer.js";
 import { isItemLocked } from "../types.js";
 
 const REPARENT_ACTIVE_ATTR = "data-reparent-drop-target";
@@ -275,13 +276,16 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
         // font to the bounded (cross) dimension. Gated by the auto-fit flag so "off"
         // restores plain reparent.
         const doc = getDocumentRef.current?.();
-        const parentLayout = (
+        const parentLayout =
           doc !== null && doc !== undefined
             ? (findItemDeep(doc, candidateId)?.attrs as { layout?: LayoutSpec } | undefined)?.layout
-            : undefined
-        );
+            : undefined;
         const fillTextIds =
           isTextAutofitEnabled() &&
+          // WI-051 — when engine measurement is ON, the reparent command content-hugs
+          // the text instead (keeps its content size); the WI-238 cross-stretch (which
+          // fills the column and shrinks the box) is the OFF path only.
+          !engineTextMeasureEnabled() &&
           parentLayout?.kind === "auto-flex" &&
           doc !== null &&
           doc !== undefined
@@ -297,7 +301,13 @@ export function useReparentDragController(deps: UseReparentDragControllerDeps): 
           for (const id of fillTextIds) {
             editor.exec("weave.item.setLayoutChild", {
               itemId: id,
-              policy: { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto", alignSelf: "stretch" },
+              policy: {
+                kind: "auto-flex",
+                grow: 0,
+                shrink: 1,
+                basis: "auto",
+                alignSelf: "stretch",
+              },
             });
           }
           editor.exec("weave.item.reparent", {
