@@ -50,18 +50,20 @@ const store = new Map<string, string>();
   removeItem: (k: string) => void store.delete(k),
 };
 
-describe("engineTextMeasureEnabled (opt-in until live-verified)", () => {
+describe("engineTextMeasureEnabled (default ON, escape hatch 'off')", () => {
   afterEach(() => store.clear());
 
-  it("is OFF by default", () => {
-    expect(engineTextMeasureEnabled()).toBe(false);
+  it("is ON by default", () => {
+    expect(engineTextMeasureEnabled()).toBe(true);
   });
 
-  it("is enabled only by the exact value 'on'", () => {
+  it("is disabled only by the exact value 'off'", () => {
+    store.set("weave.engineTextMeasure", "off");
+    expect(engineTextMeasureEnabled()).toBe(false);
     store.set("weave.engineTextMeasure", "on");
     expect(engineTextMeasureEnabled()).toBe(true);
-    store.set("weave.engineTextMeasure", "yes");
-    expect(engineTextMeasureEnabled()).toBe(false);
+    store.set("weave.engineTextMeasure", "anything");
+    expect(engineTextMeasureEnabled()).toBe(true);
   });
 });
 

@@ -6,21 +6,23 @@
 // hands it to the engine's Hug-reflow calls (commands.ts) — weave itself runs NO fit
 // logic; it only wires the capability (a "pixel oracle"), per the hands-off goal.
 //
-// OFF BY DEFAULT. Changing engine layout sizing is gated on LIVE VERIFICATION (the
-// hard workspace rule — measurement/observer changes have repeatedly regressed). So
-// the measurer is injected only when `localStorage["weave.engineTextMeasure"] = "on"`.
-// Default off ⇒ the engine keeps its current geometry behavior (zero behavior change,
-// zero regression) until an operator live-verifies, then flips it on by default.
+// ON BY DEFAULT (since the add / edit / paste / reparent (flex·grid·free) content-hug
+// paths were live-verified on the dev server). Escape hatch:
+// `localStorage["weave.engineTextMeasure"] = "off"` reverts to the prior geometry
+// behavior (the WI-238 cross-stretch / fitFontScale font-shrink path) instantly,
+// without a rebuild — kept because this gates engine-layout sizing (the area with the
+// most regression history).
 
 import type { MeasureText } from "@agocraft/layout";
 import { createBrowserTextMeasurer } from "@agocraft/text-measure-browser";
 
-/** True when engine-side text measurement is enabled (opt-in until live-verified). */
+/** True when engine-side text measurement is enabled — DEFAULT ON; disabled only by
+ *  the exact escape-hatch value `localStorage["weave.engineTextMeasure"] = "off"`. */
 export function engineTextMeasureEnabled(): boolean {
   try {
-    return globalThis.localStorage?.getItem("weave.engineTextMeasure") === "on";
+    return globalThis.localStorage?.getItem("weave.engineTextMeasure") !== "off";
   } catch {
-    return false;
+    return true;
   }
 }
 
