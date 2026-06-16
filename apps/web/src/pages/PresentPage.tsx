@@ -23,6 +23,19 @@ import { editorModeFor } from "../document/editor-mode/registry.js";
 import { PresentRuntimeProvider } from "../document/interactions/present-runtime-context.js";
 import { PresentFrameTree } from "../document/render/PresentFrameTree.js";
 import { DocumentForResolutionProvider } from "../document/style/resolver-context.js";
+import { InkLayer } from "../features/present/ink/InkLayer.js";
+import { InkToolbar } from "../features/present/ink/InkToolbar.js";
+import { inkTool } from "../features/present/ink/ink-tools.js";
+import { resolveRelayUrl } from "../features/present/ink/relay/relay-url.js";
+import { useLiveSession } from "../features/present/ink/relay/use-live-session.js";
+import { useInkMode } from "../features/present/ink/use-ink-mode.js";
+import { useInkSession } from "../features/present/ink/use-ink-session.js";
+
+// WI-239 Phase 1 — ephemeral ink surface keys. Slide ink is keyed per
+// camera step (each slide keeps its own marks for the session); the blank
+// board is a single ephemeral surface.
+const INK_BOARD_KEY = "board:0";
+const inkSlideKey = (activeId: string): string => `slide:${activeId}`;
 
 // Phase 13d-3 — entrance-animation Web Animations API keyframes per mode.
 // Closed-owned mode union → a Record table, not a `switch` (Rule 6): a new mode
@@ -197,6 +210,15 @@ export function PresentPage() {
     { entryId: string; effect: HoverEffectBehavior } | undefined
   >(undefined);
 
+  // WI-239 Phase 1 — ephemeral whiteboard ink (DR-154). The session holds
+  // strokes in memory only (no document round-trip); the controller is the
+  // single source of ink-mode state. Both hooks run unconditionally above the
+  // early returns so hook order is stable across the async-load blank first
+  // paint (same React #310 guard the comments below describe).
+  const inkSession = useInkSession();
+  const ink = useInkMode();
+  const viewport = useWindowSize();
+
   // Phase 11e — step order follows `design.presentationOrder`. Each entry
   // (root or any frame, at any depth) becomes one step. PresentPage acts as
   // a *camera*: the whole design tree is rendered once in the scene, and
@@ -280,6 +302,17 @@ export function PresentPage() {
     },
     [totalSteps],
   );
+
+  // WI-240 Phase 2 — live session (presenter broadcasts ink + step; viewers
+  // follow). Opt-in: a viewer joins via `?session=`, a host via goLive(). When
+  // off, `live.session` is just the local Phase-1 session and no socket opens.
+  const relayUrl = useMemo(() => resolveRelayUrl(), []);
+  const live = useLiveSession({
+    localSession: inkSession,
+    currentStep: safeStep,
+    onFollowStep: goToStep,
+    relayUrl,
+  });
 
   const goToCameraId = useCallback(
     (cameraId: string) => {
@@ -749,6 +782,9 @@ export function PresentPage() {
 
   const activeId = cameraTargets[safeStep]?.behavior.id ?? cameraTargets[0]?.behavior.id ?? "";
 
+  // WI-239 — the surface CLEAR / UNDO act on: the open board, else the slide.
+  const activeInkSurface = ink.boardOpen ? INK_BOARD_KEY : inkSlideKey(activeId);
+
   return (
     <div className="fixed inset-0">
       {/* WI-040 — the StyleResolver cascade (theme tokens written as
@@ -770,10 +806,72 @@ export function PresentPage() {
               activeId={activeId}
               background={design.background}
               bgTone={bgTone}
+              overlay={
+                // WI-239 — slide annotation layer, in design-pixel space
+                // inside Stage's camera plane so ink tracks zoom/pan. Inert
+                // (pointer-events: none) unless ink mode is on and the board
+                // is closed, so present nav is byte-for-byte unchanged when
+                // not drawing.
+                <InkLayer
+                  width={design.width}
+                  height={design.height}
+                  surfaceKey={inkSlideKey(activeId)}
+                  tool={inkTool(ink.toolId)}
+                  style={ink.style}
+                  session={live.session}
+                  enabled={ink.enabled && !ink.boardOpen && live.canDraw}
+                />
+              }
             />
           </PresentRuntimeProvider>
         </DatasetProvider>
       </DocumentForResolutionProvider>
+
+      {/* WI-239 — blank whiteboard: a full-viewport ephemeral surface above
+       *  the slides (below chrome z-50 so nav/close stay clickable). Its ink
+       *  is screen-space (viewport pixels) on its own surface key. */}
+      {ink.boardOpen ? (
+        <div
+          data-testid="ink-board"
+          className="fixed inset-0 z-40"
+          style={{ background: "#f8fafc" }}
+        >
+          <InkLayer
+            width={viewport.width}
+            height={viewport.height}
+            surfaceKey={INK_BOARD_KEY}
+            tool={inkTool(ink.toolId)}
+            style={ink.style}
+            session={live.session}
+            enabled={live.canDraw}
+          />
+        </div>
+      ) : null}
+
+      {/* WI-240 — viewers can't draw: a compact "following" chip instead of the
+       *  ink toolbar. Host / solo presenter gets the full toolbar + live cluster. */}
+      {live.role === "viewer" ? (
+        <div
+          data-testid="ink-viewer-chip"
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 h-9 px-4 rounded-[var(--radius-pill)] backdrop-blur-[8px] border text-[13px]"
+          style={{
+            background: "rgba(15, 23, 42, 0.62)",
+            borderColor: "rgba(255,255,255,0.14)",
+            color: "rgba(255,255,255,0.96)",
+          }}
+        >
+          <span style={{ color: "#34d399" }}>●</span>
+          {live.status === "open" ? "Live — following presenter" : "Connecting to live…"}
+        </div>
+      ) : (
+        <InkToolbar
+          controller={ink}
+          session={live.session}
+          activeSurfaceKey={activeInkSurface}
+          live={live}
+        />
+      )}
+
       <PresentChrome
         step={safeStep}
         total={totalSteps}
@@ -784,6 +882,24 @@ export function PresentPage() {
       />
     </div>
   );
+}
+
+/** Viewport size for the screen-space blank board. Present mode is
+ *  `fixed inset-0`, so the window inner size IS the board's coordinate
+ *  space. SSR-safe default; updates on resize. */
+function useWindowSize(): { readonly width: number; readonly height: number } {
+  const [size, setSize] = useState(() => ({
+    width: typeof window === "undefined" ? 1280 : window.innerWidth,
+    height: typeof window === "undefined" ? 720 : window.innerHeight,
+  }));
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setSize({ width: window.innerWidth, height: window.innerHeight });
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
 }
 
 function activeCameraId(

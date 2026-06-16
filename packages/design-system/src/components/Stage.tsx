@@ -55,6 +55,16 @@ interface StageProps {
    *  it (FrameStage / PresentPage share the same helper) and passes it in
    *  so Stage doesn't have to bundle a canvas-luminance probe. */
   readonly bgTone?: "light" | "dark";
+  /**
+   * Domain-neutral slot rendered as the topmost child *inside the design
+   * plane* — i.e. it shares the camera's pan/zoom transform with every
+   * scene. A caller that needs a layer expressed in design-pixel
+   * coordinates (an annotation/ink surface, a measurement guide, a
+   * coordinate grid) renders it here so it tracks the camera for free.
+   * Untransformed screen-space chrome (toolbars, nav) stays a sibling of
+   * `<Stage>`, not this slot. Defaults to nothing.
+   */
+  readonly overlay?: ReactNode;
   readonly className?: string;
 }
 
@@ -106,6 +116,7 @@ export function Stage({
   activeId,
   background,
   bgTone,
+  overlay,
   className,
 }: StageProps) {
   const reduce = useReducedMotion();
@@ -343,6 +354,9 @@ export function Stage({
             );
           });
         })()}
+        {/* Topmost in-plane slot — shares the camera transform with the
+         *  scenes above (design-pixel coordinate space). See `overlay` prop. */}
+        {overlay}
       </motion.div>
     </div>
   );
