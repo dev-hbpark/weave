@@ -132,13 +132,6 @@ import {
   useIsCropping,
 } from "../document/interactions/cropping-state.js";
 
-// Default text line-height multiplier (mirrors the TextAttrs seed default).
-import { clampRefitPx, shrinkFontTarget } from "../document/domains/text-autofit.js";
-import {
-  type RequestTextFit,
-  type TextFitReport,
-  TextFitProvider,
-} from "../document/domains/text-autofit-context.js";
 import { EditorVMProvider } from "../document/interactions/editor-vm-context.js";
 import { frameHoverStore } from "../document/interactions/frame-hover-store.js";
 import {
@@ -721,72 +714,10 @@ function DesignPageBody() {
     [editor],
   );
 
-  // WI-237/DR-152 (flex) + WI-238/DR-153 (grid) — text auto-fit coalescing channel.
-  // TextBlocks measure content overflow in the DOM; we dedupe a burst and flush on
-  // rAF as ONE `editor.runBatch` (a single undo entry + a single save per settle).
-  // Routing is decided HERE from each item's REAL parent layout (so it's correct
-  // even when the child's own layoutChild is stale, e.g. reparented into a grid):
-  //  • flex/absolute → correct the text's own frame.height (grow the box to content).
-  //  • auto-grid cell → the row track owns the height, so the box can't grow; SHRINK
-  //    the cell's FONT to fit instead (keeps the table compact, never overflows the
-  //    slide — operator's choice for #1).
-  const refitTextPendingRef = useRef(new Map<string, ItemFrame>()); // id → grown frame
-  const refitFontPendingRef = useRef(new Map<string, number>()); // grid cell id → font px
-  const refitRafRef = useRef<number | null>(null);
-  const docForRefitRef = useRef(docInAgocraft);
-  docForRefitRef.current = docInAgocraft;
-  const flushRefits = useCallback(() => {
-    refitRafRef.current = null;
-    const textReqs = [...refitTextPendingRef.current.entries()];
-    refitTextPendingRef.current.clear();
-    const fontReqs = [...refitFontPendingRef.current.entries()];
-    refitFontPendingRef.current.clear();
-    if (textReqs.length === 0 && fontReqs.length === 0) return;
-    editor.runBatch(() => {
-      for (const [id, frame] of textReqs) {
-        editor.exec("weave.item.update", { itemId: id, attrs: { frame } });
-      }
-      for (const [cellId, value] of fontReqs) {
-        editor.exec("weave.item.update", {
-          itemId: cellId,
-          attrs: { fontSizeSpec: { kind: "px", value } },
-        });
-      }
-    });
-  }, [editor]);
-  const scheduleRefitFlush = useCallback(() => {
-    if (refitRafRef.current === null) refitRafRef.current = requestAnimationFrame(flushRefits);
-  }, [flushRefits]);
-  const requestTextFit = useCallback<RequestTextFit>(
-    (report: TextFitReport) => {
-      const doc = docForRefitRef.current;
-      const parentLayout = (findParentAndIndex(doc, report.itemId)?.parent.attrs as
-        | { layout?: { kind?: string } }
-        | undefined)?.layout;
-      if (parentLayout?.kind === "auto-grid") {
-        // Grid cell: can't grow the box — SHRINK the font to fit the cell.
-        if (report.contentPx <= report.boxPx + 2) return;
-        const fs = (findItemDeep(doc, report.itemId)?.attrs as
-          | { fontSizeSpec?: { kind?: string; value?: number } }
-          | undefined)?.fontSizeSpec;
-        if (fs?.kind !== "px" || typeof fs.value !== "number") return;
-        const target = shrinkFontTarget(fs.value, report.boxPx, report.contentPx);
-        if (target >= fs.value - 0.5) return; // already minimal / no meaningful shrink
-        refitFontPendingRef.current.set(report.itemId, target);
-        scheduleRefitFlush();
-        return;
-      }
-      // Flex / absolute text: correct the text's OWN frame.height (basis reads it).
-      const currentRatio = report.currentFrame.height;
-      if (!(currentRatio > 0) || !(report.boxPx > 0)) return;
-      const parentPx = report.boxPx / currentRatio; // box = ratio × parent px
-      const targetRatio = clampRefitPx(report.contentPx, { minPx: 1, maxPx: parentPx * 0.99 }) / parentPx;
-      if (!(targetRatio > 0) || Math.abs(targetRatio - currentRatio) < 1e-4) return;
-      refitTextPendingRef.current.set(report.itemId, { ...report.currentFrame, height: targetRatio });
-      scheduleRefitFlush();
-    },
-    [scheduleRefitFlush],
-  );
+  // NOTE: text auto-fit no longer routes through a DesignPage→engine channel. It is
+  // now PURELY render-level in TextBlock (WI-238 rev2 / DR-153 — fitFontScale → CSS
+  // transform; box untouched). The earlier WI-237/DR-152 measure→engine-write channel
+  // (refit coalescing + TextFitProvider) was superseded and decommissioned.
   const setPresentationOrderViaEditor = useCallback(
     (order: ReadonlyArray<string>) => {
       editor.exec("weave.design.setPresentationOrder", { order });
@@ -2735,7 +2666,6 @@ function DesignPageBody() {
                   >
                     <ModeAwareTooltipSurface>
                       <EditorProvider editor={editor}>
-                       <TextFitProvider value={requestTextFit}>
                         <DocumentForResolutionProvider document={docInAgocraft}>
                           <DatasetProvider doc={docInAgocraft} editor={editor}>
                             <ChartElementSelectionProvider>
@@ -3604,7 +3534,6 @@ function DesignPageBody() {
                             </ChartElementSelectionProvider>
                           </DatasetProvider>
                         </DocumentForResolutionProvider>
-                       </TextFitProvider>
                       </EditorProvider>
                     </ModeAwareTooltipSurface>
                   </CommandHostProvider>

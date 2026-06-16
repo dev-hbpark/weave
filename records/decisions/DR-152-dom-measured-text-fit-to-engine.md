@@ -7,10 +7,22 @@
 | ID | DR-152 |
 | Date | 2026-06-15 |
 | Owner | hbpark |
-| Status | DESIGN (iteration 1 — requires live verification) |
+| Status | **SUPERSEDED by [DR-153](DR-153-grid-row-autofit.md) (rev2)** — see note below |
 | Work Item | [WI-237](../work-items/WI-237-text-autofit-measure-to-engine.md) |
 | Scope | weave `TextBlock` (measure) + a system-origin mutation (feed) + the layout engine (resize) |
 | Supersedes the partial | WI-235/236 (add-path height guess/estimate) become fallbacks once real measurement drives size |
+
+> **SUPERSEDED (2026-06-16).** The measure→engine-write approach decided here (report
+> DOM-measured content size to a provider that writes a corrected box height / grid
+> font back through the engine) was implemented (WI-237 + WI-238 rev/follow-up) and
+> then **abandoned in WI-238 rev2 / DR-153**: writing the size back to the engine
+> shrank the box too small and was timing-flaky. Auto-fit is now **purely render-level**
+> in `TextBlock` (`fitFontScale` → CSS `transform: scale` on the content; the box is
+> left untouched). The dead channel from this DR — `text-autofit-context.tsx`
+> (TextFitProvider/useTextFit), DesignPage's `requestTextFit`/refit-coalescing, and the
+> `shouldRefitHeight`/`clampRefitPx`/`shrinkFontTarget` decision helpers — was
+> decommissioned end-to-end on 2026-06-16. The surviving core is `fitFontScale` +
+> `isTextAutofitEnabled` + `MIN_FIT_FONT_PX`.
 
 ## Context / decision (operator direction)
 

@@ -312,23 +312,21 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       setIsEditing(true);
     });
   }, [editable, item, selfId, selectFrame]);
-  // WI-237/DR-152 + WI-238/DR-153 — content-height auto-fit (default ON). Measure
-  // the content's intrinsic height (innerRef, at the engine-bound width) vs the
-  // engine box (wrapRef) and, on divergence, REPORT the raw numbers to the provider.
-  // The provider routes by the item's REAL parent layout (grid → grow the grid
-  // frame; flex/absolute → correct the text's own height) — so it is correct even
-  // when the child's own `layoutChild` is stale (e.g. reparented into a grid).
-  // Convergent (width fixed) + threshold + a hard attempt cap (no thrash).
-  // WI-238 rev2 / DR-153 — render-level shrink-to-fit. If the text's natural
-  // (full-font) content is taller/wider than its box (a grid cell / a bounded flex
-  // slot), SCALE THE FONT DOWN (CSS transform on the content) so it FITS — the box
+  // WI-238 rev2 / DR-153 — text auto-fit, render-level shrink-to-fit (default ON).
+  // The earlier WI-237/DR-152 measure→engine-write channel (report to a provider that
+  // grows the box / shrinks the grid font) was SUPERSEDED and decommissioned — it
+  // shrank the box too small and was timing-flaky. Auto-fit is now PURELY here.
+  // If the text's natural (full-font) content (innerRef) is taller/wider than its
+  // engine box (wrapRef) — a grid cell / a bounded flex slot — SCALE THE FONT DOWN
+  // (CSS transform on the content) so it FITS — the box
   // is left untouched (it keeps filling its cell/slot; we don't shrink the box).
   // Pure render: no doc write, no engine round-trip → deterministic, no undo/save
   // churn, no measure-write loop (the transform is visual, so the measured layout
   // size stays the full-font natural → a fixed point). Skipped while editing (the
   // caret edits at full size) and when content already fits (scale 1).
   const [fitScale, setFitScale] = useState(1);
-  const minFitScale = resolvedFontSizePx > 0 ? Math.max(0.3, MIN_FIT_FONT_PX / resolvedFontSizePx) : 0.3;
+  const minFitScale =
+    resolvedFontSizePx > 0 ? Math.max(0.3, MIN_FIT_FONT_PX / resolvedFontSizePx) : 0.3;
   useEffect(() => {
     if (!isTextAutofitEnabled() || isEditing) {
       setFitScale(1);
