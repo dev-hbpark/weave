@@ -46,3 +46,48 @@ export function measureTextInput(): { readonly measureText?: MeasureText } {
   const m = getEngineTextMeasurer();
   return m !== undefined ? { measureText: m } : {};
 }
+
+/** WI-051 follow-up — FREE-placed text content hug. A text with no managing layout
+ *  parent (absolute / root) is sized by its own frame; the engine does not own it,
+ *  so the host fits the box to the measured content here. `maxWidthPx` present ⇒
+ *  HEIGHT mode (fixed width, wrap → auto height: only `hRatio` is meaningful);
+ *  absent ⇒ WIDTH_AND_HEIGHT (intrinsic: both axes hug). Returns parent-ratio
+ *  width/height. Pure — takes the measurer so it is testable with a fake. */
+export interface FreeTextHugSpec {
+  readonly text: string;
+  readonly fontFamily: string;
+  readonly fontSizePx: number;
+  readonly lineHeight?: number;
+  readonly letterSpacing?: number;
+  readonly maxWidthPx?: number;
+}
+export function freeTextHugRatio(
+  measure: MeasureText,
+  spec: FreeTextHugSpec,
+  containerWPx: number,
+  containerHPx: number,
+): { readonly wRatio: number; readonly hRatio: number } | undefined {
+  if (!(containerWPx > 0) || !(containerHPx > 0)) return undefined;
+  if (!(spec.fontSizePx > 0)) return undefined;
+  const r = measure({
+    text: spec.text,
+    fontFamily: spec.fontFamily,
+    fontSizePx: spec.fontSizePx,
+    ...(spec.lineHeight !== undefined ? { lineHeight: spec.lineHeight } : {}),
+    ...(spec.letterSpacing !== undefined ? { letterSpacing: spec.letterSpacing } : {}),
+    ...(spec.maxWidthPx !== undefined ? { maxWidthPx: spec.maxWidthPx } : {}),
+  });
+  if (!(r.widthPx > 0) || !(r.heightPx > 0)) return undefined;
+  return { wRatio: r.widthPx / containerWPx, hRatio: r.heightPx / containerHPx };
+}
+
+/** Flag-gated wrapper over `freeTextHugRatio` using the engine text measurer.
+ *  Returns undefined when disabled / no measurer (→ caller keeps the seeded frame). */
+export function measureFreeTextHugRatio(
+  spec: FreeTextHugSpec,
+  containerWPx: number,
+  containerHPx: number,
+): { readonly wRatio: number; readonly hRatio: number } | undefined {
+  const m = getEngineTextMeasurer();
+  return m !== undefined ? freeTextHugRatio(m, spec, containerWPx, containerHPx) : undefined;
+}

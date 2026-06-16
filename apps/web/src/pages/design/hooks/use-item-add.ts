@@ -6,8 +6,10 @@ import {
 import type { Editor } from "@agocraft/editor";
 import { useCallback, useEffect, useState } from "react";
 import type { DomainKind, ItemFrame } from "../../../document";
-import { absoluteFrameBox } from "../../../document/agocraft-mirror.js";
+import { absoluteFrameBox, findItemDeep } from "../../../document/agocraft-mirror.js";
+import { defaultAttrsFor } from "../../../document/domain-kinds.js";
 import { layoutChildFromTextAutoResize } from "../../../document/domains/derive-text-auto-resize.js";
+import { measureFreeTextHugRatio } from "../../../document/layout/text-measurer.js";
 import { type ItemAdderKind, setItemAdder } from "../../../document/tooltip/editor-hotkeys.js";
 import { cameraFitBox } from "../../frame-camera-bridge.js";
 
@@ -23,6 +25,52 @@ import { cameraFitBox } from "../../frame-camera-bridge.js";
 // called AFTER selection state exists without re-threading those concerns.
 
 const DEFAULT_TEXT_LINE_HEIGHT = 1.4;
+
+/** WI-051 follow-up — content-hug a FREE-placed text's seeded frame (flag-gated).
+ *  A manual text add gets `WIDTH_AND_HEIGHT` (auto width+height) but the box is
+ *  seeded at a FIXED placement width — the geometry-only engine can't measure text,
+ *  so the box never fits the content. When the engine text measurer is enabled AND
+ *  the container is FREE (no managing flex/grid layout — a managed text is sized by
+ *  the engine instead, not here), measure the default text and fit the box to it,
+ *  centered on its placement. Returns the original frame when disabled / no measurer /
+ *  managed container / no container px. */
+function hugFreeTextFrame(
+  doc: Parameters<typeof absoluteFrameBox>[0],
+  containerId: string,
+  frame: ItemFrame,
+  designWidth: number,
+  designHeight: number,
+  fontSizePx: number,
+): ItemFrame {
+  const container = findItemDeep(doc, containerId);
+  const layout = (container?.attrs as { layout?: { kind?: string } } | undefined)?.layout;
+  // Managed (flex/grid) text is sized by the engine (Step 3.5), never host-hugged.
+  if (layout !== undefined && layout.kind !== "absolute-constraints") return frame;
+  const box = absoluteFrameBox(doc, containerId, designWidth, designHeight);
+  if (box === null) return frame;
+  const td = defaultAttrsFor("text");
+  const hug = measureFreeTextHugRatio(
+    {
+      text: td.text,
+      fontFamily: td.fontFamily,
+      fontSizePx,
+      lineHeight: td.lineHeight,
+      letterSpacing: td.letterSpacing,
+    },
+    box.w,
+    box.h,
+  );
+  if (hug === undefined) return frame;
+  const cx = frame.x + frame.width / 2;
+  const cy = frame.y + frame.height / 2;
+  return {
+    ...frame,
+    x: cx - hug.wRatio / 2,
+    y: cy - hug.hRatio / 2,
+    width: hug.wRatio,
+    height: hug.hRatio,
+  };
+}
 
 /** Geometry computer (orchestrator-owned; wraps screenToDesign + computeAddFrame). */
 type AddGeometryFn = (
@@ -160,6 +208,12 @@ export function useItemAdd({
         if (geo?.fontSizeRatio !== undefined) {
           frame = { ...frame, height: geo.fontSizeRatio * DEFAULT_TEXT_LINE_HEIGHT };
         }
+        // WI-051 follow-up — fit the box to the measured content (flag-gated).
+        const fsHug =
+          typeof attrsOverride.fontSize === "number"
+            ? attrsOverride.fontSize
+            : defaultAttrsFor("text").fontSize;
+        frame = hugFreeTextFrame(document, containerId, frame, designWidth, designHeight, fsHug);
       }
       // WI-077 — a chart can't be created bare: it references a dataset. Route
       // to the one-transaction `weave.chart.add` (seeds a sample dataset AND
@@ -251,6 +305,12 @@ export function useItemAdd({
         if (geo?.fontSizeRatio !== undefined) {
           frame = { ...frame, height: geo.fontSizeRatio * DEFAULT_TEXT_LINE_HEIGHT };
         }
+        // WI-051 follow-up — fit the box to the measured content (flag-gated).
+        const fsHug =
+          typeof attrsOverride.fontSize === "number"
+            ? attrsOverride.fontSize
+            : defaultAttrsFor("text").fontSize;
+        frame = hugFreeTextFrame(doc, containerId, frame, designWidth, designHeight, fsHug);
       }
       const result = editor.exec<unknown, string>("weave.item.add", {
         kind: spec.kind,

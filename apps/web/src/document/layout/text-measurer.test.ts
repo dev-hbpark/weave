@@ -1,7 +1,27 @@
 // WI-051 Step 3 — engine text-measure flag gate + graceful fallback.
 
+import type { MeasureText } from "@agocraft/layout";
 import { afterEach, describe, expect, it } from "vitest";
-import { engineTextMeasureEnabled, measureTextInput } from "./text-measurer.js";
+import { engineTextMeasureEnabled, freeTextHugRatio, measureTextInput } from "./text-measurer.js";
+
+describe("freeTextHugRatio (free-placed text content hug)", () => {
+  const fake: MeasureText = () => ({ widthPx: 200, heightPx: 60, minContentPx: 40 });
+  it("returns content px ÷ container px as parent ratios", () => {
+    const r = freeTextHugRatio(fake, { text: "x", fontFamily: "Inter", fontSizePx: 24 }, 1000, 500);
+    expect(r).toEqual({ wRatio: 0.2, hRatio: 0.12 });
+  });
+  it("is undefined for a non-positive container box / font", () => {
+    const s = { text: "x", fontFamily: "Inter", fontSizePx: 24 };
+    expect(freeTextHugRatio(fake, s, 0, 500)).toBeUndefined();
+    expect(freeTextHugRatio(fake, { ...s, fontSizePx: 0 }, 1000, 500)).toBeUndefined();
+  });
+  it("is undefined when the measurer returns a degenerate size", () => {
+    const zero: MeasureText = () => ({ widthPx: 0, heightPx: 0, minContentPx: 0 });
+    expect(
+      freeTextHugRatio(zero, { text: "x", fontFamily: "Inter", fontSizePx: 24 }, 1000, 500),
+    ).toBeUndefined();
+  });
+});
 
 const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = {
