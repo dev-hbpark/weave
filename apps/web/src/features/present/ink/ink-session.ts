@@ -40,6 +40,10 @@ export function strokesOf(state: InkState, surface: InkSurfaceKey): readonly Ink
  *  own space, so the slack is expressed there too. */
 const ERASE_SLACK = 8;
 
+export function strokeHitsPoint(stroke: InkStroke, at: InkPoint): boolean {
+  return strokeHit(stroke, at);
+}
+
 function strokeHit(stroke: InkStroke, at: InkPoint): boolean {
   const tol = stroke.style.width / 2 + ERASE_SLACK;
   const tol2 = tol * tol;

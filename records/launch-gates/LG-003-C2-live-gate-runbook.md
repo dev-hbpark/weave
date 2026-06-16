@@ -75,7 +75,9 @@ the viewer link. Viewer: open the link.
 - [ ] **Zoom/pan anchor** — strokes stay glued to slide content on both sides.
 - [ ] **Highlighter / eraser** — translucent stroke + erase both propagate.
 - [ ] **Clear** — presenter "Clear slide" empties the viewer's slide.
-- [ ] **Undo** — presenter undo re-syncs the viewer (stroke removed).
+- [ ] **Undo is presenter-local (v1)** — presenter undo removes the stroke on the
+      presenter only; the viewer keeps it (documented v1 limitation; "Clear" is the
+      shared reset). Not a bug.
 - [ ] **Step follow** — presenter advances slide (→); viewer's slide follows.
 - [ ] **Multi-viewer** — a second viewer on the same link also receives ink.
 - [ ] **Reconnect** — drop the viewer's network ~5s then restore; the chip returns to
@@ -94,11 +96,35 @@ the viewer link. Viewer: open the link.
 - **FAIL** = any unchecked box or a red harness. Capture the symptom; if it's
   "viewer receives nothing," confirm C1 (redeploy) and the tunnel first.
 
+## C2 run log
+
+- **2026-06-16 — first run FAILED, two real issues found & fixed (Continuous
+  Self-Verification working as intended):**
+  1. **Client bug (fixed):** the publishing Decorator read `base.strokes()` to build a
+     `sync` message — but that read is stale immediately after a `useReducer` dispatch,
+     so clear/erase published the *pre*-mutation state and never cleared the viewer. Fix:
+     the wire protocol is now derived from the mutation args only (`stroke`/`erase`/
+     `clear`, no read-back); `sync` removed; undo/redo are presenter-local in v1. Harness
+     then PASSES.
+  2. **Config mismatch (operator action):** the harness connected to
+     `ws://localhost:8789` — a **stale old-code** agent-server with no path routing
+     (swallows `/relay`). The **redeployed new-code** server is on `ws://localhost:8788`
+     (launchd `PORT=8788` + the cloudflared tunnel → localhost:8788). weave's
+     `VITE_AKU_AGENT_URL` points at the stale **:8789**. Pointed at :8788, the full stack
+     (draw → viewer render → clear) PASSES.
+  - **Operator to close C2:** make weave's relay endpoint resolve to the new-code server
+    — repoint `VITE_AKU_AGENT_URL` (or set `VITE_WEAVE_RELAY_URL`) to the **:8788** server
+    / its tunnel, or retire the stale **:8789** instance. Then re-run Part A (expect pass)
+    + Part B.
+
 ## Troubleshooting
 
-- **Viewer gets nothing / harness `count 0`** — almost always C1 not deployed (old server
-  swallows `/relay`) or the tunnel is down. Verify: `wscat -c "$VITE_AKU_AGENT_URL/relay?room=t"`
-  connects, and a second client in the same room receives what the first sends.
+- **Viewer gets nothing / harness `count 0`** — almost always (a) the relay endpoint is an
+  old/stale server without path routing (swallows `/relay`) — confirm which PORT the app
+  connects to vs which port runs the new code; or (b) C1 not deployed; or (c) tunnel down.
+  Verify: `wscat -c "<relay-url>/relay?room=t"` connects, and a second client in the same
+  room receives what the first sends. (The new-code server fans out; a pre-C1 server does
+  not.)
 - **"Go live" missing** — relay URL unresolved: neither `VITE_WEAVE_RELAY_URL` nor
   `VITE_AKU_AGENT_URL` set in the running dev server's env (a stale `:5179` server reused
   without the env is the usual cause — restart it).

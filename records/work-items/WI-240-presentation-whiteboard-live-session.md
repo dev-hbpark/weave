@@ -157,9 +157,11 @@ DuplexLink**). Link suite 23 green, depcruise (`ws` confined) + declarativecheck
 **Pending: server redeploy (dist) to go live.**
 
 **P1–P4 — weave client (`features/present/ink/relay/`): DONE.**
-- `session-message.ts` — wire union `stroke|sync|step` + handler-registry dispatch (no
-  `switch` — Rule 6); hot path = incremental `stroke`, erase/clear/undo/redo = full
-  `sync`, `step` follows presenter.
+- `session-message.ts` — wire union `stroke|erase|clear|step` + handler-registry dispatch
+  (no `switch` — Rule 6). Every message is derived from the mutation's **own args** (no
+  read-back of session state); viewer applies each deterministically (erase re-runs the
+  shared `strokeHitsPoint` hit test). **(Revised after C2 — see below; the original
+  `sync` design read stale `useReducer` state.)** undo/redo are presenter-local in v1.
 - `relay-transport.ts` — thin WS client, capped-backoff reconnect, injectable socket +
   scheduler seams (no React).
 - `publishing-session.ts` — **Decorator over `InkSession`** (`createPublishingSession`):
@@ -184,10 +186,18 @@ live off = Phase 1 unchanged).
 1. **small-think server redeploy** (rebuild dist + restart launchd) so `/relay` is live.
 2. **Two-browser live gate (C2)** — automated harness `apps/web/e2e/present-live-ink.spec.ts`
    (opt-in via `WEAVE_LIVE_GATE=1`; two tabs/one context = presenter+viewer, draws → viewer
-   renders + clear propagates) + a manual checklist (real device / reconnect / step-follow).
-   Procedure: `records/launch-gates/LG-003-C2-live-gate-runbook.md` (LG-003 condition C2).
-   The harness already surfaced that a *pre-C1* server swallows `/relay` (no fan-out) — so
-   it genuinely proves the deployed path, not just the UI.
+   renders + clear propagates) + a manual checklist. Procedure:
+   `records/launch-gates/LG-003-C2-live-gate-runbook.md`.
+
+   **C2 run 2026-06-16 — found + fixed a real bug, then PASSED against the new-code server:**
+   - **Bug (fixed):** publishing Decorator read `base.strokes()` to build a `sync` —
+     stale right after a `useReducer` dispatch, so clear/erase never reached viewers.
+     Reworked the protocol to derive every message from the mutation args (`stroke`/
+     `erase`/`clear`); dropped `sync`. Harness then PASSES (draw → viewer render → clear).
+   - **Config (operator):** weave's `VITE_AKU_AGENT_URL` points at a stale **:8789**
+     (old-code, no path routing → swallows `/relay`); the redeployed new-code server is
+     on **:8788** (+ tunnel). C2 closes once weave's relay endpoint resolves to the
+     :8788 server / its tunnel (repoint env, or retire :8789). Manual checklist still due.
 3. Decommission sweep: none (net-new). Out of scope (later WI on the same relay):
    two-way whiteboarding, board-surface broadcast (board is presenter-local in v1),
    late-joiner replay.

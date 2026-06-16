@@ -115,7 +115,8 @@ export function useLiveSession({
           if (m === null) return;
           dispatchSessionMessage(m, {
             onStroke: (s, stroke) => remoteRef.current.applyStroke(s, stroke),
-            onSync: (s, strokes) => remoteRef.current.applySync(s, strokes),
+            onErase: (s, at) => remoteRef.current.applyErase(s, at),
+            onClear: (s) => remoteRef.current.applyClear(s),
             onStep: (step) => followRef.current(step),
           });
         });

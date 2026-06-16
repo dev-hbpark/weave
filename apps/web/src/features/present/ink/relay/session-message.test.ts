@@ -20,7 +20,8 @@ describe("session-message encode/decode", () => {
   it("round-trips each message kind", () => {
     const msgs: SessionMessage[] = [
       { t: "stroke", surface: "slide:a", stroke: STROKE },
-      { t: "sync", surface: "slide:a", strokes: [STROKE] },
+      { t: "erase", surface: "slide:a", at: { x: 5, y: 6 } },
+      { t: "clear", surface: "slide:a" },
       { t: "step", step: 3 },
     ];
     for (const m of msgs) {
@@ -38,11 +39,13 @@ describe("session-message encode/decode", () => {
 
 describe("dispatchSessionMessage", () => {
   it("routes each kind to its handler (no switch)", () => {
-    const h = { onStroke: vi.fn(), onSync: vi.fn(), onStep: vi.fn() };
+    const h = { onStroke: vi.fn(), onErase: vi.fn(), onClear: vi.fn(), onStep: vi.fn() };
     dispatchSessionMessage({ t: "stroke", surface: "x", stroke: STROKE }, h);
     expect(h.onStroke).toHaveBeenCalledWith("x", STROKE);
-    dispatchSessionMessage({ t: "sync", surface: "x", strokes: [STROKE] }, h);
-    expect(h.onSync).toHaveBeenCalledWith("x", [STROKE]);
+    dispatchSessionMessage({ t: "erase", surface: "x", at: { x: 1, y: 2 } }, h);
+    expect(h.onErase).toHaveBeenCalledWith("x", { x: 1, y: 2 });
+    dispatchSessionMessage({ t: "clear", surface: "x" }, h);
+    expect(h.onClear).toHaveBeenCalledWith("x");
     dispatchSessionMessage({ t: "step", step: 5 }, h);
     expect(h.onStep).toHaveBeenCalledWith(5);
   });

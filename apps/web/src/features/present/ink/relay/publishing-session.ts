@@ -1,10 +1,12 @@
 // WI-240 Phase 2 — presenter publishing seam, as a Decorator over InkSession.
 //
-// Wraps the Phase-1 session: every mutation writes through to the local session
-// AND publishes a SessionMessage. The hot path (addStroke) publishes an
-// incremental `stroke`; erase/clear/undo/redo publish a full-surface `sync` for
-// convergence. Phase-1 `InkLayer`/capture are UNTOUCHED — they just receive a
-// different `InkSession` (the Phase-1 producer/consumer seam paying off, DR-155).
+// Wraps the Phase-1 session: each mutation writes through to the local session
+// AND publishes a SessionMessage **derived from the mutation's own arguments** —
+// never from a read-back of `base.strokes()`, which is stale immediately after a
+// useReducer dispatch (that stale read silently dropped clear/erase to viewers).
+// add→stroke, erase→erase point, clear→clear. undo/redo stay presenter-local in
+// v1 (not broadcast; clear is the shared reset). Phase-1 `InkLayer`/capture are
+// UNTOUCHED — they just receive a different `InkSession` (DR-155 seam).
 
 import type { InkPoint, InkStroke, InkSurfaceKey } from "../types.js";
 import type { InkSession } from "../use-ink-session.js";
@@ -14,37 +16,26 @@ export function createPublishingSession(
   base: InkSession,
   publish: (m: SessionMessage) => void,
 ): InkSession {
-  // Surfaces this presenter has mutated — used to re-sync them after a global
-  // undo/redo (which can affect any of them).
-  const touched = new Set<InkSurfaceKey>();
-  const syncSurface = (surface: InkSurfaceKey): void => {
-    publish({ t: "sync", surface, strokes: base.strokes(surface) });
-  };
-
   return {
     strokes: (surface) => base.strokes(surface),
     addStroke(surface: InkSurfaceKey, stroke: InkStroke) {
       base.addStroke(surface, stroke);
-      touched.add(surface);
       publish({ t: "stroke", surface, stroke });
     },
     eraseAt(surface: InkSurfaceKey, at: InkPoint) {
       base.eraseAt(surface, at);
-      touched.add(surface);
-      syncSurface(surface);
+      publish({ t: "erase", surface, at });
     },
     clear(surface: InkSurfaceKey) {
       base.clear(surface);
-      touched.add(surface);
-      syncSurface(surface);
+      publish({ t: "clear", surface });
     },
+    // v1: undo/redo affect only the presenter's local view (not broadcast).
     undo() {
       base.undo();
-      for (const s of touched) syncSurface(s);
     },
     redo() {
       base.redo();
-      for (const s of touched) syncSurface(s);
     },
     get canUndo() {
       return base.canUndo;

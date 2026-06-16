@@ -4,14 +4,17 @@
 // render changes are needed. Mutators that aren't fed by the relay are no-ops.
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { InkStroke, InkSurfaceKey } from "../types.js";
+import { strokeHitsPoint } from "../ink-session.js";
+import type { InkPoint, InkStroke, InkSurfaceKey } from "../types.js";
 import type { InkSession } from "../use-ink-session.js";
 
 export interface RemoteInkSession extends InkSession {
-  /** Apply an incremental append (the `stroke` message). */
+  /** Append a stroke (the `stroke` message). */
   applyStroke(surface: InkSurfaceKey, stroke: InkStroke): void;
-  /** Replace a surface wholesale (the `sync` message). */
-  applySync(surface: InkSurfaceKey, strokes: readonly InkStroke[]): void;
+  /** Erase at a point — same hit test as the presenter ran (the `erase` msg). */
+  applyErase(surface: InkSurfaceKey, at: InkPoint): void;
+  /** Empty a surface (the `clear` message). */
+  applyClear(surface: InkSurfaceKey): void;
 }
 
 export function useRemoteInkSession(): RemoteInkSession {
@@ -28,15 +31,23 @@ export function useRemoteInkSession(): RemoteInkSession {
   const applyStroke = useCallback((surface: InkSurfaceKey, stroke: InkStroke) => {
     setSurfaces((prev) => ({ ...prev, [surface]: [...(prev[surface] ?? []), stroke] }));
   }, []);
-  const applySync = useCallback((surface: InkSurfaceKey, next: readonly InkStroke[]) => {
-    setSurfaces((prev) => ({ ...prev, [surface]: next }));
+  const applyErase = useCallback((surface: InkSurfaceKey, at: InkPoint) => {
+    setSurfaces((prev) => {
+      const cur = prev[surface] ?? [];
+      const kept = cur.filter((s) => !strokeHitsPoint(s, at));
+      return kept.length === cur.length ? prev : { ...prev, [surface]: kept };
+    });
+  }, []);
+  const applyClear = useCallback((surface: InkSurfaceKey) => {
+    setSurfaces((prev) => (prev[surface]?.length ? { ...prev, [surface]: [] } : prev));
   }, []);
 
   return useMemo<RemoteInkSession>(
     () => ({
       strokes,
       applyStroke,
-      applySync,
+      applyErase,
+      applyClear,
       // Viewer surfaces are driven only by the relay; local mutators are inert.
       addStroke: () => {},
       eraseAt: () => {},
@@ -46,6 +57,6 @@ export function useRemoteInkSession(): RemoteInkSession {
       canUndo: false,
       canRedo: false,
     }),
-    [strokes, applyStroke, applySync],
+    [strokes, applyStroke, applyErase, applyClear],
   );
 }
