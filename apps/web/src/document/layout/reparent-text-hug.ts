@@ -10,7 +10,12 @@
 
 import { resolveFontSize } from "@agocraft/core";
 import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../agocraft-mirror.js";
-import { engineTextMeasureEnabled, measureFreeTextHugRatio } from "./text-measurer.js";
+import {
+  engineTextMeasureEnabled,
+  type FreeTextHugSpec,
+  gridCellFontShrinkPx,
+  measureFreeTextHugRatio,
+} from "./text-measurer.js";
 
 type Doc = Parameters<typeof absoluteFrameBox>[0];
 interface AttrsPatch {
@@ -80,17 +85,14 @@ export function reparentTextHugPatches(
         : typeof a.lineHeight === "number"
           ? a.lineHeight
           : 1.4;
-    const hug = measureFreeTextHugRatio(
-      {
-        text: typeof a.text === "string" ? a.text : "",
-        fontFamily: typeof a.fontFamily === "string" ? a.fontFamily : "sans-serif",
-        fontSizePx,
-        lineHeight,
-        letterSpacing: typeof a.letterSpacing === "number" ? a.letterSpacing : 0,
-      },
-      box.w,
-      box.h,
-    );
+    const spec: FreeTextHugSpec = {
+      text: typeof a.text === "string" ? a.text : "",
+      fontFamily: typeof a.fontFamily === "string" ? a.fontFamily : "sans-serif",
+      fontSizePx,
+      lineHeight,
+      letterSpacing: typeof a.letterSpacing === "number" ? a.letterSpacing : 0,
+    };
+    const hug = measureFreeTextHugRatio(spec, box.w, box.h);
     if (hug === undefined) continue;
     // The post-reparent attrs (re-based frame + ratio-font) are this patch's base.
     const baseAttrs = baseAttrsAfter(bp, String(itemId)) ?? a;
@@ -98,22 +100,42 @@ export function reparentTextHugPatches(
     if (baseFrame === undefined) continue;
     const layoutKind = parentLayout?.kind;
     const baseLc = baseAttrs.layoutChild as Record<string, unknown> | undefined;
+
+    // auto-grid — a cell is TRACK-BOUND (the box cannot grow). When the content
+    // overflows the cell, shrink the FONT (measured, written to the doc) so it fits the
+    // cell and FILLS it — this is the engine/measurement successor to the render-time
+    // `fitFontScale`, moving grid-cell font-shrink into the model (DR-156 future work).
+    // When the content fits, keep the content-hug at start (box = content size).
+    if (layoutKind === "auto-grid") {
+      const cellWPx = (baseFrame.width as number) * box.w;
+      const cellHPx = (baseFrame.height as number) * box.h;
+      const shrunkPx = gridCellFontShrinkPx(spec, cellWPx, cellHPx);
+      const gridLc = baseLc?.kind === "auto-grid" ? baseLc : { kind: "auto-grid" };
+      const after: Record<string, unknown> =
+        shrunkPx !== undefined
+          ? {
+              ...baseAttrs,
+              fontSize: Math.round(shrunkPx),
+              fontSizeSpec: { kind: "px", value: shrunkPx },
+              layoutChild: { ...gridLc, justifySelf: "stretch", alignSelf: "stretch" },
+            }
+          : {
+              ...baseAttrs,
+              frame: { ...baseFrame, width: hug.wRatio, height: hug.hRatio },
+              layoutChild: { ...gridLc, justifySelf: "start", alignSelf: "start" },
+            };
+      out.push({ type: "item.attrs", itemId: item.id, before: baseAttrs, after });
+      continue;
+    }
+
     // The content-hug child policy per parent kind:
     //  • auto-flex → grow:0 + basis:"auto" (main content-sized), NO alignSelf:"stretch"
     //    (cross stays content-sized) — replaces the WI-238 cross-stretch.
-    //  • auto-grid → keep the engine-assigned cell (column/row/span), but place the
-    //    text at content size in it (justify/alignSelf:"start"), not stretched to fill.
     //  • free / absolute → no layout policy; the frame override alone content-hugs it.
     const hugLayoutChild =
       layoutKind === "auto-flex"
         ? { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto" }
-        : layoutKind === "auto-grid"
-          ? {
-              ...(baseLc?.kind === "auto-grid" ? baseLc : { kind: "auto-grid" }),
-              justifySelf: "start",
-              alignSelf: "start",
-            }
-          : undefined;
+        : undefined;
     const after: Record<string, unknown> = {
       ...baseAttrs,
       frame: { ...baseFrame, width: hug.wRatio, height: hug.hRatio },

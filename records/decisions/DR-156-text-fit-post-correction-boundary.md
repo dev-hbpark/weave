@@ -55,6 +55,28 @@ Step 4's literal "delete both" is **not correct** — each has an irreducible ro
   decommissioned `shrinkFontTarget` once played, but engine-side). Tracked as future
   work, not part of Step 4.
 
+## Follow-up — measured grid-cell font-shrink (started 2026-06-16)
+
+The "move grid-cell font-shrink into measurement" future work is now **underway**, path
+by path (so `fitFontScale` can be dropped for grid only once EVERY grid-text path
+writes a measured font — otherwise the uncovered paths would overflow):
+
+- **`gridCellFontShrink(measure, spec, cellWPx, cellHPx)`** (`text-measurer.ts`, pure +
+  unit-tested) — wraps the text to the cell width, and when the wrapped content height
+  overflows the cell height, returns `fontPx × (cellH / contentH)` floored at
+  `MIN_GRID_FONT_PX = 11`. The measured, model-written successor to the render-observer
+  `shrinkFontTarget`. `gridCellFontShrinkPx` is the flag-gated engine-measurer wrapper.
+- **Reparent-into-grid: DONE + live-verified.** `reparentTextHugPatches` (auto-grid
+  branch): content overflows the cell → write `fontSizeSpec:{kind:"px"}` (the shrunk px)
+  + fill the cell (`justify/alignSelf:"stretch"`); content fits → content-hug at `start`
+  (unchanged). Dev-server: a long 40px text reparented into a small cell → font written
+  to the doc as 11px (floored), stretch; a short 28px text into a big cell → 28px kept,
+  start (no shrink). The shrink is now in the MODEL, not a render transform.
+- **Remaining before `fitFontScale` can be dropped for grid:** the add-into-grid,
+  paste-into-grid, and **edit (typing in a grid cell)** paths must also write a measured
+  font. Until then `fitFontScale` STAYS as the net for those paths (it is a near-no-op on
+  a reparented cell whose font is already model-shrunk). Tracked as the next increment.
+
 ## Related
 
 - DR-064 (text-measure capability + package split), WI-051 (engine seam → default on).

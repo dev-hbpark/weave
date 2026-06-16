@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   engineTextMeasureEnabled,
   freeTextHugRatio,
+  gridCellFontShrink,
   measureTextInput,
   resolveCssFontFamily,
 } from "./text-measurer.js";
@@ -21,6 +22,39 @@ describe("resolveCssFontFamily (Canvas2D can't resolve CSS vars)", () => {
   });
   it("falls back to sans-serif for a bare var with no fallback + no DOM value", () => {
     expect(resolveCssFontFamily("var(--font-sans)")).toBe("sans-serif");
+  });
+});
+
+describe("gridCellFontShrink (measured grid-cell font shrink — fitFontScale successor)", () => {
+  const spec = { text: "long text", fontFamily: "Inter", fontSizePx: 40 };
+  it("is undefined when the content already fits the cell (no shrink)", () => {
+    const fits: MeasureText = () => ({ widthPx: 100, heightPx: 80, minContentPx: 40 });
+    expect(gridCellFontShrink(fits, spec, 200, 100)).toBeUndefined();
+  });
+  it("shrinks the font by the cell-height / content-height ratio when it overflows", () => {
+    // wrapped content is 200px tall in a 100px cell → scale 0.5 → 40 * 0.5 = 20px
+    const tall: MeasureText = () => ({ widthPx: 180, heightPx: 200, minContentPx: 40 });
+    expect(gridCellFontShrink(tall, spec, 200, 100)).toBeCloseTo(20, 5);
+  });
+  it("floors the shrunk font at the minimum (never below ~11px)", () => {
+    const huge: MeasureText = () => ({ widthPx: 180, heightPx: 4000, minContentPx: 40 });
+    expect(gridCellFontShrink(huge, spec, 200, 100)).toBe(11);
+  });
+  it("wraps to the cell WIDTH (maxWidthPx) when measuring", () => {
+    let seen: number | undefined;
+    const probe: MeasureText = (s) => {
+      seen = s.maxWidthPx;
+      return { widthPx: 180, heightPx: 200, minContentPx: 40 };
+    };
+    gridCellFontShrink(probe, spec, 240, 100);
+    expect(seen).toBe(240);
+  });
+  it("is undefined for a non-positive cell / font / degenerate measure", () => {
+    const ok: MeasureText = () => ({ widthPx: 180, heightPx: 200, minContentPx: 40 });
+    expect(gridCellFontShrink(ok, spec, 0, 100)).toBeUndefined();
+    expect(gridCellFontShrink(ok, { ...spec, fontSizePx: 0 }, 200, 100)).toBeUndefined();
+    const zero: MeasureText = () => ({ widthPx: 0, heightPx: 0, minContentPx: 0 });
+    expect(gridCellFontShrink(zero, spec, 200, 100)).toBeUndefined();
   });
 });
 

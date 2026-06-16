@@ -119,3 +119,46 @@ export function measureFreeTextHugRatio(
   const m = getEngineTextMeasurer();
   return m !== undefined ? freeTextHugRatio(m, spec, containerWPx, containerHPx) : undefined;
 }
+
+/** WI-051 Step 4 follow-up — MEASURED grid-cell font shrink (the engine/measurement
+ *  successor to the decommissioned render-observer `shrinkFontTarget`). A grid cell is
+ *  track-bound — its box CANNOT grow — so when the text (wrapped to the cell width)
+ *  overflows the cell HEIGHT, shrink the FONT so it fits, and the shrunk px is written
+ *  to the doc (model owns it) instead of a render-time `fitFontScale` transform.
+ *  Convergent: a smaller font → shorter wrapped content → fits. Returns the shrunk
+ *  font px, or undefined when the content already fits / inputs aren't ready / no
+ *  measurer. Pure given the measurer. */
+const MIN_GRID_FONT_PX = 11;
+
+/** Pure core — takes the measurer so it is testable with a fake. */
+export function gridCellFontShrink(
+  measure: MeasureText,
+  spec: FreeTextHugSpec,
+  cellWPx: number,
+  cellHPx: number,
+): number | undefined {
+  if (!(cellWPx > 0) || !(cellHPx > 0) || !(spec.fontSizePx > 0)) return undefined;
+  const r = measure({
+    text: spec.text,
+    fontFamily: spec.fontFamily,
+    fontSizePx: spec.fontSizePx,
+    ...(spec.lineHeight !== undefined ? { lineHeight: spec.lineHeight } : {}),
+    ...(spec.letterSpacing !== undefined ? { letterSpacing: spec.letterSpacing } : {}),
+    maxWidthPx: cellWPx, // wrap to the cell width
+  });
+  if (!(r.heightPx > 0)) return undefined;
+  if (r.heightPx <= cellHPx + 0.5) return undefined; // already fits → no shrink
+  const scaled = spec.fontSizePx * (cellHPx / r.heightPx);
+  return Math.max(MIN_GRID_FONT_PX, scaled);
+}
+
+/** Flag-gated wrapper using the engine measurer. Returns undefined when disabled /
+ *  no measurer / content already fits. */
+export function gridCellFontShrinkPx(
+  spec: FreeTextHugSpec,
+  cellWPx: number,
+  cellHPx: number,
+): number | undefined {
+  const m = getEngineTextMeasurer();
+  return m !== undefined ? gridCellFontShrink(m, spec, cellWPx, cellHPx) : undefined;
+}
