@@ -182,9 +182,12 @@ live off = Phase 1 unchanged).
 ## Remaining / sequencing
 
 1. **small-think server redeploy** (rebuild dist + restart launchd) so `/relay` is live.
-2. **Manual two-browser live gate** over the tunnel (presenter draws → viewer sees +
-   follows; reconnect) — the one layer not glued in-browser here (relay env + tunnel
-   needed; every layer below it is unit/integration-verified).
+2. **Two-browser live gate (C2)** — automated harness `apps/web/e2e/present-live-ink.spec.ts`
+   (opt-in via `WEAVE_LIVE_GATE=1`; two tabs/one context = presenter+viewer, draws → viewer
+   renders + clear propagates) + a manual checklist (real device / reconnect / step-follow).
+   Procedure: `records/launch-gates/LG-003-C2-live-gate-runbook.md` (LG-003 condition C2).
+   The harness already surfaced that a *pre-C1* server swallows `/relay` (no fan-out) — so
+   it genuinely proves the deployed path, not just the UI.
 3. Decommission sweep: none (net-new). Out of scope (later WI on the same relay):
    two-way whiteboarding, board-surface broadcast (board is presenter-local in v1),
    late-joiner replay.

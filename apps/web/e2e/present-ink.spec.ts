@@ -5,55 +5,17 @@
 // SVG mark anchored in the design plane, (3) the blank board toggles and
 // accepts ink. Strokes are ephemeral (DR-154) — no persistence assertions.
 
-import { expect, type Page, test } from "@playwright/test";
-import { addFrame, clearAllDesigns } from "./helpers.js";
+import { expect, test } from "@playwright/test";
+import { clearAllDesigns } from "./helpers.js";
+import { enterPresentDeck } from "./present-ink-helpers.js";
 
 test.beforeEach(async ({ page }) => {
   await clearAllDesigns(page);
 });
 
-/** Create a slide-deck via the wizard WITHOUT the shared helper's
- *  `waitForLoadState("networkidle")` step. In this sandbox the offline-forced
- *  navigator + vendored-engine @fs request frequently never lets the page go
- *  network-idle (documented baseline — see WI-153 notes), which times out
- *  `prepareDesign` before the feature is ever exercised. The meaningful
- *  readiness signal is the editor handshake (`__weaveEditor/__weaveDoc/
- *  __weaveVm`); we gate on that and skip networkidle. */
-async function createDeckNoIdle(page: Page, title: string): Promise<string> {
-  await page.addInitScript(() => {
-    Object.defineProperty(window.navigator, "onLine", { get: () => false, configurable: true });
-  });
-  await page.goto("/");
-  await page.evaluate(() => window.localStorage.setItem("weave.dev.unlock-flavors", "1"));
-  await page.getByTestId("landing-new-design").click();
-  const titleInput = page.getByTestId("new-design-title");
-  await titleInput.click();
-  await page.keyboard.press("ControlOrMeta+A");
-  await page.keyboard.type(title);
-  await page.getByTestId("new-design-flavor-slide-deck").click();
-  await page.getByTestId("new-design-size-16:9").click();
-  await page.getByTestId("new-design-create").click();
-  await page.waitForURL(/\/design\/[^/]+$/);
-  await page.waitForFunction(() => {
-    const w = window as unknown as {
-      __weaveEditor?: unknown;
-      __weaveDoc?: unknown;
-      __weaveVm?: unknown;
-    };
-    return w.__weaveEditor !== undefined && w.__weaveDoc !== undefined && w.__weaveVm !== undefined;
-  });
-  const match = new URL(page.url()).pathname.match(/^\/design\/([^/]+)$/);
-  if (match === null) throw new Error(`unexpected URL: ${page.url()}`);
-  return match[1] as string;
-}
-
 /** Enter present mode on a slide deck with one slide to draw on. */
-async function enterPresent(page: Page): Promise<void> {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  const id = await createDeckNoIdle(page, "Ink E2E");
-  await addFrame(page, "slide", { frame: { x: 0, y: 0, width: 1, height: 1, rotation: 0 } });
-  await page.goto(`/design/${id}/present`);
-  await expect(page.getByTestId("ink-toolbar")).toBeVisible();
+async function enterPresent(page: import("@playwright/test").Page): Promise<void> {
+  await enterPresentDeck(page);
 }
 
 test("ink mode gate: slide layer is pointer-inert when off, armed when on", async ({ page }) => {

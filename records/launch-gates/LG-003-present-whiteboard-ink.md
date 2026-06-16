@@ -158,7 +158,7 @@ monitoring/oncall/load are deferred (OR).
 | # | Condition | Owner | ETA |
 |---|---|---|---|
 | C1 | small-think server **redeploy** (dist) so `/relay` is live | hbpark | next deploy window |
-| C2 | Manual **two-browser live gate** over the tunnel (presenter draws → viewer sees + follows; reconnect) | hbpark | after C1 |
+| C2 | **Two-browser live gate** — automated harness (`e2e/present-live-ink.spec.ts`, `WEAVE_LIVE_GATE=1`) + manual checklist. Procedure: [LG-003-C2 runbook](LG-003-C2-live-gate-runbook.md) | hbpark | after C1 |
 | C3 | Set `VITE_WEAVE_RELAY_URL` (or confirm `VITE_AKU_AGENT_URL` reachable) + weave redeploy to surface "Go live" | hbpark | after C2 passes |
 
 ## Verdict
