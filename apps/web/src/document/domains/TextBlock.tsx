@@ -546,6 +546,12 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         // (only when outlined, to leave the non-outline DOM untouched).
         // WI-238 rev2 — shrink-to-fit: scale the (full-font) content down to fit its
         // box. Visual only (transform) so the measured layout size stays natural.
+        // WI-051 Step 4 — with engine measurement ON this is the IRREDUCIBLE remaining
+        // view-side post-correction: `engineHugged` gates it OFF for every AUTO-resize
+        // text (the model sizes its box to content), so `fitScale < 1` now only happens
+        // for a box that genuinely CANNOT grow — a Fixed (NONE) text or a grid cell
+        // (track-bound) whose content overflows. Removing it there would overflow, not
+        // fit; the only way to drop it is moving grid-cell font-shrink into the engine.
         style={{
           ...(showOutline ? { ...textStyle, position: "relative" } : textStyle),
           ...(fitScale < 1 && !isEditing
