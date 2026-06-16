@@ -23,3 +23,12 @@ import { createContext } from "react";
 /** Height (in design-px) of the frame that directly contains the rendered item.
  *  Consumed by `TextBlock` to resolve a `kind: "ratio"` fontSize. */
 export const ParentFrameHeightContext = createContext<number>(0);
+
+/** The rendered item's OWN box (design-px) from the retained scene — the engine-
+ *  assigned cell / slot / Fixed / hugged box. Consumed by `TextBlock` to compute the
+ *  shrink-to-fit scale SYNCHRONOUSLY from model state (this box + the engine text
+ *  measurer for content), with no DOM read / ResizeObserver / RAF. `null` when no
+ *  provider is mounted (tests / preview) → no fit. */
+export const ItemBoxContext = createContext<{ readonly w: number; readonly h: number } | null>(
+  null,
+);

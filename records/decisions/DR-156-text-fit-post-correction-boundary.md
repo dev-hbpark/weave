@@ -55,27 +55,43 @@ Step 4's literal "delete both" is **not correct** — each has an irreducible ro
   decommissioned `shrinkFontTarget` once played, but engine-side). Tracked as future
   work, not part of Step 4.
 
-## Follow-up — measured grid-cell font-shrink (started 2026-06-16)
+## Follow-up — DOM-free SYNCHRONOUS shrink-to-fit (2026-06-16, DONE + live-verified)
 
-The "move grid-cell font-shrink into measurement" future work is now **underway**, path
-by path (so `fitFontScale` can be dropped for grid only once EVERY grid-text path
-writes a measured font — otherwise the uncovered paths would overflow):
+The "move grid-cell font-shrink into the engine/measurement" future work was first
+trialed as a **destructive doc-write** (engine measures → writes the shrunk font to the
+doc, per the old `shrinkFontTarget`). That was **reverted**: a doc-written shrink is
+DESTRUCTIVE — it overwrites the authored font, so the fit can NOT reverse when the cell
+grows or text is deleted (exactly why `shrinkFontTarget` was decommissioned). The
+shrink is intrinsically a **derived, reversible** value (authored font × box × content);
+it cannot be a single stored value without losing reversibility.
 
-- **`gridCellFontShrink(measure, spec, cellWPx, cellHPx)`** (`text-measurer.ts`, pure +
-  unit-tested) — wraps the text to the cell width, and when the wrapped content height
-  overflows the cell height, returns `fontPx × (cellH / contentH)` floored at
-  `MIN_GRID_FONT_PX = 11`. The measured, model-written successor to the render-observer
-  `shrinkFontTarget`. `gridCellFontShrinkPx` is the flag-gated engine-measurer wrapper.
-- **Reparent-into-grid: DONE + live-verified.** `reparentTextHugPatches` (auto-grid
-  branch): content overflows the cell → write `fontSizeSpec:{kind:"px"}` (the shrunk px)
-  + fill the cell (`justify/alignSelf:"stretch"`); content fits → content-hug at `start`
-  (unchanged). Dev-server: a long 40px text reparented into a small cell → font written
-  to the doc as 11px (floored), stretch; a short 28px text into a big cell → 28px kept,
-  start (no shrink). The shrink is now in the MODEL, not a render transform.
-- **Remaining before `fitFontScale` can be dropped for grid:** the add-into-grid,
-  paste-into-grid, and **edit (typing in a grid cell)** paths must also write a measured
-  font. Until then `fitFontScale` STAYS as the net for those paths (it is a near-no-op on
-  a reparented cell whose font is already model-shrunk). Tracked as the next increment.
+The operator's insight resolved it: the engine text measurer (Pretext) is **synchronous
++ DOM-free**, so the fit can be computed in ONE calc cycle from MODEL STATE — no browser
+render round-trip, no `ResizeObserver`, no RAF. So the fit stays a render-time derived
+value but loses its DOM dependency:
+
+- **`fitScale` is now a `useMemo` in `TextBlock`** computed from (a) the item's own box
+  (design-px) read from the retained scene via the new **`ItemBoxContext`** (provided by
+  `SceneFrame`), and (b) the content size from the engine measurer (`getEngineTextMeasurer`,
+  wrapped to the box width). `fitFontScale(boxH, contentH, boxW, contentW, minScale)` (the
+  existing pure core) yields the scale; applied as the same CSS transform.
+- **Removed:** the DOM `offsetHeight`/`clientHeight` read + `ResizeObserver` + 80 ms
+  settle-debounce loop — the last browser-render dependency in text fitting.
+- **Reversible + non-destructive:** the authored font is never written; deleting text /
+  enlarging the cell re-runs the memo and the font scales back up.
+- **Unifies every path:** because the fit is computed at render from the model box, the
+  add / paste / **edit (typing)** / reparent paths are ALL covered automatically — no
+  per-path font wiring. Grid text fills its cell by the engine's DEFAULT `stretch`
+  (so `ItemBoxContext` = the cell); the reparent grid override was removed.
+- **Live-verified (dev server):** grid cell long 40px text → `transform: matrix(0.3…)`
+  (shrinks), `fontSize` stays 40 (preserved); edit to "Hi" → `transform: none` (grows
+  back). Fixed (NONE) long text → shrinks; shorten → none. Auto/free text → none (no
+  spurious shrink, `engineHugged` gate).
+
+**Net boundary (updated):** `fitFontScale` is NOT removed — it is the irreducible,
+reversible display mechanism for boxes that can't grow — but it is now **DOM-free and
+synchronous**, driven purely by model state. The trialed `gridCellFontShrink` helper +
+its destructive reparent write were removed (decommission sweep).
 
 ## Related
 

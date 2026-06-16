@@ -31,16 +31,17 @@ import {
   Suspense,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { useSelection } from "../interactions/selection-context.js";
 import { textEditTrigger } from "../interactions/text-edit-trigger.js";
-import { engineTextMeasureEnabled } from "../layout/text-measurer.js";
+import { engineTextMeasureEnabled, getEngineTextMeasurer } from "../layout/text-measurer.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import { type AgoItem, isItemLocked, type TextAttrs, type WeaveRunStyle } from "../types.js";
 import { deriveTextAutoResize } from "./derive-text-auto-resize.js";
-import { ParentFrameHeightContext } from "./parent-frame-context.js";
+import { ItemBoxContext, ParentFrameHeightContext } from "./parent-frame-context.js";
 import { fitFontScale, isTextAutofitEnabled } from "./text-autofit.js";
 import { MIN_TEXT_WIDTH_CSS, minFitScaleFor } from "./text-fit-floors.js";
 
@@ -315,69 +316,63 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       setIsEditing(true);
     });
   }, [editable, item, selfId, selectFrame]);
-  // WI-238 rev2 / DR-153 — text auto-fit, render-level shrink-to-fit (default ON).
-  // The earlier WI-237/DR-152 measure→engine-write channel (report to a provider that
-  // grows the box / shrinks the grid font) was SUPERSEDED and decommissioned — it
-  // shrank the box too small and was timing-flaky. Auto-fit is now PURELY here.
-  // If the text's natural (full-font) content (innerRef) is taller/wider than its
-  // engine box (wrapRef) — a grid cell / a bounded flex slot — SCALE THE FONT DOWN
-  // (CSS transform on the content) so it FITS — the box
-  // is left untouched (it keeps filling its cell/slot; we don't shrink the box).
-  // Pure render: no doc write, no engine round-trip → deterministic, no undo/save
-  // churn, no measure-write loop (the transform is visual, so the measured layout
-  // size stays the full-font natural → a fixed point). Skipped while editing (the
-  // caret edits at full size) and when content already fits (scale 1).
-  const [fitScale, setFitScale] = useState(1);
+  // WI-051 Step 4 follow-up — text shrink-to-fit, computed SYNCHRONOUSLY from the
+  // MODEL (no DOM read, no ResizeObserver, no RAF). When a text's box cannot grow to
+  // its content (a grid cell / a Fixed box), the font is scaled down via a CSS
+  // transform so it fits. The fit IS a derived value (authored font × box × content) —
+  // but the engine text measurer (Pretext) is synchronous + DOM-free, so ONE calc
+  // cycle finishes it: the box px comes from the retained scene (`ItemBoxContext`), the
+  // content px from the measurer — both model state. Reversible: deleting text /
+  // enlarging the cell re-measures and the font grows back (the authored font is never
+  // overwritten). This replaces the old DOM-`offsetHeight` + `ResizeObserver` + settle-
+  // debounce loop (SUPERSEDED + removed), eliminating the last browser-render
+  // dependency in text fitting — the render now reads the fit purely from model state.
   const minFitScale = minFitScaleFor(resolvedFontSizePx);
-  // WI-051 follow-up — when engine text measurement is ON, an AUTO-resize text's box
-  // is sized to its content by the host/engine (add / edit re-hug / paste measure), so
-  // the render-level font shrink must NOT fire: it would shrink the font on commit to
-  // fit a sub-pixel DOM-vs-measure mismatch, making the text smaller than what's there.
-  // The box is authoritative; never post-shrink it. Skip for ANY non-grid auto-resize
-  // text (flex / free — the box hugs). STILL shrink: a GRID cell (track-bound box can't
-  // grow) and Fixed (NONE) text (box won't change). NOTE: a pasted text gets an
-  // auto-flex policy (HEIGHT mode) — not WIDTH_AND_HEIGHT — so it must be covered too.
+  const itemBox = useContext(ItemBoxContext);
+  const lineHeightMult =
+    a.lineHeightSpec?.unit === "multiplier"
+      ? a.lineHeightSpec.value
+      : typeof a.lineHeight === "number"
+        ? a.lineHeight
+        : 1.4;
+  // An AUTO-resize text's box hugs its content (the host/engine sized it with the SAME
+  // measurer), so the fit is a no-op there — gate it OFF to keep the box authoritative
+  // (DR-156: never post-shrink an auto box; avoids a sub-pixel 0.99 shrink). STILL fit:
+  // a GRID cell (track-bound, fills its cell by the engine's default stretch) and a
+  // Fixed (NONE) box — the boxes that cannot grow.
   const lcKind = (a.layoutChild as { kind?: string } | undefined)?.kind;
   const engineHugged =
     engineTextMeasureEnabled() &&
     lcKind !== "auto-grid" &&
     deriveTextAutoResize(a.layoutChild) !== "NONE";
-  useEffect(() => {
-    if (!isTextAutofitEnabled() || isEditing || engineHugged) {
-      setFitScale(1);
-      return undefined;
-    }
-    const box = wrapRef.current;
-    const content = innerRef.current;
-    if (box === null || content === null) return undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const measure = (): void => {
-      // content is laid out at FULL font (the transform is visual only), so its
-      // offset size is the stable natural size — measuring it is loop-free.
-      const next = fitFontScale(
-        box.clientHeight,
-        content.offsetHeight,
-        box.clientWidth,
-        content.offsetWidth,
-        minFitScale,
-      );
-      setFitScale((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
-    };
-    // Settle-debounce so we read the QUIESCED layout, not transient mid-reflow frames
-    // (reparent) — measuring transients made the result vary run to run.
-    const schedule = (): void => {
-      if (timer !== undefined) clearTimeout(timer);
-      timer = setTimeout(measure, 80);
-    };
-    schedule();
-    const ro = new ResizeObserver(schedule);
-    ro.observe(box);
-    ro.observe(content);
-    return () => {
-      if (timer !== undefined) clearTimeout(timer);
-      ro.disconnect();
-    };
-  }, [isEditing, minFitScale, a.text, a.textRuns, engineHugged]);
+  const fitScale = useMemo(() => {
+    if (!isTextAutofitEnabled() || isEditing || engineHugged) return 1;
+    const measure = getEngineTextMeasurer();
+    if (measure === undefined || itemBox === null) return 1;
+    if (!(itemBox.w > 0) || !(itemBox.h > 0)) return 1;
+    const text = typeof a.text === "string" ? a.text : "";
+    if (text.length === 0) return 1;
+    const r = measure({
+      text,
+      fontFamily: typeof a.fontFamily === "string" ? a.fontFamily : "sans-serif",
+      fontSizePx: resolvedFontSizePx,
+      lineHeight: lineHeightMult,
+      letterSpacing: typeof a.letterSpacing === "number" ? a.letterSpacing : 0,
+      maxWidthPx: itemBox.w,
+    });
+    if (!(r.heightPx > 0)) return 1;
+    return fitFontScale(itemBox.h, r.heightPx, itemBox.w, r.widthPx, minFitScale);
+  }, [
+    isEditing,
+    engineHugged,
+    itemBox,
+    resolvedFontSizePx,
+    minFitScale,
+    lineHeightMult,
+    a.text,
+    a.fontFamily,
+    a.letterSpacing,
+  ]);
   const fitTransformOrigin = `${
     horizontalAlign === "center" ? "center" : horizontalAlign === "right" ? "right" : "left"
   } ${verticalAlign === "CENTER" ? "center" : verticalAlign === "BOTTOM" ? "bottom" : "top"}`;
@@ -544,14 +539,13 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
         data-text-content
         // DR-059 — positioning context for the absolute outline back layer
         // (only when outlined, to leave the non-outline DOM untouched).
-        // WI-238 rev2 — shrink-to-fit: scale the (full-font) content down to fit its
-        // box. Visual only (transform) so the measured layout size stays natural.
-        // WI-051 Step 4 — with engine measurement ON this is the IRREDUCIBLE remaining
-        // view-side post-correction: `engineHugged` gates it OFF for every AUTO-resize
-        // text (the model sizes its box to content), so `fitScale < 1` now only happens
-        // for a box that genuinely CANNOT grow — a Fixed (NONE) text or a grid cell
-        // (track-bound) whose content overflows. Removing it there would overflow, not
-        // fit; the only way to drop it is moving grid-cell font-shrink into the engine.
+        // Shrink-to-fit: scale the (full-font) content down to fit its box. Visual only
+        // (transform) so the authored font is never overwritten → reversible (grow the
+        // cell / delete text and it scales back up). WI-051 Step 4 — `fitScale` is now
+        // computed SYNCHRONOUSLY from MODEL STATE (the scene box via ItemBoxContext + the
+        // engine measurer), with NO DOM read / ResizeObserver / RAF. It is non-1 only for
+        // a box that genuinely CANNOT grow — a Fixed (NONE) text or a grid cell (track-
+        // bound) whose content overflows (`engineHugged` gates it OFF for AUTO text).
         style={{
           ...(showOutline ? { ...textStyle, position: "relative" } : textStyle),
           ...(fitScale < 1 && !isEditing

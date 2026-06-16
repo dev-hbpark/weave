@@ -32,6 +32,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -43,7 +44,10 @@ import {
   useSelectionChromeVisible,
 } from "../../document";
 import { deriveTextAutoResize as deriveTextAutoResizeForFrameStage } from "../../document/domains/derive-text-auto-resize.js";
-import { ParentFrameHeightContext } from "../../document/domains/parent-frame-context.js";
+import {
+  ItemBoxContext,
+  ParentFrameHeightContext,
+} from "../../document/domains/parent-frame-context.js";
 import {
   type ClickIntent,
   capabilityOf,
@@ -212,6 +216,10 @@ function SceneFrameImpl({
   // Design-pixel footprint comes straight from the scene entry (no ratio math).
   const widthPx = w;
   const heightPx = h;
+  // The item's OWN box (design-px) → ItemBoxContext, feeding TextBlock's synchronous,
+  // DOM-free shrink-to-fit (WI-051 Step 4). Memoized before the degenerate-box early
+  // return below so the hook order is stable (rules-of-hooks).
+  const itemBoxValue = useMemo(() => ({ w: widthPx, h: heightPx }), [widthPx, heightPx]);
 
   // Display-size hit gate + focus gating (unchanged from the recursive renderer;
   // it reads the engine-computed px footprint instead of a parent-derived one).
@@ -514,29 +522,32 @@ function SceneFrameImpl({
   };
 
   // DR-053 Stage 3 — TextBlock is a pure renderer filling its engine-assigned box.
-  // The parent height (scene) feeds font-size-ratio resolution.
+  // The parent height (scene) feeds font-size-ratio resolution; the item's OWN box
+  // (`itemBoxValue`, computed above) feeds TextBlock's synchronous DOM-free shrink-to-fit.
   const frameContentNode = (
     <ParentFrameHeightContext.Provider value={parentHeight}>
-      <FrameCulledContext.Provider value={culled}>
-        <FrameContent
-          item={item as unknown as AgoItem}
-          {...(onUpdateItem
-            ? {
-                onUpdate: (patch: Record<string, unknown>) =>
-                  onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
-              }
-            : {})}
-          {...(onUpdateShape
-            ? {
-                onUpdateShape: (shapeId: string, patch: object) =>
-                  onUpdateShape(itemId, shapeId, patch),
-              }
-            : {})}
-          {...(onRemoveShape
-            ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
-            : {})}
-        />
-      </FrameCulledContext.Provider>
+      <ItemBoxContext.Provider value={itemBoxValue}>
+        <FrameCulledContext.Provider value={culled}>
+          <FrameContent
+            item={item as unknown as AgoItem}
+            {...(onUpdateItem
+              ? {
+                  onUpdate: (patch: Record<string, unknown>) =>
+                    onUpdateItem(itemId, (prev) => ({ ...prev, ...(patch as object) })),
+                }
+              : {})}
+            {...(onUpdateShape
+              ? {
+                  onUpdateShape: (shapeId: string, patch: object) =>
+                    onUpdateShape(itemId, shapeId, patch),
+                }
+              : {})}
+            {...(onRemoveShape
+              ? { onRemoveShape: (shapeId: string) => onRemoveShape(itemId, shapeId) }
+              : {})}
+          />
+        </FrameCulledContext.Provider>
+      </ItemBoxContext.Provider>
     </ParentFrameHeightContext.Provider>
   );
 

@@ -13,7 +13,6 @@ import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../agocraft-
 import {
   engineTextMeasureEnabled,
   type FreeTextHugSpec,
-  gridCellFontShrinkPx,
   measureFreeTextHugRatio,
 } from "./text-measurer.js";
 
@@ -99,34 +98,14 @@ export function reparentTextHugPatches(
     const baseFrame = (baseAttrs.frame ?? a.frame) as Record<string, unknown> | undefined;
     if (baseFrame === undefined) continue;
     const layoutKind = parentLayout?.kind;
-    const baseLc = baseAttrs.layoutChild as Record<string, unknown> | undefined;
 
-    // auto-grid — a cell is TRACK-BOUND (the box cannot grow). When the content
-    // overflows the cell, shrink the FONT (measured, written to the doc) so it fits the
-    // cell and FILLS it — this is the engine/measurement successor to the render-time
-    // `fitFontScale`, moving grid-cell font-shrink into the model (DR-156 future work).
-    // When the content fits, keep the content-hug at start (box = content size).
-    if (layoutKind === "auto-grid") {
-      const cellWPx = (baseFrame.width as number) * box.w;
-      const cellHPx = (baseFrame.height as number) * box.h;
-      const shrunkPx = gridCellFontShrinkPx(spec, cellWPx, cellHPx);
-      const gridLc = baseLc?.kind === "auto-grid" ? baseLc : { kind: "auto-grid" };
-      const after: Record<string, unknown> =
-        shrunkPx !== undefined
-          ? {
-              ...baseAttrs,
-              fontSize: Math.round(shrunkPx),
-              fontSizeSpec: { kind: "px", value: shrunkPx },
-              layoutChild: { ...gridLc, justifySelf: "stretch", alignSelf: "stretch" },
-            }
-          : {
-              ...baseAttrs,
-              frame: { ...baseFrame, width: hug.wRatio, height: hug.hRatio },
-              layoutChild: { ...gridLc, justifySelf: "start", alignSelf: "start" },
-            };
-      out.push({ type: "item.attrs", itemId: item.id, before: baseAttrs, after });
-      continue;
-    }
+    // auto-grid — a cell is TRACK-BOUND and the engine's DEFAULT cell alignment is
+    // `stretch`, so a reparented grid text already FILLS its cell (box = cell). We do
+    // NOT content-hug it (that would set box = content and overflow the track). The
+    // font shrink-to-fit, when the content exceeds the cell, is computed at render
+    // SYNCHRONOUSLY from the model (TextBlock + ItemBoxContext + the engine measurer),
+    // reversibly — so there is nothing to write here. Skip → let the engine stand.
+    if (layoutKind === "auto-grid") continue;
 
     // The content-hug child policy per parent kind:
     //  • auto-flex → grow:0 + basis:"auto" (main content-sized), NO alignSelf:"stretch"
