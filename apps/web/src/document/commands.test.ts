@@ -12,14 +12,14 @@ import type {
 } from "@agocraft/core";
 import {
   CapabilityRegistryToken,
-  createAutoGridChildPolicy as makeGridChildPolicy,
-  createAutoGridSpec as makeGridSpec,
   createCapabilityRegistry,
   createUuidV7Generator,
   defaultClock,
   defaultRandom,
   FILL_UNIT_KIND,
   IdGeneratorToken,
+  createAutoGridChildPolicy as makeGridChildPolicy,
+  createAutoGridSpec as makeGridSpec,
   itemId as makeItemId,
   trackFr as makeTrackFr,
 } from "@agocraft/core";
@@ -173,6 +173,30 @@ describe("buildWeaveCommands — direct (Phase 2)", () => {
       throw new Error("expected item.create");
     expect(String(patch.parentId)).toBe(rootId);
     expect(String(patch.item.id)).toBe(result.value);
+  });
+
+  it("weave.item.add — WI-051 Step 3.5 trigger is a safe no-op without a canvas measurer", () => {
+    // A TEXT add WITH a design basis + the engine-measure flag ON enters the Step 3.5
+    // block; in node there is no Canvas2D measurer, so the engine's reflowMeasuredText
+    // is a no-op → the add still emits just item.create and never throws.
+    const store = new Map<string, string>();
+    const prevLS = (globalThis as { localStorage?: unknown }).localStorage;
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    store.set("weave.engineTextMeasure", "on");
+    try {
+      const cmd = buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.item.add");
+      if (cmd === undefined) throw new Error("command not found");
+      const result = cmd.run(makeCtx(), { kind: "text", designWidth: 1000, designHeight: 500 });
+      if (!result.ok) throw new Error("unexpected fail");
+      expect(result.patches).toHaveLength(1);
+      expect(result.patches[0]?.type).toBe("item.create");
+    } finally {
+      (globalThis as { localStorage?: unknown }).localStorage = prevLS;
+    }
   });
 
   it("weave.item.remove emits a self-contained item.remove patch for a root item (WI-024)", () => {
@@ -3224,7 +3248,11 @@ describe("weave.clipboard.paste — layout add-rule placement (WI-224)", () => {
       schemaVersion: 3,
     };
     const doc = addChild(toAgocraftDocument(weave), cell("hi", 2, 3), "grid-2");
-    const ctx: CommandContext = { document: doc, resolve: () => null as never, skipRelations: false };
+    const ctx: CommandContext = {
+      document: doc,
+      resolve: () => null as never,
+      skipRelations: false,
+    };
 
     const setLayout = nn(
       buildWeaveCommands(spyTargets()).find((c) => c.name === "weave.frame.setLayout"),
@@ -3232,7 +3260,11 @@ describe("weave.clipboard.paste — layout add-rule placement (WI-224)", () => {
     // Re-assert a SMALL 2×1 spec — the guard must grow rows to cover the row-3 cell.
     const res = setLayout.run(ctx, {
       itemId: "grid-2",
-      layout: { kind: "auto-grid", columns: [makeTrackFr(1), makeTrackFr(1)], rows: [makeTrackFr(1)] },
+      layout: {
+        kind: "auto-grid",
+        columns: [makeTrackFr(1), makeTrackFr(1)],
+        rows: [makeTrackFr(1)],
+      },
     } as never);
     expect(res.ok).toBe(true);
     if (!res.ok) return;

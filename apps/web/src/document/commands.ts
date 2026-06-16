@@ -112,9 +112,10 @@ import {
 import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
 import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
-// WI-051 Step 3 — engine-side text measurement, injected into Hug reflow (OFF by
-// default until live-verified; see `layout/text-measurer.ts`).
-import { measureTextInput } from "./layout/text-measurer.js";
+// WI-051 Step 3 / 3.5 — engine-side text measurement, injected into Hug reflow +
+// the content-auto (non-Hug) `reflowMeasuredText` trigger (OFF by default until
+// live-verified; see `layout/text-measurer.js`).
+import { engineTextMeasureEnabled, measureTextInput } from "./layout/text-measurer.js";
 import {
   ALIGN_OPS_ORDER,
   type AlignInput,
@@ -1099,6 +1100,42 @@ export function buildWeaveCommands(
         ...layoutSiblingPatches,
         ...cascadePatches,
       ];
+
+      // WI-051 Step 3.5 — engine-measured content sizing for an added TEXT in a
+      // content-auto flex/grid slot (the non-Hug path). Build the POST-ADD doc
+      // (staged item appended + sibling/cascade frames applied), let the ENGINE
+      // measure the text itself and correct its content-auto axes, and FOLD the
+      // correction into this same transaction (one undo). The host stays hands-off:
+      // it provides the post-add tree + design basis; the engine owns measurement +
+      // policy. OFF by default (flag) and no-op without a measurer / design basis /
+      // a content-auto axis ⇒ zero behavior change until live-verified.
+      if (
+        engineTextMeasureEnabled() &&
+        stagedItem.kind === "text" &&
+        typeof input.designWidth === "number" &&
+        typeof input.designHeight === "number" &&
+        input.designWidth > 0 &&
+        input.designHeight > 0
+      ) {
+        let postRoot = mapItemDeep(ctx.document.root, container.id, (c) => ({
+          ...c,
+          children: [...c.children, stagedItem],
+        }));
+        for (const p of [...layoutSiblingPatches, ...cascadePatches]) {
+          if (p.type === "item.attrs") {
+            const ap = p as { itemId: AgocraftItem["id"]; after: AgocraftItem["attrs"] };
+            postRoot = mapItemDeep(postRoot, ap.itemId, (it) => ({ ...it, attrs: ap.after }));
+          }
+        }
+        patches.push(
+          ...getLayoutEngine().reflowMeasuredText({
+            root: postRoot,
+            itemId: stagedItem.id,
+            designWidth: input.designWidth,
+            designHeight: input.designHeight,
+          }),
+        );
+      }
       return ok(String(stagedItem.id), patches);
     },
   };
