@@ -66,6 +66,10 @@
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import { findItemDeep, findParentAndIndex } from "../../../document/agocraft-mirror.js";
 import { layoutChildFromTextAutoResize } from "../../../document/domains/derive-text-auto-resize.js";
+import {
+  clampEstHeightRatio,
+  ENGINE_MIN_MAIN_SHARE,
+} from "../../../document/domains/text-fit-floors.js";
 
 /** Canvas px the agent sizes fonts against (design VM). */
 export interface DesignPx {
@@ -133,8 +137,8 @@ export function estimateTextHeightRatio(
   }
   const contentPx = lines * fontPx * lh;
   const ratio = contentPx / parentHPx;
-  // Never below a readable floor, never absurdly tall.
-  return Math.min(0.95, Math.max(0.02, ratio));
+  // Never below a readable floor, never absurdly tall (band: text-fit-floors).
+  return clampEstHeightRatio(ratio);
 }
 
 // The canonical Fixed-box policy (left × top anchor → derives to "NONE"/Fixed).
@@ -211,7 +215,9 @@ function containerLayoutKind(
 function hasDegenerateWidth(input: Record<string, unknown>): boolean {
   const fr = isObj(input.frame) ? input.frame : undefined;
   if (fr === undefined) return false;
-  return typeof fr.width === "number" && Number.isFinite(fr.width) && fr.width <= 0.04;
+  return (
+    typeof fr.width === "number" && Number.isFinite(fr.width) && fr.width <= ENGINE_MIN_MAIN_SHARE
+  );
 }
 
 /** True when the agent gave an explicit, positive MAIN-axis size on the add's
@@ -278,7 +284,8 @@ export function fixAgentTextBox(
   // the text (no clip, no 450px balloon). undefined when we lack canvas/container
   // px or a px font; callers fall back to the WI-235 share policy.
   const estColHeight = (): number | undefined => {
-    if (design === undefined || containerId === undefined || input.kind !== "text") return undefined;
+    if (design === undefined || containerId === undefined || input.kind !== "text")
+      return undefined;
     const box = containerAbsPx(doc, containerId, design);
     if (box === undefined) return undefined;
     const text = typeof attrs.text === "string" ? attrs.text : "";

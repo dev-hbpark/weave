@@ -26,9 +26,6 @@ export function isTextAutofitEnabled(): boolean {
   }
 }
 
-/** Readable floor for shrink-to-fit — never shrink a font below this design-px. */
-export const MIN_FIT_FONT_PX = 11;
-
 /** WI-238 (rev2) / DR-153 — render-level shrink-to-fit scale. When a text's natural
  *  (full-font) content is taller/wider than its box (grid cell / region), return the
  *  scale (< 1) to shrink it so it fits; 1 when it already fits (NEVER scales up).

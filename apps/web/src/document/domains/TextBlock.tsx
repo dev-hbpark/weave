@@ -39,7 +39,8 @@ import { textEditTrigger } from "../interactions/text-edit-trigger.js";
 import { useResolveColor } from "../style/resolver-context.js";
 import { type AgoItem, isItemLocked, type TextAttrs, type WeaveRunStyle } from "../types.js";
 import { ParentFrameHeightContext } from "./parent-frame-context.js";
-import { fitFontScale, isTextAutofitEnabled, MIN_FIT_FONT_PX } from "./text-autofit.js";
+import { fitFontScale, isTextAutofitEnabled } from "./text-autofit.js";
+import { MIN_TEXT_WIDTH_CSS, minFitScaleFor } from "./text-fit-floors.js";
 
 // R3 (WI-029 lazy-load): Lexical is ~55 KB gz of editor machinery. We don't
 // need it in present mode — and even in edit mode, defer until the user
@@ -253,8 +254,8 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
     // Don't allow the rendered content to be narrower than one character
     // visually — caps how aggressively width can collapse. The frame box's
     // width is set by frame.width; this just stops the inner text from
-    // dropping below a 1ch ribbon.
-    minWidth: "1ch",
+    // dropping below a ~1-glyph ribbon (floor: text-fit-floors).
+    minWidth: MIN_TEXT_WIDTH_CSS,
     ...truncateStyles,
   };
 
@@ -325,8 +326,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // size stays the full-font natural → a fixed point). Skipped while editing (the
   // caret edits at full size) and when content already fits (scale 1).
   const [fitScale, setFitScale] = useState(1);
-  const minFitScale =
-    resolvedFontSizePx > 0 ? Math.max(0.3, MIN_FIT_FONT_PX / resolvedFontSizePx) : 0.3;
+  const minFitScale = minFitScaleFor(resolvedFontSizePx);
   useEffect(() => {
     if (!isTextAutofitEnabled() || isEditing) {
       setFitScale(1);
