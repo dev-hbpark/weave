@@ -329,16 +329,21 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
   // caret edits at full size) and when content already fits (scale 1).
   const [fitScale, setFitScale] = useState(1);
   const minFitScale = minFitScaleFor(resolvedFontSizePx);
-  // WI-051 follow-up — when engine text measurement is ON, a free auto-WIDTH text's
-  // box is HUGGED to its content (add + edit re-hug), so the render-level font shrink
-  // must NOT fire: it would shrink the font on commit to fit a (DOM-vs-measure) sub-
-  // pixel mismatch, making the finished text smaller than what was typed. The box is
-  // authoritative; never post-shrink it. (Grid cells / Fixed text — not
-  // WIDTH_AND_HEIGHT — still shrink-to-fit as before.)
-  const autoWidthHugged =
-    engineTextMeasureEnabled() && deriveTextAutoResize(a.layoutChild) === "WIDTH_AND_HEIGHT";
+  // WI-051 follow-up — when engine text measurement is ON, an AUTO-resize text's box
+  // is sized to its content by the host/engine (add / edit re-hug / paste measure), so
+  // the render-level font shrink must NOT fire: it would shrink the font on commit to
+  // fit a sub-pixel DOM-vs-measure mismatch, making the text smaller than what's there.
+  // The box is authoritative; never post-shrink it. Skip for ANY non-grid auto-resize
+  // text (flex / free — the box hugs). STILL shrink: a GRID cell (track-bound box can't
+  // grow) and Fixed (NONE) text (box won't change). NOTE: a pasted text gets an
+  // auto-flex policy (HEIGHT mode) — not WIDTH_AND_HEIGHT — so it must be covered too.
+  const lcKind = (a.layoutChild as { kind?: string } | undefined)?.kind;
+  const engineHugged =
+    engineTextMeasureEnabled() &&
+    lcKind !== "auto-grid" &&
+    deriveTextAutoResize(a.layoutChild) !== "NONE";
   useEffect(() => {
-    if (!isTextAutofitEnabled() || isEditing || autoWidthHugged) {
+    if (!isTextAutofitEnabled() || isEditing || engineHugged) {
       setFitScale(1);
       return undefined;
     }
@@ -372,7 +377,7 @@ export function TextBlock({ item, onUpdate }: TextBlockProps) {
       if (timer !== undefined) clearTimeout(timer);
       ro.disconnect();
     };
-  }, [isEditing, minFitScale, a.text, a.textRuns, autoWidthHugged]);
+  }, [isEditing, minFitScale, a.text, a.textRuns, engineHugged]);
   const fitTransformOrigin = `${
     horizontalAlign === "center" ? "center" : horizontalAlign === "right" ? "right" : "left"
   } ${verticalAlign === "CENTER" ? "center" : verticalAlign === "BOTTOM" ? "bottom" : "top"}`;
