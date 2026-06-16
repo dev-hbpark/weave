@@ -96,13 +96,28 @@ export function reparentTextHugPatches(
     const baseAttrs = baseAttrsAfter(bp, String(itemId)) ?? a;
     const baseFrame = (baseAttrs.frame ?? a.frame) as Record<string, unknown> | undefined;
     if (baseFrame === undefined) continue;
-    const isFlex = parentLayout?.kind === "auto-flex";
+    const layoutKind = parentLayout?.kind;
+    const baseLc = baseAttrs.layoutChild as Record<string, unknown> | undefined;
+    // The content-hug child policy per parent kind:
+    //  • auto-flex → grow:0 + basis:"auto" (main content-sized), NO alignSelf:"stretch"
+    //    (cross stays content-sized) — replaces the WI-238 cross-stretch.
+    //  • auto-grid → keep the engine-assigned cell (column/row/span), but place the
+    //    text at content size in it (justify/alignSelf:"start"), not stretched to fill.
+    //  • free / absolute → no layout policy; the frame override alone content-hugs it.
+    const hugLayoutChild =
+      layoutKind === "auto-flex"
+        ? { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto" }
+        : layoutKind === "auto-grid"
+          ? {
+              ...(baseLc?.kind === "auto-grid" ? baseLc : { kind: "auto-grid" }),
+              justifySelf: "start",
+              alignSelf: "start",
+            }
+          : undefined;
     const after: Record<string, unknown> = {
       ...baseAttrs,
       frame: { ...baseFrame, width: hug.wRatio, height: hug.hRatio },
-      // In a flex, content-hug BOTH axes: grow:0 + basis:"auto" (main) and NO
-      // alignSelf:"stretch" (cross stays content-sized) — replaces the WI-238 stretch.
-      ...(isFlex ? { layoutChild: { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto" } } : {}),
+      ...(hugLayoutChild !== undefined ? { layoutChild: hugLayoutChild } : {}),
     };
     out.push({ type: "item.attrs", itemId: item.id, before: baseAttrs, after });
   }
