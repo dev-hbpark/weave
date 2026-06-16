@@ -26,6 +26,7 @@ import {
   type LayoutEngine,
   type LayoutRegistry,
 } from "@agocraft/layout";
+import { getEngineTextMeasurer } from "./text-measurer.js";
 
 /** v1 absolute-constraints ripple on parent resize (RISK-001 C3.1).
  *  Enabled 2026-05-28 so frame resize propagates anchor-based child
@@ -78,7 +79,16 @@ let cachedEngine: LayoutEngine | undefined;
  *  on layout kind or shapes layout patches itself (library-ownership rule). */
 export function getLayoutEngine(): LayoutEngine {
   if (cachedEngine === undefined) {
-    cachedEngine = createLayoutEngine({ registry: getLayoutRegistry() });
+    // WI-051 Step 3.5 — inject the browser text measurer so the engine can size a
+    // text item's content-auto axes itself (`engine.reflowMeasuredText`, the non-Hug
+    // path). OFF by default (the flag is read once at engine creation — flip it and
+    // reload to enable; see `text-measurer.ts`). Undefined ⇒ the engine keeps its
+    // geometry behavior (no regression).
+    const measureText = getEngineTextMeasurer();
+    cachedEngine = createLayoutEngine({
+      registry: getLayoutRegistry(),
+      ...(measureText !== undefined ? { measureText } : {}),
+    });
   }
   return cachedEngine;
 }
