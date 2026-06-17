@@ -93,6 +93,41 @@ command. Recommend (a) gated behind the e2e suite.
 `tsc` + biome + full unit suite + the group-hug / dissolve / relayout / undo-redo
 e2e all green. The cutover is behaviour-neutral; the suite is the proof.
 
+## Blockers found during a cutover attempt (2026-06-17) — READ BEFORE EXECUTING
+
+A cutover attempt surfaced that the full central auto-apply is **NOT a
+behaviour-neutral refactor** as-is; it needs per-site reconciliation + e2e. The
+concrete findings (so the executor with an e2e env handles each):
+
+1. **relayout policy differs per site — the killer.** `computeAttrsPatches`
+   (item.update) relayouts on **SIZE change only** (WI-224: a position-only move
+   must NOT relayout — children travel with the parent). This site is ALREADY on
+   the pipeline (`276cd21`), matching the size-only `relayoutEffect`.
+   `frameUpdatesToPatches` (resizeMulti / items.update `updates`, ~`commands.ts:1837`)
+   relayouts on **ANY frame change incl. moves**. A single effect cannot be
+   behaviour-neutral for both — routing 1837 through the size-only effect DROPS
+   relayout-on-move (regression). Fix: either two effects (size-only vs any-change,
+   keyed by a meta flag) or keep 1837 inline. Decide with e2e.
+2. **batch double-apply.** `buildWeaveCommands` `return [...base, batch]`; `batch`
+   composes sub-commands. Wrapping `batch` AND its sub-commands double-applies
+   effects. The wrapper must wrap `base` only (and `batch` must run unwrapped
+   sub-commands), or exclude batch.
+3. **relayout cascade.** Centrally relayouting every `item.attrs` size change
+   re-relayouts reflow-RESULT patches (the inline scoped to the user's edit). The
+   engine is probably idempotent here but this is exactly the WI-047 revert risk —
+   verify with e2e before globalizing.
+4. **live-hug stateful cache.** `groupHugLivePatches` needs `gestureGroupG0`
+   (per-session gesture-start box, a `buildWeaveCommands` closure Map). A pure
+   effect needs this relocated (module singleton ⇒ shared across editors — check).
+5. **dissolve command-coupling.** `dissolveUnderflowingGroups` →
+   `removeFrameKeepingChildren` (a sibling Command closure) + `getDesignDims`.
+   Extract `removeFrameKeepingChildren`'s body to a pure helper first.
+
+Recommended execution: with the drag / group-hug / dissolve / undo e2e GREEN
+(networked env), reconcile (1) per-site, fix (2), verify (3)'s idempotency,
+relocate (4), extract (5) — each behaviour-neutral, suite + e2e as the gate. The
+pipeline foundation + the size-only relayout slice are already on `main`.
+
 ## Coordination notes
 
 - Numbers: this design is WI-248 / DR-164 (your group-hug owns WI-245/246/DR-162;
