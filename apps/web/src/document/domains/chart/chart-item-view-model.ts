@@ -142,5 +142,12 @@ export function useChartItemViewModel(item: AgoItem<"chart">): ChartItemVm {
     ...(a.overrides !== undefined ? { overrides: a.overrides } : {}),
   };
 
-  return { status: "ready", opacity, echartProps, onElementClick, onLegendClick, onBackgroundClick };
+  return {
+    status: "ready",
+    opacity,
+    echartProps,
+    onElementClick,
+    onLegendClick,
+    onBackgroundClick,
+  };
 }

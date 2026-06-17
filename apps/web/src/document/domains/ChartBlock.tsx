@@ -22,8 +22,8 @@
 
 import { type JSX, lazy, Suspense } from "react";
 import type { AgoItem } from "../types.js";
-import { type ChartItemVm, useChartItemViewModel } from "./chart/chart-item-view-model.js";
 import { ChartErrorBoundary } from "./chart/ChartErrorBoundary.js";
+import { type ChartItemVm, useChartItemViewModel } from "./chart/chart-item-view-model.js";
 
 // The ONLY reference to the echarts-backed renderer is this dynamic import, so
 // echarts is code-split into a separate chunk loaded on first chart render.
