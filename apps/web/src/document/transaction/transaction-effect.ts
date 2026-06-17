@@ -23,6 +23,15 @@ export interface TransactionEffect {
   /** `patch.type` values this effect reacts to — lets the pipeline skip it
    *  cheaply and documents the trigger. */
   readonly reactsTo: ReadonlyArray<string>;
+  /** WI-250 / DR-166 — set when this effect re-derives the SAME engine reflow a
+   *  command may already perform INLINE (i.e. it calls the layout engine the same
+   *  way the command did). The central runner suppresses such an effect when the
+   *  command's output already carries engine-derived patches (`isReflowDerived`):
+   *  a self-reflowing command (add / reparent / resizeHug / items.update) emits
+   *  its own reflow, so re-deriving it here would double / conflict. Weave-side
+   *  effects that a command does NOT self-manage (group-hug, group-dissolve) leave
+   *  this false, so they still attach universally. */
+  readonly skipWhenSelfReflowed?: boolean;
   /** Derive consequent patches from the PRIMARY patches (+ meta). PURE; returns
    *  `ok([])` when nothing applies; MUST NOT react to its own output (loop-free —
    *  reacts to PRIMARY patch kinds only). Declarative errors: an effect that can

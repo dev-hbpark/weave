@@ -20,6 +20,11 @@ const sizeChanged = (a: ItemFrame | undefined, b: ItemFrame | undefined): boolea
 export const relayoutEffect: TransactionEffect = {
   name: "relayout",
   reactsTo: ["item.attrs"],
+  // WI-250 / DR-166 — this IS the engine reflow (same `onFrameChanged` call a
+  // self-reflowing command performs inline). Suppressed by the central runner
+  // when the command already emitted engine-derived reflow patches, so add /
+  // reparent / resizeHug / items.update do not double-reflow.
+  skipWhenSelfReflowed: true,
   derive(ctx, patches, meta) {
     if (!LAYOUT_FEATURE_ENABLED) return ok([]);
     const out: Patch[] = [];

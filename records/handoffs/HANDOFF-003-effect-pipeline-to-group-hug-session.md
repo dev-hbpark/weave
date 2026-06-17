@@ -244,3 +244,30 @@ showed is not behaviour-neutral). Landed:
 relayout per-site split (blocker 1, `frameUpdatesToPatches` at items.update) —
 those are relayout/runner concerns you own. The `item.add` create-only feed is a
 deliberate workaround for hazard 1; if you later globalize, revisit it.
+
+## STEP 4 — CENTRAL AUTO-APPLY: DONE (WI-250 / DR-166, 2026-06-17)
+
+The deferred Step-4 central runner shipped, via the option-(b) engine reflow-origin
+tag the empirical conclusion (above) said it required:
+
+- **agocraft DR-065 / WI-052** — the layout engine now stamps `derived: true` on
+  its reflow CONSEQUENCE patches (`fullAttrsPatch` + `hug-reflow attrsFramePatch`);
+  `@agocraft/core` exports `isReflowDerived`. Re-vendored (core rc.20260617120000,
+  layout rc.20260617130000).
+- **`applyEffects`** filters to primary patches (`!isReflowDerived`) — replacing
+  the per-site `[createPatch]` curation with a STRUCTURAL loop-free guarantee — and
+  skips `skipWhenSelfReflowed` effects (relayout) when the command's output carries
+  any derived patch (so add / reparent / resizeHug / items.update don't double).
+- **`withEffects`** wraps every command (`batch` unwrapped). The 4 per-site
+  `applyEffects` calls are removed; the inline engine reflow in
+  frameUpdatesToPatches / items.update is KEPT (now tagged ⇒ self-reflowed ⇒
+  relayout suppressed), so blocker 1's any-change policy is preserved with NO
+  size-only regression.
+
+The cascade double-apply (blocker 3 / cutover attempt #2, 42f1163) is structurally
+gone: the relayout effect cannot re-derive from a patch the engine already produced
+(tagged), nor from a primary the command already self-reflowed (suppressed).
+
+**Gate:** `tsc` + biome + unit 1524 + e2e behaviour-neutral vs the 4-failed/26-passed
+baseline (the mid-cutover `resizeHug` regression `hug-resize:105/182` was fixed by
+tagging `hug-reflow.ts` + the suppress rule). HANDOFF-003 is now fully closed.

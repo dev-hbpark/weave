@@ -136,6 +136,7 @@ import type { Result, WeaveError } from "./result.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
 import { applyEffects } from "./transaction/effect-pipeline.js";
+import type { EffectMeta } from "./transaction/transaction-effect.js";
 import { CROP_OFFSET_UNIT_KIND } from "./transform-crop-offset.js";
 import {
   type DomainKind,
@@ -839,6 +840,14 @@ function cascadeReflowFromSiblingPatches(
   return out;
 }
 
+/** WI-250 / DR-166 — re-stamp a layout reflow-consequence patch as engine-`derived`.
+ *  The layout-authoring commands (setSizing / setLayout) RECONSTRUCT clean patches
+ *  (so undo `before` == original) from a tagged `refitHugContainer` result; that
+ *  reconstruction drops the engine tag. Re-stamping keeps the central effect runner
+ *  treating the command as self-reflowed (relayout not re-derived) regardless of how
+ *  many descendants the refit touched. Mirrors the engine boundary's own tagging. */
+const asReflowDerived = (p: Patch): Patch => ({ ...p, derived: true }) as Patch;
+
 export function buildWeaveCommands(
   targets: WeaveCommandTargets,
   presetRegistry: PresetRegistry = defaultPresetRegistry(),
@@ -1191,19 +1200,12 @@ export function buildWeaveCommands(
           }),
         );
       }
-      // WI-248 — group-hug via the effect pipeline: the new child's `item.create`
-      // patch makes group-hug-effect grow the container. Feed ONLY the create
-      // patch so relayout (reacts to `item.attrs`) is not double-run against the
-      // add's own layout/sibling patches.
-      const createPatch = patches.find((p) => (p as { type?: string }).type === "item.create");
-      if (createPatch !== undefined) {
-        const fx = applyEffects(ctx, [createPatch], {
-          ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
-          ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
-        });
-        if (!fx.ok) return fail(fx.error.code, fx.error.message);
-        if (fx.value.length > 0) return ok(String(stagedItem.id), [...patches, ...fx.value]);
-      }
+      // WI-250 — group-hug / relayout now attach via the CENTRAL effect runner
+      // (`withEffects`). The add's own sibling/grid/subtree reflow patches are
+      // engine-tagged `derived`, so the pipeline ignores them and reacts only to
+      // this command's PRIMARY `item.create` (group-hug grows the container) — the
+      // exact effect the former inline `applyEffects(ctx, [createPatch], …)` had,
+      // now with no per-site curation.
       return ok(String(stagedItem.id), patches);
     },
   };
@@ -1222,15 +1224,9 @@ export function buildWeaveCommands(
   // the same transaction so removing a group's 2nd-to-last child auto-ungroups.
   const removeItem: typeof removeItemKit = {
     name: removeItemKit.name,
-    run: (ctx, input) => {
-      const base = removeItemKit.run(ctx, input);
-      if (!base.ok) return base;
-      // WI-248 — group dissolve/shrink-on-underflow via the effect pipeline
-      // (group-dissolve-effect reacts to `item.remove`).
-      const fx = applyEffects(ctx, base.patches, {});
-      if (!fx.ok) return fail(fx.error.code, fx.error.message);
-      return fx.value.length === 0 ? base : ok(base.value, [...base.patches, ...fx.value]);
-    },
+    run: (ctx, input) => removeItemKit.run(ctx, input),
+    // WI-250 — group dissolve/shrink-on-underflow attaches via the central effect
+    // runner (group-dissolve-effect reacts to the primary `item.remove`).
   };
   // WI-025 (DR-025 S3) — batch remove absorbed into the editing-command kit.
   // Every selected item removed in ONE transaction so a single Cmd+Z restores
@@ -1253,12 +1249,9 @@ export function buildWeaveCommands(
       const indexOf = (id: string) =>
         findParentAndIndex(ctx.document, makeItemId(id))?.indexInParent ?? -1;
       const sorted = [...input.itemIds].sort((a, b) => indexOf(b) - indexOf(a));
-      const base = removeItemsKit.run(ctx, { ...input, itemIds: sorted });
-      if (!base.ok) return base;
-      // WI-248 — group dissolve/shrink-on-underflow via the effect pipeline.
-      const fx = applyEffects(ctx, base.patches, {});
-      if (!fx.ok) return fail(fx.error.code, fx.error.message);
-      return fx.value.length === 0 ? base : ok(base.value, [...base.patches, ...fx.value]);
+      return removeItemsKit.run(ctx, { ...input, itemIds: sorted });
+      // WI-250 — group dissolve/shrink-on-underflow attaches via the central
+      // effect runner (group-dissolve-effect reacts to the primary `item.remove`).
     },
   };
   // WI-156 / DR-112 — the sole snapshot-boundary command (see
@@ -1394,7 +1387,8 @@ export function buildWeaveCommands(
   // also fold in unit patches). Returns the item.attrs patch plus any LayoutEngine
   // reflow patches a frame change triggers.
   function computeAttrsPatches(
-    ctx: CommandContext,
+    // WI-250 — relayout is now derived centrally; this helper no longer reads ctx.
+    _ctx: CommandContext,
     child: AgocraftItem,
     weaveItem: WeaveItem,
     input: UpdateItemInput,
@@ -1449,18 +1443,13 @@ export function buildWeaveCommands(
     // pre-update document, which get appended AFTER this patch and revert
     // the edit. Bug surfaced only inside flex/grid frames (absolute parents
     // return no reflow patches, so the overwrite was invisible there).
-    // WI-249 / DR-164 — the "geometry changed → relayout" consequence is now a
-    // registered transaction effect (`relayoutEffect`). The command emits its
-    // primary patch; the pipeline derives the reflow patches (same guard: SIZE
-    // change + LAYOUT_FEATURE_ENABLED; same `onFrameChanged` call). Behaviour-
-    // neutral — the effect re-derives the frames from `patch.before/after.frame`.
-    const fx = applyEffects(ctx, [patch], {
-      ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
-      ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
-      ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
-    });
-    if (!fx.ok) return fx; // a failing effect propagates its typed WeaveError
-    return { ok: true, value: fx.value.length > 0 ? [patch, ...fx.value] : [patch] };
+    // WI-249 / DR-164 / WI-250 — the "geometry changed → relayout" consequence is
+    // a registered transaction effect (`relayoutEffect`) attached by the CENTRAL
+    // runner (`withEffects`): this helper emits only its PRIMARY `item.attrs`
+    // patch; the pipeline derives the size-change reflow (LAYOUT_FEATURE_ENABLED +
+    // SIZE change, the WI-224 size-only policy). The runner sources meta
+    // (sessionId / designWidth / designHeight) from the command input.
+    return { ok: true, value: [patch] };
   }
 
   // WI-055 — rectangle corner radius. A thin, dedicated command over the
@@ -1707,6 +1696,10 @@ export function buildWeaveCommands(
       // resize of ANY item (including a child inside a flex/grid frame) is
       // reported by frame change; the engine delegates position management
       // to the parent frame's layout. No host-side parent/child branching.
+      // WI-250 — this inline reflow is engine-tagged `derived`, so the central
+      // effect runner sees this command as self-reflowed and SUPPRESSES the
+      // relayout effect (no double-apply); keeping it inline preserves this path's
+      // any-frame-change (incl. move) relayout policy (HANDOFF-003 blocker 1).
       if (LAYOUT_FEATURE_ENABLED && prevFrameRaw !== undefined) {
         patches.push(
           ...getLayoutEngine().onFrameChanged({
@@ -1883,6 +1876,9 @@ export function buildWeaveCommands(
               oldFrame.width !== newFrame.width ||
               oldFrame.height !== newFrame.height ||
               oldFrame.rotation !== newFrame.rotation);
+          // WI-250 — inline engine reflow (engine-tagged `derived`) ⇒ the central
+          // runner treats items.update as self-reflowed and suppresses relayout
+          // (no double); keeping it inline preserves the any-change policy.
           if (
             LAYOUT_FEATURE_ENABLED &&
             frameChanged &&
@@ -3407,7 +3403,10 @@ export function buildWeaveCommands(
                 : {}),
             },
           } as Patch;
-          return ok(undefined, [containerPatch, ...desc]);
+          // WI-250 — self-managed Hug re-fit; stamp the reconstructed container
+          // patch `derived` (desc patches are engine-tagged) so the central runner
+          // suppresses relayout.
+          return ok(undefined, [asReflowDerived(containerPatch), ...desc]);
         }
       }
       return result;
@@ -3557,7 +3556,14 @@ export function buildWeaveCommands(
         } as Patch);
       }
 
-      return ok(undefined, [containerPatch, ...childPatches, ...grandchildPatches]);
+      // WI-250 — this command fully self-manages its layout (pin + re-fit); stamp
+      // its reconstructed patches `derived` so the central runner suppresses
+      // relayout (its grandchild patches are already engine-tagged).
+      return ok(undefined, [
+        asReflowDerived(containerPatch),
+        ...childPatches.map(asReflowDerived),
+        ...grandchildPatches,
+      ]);
     },
   };
 
@@ -3703,7 +3709,46 @@ export function buildWeaveCommands(
   // writes every input up-front), so batch is for independent edits + edits to
   // EXISTING items; to chain on a freshly-created item, use a follow-up call (still
   // one undo via the agent round group).
-  const byName = new Map<string, Command>(base.map((c) => [c.name, c]));
+  // WI-250 / DR-166 — CENTRAL transaction-effect runner (the foolproof end-state
+  // HANDOFF-003 §Step-4 deferred). Every command's FULL output runs through the
+  // effect pipeline; `applyEffects` filters engine-derived reflow patches
+  // (`isReflowDerived`) so effects react only to PRIMARY patches. Result: a
+  // command author emits only primary patches and relayout / group-hug /
+  // dissolve attach automatically — no per-command skip-set, no per-call-site
+  // `[createPatch]` curation. Reflow a command performs INLINE (add → onChildAdd,
+  // reparent → onReparent) is tagged `derived` at the engine boundary, so it is
+  // NOT re-derived here (the cascade double-apply that blocked the naive cutover,
+  // commit 42f1163, is gone). `batch` is wrapped per-sub-op via `byName` below;
+  // the batch command itself stays UNWRAPPED so its aggregate (already-effected)
+  // output is not run through the pipeline a second time.
+  const effectMetaForInput = (input: unknown): EffectMeta => {
+    const dims = getDesignDims();
+    const i = input as
+      | { sessionId?: unknown; designWidth?: unknown; designHeight?: unknown }
+      | null
+      | undefined;
+    const sessionId = typeof i?.sessionId === "string" ? i.sessionId : undefined;
+    const designWidth = typeof i?.designWidth === "number" ? i.designWidth : dims?.w;
+    const designHeight = typeof i?.designHeight === "number" ? i.designHeight : dims?.h;
+    return {
+      ...(sessionId !== undefined ? { sessionId } : {}),
+      ...(designWidth !== undefined ? { designWidth } : {}),
+      ...(designHeight !== undefined ? { designHeight } : {}),
+    };
+  };
+  const withEffects = <I, O>(cmd: Command<I, O>): Command<I, O> => ({
+    ...cmd,
+    run: (ctx, input) => {
+      const r = cmd.run(ctx, input);
+      if (!r.ok) return r;
+      const fx = applyEffects(ctx, r.patches, effectMetaForInput(input));
+      if (!fx.ok) return fail(fx.error.code, fx.error.message);
+      return fx.value.length === 0 ? r : ok(r.value, [...r.patches, ...fx.value]);
+    },
+  });
+  const wrappedBase: ReadonlyArray<Command> = base.map((c) => withEffects(c));
+
+  const byName = new Map<string, Command>(wrappedBase.map((c) => [c.name, c]));
   // Commands excluded from a batch: weave.batch (no nesting) + weave.doc.reset
   // (a non-patch side effect that would fire even if a later op aborts the batch).
   const BATCH_DISALLOWED = new Set<string>(["weave.batch", "weave.doc.reset"]);
@@ -3763,7 +3808,7 @@ export function buildWeaveCommands(
     },
   };
 
-  return [...base, batch];
+  return [...wrappedBase, batch];
 }
 
 /** Register the command set on an editor. Returns a single teardown that

@@ -35,7 +35,7 @@
     "overrides": {
       "@small-think/client": "file:apps/web/vendor/small-think/small-think-client-0.1.6.tgz",
       "@agocraft/agent-client": "file:apps/web/vendor/agocraft/agocraft-agent-client-1.0.0-rc.20260611161000.tgz",
-      "@agocraft/core": "file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260614090000.tgz",
+      "@agocraft/core": "file:apps/web/vendor/agocraft/agocraft-core-1.0.0-rc.20260617120000.tgz",
       "@agocraft/domain-block-doc": "file:apps/web/vendor/agocraft/agocraft-domain-block-doc-1.0.0-rc.20260602053511.tgz",
       "@agocraft/domain-canvas-design": "file:apps/web/vendor/agocraft/agocraft-domain-canvas-design-1.0.0-rc.20260602053511.tgz",
       "@agocraft/domain-media": "file:apps/web/vendor/agocraft/agocraft-domain-media-1.0.0-rc.20260602053511.tgz",
@@ -43,7 +43,7 @@
       "@agocraft/editor": "file:apps/web/vendor/agocraft/agocraft-editor-1.0.0-rc.20260614000000.tgz",
       "@agocraft/input": "file:apps/web/vendor/agocraft/agocraft-input-1.0.0-rc.20260602053511.tgz",
       "@agocraft/interaction": "file:apps/web/vendor/agocraft/agocraft-interaction-1.0.0-rc.20260602053511.tgz",
-      "@agocraft/layout": "file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260616010000.tgz",
+      "@agocraft/layout": "file:apps/web/vendor/agocraft/agocraft-layout-1.0.0-rc.20260617130000.tgz",
       "@agocraft/manipulation": "file:apps/web/vendor/agocraft/agocraft-manipulation-1.0.0-rc.20260602053511.tgz",
       "@agocraft/plugin-sample-measurement": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-measurement-1.0.0-rc.20260602053511.tgz",
       "@agocraft/plugin-sample-sticky-note": "file:apps/web/vendor/agocraft/agocraft-plugin-sample-sticky-note-1.0.0-rc.20260602053511.tgz",
