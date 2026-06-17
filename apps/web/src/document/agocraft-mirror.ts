@@ -45,7 +45,7 @@ import {
   computeReparentFrameRatio as coreComputeReparentFrameRatio,
   type FrameRect,
 } from "@agocraft/spatial";
-import { KNOWN_DOMAIN_KINDS } from "./domain-kinds.js";
+import { isContainerKind, KNOWN_DOMAIN_KINDS } from "./domain-kinds.js";
 import { buildThemeTokenMap } from "./style/theme-tokens.js";
 import type { InteractionBehavior, Document as WeaveDocument, Item as WeaveItem } from "./types.js";
 
@@ -528,10 +528,13 @@ export function updateUnitAttrs(
 import type { DomainKind, ItemAttrsByKind } from "./types.js";
 
 function isDomainKind(kind: string): kind is DomainKind {
-  // WI-032 Phase 3 — single canvas container kind. Primitive kinds
-  // (image / video / shape / text) are not weave-domain items in the
-  // legacy sense — they're leaf primitives drawn inside frames.
-  return kind === "frame";
+  // This legacy projection materialises CONTAINER items (frame, group); leaf
+  // primitives (image / video / shape / text / …) are handled elsewhere. The
+  // check reads containment from the kind's `structure` (WI-241) instead of a
+  // `=== "frame"` literal, so the new `group` container is included here without
+  // editing this guard. Today only frame + group are containers — behaviour for
+  // pre-group docs is identical.
+  return isContainerKind(kind);
 }
 
 /** Project an agocraft Item's units back to weave InteractionBehaviors.

@@ -8,6 +8,7 @@
 
 import type { Document as AgocraftDocument } from "@agocraft/core";
 import { findItemDeep } from "../../agocraft-mirror.js";
+import { isContainerKind } from "../../domain-kinds.js";
 import type { InsertionPolicy } from "../types.js";
 
 /** Free placement: adds land on the design root (`undefined` sentinel —
@@ -26,10 +27,12 @@ export function insertIntoActivePage(
   return activePageId;
 }
 
-/** WI-180 free placement: a selected FRAME is an editing surface — the
- *  explicit add lands inside it; anything else (no selection, non-frame,
- *  stale id) falls through to the design root. The former consumer-side
- *  `selIsFrame ? sel : default` branch, verbatim. */
+/** WI-180 free placement: a selected CONTAINER is an editing surface — the
+ *  explicit add lands inside it; anything else (no selection, leaf primitive,
+ *  stale id) falls through to the design root. Containment is read from the
+ *  kind's `structure` (`isContainerKind`) rather than a `=== "frame"` literal,
+ *  so a future container kind (e.g. group) becomes an editing surface here
+ *  automatically. Today only frame is a container — behaviour-identical. */
 export function addIntoSelectedFrame(
   doc: AgocraftDocument,
   _activePageId: string | undefined,
@@ -37,7 +40,7 @@ export function addIntoSelectedFrame(
 ): string | undefined {
   if (selectedId === undefined) return undefined;
   const sel = findItemDeep(doc, selectedId);
-  return sel?.kind === "frame" ? selectedId : undefined;
+  return sel !== undefined && isContainerKind(sel.kind) ? selectedId : undefined;
 }
 
 /** WI-180 page-bounded: sub-page frames are GROUPS, not editing surfaces —

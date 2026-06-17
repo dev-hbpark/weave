@@ -16,6 +16,7 @@
 export { DOMAIN_RENDERERS, type DomainRendererProps } from "../domain-kinds.js";
 export { EmbedBlock } from "./EmbedBlock.js";
 export { FrameBlock } from "./FrameBlock.js";
+export { GroupBlock } from "./GroupBlock.js";
 export { ImageBlock } from "./ImageBlock.js";
 export { LineBlock } from "./LineBlock.js";
 export { QrBlock } from "./QrBlock.js";

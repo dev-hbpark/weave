@@ -18,6 +18,7 @@ import type { ComponentType } from "react";
 import { ChartBlock } from "./domains/ChartBlock.js";
 import { EmbedBlock } from "./domains/EmbedBlock.js";
 import { FrameBlock } from "./domains/FrameBlock.js";
+import { GroupBlock } from "./domains/GroupBlock.js";
 import { ImageBlock } from "./domains/ImageBlock.js";
 import { LineBlock } from "./domains/LineBlock.js";
 import { QrBlock } from "./domains/QrBlock.js";
@@ -38,6 +39,52 @@ export type DomainRendererProps<K extends DomainKind> = {
   readonly onUpdate?: (patch: Partial<ItemAttrsByKind[K]>) => void;
 };
 
+// ── StructureSpec — per-kind structural policy ──────────────────────────────
+//
+// The single source of truth for the structural verbs (create / add / remove /
+// reparent / detach) and the group-dissolve invariant. In the Phase 11 paradigm
+// EVERY item is a frame and *can* nest children at the data-model level; this
+// spec declares the SEMANTIC policy — is this kind MEANT to hold children, what
+// may it hold, and what happens when it underflows.
+//
+// Discriminated on `isContainer` (a boolean, deliberately not a `role`/`kind`
+// discriminant the declarative-dispatch gate watches). The discriminator forces
+// a container to spell out its child policy and forbids a leaf from carrying
+// meaningless container fields. Because `structure` is a REQUIRED field on the
+// spec and SPECS is a compiler-exhaustive mapped type, adding a new DomainKind
+// is a compile error until its structure is declared — no silent
+// "everything is a leaf" / "nothing dissolves" default can slip in.
+export type StructureSpec =
+  | {
+      /** This kind exists to compose child items (frame today; group next). */
+      readonly isContainer: true;
+      /** Gate for the `add` / `reparent` verbs: may `childKind` live directly
+       *  under this container? `() => true` accepts anything. */
+      readonly accepts: (childKind: DomainKind) => boolean;
+      /** Minimum children to remain valid. `0` = may sit empty (frame). A group
+       *  sets `2`; removing a child below this fires `onUnderflow`. */
+      readonly minChildren: number;
+      /** What the remove / detach verbs do when a child removal would drop the
+       *  container below `minChildren`:
+       *   • "keep"     — leave it as-is (an empty frame is legal).
+       *   • "dissolve" — remove the container; if exactly one child remains,
+       *                  `reparent` it to the container's parent (auto-ungroup,
+       *                  per the group-min-children invariant). */
+      readonly onUnderflow: "keep" | "dissolve";
+      /** Does this container ALWAYS shrink-wrap its children — its `frame` kept
+       *  equal to the union bbox of its children, so children can never overflow
+       *  (the Figma group model)? `false` = an independent box that does not
+       *  follow its children (a frame). `true` (group) triggers the group-hug
+       *  refit on any child geometry / membership change. */
+      readonly hugsChildren: boolean;
+    }
+  | {
+      /** A visual primitive that renders its own content and is not meant to
+       *  hold child items (text / shape / image / line / qr / chart / embed /
+       *  video). */
+      readonly isContainer: false;
+    };
+
 export interface DomainKindSpec<K extends DomainKind> {
   readonly kind: K;
   /** Marketing / panel metadata (label, tagline, accent var). */
@@ -51,6 +98,11 @@ export interface DomainKindSpec<K extends DomainKind> {
    *  root.children). `qr` opts out (WI-058 — it carries no z-order adapter);
    *  preserved here so the refactor changes no runtime behaviour. */
   readonly participatesInZorder: boolean;
+  /** Structural policy for the create/add/remove/reparent/detach verbs and the
+   *  group-dissolve invariant. REQUIRED — a new kind cannot be added without
+   *  consciously declaring whether it is a container and, if so, its child
+   *  policy. See {@link StructureSpec}. */
+  readonly structure: StructureSpec;
 }
 
 // One entry per DomainKind. The mapped type makes the map exhaustive: omitting
@@ -66,6 +118,17 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     },
     renderer: FrameBlock,
     participatesInZorder: true,
+    // The canvas container of the frame-only paradigm: holds any primitive, may
+    // sit empty (an empty frame is a legal layout slot), never dissolves, and is
+    // an INDEPENDENT box (does not shrink-wrap its children — children may sit
+    // anywhere inside, overflow is allowed).
+    structure: {
+      isContainer: true,
+      accepts: () => true,
+      minChildren: 0,
+      onUnderflow: "keep",
+      hugsChildren: false,
+    },
     defaultAttrs: () => ({ frame: FULL_FRAME }),
   },
   image: {
@@ -78,6 +141,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     },
     renderer: ImageBlock,
     participatesInZorder: true,
+    structure: { isContainer: false },
     defaultAttrs: () => ({ frame: FULL_FRAME, src: "", alt: "", fit: "cover", borderRadius: 0 }),
   },
   video: {
@@ -90,6 +154,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     },
     renderer: VideoBlock,
     participatesInZorder: true,
+    structure: { isContainer: false },
     defaultAttrs: () => ({
       frame: FULL_FRAME,
       src: "",
@@ -115,6 +180,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     },
     renderer: ShapeBlock,
     participatesInZorder: true,
+    structure: { isContainer: false },
     // DR-028 — decoration (fill / stroke / …) seeds as a `decoration.fill`
     // unit in toAgocraftItem, not as an attr.
     defaultAttrs: () => ({
@@ -133,6 +199,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     },
     renderer: LineBlock,
     participatesInZorder: true,
+    structure: { isContainer: false },
     // DR-025 / WI-062 — 2-point horizontal stroke, no markers.
     defaultAttrs: () => ({
       frame: FULL_FRAME,
@@ -154,6 +221,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     },
     renderer: TextBlock,
     participatesInZorder: true,
+    structure: { isContainer: false },
     // Phase 15 + Phase 1/1.5 additive defaults — see types.ts TextAttrs.
     defaultAttrs: () => ({
       frame: FULL_FRAME,
@@ -202,6 +270,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     renderer: QrBlock,
     // WI-058 — qr historically registers no z-order adapter.
     participatesInZorder: false,
+    structure: { isContainer: false },
     defaultAttrs: () => ({
       frame: FULL_FRAME,
       data: "https://example.com",
@@ -225,6 +294,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     // WI-077 — chart participates in z-order like every other visual primitive
     // (unlike qr). Its referenced dataset is non-visual (root-unit store).
     participatesInZorder: true,
+    structure: { isContainer: false },
     // Empty `datasetId` → placeholder until a dataset is attached. The
     // add-menu (Phase 4) seeds a dataset and fills this in one step.
     defaultAttrs: () => ({
@@ -249,6 +319,7 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
     renderer: EmbedBlock,
     // WI-139 — an embed is a visual media primitive; participates in z-order.
     participatesInZorder: true,
+    structure: { isContainer: false },
     // Empty `url` → placeholder until the user pastes a recognized URL. The
     // iframe src is derived per-render via the provider registry (no stored src).
     defaultAttrs: () => ({
@@ -257,6 +328,33 @@ const SPECS: { readonly [K in DomainKind]: DomainKindSpec<K> } = {
       allowFullscreen: true,
       opacity: 1,
     }),
+  },
+  group: {
+    kind: "group",
+    meta: {
+      kind: "group",
+      label: "Group",
+      tagline: "Composition wrapper around ≥2 items — dissolves when it underflows",
+      accentVar: "--accent",
+    },
+    renderer: GroupBlock,
+    // A group is a visual primitive's peer in z-order (it has a bounding box and
+    // can be selected / reordered like any item), but paints no chrome itself.
+    participatesInZorder: true,
+    // The SECOND container (DR-158): unlike frame it requires ≥2 children,
+    // dissolves on underflow (sole survivor reparents to the group's parent),
+    // and ALWAYS shrink-wraps its children — its frame tracks the children's
+    // union bbox so a child can never overflow (DR-162 group-hug).
+    structure: {
+      isContainer: true,
+      accepts: () => true,
+      minChildren: 2,
+      onUnderflow: "dissolve",
+      hugsChildren: true,
+    },
+    // Seeds only its bounding frame; group.create (A2) overwrites it with the
+    // union box of the selected children.
+    defaultAttrs: () => ({ frame: FULL_FRAME }),
   },
 };
 
@@ -287,4 +385,43 @@ export const DESIGN_FRAME_KINDS: ReadonlyArray<DomainKind> = ALL_KINDS.filter(
 /** Seed attrs for a new item of `kind` — replaces seed.ts's `attrsByKind`. */
 export function defaultAttrsFor<K extends DomainKind>(kind: K): ItemAttrsByKind[K] {
   return SPECS[kind].defaultAttrs();
+}
+
+/** Structural policy for `kind` — the seam the create/add/remove/reparent/detach
+ *  verbs and the group-dissolve invariant read instead of branching on kind. */
+export function structureOf(kind: DomainKind): StructureSpec {
+  return SPECS[kind].structure;
+}
+
+/** Kinds that are containers (hold child items) — derived from `structure`,
+ *  mirroring how `DESIGN_FRAME_KINDS` is derived from `participatesInZorder`. */
+export const CONTAINER_KINDS: ReadonlyArray<DomainKind> = ALL_KINDS.filter(
+  (k) => SPECS[k].structure.isContainer,
+);
+
+/** May an item of `childKind` be added directly under a `parentKind` container?
+ *  The single gate the `add` / `reparent` verbs consult — leaves never accept
+ *  children, containers defer to their `accepts` predicate. */
+export function canContain(parentKind: DomainKind, childKind: DomainKind): boolean {
+  const parent = SPECS[parentKind].structure;
+  // Single early-return guard (Rule 6 permitted) — also narrows to the
+  // container variant so `accepts` is in scope below.
+  if (!parent.isContainer) return false;
+  return parent.accepts(childKind);
+}
+
+/** Is `kind` a container (a kind that may host child items)? The single
+ *  predicate that replaces the scattered `kind === "frame"` containment guards
+ *  (add command, insertion surface, frame.addChild / removeKeepingChildren
+ *  hotkeys). Accepts `unknown` — the call sites feed it an agocraft item-kind
+ *  string or a selection-context `selectedKind` (typed `unknown`, possibly
+ *  `undefined` / `"multi"` / `"none"` / an unknown kind → all `false`),
+ *  mirroring how those sites consult `KNOWN_DOMAIN_KINDS.has(...)`. Adding a new
+ *  container kind (e.g. `group`) flips every one of those sites at once. */
+export function isContainerKind(kind: unknown): boolean {
+  return (
+    typeof kind === "string" &&
+    KNOWN_DOMAIN_KINDS.has(kind) &&
+    SPECS[kind as DomainKind].structure.isContainer
+  );
 }

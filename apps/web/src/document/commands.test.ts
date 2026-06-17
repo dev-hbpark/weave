@@ -3242,6 +3242,46 @@ describe("group dissolve-on-underflow (WI-242 A3)", () => {
     expect(af.width).toBeCloseTo(0.4 / 1.2);
   });
 
+  it("WI-246 — a LIVE multi-tick drag (same sessionId) does not drift or balloon the group", () => {
+    // Reproduces the feedback loop: the gesture commits frames relative to the
+    // GESTURE-START group box g0={0.1,0.1,0.8,0.8}; the refit must use g0, not the
+    // live (growing) group box. Drag `a` right: abs x 0.1 → 0.7 over 3 ticks.
+    const ctx = makeGroupedCtx(["a", "b"]);
+    const update = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.update");
+    if (update === undefined) throw new Error("command not found");
+    let doc = ctx.document;
+    // a.frame relative to g0 for abs x = 0.3, 0.5, 0.7  →  (absX-0.1)/0.8 = 0.25, 0.5, 0.75
+    for (const x of [0.25, 0.5, 0.75]) {
+      const res = update.run(
+        { ...ctx, document: doc },
+        {
+          itemId: "a",
+          attrs: { frame: { x, y: 0, width: 0.5, height: 0.5, rotation: 0 } },
+          sessionId: "sess1",
+        },
+      );
+      if (!res.ok) throw new Error(`unexpected fail: ${res.error.code}`);
+      for (const p of res.patches) {
+        doc = applyChangeToDocument(doc, p as Parameters<typeof applyChangeToDocument>[1]);
+      }
+    }
+    const grp = doc.root.children.find((c) => String(c.id) === "grp");
+    const gf = (grp?.attrs as { frame: ItemFrameLike }).frame;
+    // Final: a abs {0.7,0.1,0.4,0.4}, b abs {0.5,0.5,0.4,0.4} → union {0.5,0.1,0.6,0.8}.
+    // NOT ballooned (a buggy live-doc refit would compound the drift well past 0.6).
+    expect(gf.x).toBeCloseTo(0.5);
+    expect(gf.width).toBeCloseTo(0.6);
+    expect(gf.height).toBeCloseTo(0.8);
+    // `a` ends at its intended absolute position (group.x + a.x*group.w ≈ 0.7).
+    const a = (grp?.children ?? []).find((c) => String(c.id) === "a");
+    const af = (a?.attrs as { frame: ItemFrameLike }).frame;
+    expect(gf.x + af.x * gf.width).toBeCloseTo(0.7);
+    // `b` stayed put (abs x ≈ 0.5).
+    const b = (grp?.children ?? []).find((c) => String(c.id) === "b");
+    const bf = (b?.attrs as { frame: ItemFrameLike }).frame;
+    expect(gf.x + bf.x * gf.width).toBeCloseTo(0.5);
+  });
+
   it("removing BOTH children at once removes the empty group (no orphan)", () => {
     const ctx = makeGroupedCtx(["a", "b"]);
     const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.items.remove");

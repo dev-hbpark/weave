@@ -47,7 +47,15 @@ export type DomainKind =
   | "chart"
   // WI-139 — oEmbed / iframe embed (weave-local kind; YouTube first). Stores the
   // pasted URL; the iframe src is DERIVED per-render via the provider registry.
-  | "embed";
+  | "embed"
+  // WI-241 (DR-158/DR-159) — `group` is the SECOND container kind (after frame),
+  // a weave-local kind. It exists to COMPOSE ≥2 selected items as a unit and
+  // carries the dissolve-on-underflow invariant (drop to <2 children → the
+  // group is removed and the sole survivor reparents to its parent). Structurally
+  // a transparent bounding box around its children (no own paint) — the
+  // containment difference from `frame` lives entirely in its `structure` spec
+  // (isContainer:true, minChildren:2, onUnderflow:"dissolve").
+  | "group";
 
 // ── ItemFrame — universal parent-relative bounding box ──────────────────────
 //
@@ -119,6 +127,17 @@ export interface FrameAttrs {
   };
   /** Optional human-friendly label — ThumbnailPanel / outline display it
    *  next to the frame's position. NOT rendered inside the frame. */
+  readonly label?: string;
+}
+
+// WI-241 — a group is a transparent container around its children. It carries
+// NO own paint chrome (unlike a frame's fill/stroke/radius) — the only attr it
+// owns is its bounding `frame` (recomputed to wrap its children on group/ungroup)
+// plus an optional label. Backgrounds/structure belong on a `frame`; a group is
+// purely a composition wrapper with the ≥2 / dissolve invariant.
+export interface GroupAttrs {
+  readonly frame: ItemFrame;
+  /** Optional human-friendly label — outline / breadcrumb display only. */
   readonly label?: string;
 }
 
@@ -368,6 +387,7 @@ export type ItemAttrsByKind = {
   qr: QrAttrs & WeaveCommonAttrs;
   chart: ChartAttrs & WeaveCommonAttrs;
   embed: EmbedAttrs & WeaveCommonAttrs;
+  group: GroupAttrs & WeaveCommonAttrs;
 };
 
 /** DR-061 — kind-agnostic read of the weave-local `locked` flag. Accepts any
