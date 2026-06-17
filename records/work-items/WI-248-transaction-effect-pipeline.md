@@ -7,7 +7,7 @@
 | ID | WI-248 |
 | Date | 2026-06-17 |
 | Owner | hbpark |
-| Status | **DESIGN ONLY** — DR accepted-pending; build coordinated via HANDOFF-003 (group-hug session owns the effects to migrate) |
+| Status | **PARTIAL — pipeline + relayout effect BUILT (`276cd21`); group-hug/dissolve still HANDOFF-003 (group-hug session owns them)** |
 | Type | Architecture — transaction-level side-effect orchestration |
 | Decision | [DR-164](../decisions/DR-164-transaction-effect-pipeline.md) |
 | Handoff | [HANDOFF-003](../handoffs/HANDOFF-003-effect-pipeline-to-group-hug-session.md) |
@@ -34,6 +34,21 @@ explicit ordering, live-gesture `EffectMeta` (sessionId), undo/redo idempotency.
 
 Operator ask honored: **design first**, and **automation items are extensible**
 (the registry is the centerpiece).
+
+## Built so far (`276cd21`)
+
+- `document/transaction/`: `TransactionEffect` + `EffectMeta`, `applyEffects`
+  (Open-Closed registry, returns `Result<Patch[], WeaveError>` — DR-165 channel),
+  `relayoutEffect`. Tests: `effect-pipeline.test.ts`.
+- **relayout migrated**: `computeAttrsPatches` emits its primary patch + routes
+  the reflow through the pipeline (behaviour-neutral: same SIZE-change guard, same
+  `onFrameChanged`, frames re-derived from `patch.before/after.frame`). A failing
+  effect propagates a typed `WeaveError` → `weave.item.update` `fail`.
+- **NOT migrated (HANDOFF-003)**: `groupHugAfter` / `groupHugLivePatches` /
+  `dissolveUnderflowingGroups` stay inline — group-hug session's live code. Only
+  relayout is registered, so no double-apply.
+- Full central-runner auto-apply (every command, no per-site call) remains the
+  cutover the group-hug session co-owns.
 
 ## Coordination
 
