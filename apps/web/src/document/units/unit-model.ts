@@ -14,17 +14,19 @@
 // validation) live in the unit model, not inline in the command.
 
 import type { Item as AgocraftItem } from "@agocraft/core";
+import { err, invalid, ok, otherError, type Result, type WeaveError } from "../result.js";
 
-export type UnitResult<A> =
-  | { readonly ok: true; readonly value: A }
-  | { readonly ok: false; readonly code: string; readonly message: string };
+// WI-249 / DR-165 — a unit's validation error is the shared typed `WeaveError`
+// channel (one error type across the unit + effect + command layers, matchable),
+// not a parallel `{code,message}` shape. `code` is preserved (each WeaveError
+// variant carries it) so the command `fail(error.code, …)` surface is unchanged.
+export type UnitResult<A> = Result<A, WeaveError>;
 
-export const unitOk = <A>(value: A): UnitResult<A> => ({ ok: true, value });
-export const unitErr = <A>(code: string, message: string): UnitResult<A> => ({
-  ok: false,
-  code,
-  message,
-});
+export const unitOk = ok;
+/** All current unit validations use `invalid-input`; the bridge keeps any other
+ *  code as `Other` (still typed) so the helper stays generic. */
+export const unitErr = <A>(code: string, message: string): UnitResult<A> =>
+  err(code === "invalid-input" ? invalid(message) : otherError(code, message));
 
 /** The common contract every unit model satisfies. `A` is the unit's validated
  *  state type; per-unit MANIPULATION operations are added on the concrete model

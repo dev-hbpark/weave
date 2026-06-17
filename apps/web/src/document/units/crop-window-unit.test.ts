@@ -25,7 +25,7 @@ describe("cropWindowUnit", () => {
     ]) {
       const r = cropWindowUnit.validate(bad);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.code).toBe("invalid-input");
+      if (!r.ok) expect(r.error.code).toBe("invalid-input");
     }
   });
 

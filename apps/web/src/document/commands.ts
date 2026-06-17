@@ -1310,7 +1310,7 @@ export function buildWeaveCommands(
       );
     }
     const v = model.validate(attrs);
-    if (!v.ok) return fail(v.code, `${commandName}: ${v.message}`);
+    if (!v.ok) return fail(v.error.code, `${commandName}: ${v.error.message}`);
     return setDecorationCommand.run(ctx, { itemId, kind, attrs: model.toAttrs(v.value) });
   };
 
@@ -1564,7 +1564,7 @@ export function buildWeaveCommands(
         input.crop === undefined ? undefined : { ...input.crop, rotation: input.rotation },
       );
       if (!validated.ok) {
-        return fail(validated.code, `weave.media.setCrop: ${validated.message}`);
+        return fail(validated.error.code, `weave.media.setCrop: ${validated.error.message}`);
       }
       // Write the `crop.window` unit (attrs from the model) + STRIP the legacy
       // attrs.cropRatio so a re-saved doc is fully unit-based (DR-028).
