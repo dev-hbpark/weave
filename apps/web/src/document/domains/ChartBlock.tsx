@@ -1,31 +1,29 @@
-// WI-077/078 — ChartBlock renderer (DR-031 data / DR-032 ECharts / DR-035 items).
+// WI-077/078 — chart content View (DR-031 data / DR-032 ECharts / DR-035 items).
 //
-// A `chart` owns no data: it resolves its dataset (referenced by
-// `attrs.datasetId`) from the root-unit store via `useResolveDataset()` and
-// derives the visual from the resolved rows at render time. Because the doc is
-// immutable, a `weave.dataset.update` produces a new snapshot → a new resolver
-// (DatasetProvider memo) → this component re-renders with fresh data.
+// WI-243 / DR-160 — split into ViewModel + pure View. ALL non-render concerns
+// (dataset resolution, encoding migration, plottability, the drill-selection
+// FSM, click→role intent) now live in `chart/chart-item-view-model.ts`. This
+// file is the PURE View (`ChartView`, renders from `{ item, vm }` only — no
+// Context, no store, no derivation) plus a thin `ChartBlock` shim that calls the
+// hook. `ChartView` is exported so the Phase-0 spec facet (HANDOFF-002) can wire
+// `view: ChartView` / `useViewModel: useChartItemViewModel` with no further edit.
 //
-// Graceful refs (DR-031): an empty/dangling `datasetId` or an empty encoding
-// render the "데이터 없음" placeholder — never a crash.
+// A `chart` owns no data: the VM resolves its dataset (referenced by
+// `attrs.datasetId`) and derives the visual. Because the doc is immutable, a
+// `weave.dataset.update` produces a new snapshot → a new resolver → the VM
+// returns fresh `echartProps` → this View re-renders with new data. An
+// empty/dangling `datasetId` or an empty encoding yields `status: "empty"` → the
+// "데이터 없음" placeholder, never a crash (DR-031).
 //
 // Rendering: the data MARKS (bars/lines/slices) are drawn by ECharts
-// (SVGRenderer, lazy-loaded). The category LABELS are NOT drawn here — they are
-// real weave `text` child Items, materialized + positioned by the
-// `useChartLabelSync` controller (DR-035). ECharts' own category text is hidden
-// (echarts-option). So ChartBlock is a thin shell: placeholder + lazy ECharts +
-// the mark-click → element-selection bridge.
+// (SVGRenderer, lazy-loaded). The category LABELS are real weave `text` child
+// Items (DR-035), so this View stays a thin shell: placeholder + lazy ECharts +
+// the VM-owned mark/legend/background click bridge.
 
-import { type JSX, lazy, Suspense, useContext } from "react";
-import { useResolveDataset } from "../dataset/dataset-context.js";
-import type { DatasetPayload } from "../dataset/dataset-store.js";
-import { SelectionVmContext } from "../interactions/selection-context.js";
+import { type JSX, lazy, Suspense } from "react";
 import type { AgoItem } from "../types.js";
+import { type ChartItemVm, useChartItemViewModel } from "./chart/chart-item-view-model.js";
 import { ChartErrorBoundary } from "./chart/ChartErrorBoundary.js";
-import { useChartElementSelection } from "./chart/chart-element-context.js";
-import { type ChartEncoding, type ChartType, migrateEncoding } from "./chart/chart-model.js";
-import { legendSelection, markSelection } from "./chart/chart-selection.js";
-import { requiredChannelsSatisfied } from "./chart/chart-types.js";
 
 // The ONLY reference to the echarts-backed renderer is this dynamic import, so
 // echarts is code-split into a separate chunk loaded on first chart render.
@@ -34,13 +32,6 @@ const EChartView = lazy(() => import("./chart/echarts-renderer.js"));
 interface ChartBlockProps {
   readonly item: AgoItem<"chart">;
 }
-
-const DEFAULT_PALETTE: ReadonlyArray<string> = [
-  "var(--accent)",
-  "var(--domain-canvas-accent)",
-  "var(--domain-media-accent)",
-  "var(--domain-block-accent)",
-];
 
 function Placeholder({ opacity }: { readonly opacity: number }): JSX.Element {
   return (
@@ -55,107 +46,48 @@ function Placeholder({ opacity }: { readonly opacity: number }): JSX.Element {
   );
 }
 
-/** Whether a resolved dataset + (migrated) encoding has anything plottable —
- *  i.e. the chart type's required channels are all bound. */
-function isPlottable(
-  data: DatasetPayload | undefined,
-  chartType: ChartType,
-  encoding: ChartEncoding,
-): boolean {
-  if (data === undefined) return false;
-  if (data.rows.length === 0) return false;
-  return requiredChannelsSatisfied(chartType, encoding);
-}
-
-/** Imperative, SSR-safe read of whether `id` is (among) the selected item(s).
- *  Reads the vm store directly — no reactive subscription (so it neither needs a
- *  server snapshot nor re-renders), and at ECharts-click time it still reflects
- *  the pre-click selection. */
-function isChartSelected(vm: unknown, id: string): boolean {
-  const get = (
-    vm as
-      | {
-          itemSelection?: {
-            state?: { get?: () => { kind: string; itemId?: unknown; items?: Iterable<unknown> } };
-          };
-        }
-      | undefined
-  )?.itemSelection?.state?.get;
-  if (typeof get !== "function") return false;
-  const s = get();
-  if (s.kind === "single") return String(s.itemId) === id;
-  if (s.kind === "multi" && s.items !== undefined) {
-    for (const it of s.items) if (String(it) === id) return true;
-  }
-  return false;
-}
-
-export function ChartBlock({ item }: ChartBlockProps): JSX.Element {
-  const a = item.attrs;
-  const opacity = a.opacity ?? 1;
-  const resolve = useResolveDataset();
-  const { select } = useChartElementSelection();
-  // WI-092 — DRILL: an inner element (bar/slice) is selectable only once the
-  // chart ITEM is already selected (same as a frame: first click selects the
-  // container, a second click drills to a child). The selection is read
-  // IMPERATIVELY at click time via the vm (SSR-safe `useContext`, no reactive
-  // subscription) — and because ECharts' direct click listener fires BEFORE
-  // React's delegated `onClick` that selects the chart, the read still sees the
-  // PRE-click selection. So a first click on a bar falls through to select the
-  // chart; the next click drills into the bar.
-  const selectionVm = useContext(SelectionVmContext);
-  const data = a.datasetId === "" ? undefined : resolve(a.datasetId);
-  // DR-036 — resolve the channel encoding (migrating legacy {category,values}).
-  const encoding = migrateEncoding(a.encoding);
-
-  if (!isPlottable(data, a.chartType, encoding)) {
-    return <Placeholder opacity={opacity} />;
-  }
-  const dataset = data as DatasetPayload; // guarded by isPlottable.
+/** Pure content View for a chart item — renders from `{ item, vm }` ONLY (no
+ *  Context / store / derivation). `empty` → placeholder; `ready` → lazy ECharts
+ *  wrapped in the per-item error boundary, with the VM's click intents. */
+export function ChartView({
+  item,
+  vm,
+}: {
+  readonly item: AgoItem<"chart">;
+  readonly vm: ChartItemVm;
+}): JSX.Element {
+  if (vm.status === "empty") return <Placeholder opacity={vm.opacity} />;
 
   return (
     <div
       data-testid="chart-block"
-      data-chart-type={a.chartType}
-      data-chart-rows={dataset.rows.length}
+      data-chart-type={vm.echartProps.chartType}
+      data-chart-rows={vm.echartProps.rows.length}
       className="absolute inset-0"
-      style={{ opacity }}
+      style={{ opacity: vm.opacity }}
     >
       {/* WI-172 — boundary scopes a throwing chart to THIS item (placeholder)
           instead of unmounting the whole canvas tree and cascade-failing
           subsequent agent execs. */}
-      <ChartErrorBoundary chartItemId={String(item.id)} opacity={opacity}>
+      <ChartErrorBoundary chartItemId={String(item.id)} opacity={vm.opacity}>
         <Suspense fallback={<div data-testid="chart-loading" className="absolute inset-0" />}>
           <EChartView
-            chartItemId={String(item.id)}
-            rows={dataset.rows}
-            encoding={encoding}
-            chartType={a.chartType}
-            palette={a.palette ?? DEFAULT_PALETTE}
-            showAxis={a.showAxis !== false}
-            showLegend={a.showLegend !== false}
-            barWidth={a.barWidth}
-            innerRadius={a.variant?.innerRadius}
-            overrides={a.overrides}
-            onElementClick={(info) => {
-              // DRILL gate: ignore the mark click until the chart is selected (the
-              // first click selects the chart via the bubbled frame hit-test).
-              if (!isChartSelected(selectionVm, String(item.id))) return;
-              // DR-037 — the click→role mapping is a per-family registry (Rule 6),
-              // not an inline chartType check: cartesian mark = datum, radar mark =
-              // the whole polygon (series), etc.
-              select({ chartItemId: String(item.id), ...markSelection(a.chartType, info) });
-            }}
-            onLegendClick={(name) => {
-              if (!isChartSelected(selectionVm, String(item.id))) return;
-              select({ chartItemId: String(item.id), ...legendSelection(a.chartType, name) });
-            }}
-            // WI-092 — clicking the blank plot drops the bar selection (the chart
-            // item stays selected → back to the whole-chart level).
-            onBackgroundClick={() => select(null)}
+            {...vm.echartProps}
+            onElementClick={vm.onElementClick}
+            onLegendClick={vm.onLegendClick}
+            onBackgroundClick={vm.onBackgroundClick}
           />
         </Suspense>
       </ChartErrorBoundary>
     </div>
   );
+}
+
+/** Registered renderer (FrameSurface looks this up by `item.kind`). Thin shim:
+ *  resolve the ViewModel, then render the pure View. WI-243 transitional — the
+ *  Phase-0 spec facet will register `useViewModel`/`view` and derive the renderer
+ *  via `makeKindRenderer`, retiring this shim. */
+export function ChartBlock({ item }: ChartBlockProps): JSX.Element {
+  const vm = useChartItemViewModel(item);
+  return <ChartView item={item} vm={vm} />;
 }
