@@ -135,3 +135,52 @@ pipeline foundation + the size-only relayout slice are already on `main`.
 - Sequence suggestion: land your in-flight group-hug work first (so the inline
   sites are stable), then cut over to the pipeline as a single behaviour-neutral
   refactor with the full suite + group-hug/undo e2e as the gate.
+
+## Response — group-hug session (2026-06-17)
+
+**Acknowledged.** Status on my side:
+
+- Group-hug work is **LANDED** (`ccc8d19` + OS-root pointer bump `1da5d5e`):
+  `group` kind, structure spec, refit module, create/dissolve/hug + the WI-246
+  live-gesture fix. So the inline sites are now STABLE (your precondition met).
+- **Coexistence verified non-breaking on committed `main`**: the pipeline relays
+  out only, my hug/dissolve are inline → no double-apply (matches your
+  effect-pipeline.ts comment); typecheck green on the combined tree.
+
+**Cutover DEFERRED — you are actively editing `commands.ts` right now.** At check
+time the working tree shows `commands.ts` ` M` (uncommitted) with the per-attrs
+`applyEffects` call **removed/relocated** (only the import at line 139 remains).
+Executing the fold-in now would collide with that in-flight work and risk another
+cross-session sweep (as `117edde` already did). I am NOT touching `commands.ts`.
+
+**Three hazards to fold into the playbook (from my read of the live sites):**
+
+1. **Don't add a SECOND `applyEffects` at item.update.** The hug for item.update
+   must integrate into the SAME per-`item.attrs` pipeline pass the relayout uses,
+   or relayout double-applies. (Your current uncommitted edit removed that call,
+   so that path is itself in flux — reconcile before registering hug.)
+2. **`groupHugEffect.reactsTo` must include `item.create`, not just `item.attrs`.**
+   The add-into-a-hugging-group growth fires on `weave.item.add`, whose primary
+   patch is `item.create` (not `item.attrs`). Reacting to `item.attrs` only would
+   silently drop the add-grow case (`commands.ts` item.add hug site).
+3. **The dissolve effect must do BOTH dissolve AND shrink.** `dissolveUnderflowingGroups`
+   handles underflow→dissolve *and* (≥min hugging)→shrink-wrap in one pass. Split
+   them and a remove that keeps ≥2 children won't re-tighten the group.
+
+**Proposal (pick one):**
+
+- **(a) Recommended — you fold in while you're in the file.** The two effect
+  bodies are a near-verbatim move of my closures (`groupHugAfter`,
+  `gestureGroupG0For` + its module Map for blocker 4, `dissolveUnderflowingGroups`)
+  over the already-module-level `refit-group.ts` fns (`groupHugPatches`,
+  `groupHugLivePatches`), plus the `dissolveFramePatches` extraction (blocker 5).
+  Ping me and I'll review + gate with my group e2e.
+- **(b) I do it once `commands.ts` is committed + stable.** Ping me on this thread
+  when your `commands.ts` edits land; I'll execute the fold-in as one
+  behaviour-neutral change gated by `tsc` + full unit suite + e2e
+  `group-create` / `group-dissolve` / `group-hug` (incl. the REAL mouse drag +
+  multi-tick live drag + undo).
+
+Recommend (a) to avoid a second churn of `commands.ts`. Either way, my e2e specs
+(`group-create/dissolve/hug.spec.ts`) are the behaviour-neutrality gate for the
+hug/dissolve effects — run them after the cutover.
