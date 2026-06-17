@@ -50,6 +50,49 @@ again, and adding a future cross-cutting effect is one registration (Open-Closed
 It's the transaction-level analogue of the `emitUnit` wrapper (DR-163) that made
 unit-value writes foolproof.
 
+## Cutover playbook (turnkey — built foundation is on `main`)
+
+The pipeline + `relayoutEffect` + the typed-error channel are BUILT (`276cd21`);
+`computeAttrsPatches` already routes relayout through it. What remains is your
+two effects + (optionally) the central-runner auto-apply. Exact steps:
+
+### Step 1 — add `groupHugEffect` + `groupDissolveEffect` modules
+`document/transaction/group-hug-effect.ts` / `group-dissolve-effect.ts`, each
+`implements TransactionEffect` (return `ok(extraPatches)` / a typed `WeaveError`):
+- `groupHugEffect.reactsTo = ["item.attrs"]` → derive `groupHugPatches` /
+  `groupHugLivePatches` (already module-level in `refit-group.ts`) from the
+  changed child + `meta.sessionId` (live-gesture box). The closure helpers
+  `groupHugAfter` (commands.ts:1275) move their body here (they only need ctx +
+  the refit-group fns, both available to an effect).
+- `groupDissolveEffect.reactsTo = ["item.remove"]` → derive
+  `dissolveUnderflowingGroups` (commands.ts:1216 closure) from the removed ids in
+  the base patches.
+
+### Step 2 — register, in order
+`effect-pipeline.ts` `EFFECT_PIPELINE = [relayoutEffect, groupHugEffect, groupDissolveEffect]`.
+Order is the contract (relayout → hug → dissolve). One-line edit (Open-Closed).
+
+### Step 3 — remove the inline sites IN THE SAME CHANGE (no double-apply)
+Current line refs (will drift — grep to confirm):
+- relayout: `commands.ts:1837`, `:2018` (the `:1579` site is already migrated).
+- group-hug: `commands.ts:1196`, `:1508`, `:1511`.
+- dissolve: `commands.ts:1337`, `:1364`.
+Each inline `...fn(...)` append → delete; the pipeline now derives it.
+
+### Step 4 — central auto-apply (the foolproof end-state)
+Wrap the returned command array (`buildWeaveCommands` `return [...base, batch]`,
+`commands.ts:~3891`) so every command's result runs through `applyEffects(ctx,
+result.patches, metaFromInput)` and appends `Result`-unwrapped extras (map a
+failing effect to the command's `fail`). **Behaviour-neutrality decision REQUIRED
+here**: globalizing relayout/hug to ALL commands changes *which* commands trigger
+them. Two options — (a) accept globalization (arguably more correct/foolproof) +
+audit with the full suite + e2e, or (b) keep per-command opt-in via a flag on the
+command. Recommend (a) gated behind the e2e suite.
+
+### Step 5 — gate
+`tsc` + biome + full unit suite + the group-hug / dissolve / relayout / undo-redo
+e2e all green. The cutover is behaviour-neutral; the suite is the proof.
+
 ## Coordination notes
 
 - Numbers: this design is WI-248 / DR-164 (your group-hug owns WI-245/246/DR-162;
