@@ -1726,9 +1726,10 @@ export function buildWeaveCommands(
       if (child === undefined) {
         return fail("item-not-found", `weave.shape.setFill: no item with id "${input.itemId}"`);
       }
-      if (child.kind !== "shape") {
-        return fail("not-a-shape", `weave.shape.setFill: item "${input.itemId}" is not a shape`);
-      }
+      // DR-028 / DR-161 — `decoration.fill` is a kind-agnostic UNIT (read by shape
+      // AND frame renderers), so no kind gate: the command validates the PaintSpec
+      // and attaches the fill unit to the (existing) target. Non-fill kinds ignore
+      // it and round-trip it untouched (onUnknown: preserve).
       const fill = input.fill as { type?: unknown; stops?: unknown } | undefined;
       if (fill === undefined || typeof fill.type !== "string" || !SHAPE_FILL_TYPES.has(fill.type)) {
         return fail(

@@ -700,10 +700,18 @@ function makeShapeCtx(): CommandContext {
     behaviors: [],
     createdAt: META_DATE,
   } as unknown as Item;
+  // A frame too — the OTHER decoration.fill consumer (DR-161 kind-agnostic fill).
+  const frameItem = {
+    id: "frame-1",
+    kind: "frame",
+    attrs: { frame: FULL_FRAME },
+    behaviors: [],
+    createdAt: META_DATE,
+  } as unknown as Item;
   const weave: WeaveDocument = {
     id: "doc-shape",
     title: "Shapes",
-    items: [rectItem, ellipseItem],
+    items: [rectItem, ellipseItem, frameItem],
     updatedAt: META_DATE,
     schemaVersion: 3,
   };
@@ -874,15 +882,12 @@ describe("weave.shape.setFill (WI-056)", () => {
     expect(result.error.code).toBe("item-not-found");
   });
 
-  it("fails with not-a-shape for a non-shape item", () => {
-    // makeCtx seeds a "slide" item, not a shape.
-    const result = cmd().run(makeCtx(), {
-      itemId: "slide-1",
-      fill: { type: "solid", color: "#000000" },
-    });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe("not-a-shape");
+  it("is kind-agnostic — attaches the decoration.fill unit to a FRAME too (DR-028/DR-161)", () => {
+    // decoration.fill is a kind-agnostic unit (frame renders it too): no kind gate.
+    const paint = createdFillPaint(
+      cmd().run(makeShapeCtx(), { itemId: "frame-1", fill: { type: "solid", color: "#abcdef" } }),
+    ) as { color: string };
+    expect(paint.color).toBe("#abcdef");
   });
 });
 

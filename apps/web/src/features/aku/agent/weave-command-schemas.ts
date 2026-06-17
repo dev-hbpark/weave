@@ -956,7 +956,8 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
   //   • none            — { type:"none" }  (transparent)
   //   • image | video   — { type:"image"|"video", src:"<url>", fit?, opacity? }
   // Gradient `offset`/`stops[].color` are absolute values, NOT theme tokens.
-  // The renderer materializes every variant; a non-shape target → `not-a-shape`.
+  // The renderer materializes every variant. DR-161 — `decoration.fill` is a
+  // kind-agnostic unit (shape + frame render it), so there is no kind gate.
   "weave.shape.setFill": {
     label: label("weave.shape.setFill"),
     inputSchema: obj(
@@ -1017,7 +1018,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         },
       },
       ["itemId", "fill"],
-      "Set a SHAPE's fill paint (`PaintSpec`): solid / linear-gradient / radial-gradient / image / video / none. Shape-only. Also doable via weave.item.update { units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] }, which works for any item kind.",
+      "Set a fill paint (`PaintSpec`): solid / linear-gradient / radial-gradient / image / video / none. Stored as a kind-agnostic `decoration.fill` unit (shape + frame renderers read it); no kind gate. Also doable via weave.item.update { units:[{ kind:'decoration.fill', attrs:<PaintSpec> }] }.",
     ),
   },
   // ── freeform polygon vertices (WI-057) ──
