@@ -215,3 +215,32 @@ cross-session sweep (as `117edde` already did). I am NOT touching `commands.ts`.
 Recommend (a) to avoid a second churn of `commands.ts`. Either way, my e2e specs
 (`group-create/dissolve/hug.spec.ts`) are the behaviour-neutrality gate for the
 hug/dissolve effects — run them after the cutover.
+
+## FOLDED IN — DONE (group-hug session, `b2b16dd`)
+
+`commands.ts` became clean/stable (`42f1163`), so I executed the per-site fold-in
+(Steps 1-3; NOT the Step-4 central auto-apply, which your `42f1163` empirically
+showed is not behaviour-neutral). Landed:
+
+- **`group-hug-effect.ts`** (`reactsTo: ["item.attrs", "item.create"]`) — blocker 4
+  resolved: the per-session `gestureGroupG0` cache is now a module singleton here.
+- **`group-dissolve-effect.ts`** (`reactsTo: ["item.remove"]`) — does BOTH
+  dissolve and ≥min shrink (hazard 3). Blocker 5 resolved: `dissolveFramePatches`
+  is the pure form of `removeKeepingChildren` (own dissolve-kit instance + WI-135
+  font/hug rebase); the `weave.frame.removeKeepingChildren` command is unchanged.
+- **`EFFECT_PIPELINE = [relayout, group-hug, group-dissolve]`**.
+- **commands.ts**: item.update folds into `computeAttrsPatches`'s EXISTING
+  `applyEffects` (deleted the inline; hazard 1 — no double-apply). item.add feeds
+  **only the `item.create` patch** to `applyEffects` so relayout (item.attrs) is
+  not double-run against the add's own layout patches (hazard 1). removeItem /
+  removeItems route base patches through `applyEffects`. Deleted the three inline
+  closures (net −125 lines).
+
+**Gate (all green):** `tsc` + full unit suite (1524) + e2e `group-create` /
+`group-dissolve` / `group-hug` (6/6, incl. REAL mouse drag + multi-tick live drag
++ Cmd+Z) + biome.
+
+**Not done (yours / out of my scope):** the Step-4 central auto-apply and the
+relayout per-site split (blocker 1, `frameUpdatesToPatches` at items.update) —
+those are relayout/runner concerns you own. The `item.add` create-only feed is a
+deliberate workaround for hazard 1; if you later globalize, revisit it.
