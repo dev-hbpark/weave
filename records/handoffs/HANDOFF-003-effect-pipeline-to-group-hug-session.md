@@ -128,6 +128,37 @@ Recommended execution: with the drag / group-hug / dissolve / undo e2e GREEN
 relocate (4), extract (5) — each behaviour-neutral, suite + e2e as the gate. The
 pipeline foundation + the size-only relayout slice are already on `main`.
 
+## Empirical result — cutover attempt #2 (e2e env available, 2026-06-17)
+
+With e2e runnable, a central `withEffects` runner wrapping every command (relayout
+only, hug/dissolve kept inline) was implemented and gated on the FULL UNIT SUITE.
+The suite CAUGHT that central globalization is **NOT behaviour-neutral**:
+
+- `commands-layout-relayout.test.ts › weave.item.add — #1 cascade relayout … reflows
+  the GRANDCHILDREN of a nested flex container` **FAILED.** `weave.item.add` already
+  performs its OWN reflow (`onChildAdd` / `reflowSubtree`); the wrapper's
+  size-only `relayoutEffect` then fired again on the add's sibling-shift
+  `item.attrs` patches → **double / conflicting reflow** (≠ idempotent → different
+  patches). This is blocker #3 (cascade) confirmed, not theoretical: globalizing
+  relayout double-applies on commands that self-manage layout (add, likely
+  reparent).
+- (Secondary, fixable) the wrapper must spread the command (`{...cmd, run}`) — a
+  `{name, run}`-only wrapper dropped other command properties → a registration
+  test failed.
+
+**Conclusion:** relayout cannot be GLOBALLY centralized behaviour-neutrally — a
+single effect can't distinguish a user-edit frame change from a self-reflow
+result, and self-reflowing commands double-apply. The central runner needs either
+(a) per-command opt-in (not foolproof), or (b) the effect to skip commands/patches
+that already reflowed (requires a "reflow origin" tag on patches — an engine-level
+change). Both need the layout-engine owner + the drag/group/undo e2e.
+
+Reverted to the safe committed state (`276cd21`): relayout is pipeline-migrated at
+`computeAttrsPatches` (size-only, behaviour-neutral) only; `frameUpdatesToPatches`
+/ items.update relayout + hug + dissolve stay inline. Suite green (1524). The full
+central cutover stays blocked on (a)/(b) above + e2e — best done with the engine /
+group-hug owner.
+
 ## Coordination notes
 
 - Numbers: this design is WI-248 / DR-164 (your group-hug owns WI-245/246/DR-162;
