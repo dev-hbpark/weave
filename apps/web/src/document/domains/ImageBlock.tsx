@@ -1,37 +1,22 @@
-// WI-020 Phase 3 — ImageBlock renderer.  WI-074 / DR-029 — interactive crop.
+// WI-020 Phase 3 — image content View.  WI-074 / DR-029 — interactive crop.
 //
-// Reads ImageAttrs (DR-023) and renders an `<img>` filling the frame. Visual
-// specs (FilterSpec → CSS filter, ShadowSpec → box-shadow) come from agocraft's
-// `@agocraft/core/visual` helpers so the same conversion stays canonical.
+// WI-243 / DR-160 — split into ViewModel + pure View. Attr resolution, the crop /
+// culled gates, the enter-crop intent, and the wrapper style live in
+// `image-item-view-model.ts`; `ImageView` renders from `{ vm }` ONLY (never reads
+// `item.*`). The frame-box aspect (drives the rotation cover-zoom) is a DOM
+// measurement the View owns and threads into the crop/image content.
 //
-// Crop (`cropRatio = { x, y, w, h, rotation? }`, agocraft DR-037):
-//  • committed render — the window (x,y,w,h) is scaled to fill the frame; the
-//    content is rotated by `rotation` (DR-029 D6 straighten) with a cover-zoom so
-//    the frame never shows empty corners.
-//  • crop mode (double-click, DR-029 D8 redesign) — the FULL source is shown
-//    extending beyond the frame box, DIMMED; the frame-box region is drawn a SECOND
-//    time at full brightness (the kept crop) so you can see how much is cropped out.
-//    Drag to PAN (cropRatio x/y); a STRAIGHTEN slider rotates content (D6). Commit →
-//    `onUpdate({ cropRatio })` → weave.item.update → History. Crop-window RESIZE +
-//    image-scale handles move to the SelectionLayer overlay in Phase 2/3.
+// Crop (`cropRatio = { x, y, w, h, rotation? }`): committed render scales the
+// window to fill the frame + rotates with a cover-zoom; crop mode (double-click)
+// shows the full source dimmed with the kept region drawn bright. Drag to PAN;
+// commit/cancel is external (DesignPage) via the shared store.
 
-import type { Item as AgocraftItem, FilterSpec, ShadowSpec } from "@agocraft/core";
-import {
-  FILTER_UNIT_KIND,
-  filterToCss,
-  findUnitInItem,
-  OPACITY_UNIT_KIND,
-  SHADOW_UNIT_KIND,
-  shadowToCss,
-} from "@agocraft/core";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type CornerRadii, mediaBorderRadius } from "../corner-radius.js";
+import { type JSX, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { coverZoom, panCropOffset, panCropWindow } from "../crop-geometry.js";
-import { croppingState, useCropDraft, useCroppingItemId } from "../interactions/cropping-state.js";
-import { useIsCulled } from "../interactions/viewport-cull-context.js";
-import { readCropOffset } from "../transform-crop-offset.js";
+import { croppingState, useCropDraft } from "../interactions/cropping-state.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
+import { type CropRect, type ImageItemVm, useImageItemViewModel } from "./image-item-view-model.js";
 import { MediaPlaceholder } from "./MediaPlaceholder.js";
 
 interface ImageBlockProps {
@@ -39,44 +24,12 @@ interface ImageBlockProps {
   readonly onUpdate?: (patch: Partial<ImageAttrs>) => void;
 }
 
-interface CropRect {
-  readonly x: number;
-  readonly y: number;
-  readonly w: number;
-  readonly h: number;
-  /** radians, content straighten (DR-029 D6) */
-  readonly rotation: number;
-  /** WI-074 D12 — image-offset (frame fractions) within the rotation magnification. */
-  readonly ox: number;
-  readonly oy: number;
-}
-
-const IDENTITY_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1, rotation: 0, ox: 0, oy: 0 };
-
-function readCrop(a: ImageAttrs): CropRect {
-  const c = a.cropRatio as
-    | { x?: number; y?: number; w?: number; h?: number; rotation?: number }
-    | undefined;
-  if (c === undefined) return IDENTITY_CROP;
-  return {
-    x: c.x ?? 0,
-    y: c.y ?? 0,
-    w: c.w ?? 1,
-    h: c.h ?? 1,
-    rotation: c.rotation ?? 0,
-    ox: 0,
-    oy: 0,
-  };
-}
-
 const isIdentity = (c: CropRect): boolean =>
   c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1 && c.rotation === 0;
 
 /** Rotate + cover-zoom the source image, pivoting around the CROP WINDOW center
- *  (= the frame box center on screen), not the source center. This keeps the frame
- *  covered and the content spinning in place at ANY pan position (WI-074 D11). The
- *  origin is given in the img's own box (which spans the source [0,1]); the window
- *  center in that box is (x + w/2, y + h/2). */
+ *  (= the frame box center on screen). Keeps the frame covered and the content
+ *  spinning in place at ANY pan position (WI-074 D11). */
 function rotationTransform(crop: CropRect, aspect: number): CSSProperties {
   if (crop.rotation === 0) return {};
   const ox = (crop.x + crop.w / 2) * 100;
@@ -84,6 +37,20 @@ function rotationTransform(crop: CropRect, aspect: number): CSSProperties {
   return {
     transform: `rotate(${crop.rotation}rad) scale(${coverZoom(crop.rotation, aspect)})`,
     transformOrigin: `${ox}% ${oy}%`,
+  };
+}
+
+/** Wrapper that maps the crop window [x,x+w]x[y,y+h] onto the frame box; with the
+ *  parent overflow visible, the rest of the (cover-displayed) image extends beyond.
+ *  The (ox,oy) offset (WI-074 D12) translates the magnified image so the user can
+ *  pan into the rotation cover-zoom overflow (frame-box fractions). */
+function cropWindowWrapperStyle(c: CropRect): CSSProperties {
+  return {
+    position: "absolute",
+    left: `${(-c.x * (1 / c.w) + c.ox) * 100}%`,
+    top: `${(-c.y * (1 / c.h) + c.oy) * 100}%`,
+    width: `${(1 / c.w) * 100}%`,
+    height: `${(1 / c.h) * 100}%`,
   };
 }
 
@@ -130,10 +97,7 @@ function ImageContent(props: {
   );
 }
 
-/** Placeholder shown when an image item has no `src` (WI-076). Replaces the
- *  browser's broken-`<img>` glyph with a neutral framed surface; when `alt` is
- *  set it is rendered as a centered caption so the slot can describe what image
- *  belongs here. Glyph + caption scale to the frame size (see MediaPlaceholder). */
+/** Placeholder shown when an image item has no `src` (WI-076). */
 function ImagePlaceholder({ alt }: { readonly alt: string }): JSX.Element {
   return (
     <MediaPlaceholder
@@ -152,26 +116,10 @@ function ImagePlaceholder({ alt }: { readonly alt: string }): JSX.Element {
 
 // ── crop-mode editor (WI-074 / DR-029 D8 redesign — Phase 1) ─────────────────
 //
-// Crop mode shows the FULL source extending beyond the frame box, DIMMED, with the
-// frame-box region drawn a SECOND time at full brightness — so you can see how much
-// of the original is cropped out. Drag to PAN (cropRatio x/y); the straighten slider
-// rotates content (DR-029 D6). Crop-window RESIZE + image-scale handles move to the
-// SelectionLayer overlay in Phase 2/3. The document capture-phase pointerdown
-// bypasses the design-plane gesture controllers that swallow React onPointerDown.
-
-/** Wrapper that maps the crop window [x,x+w]x[y,y+h] onto the frame box; with the
- *  parent overflow visible, the rest of the (cover-displayed) image extends beyond.
- *  The (ox,oy) offset (WI-074 D12) additionally translates the magnified image so
- *  the user can pan into the rotation cover-zoom overflow (frame-box fractions). */
-function cropWindowWrapperStyle(c: CropRect): CSSProperties {
-  return {
-    position: "absolute",
-    left: `${(-c.x * (1 / c.w) + c.ox) * 100}%`,
-    top: `${(-c.y * (1 / c.h) + c.oy) * 100}%`,
-    width: `${(1 / c.w) * 100}%`,
-    height: `${(1 / c.h) * 100}%`,
-  };
-}
+// Shows the FULL source extending beyond the frame box, DIMMED, with the frame-box
+// region drawn a SECOND time at full brightness. Drag to PAN; commit/cancel is
+// external. The crop draft lives in the shared store so the SelectionLayer handles
+// + the FrameStage dispatcher edit the SAME draft live.
 
 function CropEditor(props: {
   readonly src: string;
@@ -182,10 +130,6 @@ function CropEditor(props: {
   readonly aspect: number;
 }): JSX.Element {
   const { src, alt, objectFit, filterCss, initial, aspect } = props;
-  // D8 P2 — the crop draft lives in the shared store so the SelectionLayer crop
-  // handles (NestedFrame) + the FrameStage dispatcher edit the SAME draft live.
-  // D8b — straighten + apply/cancel UI moved out (rotate handle + QuickActionBar);
-  // commit/cancel is driven externally (DesignPage) via the store.
   const draft = useCropDraft() ?? initial;
   const boxRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; start: CropRect } | null>(null);
@@ -212,9 +156,8 @@ function CropEditor(props: {
       if (r.width === 0 || r.height === 0) return;
       const dx = (e.clientX - drag.startX) / r.width;
       const dy = (e.clientY - drag.startY) / r.height;
-      // WI-074 D12 — rotated: pan the image WITHIN the cover-zoom magnification
-      // (offset), so the magnified overflow is reachable. Un-rotated: pan the
-      // crop window (source region) as before.
+      // WI-074 D12 — rotated: pan within the cover-zoom magnification (offset);
+      // un-rotated: pan the crop window (source region).
       const next =
         (drag.start.rotation ?? 0) === 0
           ? panCropWindow(drag.start, dx, dy)
@@ -258,8 +201,7 @@ function CropEditor(props: {
       onPointerDown={stop}
       onDoubleClick={stop}
     >
-      {/* Draw 1 — the full source, extending beyond the frame box. Pan target.
-          Drawn bright; the spotlight below dims everything outside the window. */}
+      {/* Draw 1 — the full source, extending beyond the frame box. Pan target. */}
       <div
         data-crop-pan
         data-testid="image-crop-pan"
@@ -268,10 +210,7 @@ function CropEditor(props: {
       >
         <img src={src} alt={alt} draggable={false} decoding="async" style={imgStyle} />
       </div>
-      {/* Spotlight dim — a single hole at the frame box (= the crop window). Its
-          huge box-shadow dims the WHOLE canvas around the window in one pass:
-          the cropped-out source, sibling items, everything. No seam, no leak
-          (replaces the old Draw1-local + plane-level two-dim scheme, DR-029 D8c). */}
+      {/* Spotlight dim — a single hole at the frame box dims the whole canvas. */}
       <div
         data-testid="crop-dim"
         className="absolute inset-0"
@@ -299,56 +238,10 @@ function CropEditor(props: {
   );
 }
 
-export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
-  // WI-058 Phase 2a — when this frame is culled (off-screen), drop the `<img>`
-  // so its decoded bitmap is released. The styled wrapper (size/shadow/radius)
-  // stays so layout is unchanged. Restored when the frame re-enters the buffer.
-  const culled = useIsCulled();
-  const a = item.attrs;
-  const editable = onUpdate !== undefined;
-  // WI-076 — a source-less image renders a placeholder (see ImagePlaceholder)
-  // instead of a broken `<img>`. Crop mode is meaningless without a source, so
-  // it (and the double-click that enters it) is gated on this.
-  const hasSrc = a.src.trim().length > 0;
-  const itemId = String(item.id);
-  // WI-074 D8b — crop mode is driven by the shared store: entered on double-click,
-  // exited EXTERNALLY (DesignPage 완료/취소 + Enter/ESC) so the QuickActionBar /
-  // keyboard can end a crop. Also the Step 5 gate (suspends hotkeys + gestures).
-  const cropMode = useCroppingItemId() === itemId;
-  // Safety: end this item's crop if it unmounts mid-crop.
-  useEffect(() => () => croppingState.exit(itemId), [itemId]);
-
-  const objectFit: CSSProperties["objectFit"] =
-    a.fit === "fill"
-      ? "fill"
-      : a.fit === "contain"
-        ? "contain"
-        : a.fit === "none"
-          ? "none"
-          : "cover";
-
-  // DR-028 — shadow / filter / opacity are decoration UNITS (no legacy attr fallback).
-  const shadowSpec = findUnitInItem(item as unknown as AgocraftItem, SHADOW_UNIT_KIND)?.attrs as
-    | ShadowSpec
-    | undefined;
-  const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
-  const filterSpec =
-    (findUnitInItem(item as unknown as AgocraftItem, FILTER_UNIT_KIND)?.attrs as
-      | FilterSpec
-      | undefined) ?? {};
-  const filterCss = filterToCss(filterSpec);
-  const opacity =
-    (
-      findUnitInItem(item as unknown as AgocraftItem, OPACITY_UNIT_KIND)?.attrs as
-        | { value: number }
-        | undefined
-    )?.value ?? 1;
-
-  // WI-074 D12 — merge the persisted crop image-offset (weave-local unit) into the
-  // committed crop so the rendered image reflects the in-magnification pan.
-  const crop = { ...readCrop(a), ...readCropOffset(item as unknown as AgocraftItem) };
-
-  // Frame-box aspect (width / height) — drives the rotation cover-zoom.
+/** Pure content View for an image item — renders from `{ vm }` ONLY. Owns the
+ *  DOM-measured frame-box aspect (drives the rotation cover-zoom) and threads it
+ *  into the crop/image content. */
+export function ImageView({ vm }: { readonly vm: ImageItemVm }): JSX.Element {
   const boxRef = useRef<HTMLDivElement>(null);
   const [aspect, setAspect] = useState(1);
   useLayoutEffect(() => {
@@ -367,54 +260,45 @@ export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
   return (
     <div
       ref={boxRef}
-      // WI-074 D8 — crop mode shows the full source beyond the frame box, so drop
-      // the overflow clip while cropping.
-      className={cropMode ? "relative h-full w-full" : "relative h-full w-full overflow-hidden"}
-      style={{
-        // borderRadius is an absolute design-px radius (CSS clamps a single px
-        // value to the half-short side and draws it circular). WI-109 — a
-        // per-corner `borderRadii` four-tuple overrides it as a 4-value
-        // border-radius (each corner clamped + circular by the browser).
-        borderRadius: cropMode
-          ? 0
-          : mediaBorderRadius((a as { borderRadii?: CornerRadii }).borderRadii, a.borderRadius),
-        opacity,
-        boxShadow: shadow,
-      }}
-      {...(editable && hasSrc
+      className={vm.wrapperClassName}
+      style={vm.wrapperStyle}
+      {...(vm.onEnterCrop !== undefined
         ? {
             onDoubleClick: (e: React.MouseEvent) => {
               e.stopPropagation();
-              // D8b — enter crop via the shared store; commit/cancel is external.
-              croppingState.enter(itemId, {
-                ...readCrop(item.attrs),
-                ...readCropOffset(item as unknown as AgocraftItem),
-              });
+              vm.onEnterCrop?.();
             },
           }
         : {})}
     >
-      {culled ? null : !hasSrc ? (
-        <ImagePlaceholder alt={a.alt} />
-      ) : cropMode ? (
+      {vm.status === "culled" ? null : vm.status === "placeholder" ? (
+        <ImagePlaceholder alt={vm.alt} />
+      ) : vm.status === "crop" ? (
         <CropEditor
-          src={a.src}
-          alt={a.alt}
-          objectFit={objectFit}
-          filterCss={filterCss}
-          initial={crop}
+          src={vm.src}
+          alt={vm.alt}
+          objectFit={vm.objectFit}
+          filterCss={vm.filterCss}
+          initial={vm.crop}
           aspect={aspect}
         />
       ) : (
         <ImageContent
-          src={a.src}
-          alt={a.alt}
-          objectFit={objectFit}
-          filterCss={filterCss}
-          crop={crop}
+          src={vm.src}
+          alt={vm.alt}
+          objectFit={vm.objectFit}
+          filterCss={vm.filterCss}
+          crop={vm.crop}
           aspect={aspect}
         />
       )}
     </div>
   );
+}
+
+/** Registered renderer. Thin shim: resolve the ViewModel, render the pure View.
+ *  WI-243 transitional — Phase-0 facet will register `useViewModel`/`view`. */
+export function ImageBlock({ item, onUpdate }: ImageBlockProps): JSX.Element {
+  const vm = useImageItemViewModel(item, onUpdate);
+  return <ImageView vm={vm} />;
 }

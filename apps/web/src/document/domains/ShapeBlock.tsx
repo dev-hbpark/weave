@@ -1,27 +1,18 @@
-// WI-020 Phase 3 — ShapeBlock renderer.
+// WI-020 Phase 3 — shape content View.
 //
-// Reads ShapeAttrs (DR-023 / DR-024) and renders an `<svg>` with the
-// element + props from `shapeToSvgGeometry`. Fill/stroke are converted via
-// `paintToSvgFill` so gradients land in `<defs>`. Arrow markers also live
-// in `<defs>`.
+// WI-243 / DR-160 — split into ViewModel + pure View. Paint resolution, gradient/
+// image/video `paintToSvgFill` results, shadow/opacity, and the SVG ids live in
+// `shape-item-view-model.ts`; `ShapeView` renders from `{ vm }` ONLY (never reads
+// `item.*`). The container box is a DOM measurement the View owns (ResizeObserver)
+// and feeds to `vm.geometryFor` / `vm.paintPropsFor`.
+//
+// `ArrowMarker` + `renderGeometryElement` are shared render helpers (LineBlock
+// reuses them) and stay exported from this module.
 
-import type { Item as AgocraftItem, PaintSpec, ShadowSpec, StrokeSpec } from "@agocraft/core";
-import {
-  type ArrowHeadStyle,
-  DEFAULT_SHAPE_FILL_PAINT,
-  FILL_UNIT_KIND,
-  findUnitInItem,
-  OPACITY_UNIT_KIND,
-  paintToSvgFill,
-  SHADOW_UNIT_KIND,
-  STROKE_UNIT_KIND,
-  shapeToSvgGeometry,
-  strokeToSvgAttrs,
-} from "@agocraft/core";
-import { type SVGAttributes, useEffect, useId, useRef, useState } from "react";
-import { useResolveColor } from "../style/resolver-context.js";
+import type { ArrowHeadStyle } from "@agocraft/core";
+import { type JSX, type SVGAttributes, useEffect, useRef, useState } from "react";
 import type { AgoItem, ShapeAttrs } from "../types.js";
-import { svgStrokeToReactProps } from "./svg-stroke-props.js";
+import { type ShapeItemVm, useShapeItemViewModel } from "./shape-item-view-model.js";
 
 interface ShapeBlockProps {
   readonly item: AgoItem<"shape">;
@@ -111,8 +102,7 @@ export function ArrowMarker({
   }
 }
 
-// Convert a SvgGeometry element + props into a JSX node with fill/stroke
-// applied.
+// Convert a SvgGeometry element + props into a JSX node with fill/stroke applied.
 export function renderGeometryElement(
   element: string,
   props: Record<string, string | number>,
@@ -138,16 +128,11 @@ export function renderGeometryElement(
   }
 }
 
-export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
-  void onUpdate;
-  const a = item.attrs;
-  const uid = useId();
-
-  // Track the actual rendered size of the SVG container so the geometry
-  // is computed in the frame's true aspect — without this, shapes with
-  // intrinsic aspect (star, polygon, heart, triangle, speech-bubble) get
-  // squashed when the frame is non-square because the viewBox would be
-  // fixed at 100×100 and `preserveAspectRatio="none"` would stretch.
+/** Pure content View for a shape item — renders from `{ vm }` ONLY. Owns the
+ *  DOM-measured container box (shapes with intrinsic aspect must compute geometry
+ *  in the frame's true aspect) and asks the VM's pure projectors for geometry +
+ *  paint props. */
+export function ShapeView({ vm }: { readonly vm: ShapeItemVm }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [bbox, setBbox] = useState<{ width: number; height: number }>({ width: 100, height: 100 });
   useEffect(() => {
@@ -164,84 +149,13 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const geom = shapeToSvgGeometry(a, bbox);
 
-  // WI-040 — `fill.color` and `stroke.paint.color` may be `StyleRef`
-  // objects (theme tokens) after the shape-section picker commit. Resolve
-  // via the cascade hook so the SVG fill/stroke gets a CSS string. For
-  // non-solid paints the resolver call is a no-op (returns the original
-  // type-erased value), and the substitution only touches the `.color`
-  // field when present.
-  const itemRef = item as unknown as AgocraftItem;
-  // DR-028 — fill / stroke are decoration UNITS (no legacy attr fallback). A
-  // shape with no fill unit renders the default paint (shapes are seeded with a
-  // decoration.fill unit at create-time + via the v12→v13 migration).
-  const effectiveFill: PaintSpec =
-    (findUnitInItem(itemRef, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined) ??
-    DEFAULT_SHAPE_FILL_PAINT;
-  const effectiveStroke = findUnitInItem(itemRef, STROKE_UNIT_KIND)?.attrs as
-    | StrokeSpec
-    | undefined;
-  const fillColorRaw =
-    effectiveFill.type === "solid" ? (effectiveFill as { color?: unknown }).color : undefined;
-  const resolvedFillColor = useResolveColor(fillColorRaw, itemRef, undefined);
-  const resolvedFill =
-    effectiveFill.type === "solid" && resolvedFillColor !== undefined
-      ? { ...effectiveFill, color: resolvedFillColor }
-      : effectiveFill;
-  const strokeColorRaw =
-    effectiveStroke?.paint.type === "solid"
-      ? (effectiveStroke.paint as { color?: unknown }).color
-      : undefined;
-  const resolvedStrokeColor = useResolveColor(strokeColorRaw, itemRef, undefined);
-  const resolvedStroke =
-    effectiveStroke?.paint.type === "solid" && resolvedStrokeColor !== undefined
-      ? { ...effectiveStroke, paint: { ...effectiveStroke.paint, color: resolvedStrokeColor } }
-      : effectiveStroke;
-
-  const fillId = `${uid}-fill`;
-  const fill = paintToSvgFill(resolvedFill, fillId);
-  const strokeId = `${uid}-stroke`;
-  const strokeFill = resolvedStroke ? paintToSvgFill(resolvedStroke.paint, strokeId) : null;
-  const strokeAttrs =
-    resolvedStroke && strokeFill ? strokeToSvgAttrs(resolvedStroke, strokeFill.value) : null;
-
-  // Stroke-only geometry (`line` / open `polyline` — i.e. 직선 / 자유선 / arrow
-  // shaft) has NO fill region. An open <polyline> with a fill paints the
-  // implicit closing chord, so 자유선 looked like a filled blob; a <line> with
-  // only a fill is invisible (fill is ignored on a line). Render these with
-  // fill:none and paint the outline as a stroke — the shape's fill paint
-  // becomes the line colour when no explicit stroke unit is set.
-  const isStrokeOnly =
-    geom.strokeOnly === true || geom.element === "line" || geom.element === "polyline";
-  const fillProps: SVGAttributes<SVGElement> = { fill: isStrokeOnly ? "none" : fill.value };
-  const strokeProps: SVGAttributes<SVGElement> = strokeAttrs
-    ? svgStrokeToReactProps(strokeAttrs)
-    : isStrokeOnly
-      ? { stroke: fill.value, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }
-      : {};
-
-  // DR-028 — shadow / opacity are decoration UNITS (no legacy attr fallback).
-  // Shapes use CSS `filter: drop-shadow()` (so the shadow follows the SVG
-  // silhouette — a star/triangle casts a star/triangle shadow, not a box).
-  // `drop-shadow()` takes `<x> <y> <blur> <color>` and does NOT support the
-  // `spread`/`inset` of box-shadow — so we build the string directly from the
-  // spec rather than `shadowToCss` (which emits box-shadow syntax and would be
-  // an invalid drop-shadow value, silently dropping the shadow entirely).
-  const shadowSpec = findUnitInItem(itemRef, SHADOW_UNIT_KIND)?.attrs as ShadowSpec | undefined;
-  const shadow = shadowSpec
-    ? `${shadowSpec.x}px ${shadowSpec.y}px ${Math.max(0, shadowSpec.blur)}px ${shadowSpec.color}`
-    : undefined;
-  const opacity =
-    (findUnitInItem(itemRef, OPACITY_UNIT_KIND)?.attrs as { value: number } | undefined)?.value ??
-    1;
+  const geom = vm.geometryFor(bbox);
+  const { fillProps, strokeProps } = vm.paintPropsFor(geom);
+  const { fill, strokeFill } = vm;
 
   return (
-    <div
-      ref={containerRef}
-      className="relative h-full w-full"
-      style={{ opacity, filter: shadow ? `drop-shadow(${shadow})` : undefined }}
-    >
+    <div ref={containerRef} className="relative h-full w-full" style={vm.style}>
       <svg
         viewBox={`0 0 ${bbox.width} ${bbox.height}`}
         preserveAspectRatio="none"
@@ -272,9 +186,7 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
               ))}
             </radialGradient>
           ) : null}
-          {/* WI-020 — Figma-style image fill via SVG <pattern>+<image>. The
-              pattern fills its bounding box; preserveAspectRatio on the
-              inner <image> emulates CSS object-fit. */}
+          {/* WI-020 — Figma-style image fill via SVG <pattern>+<image>. */}
           {fill.defs && fill.defs.type === "image-pattern" ? (
             <pattern id={fill.defs.id} patternUnits="objectBoundingBox" width="1" height="1">
               <image
@@ -296,10 +208,9 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
               />
             </pattern>
           ) : null}
-          {/* Video-fill clip path — the shape's geometry becomes the clip
-              for the foreignObject-hosted <video> rendered below. */}
+          {/* Video-fill clip path — the shape's geometry clips the video below. */}
           {fill.videoFill ? (
-            <clipPath id={`${uid}-video-clip`} clipPathUnits="userSpaceOnUse">
+            <clipPath id={vm.videoClipId} clipPathUnits="userSpaceOnUse">
               {renderGeometryElement(geom.element, geom.props, { fill: "black" }, {})}
             </clipPath>
           ) : null}
@@ -315,19 +226,16 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
             <ArrowMarker key={m.id} id={m.id} style={m.style} size={m.size} orient={m.orient} />
           ))}
         </defs>
-        {/* Shape geometry — filled with the resolved paint (solid /
-            gradient / image url-pattern / "transparent" for video). */}
+        {/* Shape geometry — filled with the resolved paint. */}
         {renderGeometryElement(geom.element, geom.props, fillProps, strokeProps)}
-        {/* Video fill — render a foreignObject containing the <video>
-            element, clipped by the shape's geometry. The <video> auto-
-            plays muted by default (Figma default + browser policy). */}
+        {/* Video fill — foreignObject <video> clipped by the shape geometry. */}
         {fill.videoFill ? (
           <foreignObject
             x={0}
             y={0}
             width={bbox.width}
             height={bbox.height}
-            clipPath={`url(#${uid}-video-clip)`}
+            clipPath={`url(#${vm.videoClipId})`}
             style={{ opacity: fill.videoFill.opacity }}
           >
             <video
@@ -354,4 +262,11 @@ export function ShapeBlock({ item, onUpdate }: ShapeBlockProps): JSX.Element {
       </svg>
     </div>
   );
+}
+
+/** Registered renderer. Thin shim: resolve the ViewModel, render the pure View.
+ *  WI-243 transitional — Phase-0 facet will register `useViewModel`/`view`. */
+export function ShapeBlock({ item }: ShapeBlockProps): JSX.Element {
+  const vm = useShapeItemViewModel(item);
+  return <ShapeView vm={vm} />;
 }

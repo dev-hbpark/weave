@@ -1,105 +1,71 @@
-// WI-020 Phase 3 — VideoBlock renderer.
+// WI-020 Phase 3 — video content View. Renders a `<video>` filling the frame;
+// trim (startMs/endMs) is enforced via a timeupdate handler that loops or pauses
+// past endMs. Autoplay is honoured only when muted (browser policy).
 //
-// Reads VideoAttrs (DR-023) and renders a `<video>` filling the frame.
-// Trim (startMs/endMs) is enforced via timeupdate handler that loops or
-// pauses past endMs. Autoplay is honoured only when muted is true
-// (browsers reject autoplay+sound combinations).
+// WI-243 / DR-160 — split into ViewModel + pure View. Style/objectFit/flags + the
+// `control` bundle live in `video-item-view-model.ts`; `VideoView` renders from
+// `{ vm }` ONLY (never reads `item.*`). The <video> element + its imperative
+// effects (trim seek/loop, volume, playbackRate) are DOM concerns the View owns,
+// driven by the VM's projected `control` values.
 
-import type { Item as AgocraftItem, ShadowSpec } from "@agocraft/core";
-import { findUnitInItem, OPACITY_UNIT_KIND, SHADOW_UNIT_KIND, shadowToCss } from "@agocraft/core";
-import { type CSSProperties, useEffect, useRef } from "react";
-import { type CornerRadii, mediaBorderRadius } from "../corner-radius.js";
+import type { CSSProperties } from "react";
+import { type JSX, useEffect, useRef } from "react";
 import type { AgoItem, VideoAttrs } from "../types.js";
 import { MediaPlaceholder } from "./MediaPlaceholder.js";
+import { useVideoItemViewModel, type VideoItemVm } from "./video-item-view-model.js";
 
 interface VideoBlockProps {
   readonly item: AgoItem<"video">;
   readonly onUpdate?: (patch: Partial<VideoAttrs>) => void;
 }
 
-export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
-  void onUpdate;
-  const a = item.attrs;
+/** Pure content View for a video item — renders from `{ vm }` ONLY. Owns the
+ *  <video> DOM element + its imperative trim/volume effects, driven by the VM's
+ *  `control` values. */
+export function VideoView({ vm }: { readonly vm: VideoItemVm }): JSX.Element {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const { trimStartMs, trimEndMs, loop, volume, playbackRate } = vm.control;
 
-  // Sync trim: when current time exceeds endMs, loop back or pause.
+  // Sync trim: when current time exceeds endMs, loop back or pause. No-ops when
+  // no <video> is mounted (poster / placeholder status).
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return undefined;
     function handleTimeUpdate(): void {
       if (!el) return;
-      const startS = (a.trim?.startMs ?? 0) / 1000;
-      const endS = a.trim?.endMs != null ? a.trim.endMs / 1000 : Infinity;
+      const startS = (trimStartMs ?? 0) / 1000;
+      const endS = trimEndMs != null ? trimEndMs / 1000 : Infinity;
       if (el.currentTime < startS) el.currentTime = startS;
       if (el.currentTime >= endS) {
-        if (a.loop) el.currentTime = startS;
+        if (loop) el.currentTime = startS;
         else el.pause();
       }
     }
     el.addEventListener("timeupdate", handleTimeUpdate);
     // Seek to start on first mount.
-    if (a.trim?.startMs) el.currentTime = a.trim.startMs / 1000;
+    if (trimStartMs) el.currentTime = trimStartMs / 1000;
     return () => el.removeEventListener("timeupdate", handleTimeUpdate);
-  }, [a.trim?.startMs, a.trim?.endMs, a.loop]);
+  }, [trimStartMs, trimEndMs, loop]);
 
   // Volume / playback rate.
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
-    el.volume = a.volume;
-    el.playbackRate = a.playbackRate;
-  }, [a.volume, a.playbackRate]);
-
-  const objectFit: CSSProperties["objectFit"] =
-    a.fit === "fill"
-      ? "fill"
-      : a.fit === "contain"
-        ? "contain"
-        : a.fit === "none"
-          ? "none"
-          : "cover";
-
-  // DR-028 — shadow / opacity are decoration UNITS (no legacy attr fallback).
-  const shadowSpec = findUnitInItem(item as unknown as AgocraftItem, SHADOW_UNIT_KIND)?.attrs as
-    | ShadowSpec
-    | undefined;
-  const shadow = shadowSpec ? shadowToCss(shadowSpec) : undefined;
-  const opacity =
-    (
-      findUnitInItem(item as unknown as AgocraftItem, OPACITY_UNIT_KIND)?.attrs as
-        | { value: number }
-        | undefined
-    )?.value ?? 1;
-
-  // Source-less video (wireframe / layout draft): show the COVER IMAGE if a
-  // poster is set, otherwise an icon placeholder — never an empty/black <video>
-  // (mirrors the image source-less placeholder, WI-076).
-  const hasSrc = a.src.trim().length > 0;
-  const poster = a.poster?.trim() ?? "";
+    el.volume = volume;
+    el.playbackRate = playbackRate;
+  }, [volume, playbackRate]);
 
   return (
-    <div
-      className="relative h-full w-full overflow-hidden"
-      style={{
-        // borderRadius is an absolute design-px radius (CSS clamps + circular).
-        // WI-109 — a per-corner `borderRadii` four-tuple overrides it.
-        borderRadius: mediaBorderRadius(
-          (a as { borderRadii?: CornerRadii }).borderRadii,
-          a.borderRadius,
-        ),
-        opacity,
-        boxShadow: shadow,
-      }}
-    >
-      {hasSrc ? (
+    <div className="relative h-full w-full overflow-hidden" style={vm.wrapperStyle}>
+      {vm.status === "video" ? (
         <video
           ref={videoRef}
-          src={a.src}
-          poster={a.poster ?? undefined}
-          controls={a.controls}
-          autoPlay={a.autoplay && a.muted}
-          loop={a.loop}
-          muted={a.muted}
+          src={vm.src}
+          poster={vm.poster}
+          controls={vm.controls}
+          autoPlay={vm.autoPlay}
+          loop={vm.loop}
+          muted={vm.muted}
           playsInline
           draggable={false}
           style={{
@@ -107,22 +73,22 @@ export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
             inset: 0,
             width: "100%",
             height: "100%",
-            objectFit,
+            objectFit: vm.objectFit,
             userSelect: "none",
           }}
         />
-      ) : poster ? (
-        <VideoPosterCover poster={poster} alt={a.alt ?? ""} objectFit={objectFit} />
+      ) : vm.status === "poster" ? (
+        <VideoPosterCover poster={vm.poster} alt={vm.alt} objectFit={vm.objectFit} />
       ) : (
-        <VideoPlaceholder alt={a.alt ?? ""} />
+        <VideoPlaceholder alt={vm.alt} />
       )}
     </div>
   );
 }
 
 /** Source-less video with a poster: render the poster as a static COVER IMAGE,
- *  overlaid with a play badge so it still reads as "a video goes here". The
- *  outer wrapper already applies borderRadius / shadow / opacity. */
+ *  overlaid with a play badge so it still reads as "a video goes here". The outer
+ *  wrapper already applies borderRadius / shadow / opacity. */
 function VideoPosterCover({
   poster,
   alt,
@@ -148,10 +114,7 @@ function VideoPosterCover({
 }
 
 /** Placeholder shown when a video item has no `src` and no `poster` — a neutral
- *  framed surface with a play/film glyph instead of an empty black <video>. When
- *  `alt` is set it is drawn as a centered caption so the slot can describe what
- *  KIND of video belongs here. Glyph + caption scale to the frame size (mirrors
- *  ImagePlaceholder via the shared MediaPlaceholder, WI-076). */
+ *  framed surface with a play/film glyph instead of an empty black <video>. */
 function VideoPlaceholder({ alt }: { readonly alt: string }): JSX.Element {
   return (
     <MediaPlaceholder
@@ -191,4 +154,11 @@ function PlayBadge(): JSX.Element {
       </div>
     </div>
   );
+}
+
+/** Registered renderer. Thin shim: resolve the ViewModel, render the pure View.
+ *  WI-243 transitional — Phase-0 facet will register `useViewModel`/`view`. */
+export function VideoBlock({ item }: VideoBlockProps): JSX.Element {
+  const vm = useVideoItemViewModel(item);
+  return <VideoView vm={vm} />;
 }

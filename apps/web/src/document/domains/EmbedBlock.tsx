@@ -1,23 +1,17 @@
-// WI-139 — EmbedBlock renderer. An `embed` item stores only `attrs.url`; the
-// iframe `src` is DERIVED here via the provider registry (resolveEmbed), so the
-// renderer never trusts a stored src and only ever points the iframe at an
-// allow-listed provider (YouTube → youtube-nocookie). Unrecognized / empty URL →
-// MediaPlaceholder.
+// WI-139 — embed content View. An `embed` item stores only `attrs.url`; the
+// iframe `src`, the interactive gate, the poster fallback, and the body status
+// are all DERIVED in `embed-item-view-model.ts`. WI-243 / DR-160 — `EmbedView`
+// renders from `{ vm }` ONLY (never reads `item.*`), switching on the VM's
+// `placeholder | iframe | poster | fallback` status.
 //
-// Interactivity (WI-139 — "play only after selecting"): the iframe mounts ONLY
-// when interactive — in PRESENT / read-only (`onUpdate` undefined) always, and
-// in the EDITOR only while the embed is SELECTED. Otherwise we show a derived
-// THUMBNAIL poster (img + play badge), which (a) is lighter than loading the
-// iframe for every unselected embed, (b) lets the first click reach the frame to
-// select it, and (c) is the export / static-capture fallback (an <img> is
-// captured; an iframe is not). First click selects → iframe mounts → next click
-// plays.
+// Interactivity (WI-139): the iframe mounts only when interactive (present/read-
+// only always; editor only while selected); otherwise a derived thumbnail poster
+// (img + play badge) that is pointer-inert (first click selects) and is captured
+// by export/static rendering (an <img>, not an iframe).
 
-import { type JSX, useState } from "react";
-import { useEmbedMeta } from "../embed/oembed.js";
-import { appendQuery, resolveEmbed } from "../embed/providers.js";
-import { useSelection } from "../interactions/selection-context.js";
+import type { JSX } from "react";
 import type { AgoItem, EmbedAttrs } from "../types.js";
+import { type EmbedItemVm, useEmbedItemViewModel } from "./embed-item-view-model.js";
 import { MediaPlaceholder } from "./MediaPlaceholder.js";
 
 interface EmbedBlockProps {
@@ -33,95 +27,60 @@ const PLAY_GLYPH = (
   </>
 );
 
-export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
-  const a = item.attrs;
-  const resolved = resolveEmbed(a.url ?? "");
-  const opacity = a.opacity ?? 1;
-  // Safe outside an editor session too (no-op vm fallback → empty selection).
-  const { selectedIds } = useSelection();
-  // Present/read-only → always playable. Editor → playable ONLY while selected,
-  // so the first click selects (iframe inert) and the next click plays.
-  const interactive = onUpdate === undefined || selectedIds.has(String(item.id));
-  // Live oEmbed fetch is a FALLBACK only — for a provider with no derived poster
-  // (Vimeo / Loom) whose poster hasn't been persisted yet by the meta-sync
-  // controller (e.g. present-mode, never edited). YouTube derives both; an
-  // edited deck already has `a.posterUrl` / `a.title` persisted → no fetch.
-  const needsLiveMeta =
-    resolved !== null && resolved.thumbnailUrl === null && a.posterUrl === undefined;
-  const meta = useEmbedMeta(a.url ?? "", needsLiveMeta);
-  const title = a.title ?? meta?.title;
-  // Holds the thumbnail URL that failed to load (404 / offline) → fall back to
-  // the placeholder. Keyed by URL so a new video re-attempts its own poster.
-  const [brokenPoster, setBrokenPoster] = useState<string | null>(null);
-  // Poster: derived (YouTube) ?? persisted (Vimeo/Loom) ?? live oEmbed fallback.
-  const candidatePoster =
-    resolved !== null ? (resolved.thumbnailUrl ?? a.posterUrl ?? meta?.thumbnailUrl ?? null) : null;
-  const posterUrl =
-    candidatePoster !== null && candidatePoster !== brokenPoster ? candidatePoster : null;
-  // Auto-play (muted) only in PRESENT mode — never while editing. Provider owns
-  // its param names (mute vs muted).
-  const iframeSrc =
-    resolved !== null && onUpdate === undefined && a.autoplay === true
-      ? appendQuery(resolved.embedUrl, resolved.provider.autoplayParams())
-      : (resolved?.embedUrl ?? "");
-
-  // Three states: unrecognized URL → placeholder; recognized + interactive →
-  // live iframe (plays); recognized + inert → thumbnail poster.
-  const body =
-    resolved === null ? (
-      <MediaPlaceholder
-        testId="embed-placeholder"
-        alt={
-          (a.url ?? "").trim() !== "" ? "임베드할 수 없는 URL이에요" : "YouTube URL을 붙여넣으세요"
-        }
-        glyph={PLAY_GLYPH}
-      />
-    ) : interactive ? (
-      <iframe
-        title={title ?? "Embedded video"}
-        src={iframeSrc}
-        data-testid="embed-iframe"
-        className="absolute inset-0 h-full w-full"
-        style={{ border: 0 }}
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        allowFullScreen={a.allowFullscreen ?? true}
-        referrerPolicy="strict-origin-when-cross-origin"
-      />
-    ) : posterUrl !== null ? (
-      // Decorative poster — pointer-inert so the first click selects the frame.
-      // An <img> (not an iframe) is captured by export / static rendering.
-      <div
-        className="absolute inset-0"
-        style={{ pointerEvents: "none" }}
-        data-testid="embed-poster"
-      >
-        <img
-          src={posterUrl}
-          alt={title ?? "동영상 미리보기"}
-          draggable={false}
-          onError={() => setBrokenPoster(posterUrl)}
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-        <span className="absolute inset-0 flex items-center justify-center" aria-hidden>
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm">
-            <svg viewBox="0 0 24 24" width={22} height={22} fill="#fff" aria-hidden role="img">
-              <title>재생</title>
-              <path d="M9 7.5l8 4.5-8 4.5z" />
-            </svg>
-          </span>
-        </span>
-      </div>
-    ) : (
-      <MediaPlaceholder testId="embed-placeholder" alt={title ?? "동영상"} glyph={PLAY_GLYPH} />
-    );
-
+/** Pure content View for an embed item — renders from `{ vm }` ONLY. */
+export function EmbedView({ vm }: { readonly vm: EmbedItemVm }): JSX.Element {
   return (
     <div
       className="relative h-full w-full overflow-hidden"
-      style={{ opacity }}
+      style={{ opacity: vm.opacity }}
       data-testid="block-embed-inner"
     >
-      {body}
+      {vm.status === "placeholder" ? (
+        <MediaPlaceholder testId="embed-placeholder" alt={vm.alt} glyph={PLAY_GLYPH} />
+      ) : vm.status === "iframe" ? (
+        <iframe
+          title={vm.title}
+          src={vm.src}
+          data-testid="embed-iframe"
+          className="absolute inset-0 h-full w-full"
+          style={{ border: 0 }}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen={vm.allowFullscreen}
+          referrerPolicy="strict-origin-when-cross-origin"
+        />
+      ) : vm.status === "poster" ? (
+        // Decorative poster — pointer-inert so the first click selects the frame.
+        <div
+          className="absolute inset-0"
+          style={{ pointerEvents: "none" }}
+          data-testid="embed-poster"
+        >
+          <img
+            src={vm.posterUrl}
+            alt={vm.alt}
+            draggable={false}
+            onError={vm.onPosterError}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <span className="absolute inset-0 flex items-center justify-center" aria-hidden>
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm">
+              <svg viewBox="0 0 24 24" width={22} height={22} fill="#fff" aria-hidden role="img">
+                <title>재생</title>
+                <path d="M9 7.5l8 4.5-8 4.5z" />
+              </svg>
+            </span>
+          </span>
+        </div>
+      ) : (
+        <MediaPlaceholder testId="embed-placeholder" alt={vm.alt} glyph={PLAY_GLYPH} />
+      )}
     </div>
   );
+}
+
+/** Registered renderer. Thin shim: resolve the ViewModel, render the pure View.
+ *  WI-243 transitional — Phase-0 facet will register `useViewModel`/`view`. */
+export function EmbedBlock({ item, onUpdate }: EmbedBlockProps): JSX.Element {
+  const vm = useEmbedItemViewModel(item, onUpdate);
+  return <EmbedView vm={vm} />;
 }

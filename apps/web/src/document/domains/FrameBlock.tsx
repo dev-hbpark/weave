@@ -1,47 +1,22 @@
-// WI-032 — Frame block: the canvas container of the new paradigm.
+// WI-032 — frame content View: the canvas container of the frame-only paradigm.
 //
-// Renders no visible content of its own — just the frame's PAINT (background
-// fill + border stroke) and an optional border-radius. All visible elements
-// inside the frame come from primitive child Items (`text`, `shape`, `image`,
-// `video`, nested `frame`). FrameSurface (agocraft) recurses into
-// `item.children` and lays them out at their own `frame` rectangles.
+// Renders no visible content of its own — just the frame's PAINT (background fill
+// + border stroke + corner radius). Child Items are recursed + laid out by
+// FrameSurface (agocraft). DR-028 — fill/stroke are decoration UNITS, painted via
+// the SAME SVG machinery shapes use (gradient/image/video fills render identically).
 //
-// DR-028 parity (WI-095 follow-up) — a frame's fill / stroke are decoration
-// UNITS (`decoration.fill` = PaintSpec, `decoration.stroke` = StrokeSpec),
-// exactly like a shape. This is what the agent-server is told to use
-// (weave-capabilities.ts: "set the background with a decoration.fill unit")
-// and what the unit schemas advertise: fill/stroke accept solid, gradient,
-// image AND video paint. Painting via the SAME `paintToSvgFill` /
-// `strokeToSvgAttrs` machinery shapes use means every paint kind — gradient
-// fills, gradient strokes, image fills, video fills — renders identically on a
-// frame. (A div + CSS can't do gradient borders or clipped video, hence SVG.)
-//
-// The legacy `attrs.background` field is GONE — `migrate-frame-only.ts` lifts
-// it to a `decoration.fill` unit on load, and the toolbar (FillControl /
-// StrokeControl) writes units, so this renderer reads units only.
-//
-// SOLID / GRASP:
-//   • SRP — only paints the container chrome (fill + stroke + radius).
-//   • Information Expert — knows only its own fill / stroke / corner radius.
-//   • OS Rule 6 — no kind/type switch on item kind. Paint-type branching is
-//     delegated to agocraft's `paintToSvgFill` (one place owns the PaintSpec
-//     union); this component only inlines the `<defs>` it returns.
+// WI-243 / DR-160 — split into ViewModel + pure View. Paint resolution + the rect
+// prop bundles + `hasUnitPaint` live in `frame-item-view-model.ts`; `FrameView`
+// renders from `{ vm }` ONLY (never reads `item.*`). The screen box + unscaled
+// design box are DOM measurements the View owns and feeds to `vm.geometryFor`.
 
-import {
-  type Item as AgocraftItem,
-  FILL_UNIT_KIND,
-  findUnitInItem,
-  type PaintSpec,
-  paintToSvgFill,
-  STROKE_UNIT_KIND,
-  type StrokeSpec,
-  strokeToSvgAttrs,
-} from "@agocraft/core";
-import { type JSX, type SVGAttributes, useEffect, useId, useRef, useState } from "react";
-import { type CornerRadii, cornerRadiusPxToFraction, perCornerRectPath } from "../corner-radius.js";
-import { useResolveColor } from "../style/resolver-context.js";
+import { type JSX, type SVGAttributes, useEffect, useRef, useState } from "react";
 import type { AgoItem } from "../types.js";
-import { svgStrokeToReactProps } from "./svg-stroke-props.js";
+import {
+  type FrameFill,
+  type FrameItemVm,
+  useFrameItemViewModel,
+} from "./frame-item-view-model.js";
 
 interface FrameBlockProps {
   readonly item: AgoItem<"frame">;
@@ -53,7 +28,7 @@ function PaintDefs({
   defs,
   bbox,
 }: {
-  readonly defs: ReturnType<typeof paintToSvgFill>["defs"];
+  readonly defs: FrameFill["defs"];
   readonly bbox: { width: number; height: number };
 }): JSX.Element | null {
   if (defs === undefined) return null;
@@ -80,8 +55,8 @@ function PaintDefs({
       </radialGradient>
     );
   }
-  // image-pattern — fills the rect bounding box; preserveAspectRatio on the
-  // inner <image> emulates CSS object-fit (same mapping as ShapeBlock).
+  // image-pattern — fills the rect bounding box; preserveAspectRatio on the inner
+  // <image> emulates CSS object-fit (same mapping as ShapeBlock).
   return (
     <pattern id={defs.id} patternUnits="objectBoundingBox" width="1" height="1">
       <image
@@ -99,16 +74,10 @@ function PaintDefs({
   );
 }
 
-export function FrameBlock({ item }: FrameBlockProps) {
-  const itemRef = item as unknown as AgocraftItem;
-  const uid = useId();
-  const { cornerRadius } = item.attrs;
-
-  // Measure the true rendered size so the viewBox is 1 user-unit = 1 screen px
-  // (preserveAspectRatio="none" then never distorts gradients or corner radii).
-  // `designBox` is the UNSCALED layout size (offsetWidth/Height ignore the
-  // Stage's CSS `transform: scale`) — the denominator for the corner-radius
-  // fraction, since `cornerRadius` is stored in design-px.
+/** Pure content View for a frame item — renders from `{ vm }` ONLY. Owns the
+ *  DOM-measured screen box + unscaled design box (the corner-radius fraction
+ *  denominator) and asks `vm.geometryFor` for the rounded-rect geometry. */
+export function FrameView({ vm }: { readonly vm: FrameItemVm }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [bbox, setBbox] = useState<{ width: number; height: number }>({ width: 100, height: 100 });
   const [designBox, setDesignBox] = useState<{ width: number; height: number }>({
@@ -135,90 +104,25 @@ export function FrameBlock({ item }: FrameBlockProps) {
     return () => ro.disconnect();
   }, []);
 
-  // DR-028 — fill / stroke are decoration UNITS.
-  const fillUnit = findUnitInItem(itemRef, FILL_UNIT_KIND)?.attrs as PaintSpec | undefined;
-  const strokeUnit = findUnitInItem(itemRef, STROKE_UNIT_KIND)?.attrs as StrokeSpec | undefined;
-
-  // WI-040 — resolve StyleRef (theme token) → CSS string for the solid-color
-  // fields. Hooks run unconditionally (fixed order) regardless of paint type.
-  const fillSolidRaw =
-    fillUnit?.type === "solid" ? (fillUnit as { color?: unknown }).color : undefined;
-  const resolvedFillSolid = useResolveColor(fillSolidRaw, itemRef, undefined);
-  const strokeSolidRaw =
-    strokeUnit?.paint.type === "solid"
-      ? (strokeUnit.paint as { color?: unknown }).color
-      : undefined;
-  const resolvedStrokeSolid = useResolveColor(strokeSolidRaw, itemRef, undefined);
-
-  // Fill / stroke paints (solid / gradient / image / video) via SVG.
-  const effectiveFill: PaintSpec | undefined =
-    fillUnit !== undefined && fillUnit.type === "solid" && resolvedFillSolid !== undefined
-      ? { ...fillUnit, color: resolvedFillSolid }
-      : fillUnit;
-  const resolvedStroke: StrokeSpec | undefined =
-    strokeUnit !== undefined &&
-    strokeUnit.paint.type === "solid" &&
-    resolvedStrokeSolid !== undefined
-      ? { ...strokeUnit, paint: { ...strokeUnit.paint, color: resolvedStrokeSolid } }
-      : strokeUnit;
-
-  const fill = effectiveFill ? paintToSvgFill(effectiveFill, `${uid}-fill`) : null;
-  const strokeFill = resolvedStroke ? paintToSvgFill(resolvedStroke.paint, `${uid}-stroke`) : null;
-  const strokeAttrs =
-    resolvedStroke && strokeFill ? strokeToSvgAttrs(resolvedStroke, strokeFill.value) : null;
-
-  // Stroke is centered on the rect edge — inset the rect by half its width so
-  // the whole border sits INSIDE the frame box (Figma "inside" border feel).
-  const sw = resolvedStroke?.width ?? 0;
-  const inset = sw / 2;
-  const rectW = Math.max(0, bbox.width - sw);
-  const rectH = Math.max(0, bbox.height - sw);
-  // cornerRadius is an absolute design-px radius, drawn CIRCULAR (rx === ry) and
-  // clamped to the half-short side. SVG clamps rx/ry independently, so we apply
-  // the clamp ourselves: take the radius as a fraction of the design box's
-  // half-short side, then scale that fraction onto the measured screen-px box —
-  // identical curvature on both axes at every zoom.
-  const radius =
-    cornerRadius !== undefined && cornerRadius > 0
-      ? cornerRadiusPxToFraction(cornerRadius, designBox.width, designBox.height) *
-        (Math.min(rectW, rectH) / 2)
-      : undefined;
-  const rx = radius;
-  const ry = radius;
-
-  // WI-109 — per-corner override: when `cornerRadii` is present the box is drawn
-  // as an SVG path (SVG `<rect>` only carries one rx/ry). Each corner's design-px
-  // radius is projected to screen-px via the uniform zoom and clamped to the
-  // half-short side, so the four arcs never overlap.
-  const cornerRadii = (item.attrs as { cornerRadii?: CornerRadii }).cornerRadii;
-  const designShort = Math.min(designBox.width, designBox.height);
-  const zoom = designShort > 0 ? Math.min(rectW, rectH) / designShort : 1;
-  const capScreen = Math.min(rectW, rectH) / 2;
-  const screenRadii: CornerRadii | null = cornerRadii
-    ? {
-        tl: Math.min(Math.max(0, cornerRadii.tl) * zoom, capScreen),
-        tr: Math.min(Math.max(0, cornerRadii.tr) * zoom, capScreen),
-        br: Math.min(Math.max(0, cornerRadii.br) * zoom, capScreen),
-        bl: Math.min(Math.max(0, cornerRadii.bl) * zoom, capScreen),
-      }
-    : null;
-  const perCornerPathD = screenRadii ? perCornerRectPath(rectW, rectH, screenRadii) : null;
-
-  const rectFillProps: SVGAttributes<SVGRectElement> = { fill: fill ? fill.value : "transparent" };
-  const rectStrokeProps: SVGAttributes<SVGRectElement> = svgStrokeToReactProps(strokeAttrs);
+  const g = vm.geometryFor(bbox, designBox);
+  const { fill, strokeFill } = vm;
 
   /** The rounded frame box — a per-corner `<path>` when `cornerRadii` is set,
    *  else the uniform `<rect rx/ry>`. Same fill/stroke props feed either. */
   const RoundedBox = (props: SVGAttributes<SVGElement>): JSX.Element =>
-    perCornerPathD !== null ? (
-      <path transform={`translate(${inset} ${inset})`} d={perCornerPathD} {...props} />
+    g.perCornerPathD !== null ? (
+      <path transform={`translate(${g.inset} ${g.inset})`} d={g.perCornerPathD} {...props} />
     ) : (
-      <rect x={inset} y={inset} width={rectW} height={rectH} rx={rx} ry={ry} {...props} />
+      <rect
+        x={g.inset}
+        y={g.inset}
+        width={g.rectW}
+        height={g.rectH}
+        rx={g.rx}
+        ry={g.ry}
+        {...props}
+      />
     );
-
-  // Only mount the SVG overlay when a paint unit exists — a frame with no
-  // fill / stroke stays a plain transparent div (keeps the DOM minimal).
-  const hasUnitPaint = fill !== null || strokeAttrs !== null;
 
   return (
     <div
@@ -227,7 +131,7 @@ export function FrameBlock({ item }: FrameBlockProps) {
       data-frame-kind="frame"
       className="absolute inset-0 pointer-events-none"
     >
-      {hasUnitPaint ? (
+      {vm.hasUnitPaint ? (
         <svg
           viewBox={`0 0 ${bbox.width} ${bbox.height}`}
           preserveAspectRatio="none"
@@ -239,26 +143,23 @@ export function FrameBlock({ item }: FrameBlockProps) {
           <defs>
             {fill?.defs ? <PaintDefs defs={fill.defs} bbox={bbox} /> : null}
             {strokeFill?.defs ? <PaintDefs defs={strokeFill.defs} bbox={bbox} /> : null}
-            {/* Video-fill clip — the frame rect (rounded) clips the <video>
-                rendered below, so a video background respects cornerRadius. */}
+            {/* Video-fill clip — the frame rect (rounded) clips the <video> below
+                so a video background respects cornerRadius. */}
             {fill?.videoFill ? (
-              <clipPath id={`${uid}-video-clip`} clipPathUnits="userSpaceOnUse">
+              <clipPath id={vm.videoClipId} clipPathUnits="userSpaceOnUse">
                 <RoundedBox fill="black" />
               </clipPath>
             ) : null}
           </defs>
-          <RoundedBox {...rectFillProps} {...rectStrokeProps} />
-          {/* Video fill — a foreignObject-hosted <video> clipped to the frame
-              rect. Autoplays muted by default (Figma default + browser policy).
-              Same mechanism shapes use, so the agent's image/video fill paints
-              land identically on a frame. */}
+          <RoundedBox {...vm.rectFillProps} {...vm.rectStrokeProps} />
+          {/* Video fill — foreignObject <video> clipped to the frame rect. */}
           {fill?.videoFill ? (
             <foreignObject
               x={0}
               y={0}
               width={bbox.width}
               height={bbox.height}
-              clipPath={`url(#${uid}-video-clip)`}
+              clipPath={`url(#${vm.videoClipId})`}
               style={{ opacity: fill.videoFill.opacity }}
             >
               <video
@@ -286,4 +187,11 @@ export function FrameBlock({ item }: FrameBlockProps) {
       ) : null}
     </div>
   );
+}
+
+/** Registered renderer. Thin shim: resolve the ViewModel, render the pure View.
+ *  WI-243 transitional — Phase-0 facet will register `useViewModel`/`view`. */
+export function FrameBlock({ item }: FrameBlockProps): JSX.Element {
+  const vm = useFrameItemViewModel(item);
+  return <FrameView vm={vm} />;
 }
