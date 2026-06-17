@@ -27,18 +27,11 @@ import { croppingState, useCroppingItemId } from "../interactions/cropping-state
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import { readCropOffset } from "../transform-crop-offset.js";
 import type { AgoItem, ImageAttrs } from "../types.js";
+import type { CropRect } from "./media/crop-editor.js";
 
-export interface CropRect {
-  readonly x: number;
-  readonly y: number;
-  readonly w: number;
-  readonly h: number;
-  /** radians, content straighten (DR-029 D6) */
-  readonly rotation: number;
-  /** WI-074 D12 — image-offset (frame fractions) within the rotation magnification. */
-  readonly ox: number;
-  readonly oy: number;
-}
+// DR-161 / WI-244 — CropRect now lives with the shared media-crop UI; re-export
+// so existing importers (and ImageItemVm below) keep resolving it here.
+export type { CropRect } from "./media/crop-editor.js";
 
 export type ImageItemVm = {
   readonly wrapperClassName: string;
