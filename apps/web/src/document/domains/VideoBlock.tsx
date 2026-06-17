@@ -2,16 +2,17 @@
 // trim (startMs/endMs) is enforced via a timeupdate handler that loops or pauses
 // past endMs. Autoplay is honoured only when muted (browser policy).
 //
-// WI-243 / DR-160 — split into ViewModel + pure View. Style/objectFit/flags + the
-// `control` bundle live in `video-item-view-model.ts`; `VideoView` renders from
-// `{ vm }` ONLY (never reads `item.*`). The <video> element + its imperative
-// effects (trim seek/loop, volume, playbackRate) are DOM concerns the View owns,
-// driven by the VM's projected `control` values.
+// WI-243/DR-160 — ViewModel + pure View ({ vm } only). WI-244/DR-161 — crop is a
+// kind-agnostic unit, so a video crops like an image: the committed crop renders
+// through the shared `CroppedMedia` and crop-mode through the shared `CropEditor`,
+// both fed a `<video>` via the media render-prop. The <video> element + its
+// imperative effects (trim/volume) are DOM concerns the View owns; the frame-box
+// aspect (rotation cover-zoom) is measured here.
 
-import type { CSSProperties } from "react";
-import { type JSX, useEffect, useRef } from "react";
+import { type CSSProperties, type JSX, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgoItem, VideoAttrs } from "../types.js";
 import { MediaPlaceholder } from "./MediaPlaceholder.js";
+import { CropEditor, CroppedMedia } from "./media/crop-editor.js";
 import { useVideoItemViewModel, type VideoItemVm } from "./video-item-view-model.js";
 
 interface VideoBlockProps {
@@ -20,14 +21,29 @@ interface VideoBlockProps {
 }
 
 /** Pure content View for a video item — renders from `{ vm }` ONLY. Owns the
- *  <video> DOM element + its imperative trim/volume effects, driven by the VM's
- *  `control` values. */
+ *  <video> DOM element + its imperative trim/volume effects (driven by the VM's
+ *  `control` values) and the DOM-measured frame-box aspect for cropped render. */
 export function VideoView({ vm }: { readonly vm: VideoItemVm }): JSX.Element {
+  const boxRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [aspect, setAspect] = useState(1);
   const { trimStartMs, trimEndMs, loop, volume, playbackRate } = vm.control;
 
-  // Sync trim: when current time exceeds endMs, loop back or pause. No-ops when
-  // no <video> is mounted (poster / placeholder status).
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (el === null) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      if (r.height > 0) setAspect(r.width / r.height);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Sync trim: when current time exceeds endMs, loop back or pause. No-ops when no
+  // ref'd <video> is mounted (poster / placeholder / crop status).
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return undefined;
@@ -42,7 +58,6 @@ export function VideoView({ vm }: { readonly vm: VideoItemVm }): JSX.Element {
       }
     }
     el.addEventListener("timeupdate", handleTimeUpdate);
-    // Seek to start on first mount.
     if (trimStartMs) el.currentTime = trimStartMs / 1000;
     return () => el.removeEventListener("timeupdate", handleTimeUpdate);
   }, [trimStartMs, trimEndMs, loop]);
@@ -56,39 +71,61 @@ export function VideoView({ vm }: { readonly vm: VideoItemVm }): JSX.Element {
   }, [volume, playbackRate]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden" style={vm.wrapperStyle}>
-      {vm.status === "video" ? (
-        <video
-          ref={videoRef}
-          src={vm.src}
-          poster={vm.poster}
-          controls={vm.controls}
-          autoPlay={vm.autoPlay}
-          loop={vm.loop}
-          muted={vm.muted}
-          playsInline
-          draggable={false}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: vm.objectFit,
-            userSelect: "none",
-          }}
-        />
+    <div
+      ref={boxRef}
+      className={vm.wrapperClassName}
+      style={vm.wrapperStyle}
+      {...(vm.onEnterCrop !== undefined
+        ? {
+            onDoubleClick: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              vm.onEnterCrop?.();
+            },
+          }
+        : {})}
+    >
+      {vm.status === "placeholder" ? (
+        <VideoPlaceholder alt={vm.alt} />
       ) : vm.status === "poster" ? (
         <VideoPosterCover poster={vm.poster} alt={vm.alt} objectFit={vm.objectFit} />
+      ) : vm.status === "crop" ? (
+        <CropEditor
+          initial={vm.crop}
+          aspect={aspect}
+          objectFit={vm.objectFit}
+          filterCss=""
+          media={(style: CSSProperties) => (
+            <video src={vm.src} muted playsInline draggable={false} style={style} />
+          )}
+        />
       ) : (
-        <VideoPlaceholder alt={vm.alt} />
+        <CroppedMedia
+          crop={vm.crop}
+          aspect={aspect}
+          objectFit={vm.objectFit}
+          filterCss=""
+          media={(style: CSSProperties) => (
+            <video
+              ref={videoRef}
+              src={vm.src}
+              poster={vm.poster}
+              controls={vm.controls}
+              autoPlay={vm.autoPlay}
+              loop={vm.loop}
+              muted={vm.muted}
+              playsInline
+              draggable={false}
+              style={style}
+            />
+          )}
+        />
       )}
     </div>
   );
 }
 
 /** Source-less video with a poster: render the poster as a static COVER IMAGE,
- *  overlaid with a play badge so it still reads as "a video goes here". The outer
- *  wrapper already applies borderRadius / shadow / opacity. */
+ *  overlaid with a play badge so it still reads as "a video goes here". */
 function VideoPosterCover({
   poster,
   alt,
@@ -158,7 +195,7 @@ function PlayBadge(): JSX.Element {
 
 /** Registered renderer. Thin shim: resolve the ViewModel, render the pure View.
  *  WI-243 transitional — Phase-0 facet will register `useViewModel`/`view`. */
-export function VideoBlock({ item }: VideoBlockProps): JSX.Element {
-  const vm = useVideoItemViewModel(item);
+export function VideoBlock({ item, onUpdate }: VideoBlockProps): JSX.Element {
+  const vm = useVideoItemViewModel(item, onUpdate);
   return <VideoView vm={vm} />;
 }
