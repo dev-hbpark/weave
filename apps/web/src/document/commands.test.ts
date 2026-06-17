@@ -2132,14 +2132,13 @@ describe("buildWeaveCommands — weave.media.setCrop (WI-074 / DR-161)", () => {
     expect(cropWindowUnit(result).rotation).toBe(0.1745);
   });
 
-  it("fails not-croppable on a frame target (image|video only)", () => {
+  it("is kind-agnostic — attaches the crop.window unit to ANY existing item (DR-161)", () => {
+    // No kind gate: the command just sets the unit; only media renderers read it.
     const result = cropCmd().run(makeImageCtx(), {
       itemId: "frame-1",
-      crop: { x: 0, y: 0, w: 1, h: 1 },
+      crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
     });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe("not-croppable");
+    expect(cropWindowUnit(result)).toEqual({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
   });
 
   it("fails item-not-found for an unknown id", () => {
@@ -3209,6 +3208,33 @@ describe("group dissolve-on-underflow (WI-242 A3)", () => {
     const group = doc.root.children.find((c) => String(c.id) === "grp");
     expect(group).toBeDefined();
     expect((group?.children ?? []).map((c) => String(c.id)).sort()).toEqual(["a", "b"]);
+  });
+
+  it("WI-245 — moving a group child grows the group to wrap it (no overflow)", () => {
+    // group "grp" {0.1,0.1,0.8,0.8}, tight around a{0,0,0.5,0.5} / b{0.5,0.5,0.5,0.5}.
+    const ctx = makeGroupedCtx(["a", "b"]);
+    const update = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.update");
+    if (update === undefined) throw new Error("command not found");
+    // Move `a` left, partly outside the group: a.frame.x 0 → -0.5.
+    const result = update.run(ctx, {
+      itemId: "a",
+      attrs: { frame: { x: -0.5, y: 0, width: 0.5, height: 0.5, rotation: 0 } },
+    });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    let doc = ctx.document;
+    for (const p of result.patches) {
+      doc = applyChangeToDocument(doc, p as Parameters<typeof applyChangeToDocument>[1]);
+    }
+    const grp = doc.root.children.find((c) => String(c.id) === "grp");
+    const gf = (grp?.attrs as { frame: ItemFrameLike }).frame;
+    // a abs becomes {-0.3,0.1,0.4,0.4}; union with b{0.5,0.5,0.4,0.4} → {-0.3,0.1,1.2,0.8}.
+    expect(gf.x).toBeCloseTo(-0.3);
+    expect(gf.width).toBeCloseTo(1.2);
+    // `a` is re-relativized to the new box's left edge (no overflow past the box).
+    const a = (grp?.children ?? []).find((c) => String(c.id) === "a");
+    const af = (a?.attrs as { frame: ItemFrameLike }).frame;
+    expect(af.x).toBeCloseTo(0);
+    expect(af.width).toBeCloseTo(0.4 / 1.2);
   });
 
   it("removing BOTH children at once removes the empty group (no orphan)", () => {

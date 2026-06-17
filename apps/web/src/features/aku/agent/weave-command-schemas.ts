@@ -1060,7 +1060,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         offset: obj({ ox: NUM, oy: NUM }, ["ox", "oy"]),
       },
       ["itemId", "crop"],
-      "CROP an image or video — `crop` is the visible window in 0..1 of the media box ({x,y} top-left, {w,h} size; no-crop = {0,0,1,1}). `rotation` straightens the content; `offset` pans within the cover-zoom. Image/video only. Stored as a `crop.window` unit.",
+      "CROP a media item — `crop` is the visible window in 0..1 of the media box ({x,y} top-left, {w,h} size; no-crop = {0,0,1,1}). `rotation` straightens the content; `offset` pans within the cover-zoom. Stored as a kind-agnostic `crop.window` unit; meaningful for image / video (their renderers read it). ",
     ),
   },
   // ── flip / mirror (WI-074 / DR-029 D7) — image / video / shape / line ──

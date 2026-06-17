@@ -55,9 +55,14 @@ export function readCropWindow(item): CropWindow;        // unit ?? legacy attrs
 - Empty schema + `onUnknown: preserve` → round-trips with no agocraft change
   (Rule 5), exactly like `crop.offset`. No re-vendor.
 
-### 2. Command: `weave.image.setCrop` → `weave.media.setCrop`, un-gated to image|video
+### 2. Command: `weave.image.setCrop` → `weave.media.setCrop`, NO kind gate
 
-- Kind guard `kind !== "image"` → `kind !== "image" && kind !== "video"`.
+- The crop is a kind-agnostic unit, so the command has **no kind check at all** —
+  it just attaches the `crop.window` unit to the (existing) target item. The sole
+  precondition is item-exists; only the media renderers (image / video) read the
+  unit, and other kinds round-trip it untouched (`onUnknown: preserve`). (The
+  intermediate `kind === "image" || "video"` guard was removed — gating by kind is
+  exactly the image-coupling the unit model eliminates.)
 - Writes the `crop.window` + `crop.offset` units (one transaction, one undo)
   instead of `attrs.cropRatio`.
 - Rename the command (call sites: DesignPage `applyCrop`, editor-hotkeys

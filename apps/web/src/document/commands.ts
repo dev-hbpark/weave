@@ -117,6 +117,7 @@ import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/cha
 // live-verified; see `layout/text-measurer.js`).
 import { getDesignDims } from "./layout/design-dims.js";
 import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
+import { groupHugPatches } from "./layout/refit-group.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { reparentTextHugPatches } from "./layout/reparent-text-hug.js";
 import { textHugChildPolicy, textHugFrameRatio } from "./layout/text-layout-fit.js";
@@ -1189,7 +1190,9 @@ export function buildWeaveCommands(
           }),
         );
       }
-      return ok(String(stagedItem.id), patches);
+      // WI-245 — adding a child into a hugging group grows the group to wrap it.
+      const hug = groupHugAfter(ctx.document, [String(container.id)], patches);
+      return ok(String(stagedItem.id), hug.length > 0 ? [...patches, ...hug] : patches);
     },
   };
   // WI-025 (DR-025 S3) — generic remove absorbed into the @agocraft/core
@@ -1228,20 +1231,66 @@ export function buildWeaveCommands(
         p as unknown as Parameters<typeof applyChangeToDocument>[1],
       );
     }
+    const apply = (ps: ReadonlyArray<Patch>) => {
+      for (const p of ps) {
+        workingDoc = applyChangeToDocument(
+          workingDoc,
+          p as unknown as Parameters<typeof applyChangeToDocument>[1],
+        );
+      }
+    };
     const extra: Patch[] = [];
     for (const parentId of parentIds) {
       const parent = findItemDeep(workingDoc, parentId);
       if (parent === undefined || !isContainerKind(parent.kind)) continue;
       const s = structureOf(parent.kind as DomainKind);
-      if (!s.isContainer || s.onUnderflow !== "dissolve") continue;
-      if ((parent.children?.length ?? 0) >= s.minChildren) continue;
-      const dissolved = removeFrameKeepingChildren.run(
-        { ...ctx, document: workingDoc },
-        { frameId: parentId },
+      if (!s.isContainer) continue;
+      const childCount = parent.children?.length ?? 0;
+      if (s.onUnderflow === "dissolve" && childCount < s.minChildren) {
+        // Underflow → dissolve (auto-ungroup).
+        const dissolved = removeFrameKeepingChildren.run(
+          { ...ctx, document: workingDoc },
+          { frameId: parentId },
+        );
+        if (dissolved.ok && dissolved.patches.length > 0) {
+          extra.push(...dissolved.patches);
+          apply(dissolved.patches);
+        }
+      } else if (s.hugsChildren && childCount > 0) {
+        // WI-245 — still ≥ min: a hugging group shrink-wraps to the survivors.
+        const hug = groupHugPatches(workingDoc, parentId);
+        if (hug.length > 0) {
+          extra.push(...hug);
+          apply(hug);
+        }
+      }
+    }
+    return extra;
+  };
+
+  // WI-245 / DR-162 — group-hug refit for the geometry / add paths. Re-fits each
+  // hugging container so its box equals its children's union after the
+  // triggering mutation (a child moved / resized / was added). Read against the
+  // doc with `basePatches` applied. No-op (epsilon-guarded) when already tight.
+  const groupHugAfter = (
+    preDoc: CommandContext["document"],
+    containerIds: ReadonlyArray<string>,
+    basePatches: ReadonlyArray<Patch>,
+  ): Patch[] => {
+    if (containerIds.length === 0) return [];
+    let workingDoc = preDoc;
+    for (const p of basePatches) {
+      workingDoc = applyChangeToDocument(
+        workingDoc,
+        p as unknown as Parameters<typeof applyChangeToDocument>[1],
       );
-      if (dissolved.ok && dissolved.patches.length > 0) {
-        extra.push(...dissolved.patches);
-        for (const p of dissolved.patches) {
+    }
+    const out: Patch[] = [];
+    for (const cid of new Set(containerIds)) {
+      const hug = groupHugPatches(workingDoc, cid);
+      if (hug.length > 0) {
+        out.push(...hug);
+        for (const p of hug) {
           workingDoc = applyChangeToDocument(
             workingDoc,
             p as unknown as Parameters<typeof applyChangeToDocument>[1],
@@ -1249,7 +1298,7 @@ export function buildWeaveCommands(
         }
       }
     }
-    return extra;
+    return out;
   };
 
   const removeItemKit = createRemoveItemCommand("weave.item.remove");
@@ -1357,7 +1406,14 @@ export function buildWeaveCommands(
           patches.push(...r.patches);
         }
       }
-      return ok(undefined, patches);
+      // WI-245 — if this item is a child of a hugging group, re-fit the group to
+      // the children's union (a move / resize must not let the child overflow).
+      const parent = findParentAndIndex(ctx.document, makeItemId(input.itemId));
+      const hug =
+        parent !== undefined
+          ? groupHugAfter(ctx.document, [String(parent.parent.id)], patches)
+          : [];
+      return ok(undefined, hug.length > 0 ? [...patches, ...hug] : patches);
     },
   };
 
@@ -1543,14 +1599,11 @@ export function buildWeaveCommands(
       if (child === undefined) {
         return fail("item-not-found", `weave.media.setCrop: no item with id "${input.itemId}"`);
       }
-      // DR-161 — crop is a kind-agnostic UNIT now, so any croppable media works.
-      const kind = (child as { kind?: string }).kind;
-      if (kind !== "image" && kind !== "video") {
-        return fail(
-          "not-croppable",
-          `weave.media.setCrop: item "${input.itemId}" is not an image or video`,
-        );
-      }
+      // DR-161 — crop is a kind-agnostic `crop.window` UNIT now: the command just
+      // attaches the unit to the (existing) target item — no kind gate. Only the
+      // media renderers (image / video) read the unit; other kinds ignore it and
+      // round-trip it untouched (onUnknown: preserve). The sole precondition is
+      // that the item exists (checked above) so the unit has a host.
       const c = input.crop;
       const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
       const EPS = 1e-6;
