@@ -9,18 +9,28 @@
 // Single forward pass: each effect derives from the PRIMARY patches only
 // (loop-free). Registry ORDER is the contract (document any dependency).
 //
-// Migrated so far: relayout. The group-hug + dissolve effects are owned by the
-// concurrent group-hug session (HANDOFF-003) and stay inline until they register
-// here — until then this pipeline only relays out, so there is no double-apply.
+// Migrated: relayout (WI-249), group-hug + group-dissolve (WI-248, HANDOFF-003
+// fold-in). Each command emits its primary patches; the pipeline derives the
+// cross-cutting consequences. The inline sites in commands.ts are removed in the
+// same change, so there is no double-apply.
 
 import type { CommandContext, Patch } from "@agocraft/core";
 import { ok, type Result, type WeaveError } from "../result.js";
+import { groupDissolveEffect } from "./group-dissolve-effect.js";
+import { groupHugEffect } from "./group-hug-effect.js";
 import { relayoutEffect } from "./relayout-effect.js";
 import type { EffectMeta, TransactionEffect } from "./transaction-effect.js";
 
-// Order = application order. (relayout first; hug/dissolve to be registered by
-// the group-hug session per HANDOFF-003.)
-const EFFECT_PIPELINE: ReadonlyArray<TransactionEffect> = [relayoutEffect];
+// Order = application order, and the order IS the contract:
+//   relayout → hug → dissolve.
+// relayout reflows a layout frame's children from a size change; hug then
+// shrink-wraps a group to its (possibly reflowed) children; dissolve reacts to
+// item.remove (disjoint trigger from the other two, so order vs them is moot).
+const EFFECT_PIPELINE: ReadonlyArray<TransactionEffect> = [
+  relayoutEffect,
+  groupHugEffect,
+  groupDissolveEffect,
+];
 
 /** Run the pipeline over a command's primary patches → `ok(extraPatches)` to
  *  append, or the first effect's typed `WeaveError` (DR-165 (A) channel). Caller:

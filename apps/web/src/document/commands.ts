@@ -107,14 +107,13 @@ import {
   normalizeDatasetPayload,
   readDatasetPayload,
 } from "./dataset/dataset-store.js";
-import { isContainerKind, structureOf } from "./domain-kinds.js";
+import { isContainerKind } from "./domain-kinds.js";
 import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
 // WI-051 Step 3 / 3.5 — engine-side text measurement, injected into Hug reflow +
 // the content-auto (non-Hug) `reflowMeasuredText` trigger (OFF by default until
 // live-verified; see `layout/text-measurer.js`).
 import { getDesignDims } from "./layout/design-dims.js";
 import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
-import { groupHugLivePatches, groupHugPatches } from "./layout/refit-group.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { reparentTextHugPatches } from "./layout/reparent-text-hug.js";
 import { textHugChildPolicy, textHugFrameRatio } from "./layout/text-layout-fit.js";
@@ -1192,9 +1191,20 @@ export function buildWeaveCommands(
           }),
         );
       }
-      // WI-245 — adding a child into a hugging group grows the group to wrap it.
-      const hug = groupHugAfter(ctx.document, [String(container.id)], patches);
-      return ok(String(stagedItem.id), hug.length > 0 ? [...patches, ...hug] : patches);
+      // WI-248 — group-hug via the effect pipeline: the new child's `item.create`
+      // patch makes group-hug-effect grow the container. Feed ONLY the create
+      // patch so relayout (reacts to `item.attrs`) is not double-run against the
+      // add's own layout/sibling patches.
+      const createPatch = patches.find((p) => (p as { type?: string }).type === "item.create");
+      if (createPatch !== undefined) {
+        const fx = applyEffects(ctx, [createPatch], {
+          ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
+          ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
+        });
+        if (!fx.ok) return fail(fx.error.code, fx.error.message);
+        if (fx.value.length > 0) return ok(String(stagedItem.id), [...patches, ...fx.value]);
+      }
+      return ok(String(stagedItem.id), patches);
     },
   };
   // WI-025 (DR-025 S3) — generic remove absorbed into the @agocraft/core
@@ -1202,130 +1212,11 @@ export function buildWeaveCommands(
   // the item's actual parent (so nested removals emit a correct structural
   // patch) and emits the self-contained `item.remove` (WI-024). Identical
   // behavior + error code (`item-not-found`) to the prior inline body.
-  // WI-242 A3 — GROUP dissolve-on-underflow invariant. After a remove, any
-  // container that dropped below its `structure.minChildren` AND declares
-  // `onUnderflow:"dissolve"` (today: the `group` kind) is dissolved in the SAME
-  // transaction — its surviving child reparents to the group's OWN parent and
-  // the emptied group is removed (auto-ungroup). Reuses removeFrameKeepingChildren
-  // (the kind-agnostic dissolve: reparent children → own parent + remove +
-  // WI-135 frameRatio/font rebase), so the geometry + undo round-trip are the
-  // proven ones. Read against an EVOLVED working doc (the base remove applied)
-  // so child counts + dissolve geometry are live — the weave.batch idiom. One
-  // level: a survivor that is itself an underflowing group is not re-dissolved
-  // here (rare; a fixpoint pass is a follow-up if a real case appears).
-  // `removeFrameKeepingChildren` is defined later in this factory; the closure
-  // resolves it at command-exec time (after the factory has fully run).
-  const dissolveUnderflowingGroups = (
-    ctx: CommandContext,
-    removedIds: ReadonlyArray<string>,
-    basePatches: ReadonlyArray<Patch>,
-  ): Patch[] => {
-    const parentIds = new Set<string>();
-    for (const id of removedIds) {
-      const info = findParentAndIndex(ctx.document, makeItemId(id));
-      if (info !== undefined) parentIds.add(String(info.parent.id));
-    }
-    if (parentIds.size === 0) return [];
-    let workingDoc = ctx.document;
-    for (const p of basePatches) {
-      workingDoc = applyChangeToDocument(
-        workingDoc,
-        p as unknown as Parameters<typeof applyChangeToDocument>[1],
-      );
-    }
-    const apply = (ps: ReadonlyArray<Patch>) => {
-      for (const p of ps) {
-        workingDoc = applyChangeToDocument(
-          workingDoc,
-          p as unknown as Parameters<typeof applyChangeToDocument>[1],
-        );
-      }
-    };
-    const extra: Patch[] = [];
-    for (const parentId of parentIds) {
-      const parent = findItemDeep(workingDoc, parentId);
-      if (parent === undefined || !isContainerKind(parent.kind)) continue;
-      const s = structureOf(parent.kind as DomainKind);
-      if (!s.isContainer) continue;
-      const childCount = parent.children?.length ?? 0;
-      if (s.onUnderflow === "dissolve" && childCount < s.minChildren) {
-        // Underflow → dissolve (auto-ungroup).
-        const dissolved = removeFrameKeepingChildren.run(
-          { ...ctx, document: workingDoc },
-          { frameId: parentId },
-        );
-        if (dissolved.ok && dissolved.patches.length > 0) {
-          extra.push(...dissolved.patches);
-          apply(dissolved.patches);
-        }
-      } else if (s.hugsChildren && childCount > 0) {
-        // WI-245 — still ≥ min: a hugging group shrink-wraps to the survivors.
-        const hug = groupHugPatches(workingDoc, parentId);
-        if (hug.length > 0) {
-          extra.push(...hug);
-          apply(hug);
-        }
-      }
-    }
-    return extra;
-  };
-
-  // WI-245 / DR-162 — group-hug refit for the geometry / add paths. Re-fits each
-  // hugging container so its box equals its children's union after the
-  // triggering mutation (a child moved / resized / was added). Read against the
-  // doc with `basePatches` applied. No-op (epsilon-guarded) when already tight.
-  const groupHugAfter = (
-    preDoc: CommandContext["document"],
-    containerIds: ReadonlyArray<string>,
-    basePatches: ReadonlyArray<Patch>,
-  ): Patch[] => {
-    if (containerIds.length === 0) return [];
-    let workingDoc = preDoc;
-    for (const p of basePatches) {
-      workingDoc = applyChangeToDocument(
-        workingDoc,
-        p as unknown as Parameters<typeof applyChangeToDocument>[1],
-      );
-    }
-    const out: Patch[] = [];
-    for (const cid of new Set(containerIds)) {
-      const hug = groupHugPatches(workingDoc, cid);
-      if (hug.length > 0) {
-        out.push(...hug);
-        for (const p of hug) {
-          workingDoc = applyChangeToDocument(
-            workingDoc,
-            p as unknown as Parameters<typeof applyChangeToDocument>[1],
-          );
-        }
-      }
-    }
-    return out;
-  };
-
-  // WI-246 — live-gesture fix for group-hug. During a drag/resize, the agocraft
-  // move binding computes the child's frame relative to the GESTURE-START group
-  // box (cached once per gesture). If the group-hug refit grew the group box
-  // tick-to-tick, that reference drifted → the child mis-positioned and the
-  // group ballooned. Cache the group's gesture-start frame keyed by the gesture
-  // `sessionId` (the same WI-042 hugParentBoxFor pattern) and feed it to
-  // `groupHugLivePatches` so the dragged child stays consistent as the box grows.
-  const gestureGroupG0 = new Map<string, { groupId: string; g0: ItemFrame }>();
-  const gestureGroupG0For = (
-    sessionId: string,
-    groupId: string,
-    doc: CommandContext["document"],
-  ): ItemFrame | undefined => {
-    const hit = gestureGroupG0.get(sessionId);
-    if (hit !== undefined && hit.groupId === groupId) return hit.g0;
-    const group = findItemDeep(doc, groupId);
-    const g0 = (group?.attrs as { frame?: ItemFrame } | undefined)?.frame;
-    if (g0 === undefined) return undefined;
-    if (gestureGroupG0.size > 16) gestureGroupG0.clear(); // bound (one gesture at a time)
-    gestureGroupG0.set(sessionId, { groupId, g0 });
-    return g0;
-  };
-
+  // WI-248 — group dissolve/shrink-on-remove and group-hug refit are now
+  // registered transaction effects (group-dissolve-effect.ts / group-hug-effect.ts);
+  // the remove / update / add commands route their primary patches through
+  // `applyEffects`. The former inline closures + the per-gesture g0 cache moved
+  // into those effect modules (HANDOFF-003 fold-in).
   const removeItemKit = createRemoveItemCommand("weave.item.remove");
   // WI-242 A3 — dissolve decorator: append group-underflow dissolve patches in
   // the same transaction so removing a group's 2nd-to-last child auto-ungroups.
@@ -1334,8 +1225,11 @@ export function buildWeaveCommands(
     run: (ctx, input) => {
       const base = removeItemKit.run(ctx, input);
       if (!base.ok) return base;
-      const extra = dissolveUnderflowingGroups(ctx, [String(input.itemId)], base.patches);
-      return extra.length === 0 ? base : ok(base.value, [...base.patches, ...extra]);
+      // WI-248 — group dissolve/shrink-on-underflow via the effect pipeline
+      // (group-dissolve-effect reacts to `item.remove`).
+      const fx = applyEffects(ctx, base.patches, {});
+      if (!fx.ok) return fail(fx.error.code, fx.error.message);
+      return fx.value.length === 0 ? base : ok(base.value, [...base.patches, ...fx.value]);
     },
   };
   // WI-025 (DR-025 S3) — batch remove absorbed into the editing-command kit.
@@ -1361,8 +1255,10 @@ export function buildWeaveCommands(
       const sorted = [...input.itemIds].sort((a, b) => indexOf(b) - indexOf(a));
       const base = removeItemsKit.run(ctx, { ...input, itemIds: sorted });
       if (!base.ok) return base;
-      const extra = dissolveUnderflowingGroups(ctx, input.itemIds, base.patches);
-      return extra.length === 0 ? base : ok(base.value, [...base.patches, ...extra]);
+      // WI-248 — group dissolve/shrink-on-underflow via the effect pipeline.
+      const fx = applyEffects(ctx, base.patches, {});
+      if (!fx.ok) return fail(fx.error.code, fx.error.message);
+      return fx.value.length === 0 ? base : ok(base.value, [...base.patches, ...fx.value]);
     },
   };
   // WI-156 / DR-112 — the sole snapshot-boundary command (see
@@ -1486,32 +1382,11 @@ export function buildWeaveCommands(
           patches.push(...r.patches);
         }
       }
-      // WI-245 / WI-246 — if this item is a child of a hugging group, re-fit the
-      // group to the children's union (a move / resize must not let the child
-      // overflow). During a live gesture (`sessionId` present) use the
-      // gesture-start group box so the refit stays consistent as the box grows;
-      // otherwise (programmatic / one-shot) refit against the live doc.
-      const parent = findParentAndIndex(ctx.document, makeItemId(input.itemId));
-      let hug: Patch[] = [];
-      if (parent !== undefined) {
-        const groupId = String(parent.parent.id);
-        if (input.sessionId !== undefined) {
-          const g0 = gestureGroupG0For(input.sessionId, groupId, ctx.document);
-          if (g0 !== undefined) {
-            let workingDoc = ctx.document;
-            for (const p of patches) {
-              workingDoc = applyChangeToDocument(
-                workingDoc,
-                p as unknown as Parameters<typeof applyChangeToDocument>[1],
-              );
-            }
-            hug = groupHugLivePatches(workingDoc, groupId, String(input.itemId), g0);
-          }
-        } else {
-          hug = groupHugAfter(ctx.document, [groupId], patches);
-        }
-      }
-      return ok(undefined, hug.length > 0 ? [...patches, ...hug] : patches);
+      // WI-248 — the group-hug refit is now a registered transaction effect
+      // (group-hug-effect.ts). `computeAttrsPatches`'s pipeline pass derives it
+      // from the frame's `item.attrs` patch (live-gesture box via meta.sessionId),
+      // so a frame edit grows/shrinks its hugging group automatically.
+      return ok(undefined, patches);
     },
   };
 
