@@ -101,7 +101,6 @@ import {
   type PasteCoordInput,
   resolvePasteFrame,
 } from "./clipboard/paste-coord.js";
-import { CROP_WINDOW_UNIT_KIND } from "./crop-window.js";
 import {
   buildDatasetUnit,
   type DatasetPayload,
@@ -117,7 +116,7 @@ import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/cha
 // live-verified; see `layout/text-measurer.js`).
 import { getDesignDims } from "./layout/design-dims.js";
 import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
-import { groupHugPatches } from "./layout/refit-group.js";
+import { groupHugLivePatches, groupHugPatches } from "./layout/refit-group.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { reparentTextHugPatches } from "./layout/reparent-text-hug.js";
 import { textHugChildPolicy, textHugFrameRatio } from "./layout/text-layout-fit.js";
@@ -139,7 +138,6 @@ import { ratioFontReparentPatches } from "./reparent-font.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
 import { CROP_OFFSET_UNIT_KIND } from "./transform-crop-offset.js";
-import { FLIP_ALLOWED_KINDS, FLIP_UNIT_KIND } from "./transform-flip.js";
 import {
   type DomainKind,
   FULL_FRAME,
@@ -147,6 +145,8 @@ import {
   type ItemFrame,
   type Item as WeaveItem,
 } from "./types.js";
+import { cropWindowUnit } from "./units/crop-window-unit.js";
+import { flipUnit } from "./units/flip-unit.js";
 
 /** Slice of useDocument's callback surface used by the *direct* commands
  *  (add / remove / reset). In-place commands no longer call into this.
@@ -1301,6 +1301,29 @@ export function buildWeaveCommands(
     return out;
   };
 
+  // WI-246 — live-gesture fix for group-hug. During a drag/resize, the agocraft
+  // move binding computes the child's frame relative to the GESTURE-START group
+  // box (cached once per gesture). If the group-hug refit grew the group box
+  // tick-to-tick, that reference drifted → the child mis-positioned and the
+  // group ballooned. Cache the group's gesture-start frame keyed by the gesture
+  // `sessionId` (the same WI-042 hugParentBoxFor pattern) and feed it to
+  // `groupHugLivePatches` so the dragged child stays consistent as the box grows.
+  const gestureGroupG0 = new Map<string, { groupId: string; g0: ItemFrame }>();
+  const gestureGroupG0For = (
+    sessionId: string,
+    groupId: string,
+    doc: CommandContext["document"],
+  ): ItemFrame | undefined => {
+    const hit = gestureGroupG0.get(sessionId);
+    if (hit !== undefined && hit.groupId === groupId) return hit.g0;
+    const group = findItemDeep(doc, groupId);
+    const g0 = (group?.attrs as { frame?: ItemFrame } | undefined)?.frame;
+    if (g0 === undefined) return undefined;
+    if (gestureGroupG0.size > 16) gestureGroupG0.clear(); // bound (one gesture at a time)
+    gestureGroupG0.set(sessionId, { groupId, g0 });
+    return g0;
+  };
+
   const removeItemKit = createRemoveItemCommand("weave.item.remove");
   // WI-242 A3 — dissolve decorator: append group-underflow dissolve patches in
   // the same transaction so removing a group's 2nd-to-last child auto-ungroups.
@@ -1406,13 +1429,31 @@ export function buildWeaveCommands(
           patches.push(...r.patches);
         }
       }
-      // WI-245 — if this item is a child of a hugging group, re-fit the group to
-      // the children's union (a move / resize must not let the child overflow).
+      // WI-245 / WI-246 — if this item is a child of a hugging group, re-fit the
+      // group to the children's union (a move / resize must not let the child
+      // overflow). During a live gesture (`sessionId` present) use the
+      // gesture-start group box so the refit stays consistent as the box grows;
+      // otherwise (programmatic / one-shot) refit against the live doc.
       const parent = findParentAndIndex(ctx.document, makeItemId(input.itemId));
-      const hug =
-        parent !== undefined
-          ? groupHugAfter(ctx.document, [String(parent.parent.id)], patches)
-          : [];
+      let hug: Patch[] = [];
+      if (parent !== undefined) {
+        const groupId = String(parent.parent.id);
+        if (input.sessionId !== undefined) {
+          const g0 = gestureGroupG0For(input.sessionId, groupId, ctx.document);
+          if (g0 !== undefined) {
+            let workingDoc = ctx.document;
+            for (const p of patches) {
+              workingDoc = applyChangeToDocument(
+                workingDoc,
+                p as unknown as Parameters<typeof applyChangeToDocument>[1],
+              );
+            }
+            hug = groupHugLivePatches(workingDoc, groupId, String(input.itemId), g0);
+          }
+        } else {
+          hug = groupHugAfter(ctx.document, [groupId], patches);
+        }
+      }
       return ok(undefined, hug.length > 0 ? [...patches, ...hug] : patches);
     },
   };
@@ -1599,39 +1640,18 @@ export function buildWeaveCommands(
       if (child === undefined) {
         return fail("item-not-found", `weave.media.setCrop: no item with id "${input.itemId}"`);
       }
-      // DR-161 — crop is a kind-agnostic `crop.window` UNIT now: the command just
-      // attaches the unit to the (existing) target item — no kind gate. Only the
-      // media renderers (image / video) read the unit; other kinds ignore it and
-      // round-trip it untouched (onUnknown: preserve). The sole precondition is
-      // that the item exists (checked above) so the unit has a host.
-      const c = input.crop;
-      const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
-      const EPS = 1e-6;
-      if (
-        c === undefined ||
-        !finite(c.x) ||
-        !finite(c.y) ||
-        !finite(c.w) ||
-        !finite(c.h) ||
-        c.w <= 0 ||
-        c.h <= 0 ||
-        c.x < 0 ||
-        c.y < 0 ||
-        c.x + c.w > 1 + EPS ||
-        c.y + c.h > 1 + EPS
-      ) {
-        return fail(
-          "invalid-input",
-          "weave.media.setCrop: crop must be 0..1 with w,h>0 and x+w<=1, y+h<=1",
-        );
+      // DR-161 — crop is a kind-agnostic `crop.window` UNIT (no kind gate; only the
+      // media renderers read it). DR-162 — the VALIDATION is the unit model's job;
+      // the command orchestrates. `appliesTo` is always true for crop, so the only
+      // precondition is item-exists (checked above).
+      const validated = cropWindowUnit.validate(
+        input.crop === undefined ? undefined : { ...input.crop, rotation: input.rotation },
+      );
+      if (!validated.ok) {
+        return fail(validated.code, `weave.media.setCrop: ${validated.message}`);
       }
-      if (input.rotation !== undefined && !finite(input.rotation)) {
-        return fail("invalid-input", "weave.media.setCrop: rotation must be a finite number");
-      }
-      // DR-161 — the crop window is a weave-local `crop.window` UNIT now (was
-      // attrs.cropRatio). Write the unit + STRIP the legacy attr so a re-saved doc
-      // is fully unit-based (DR-028). Flip (DR-029 D7) stays its own `transform.flip`
-      // unit; setCrop only sets the window + rotation.
+      // Write the `crop.window` unit (attrs from the model) + STRIP the legacy
+      // attrs.cropRatio so a re-saved doc is fully unit-based (DR-028).
       const patches: Patch[] = [];
       const attrsRec = child.attrs as unknown as Record<string, unknown>;
       if ("cropRatio" in attrsRec) {
@@ -1641,14 +1661,8 @@ export function buildWeaveCommands(
       }
       const winResult = setDecorationCommand.run(ctx, {
         itemId: input.itemId,
-        kind: CROP_WINDOW_UNIT_KIND,
-        attrs: {
-          x: c.x,
-          y: c.y,
-          w: c.w,
-          h: c.h,
-          ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
-        },
+        kind: cropWindowUnit.kind,
+        attrs: cropWindowUnit.toAttrs(validated.value),
       });
       if (!winResult.ok) return winResult;
       patches.push(...winResult.patches);
@@ -1656,6 +1670,7 @@ export function buildWeaveCommands(
       // as the weave-local `crop.offset` unit, in the SAME transaction (single undo).
       const off = input.offset;
       if (off !== undefined) {
+        const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
         if (!finite(off.ox) || !finite(off.oy)) {
           return fail("invalid-input", "weave.media.setCrop: offset must be finite numbers");
         }
@@ -1683,24 +1698,23 @@ export function buildWeaveCommands(
       if (child === undefined) {
         return fail("item-not-found", `weave.item.flip: no item with id "${input.itemId}"`);
       }
-      const kind = (child as { kind?: string }).kind ?? "";
-      if (!FLIP_ALLOWED_KINDS.has(kind)) {
+      // DR-162 — orchestrate via the flip unit model: the applicability rule
+      // (which kinds may flip) and the toggle manipulation live in the unit, not
+      // inline here.
+      if (!flipUnit.appliesTo(child as unknown as AgocraftItem)) {
+        const kind = (child as { kind?: string }).kind ?? "";
         return fail("flip-not-supported", `weave.item.flip: kind "${kind}" cannot be flipped`);
       }
-      if (input.axis !== "horizontal" && input.axis !== "vertical") {
+      if (!flipUnit.isAxis(input.axis)) {
         return fail("invalid-input", "weave.item.flip: axis must be 'horizontal' or 'vertical'");
       }
-      const cur = findUnitInItem(child as unknown as AgocraftItem, FLIP_UNIT_KIND)?.attrs as
-        | { flipH?: boolean; flipV?: boolean }
-        | undefined;
-      const flipH = input.axis === "horizontal" ? !(cur?.flipH ?? false) : (cur?.flipH ?? false);
-      const flipV = input.axis === "vertical" ? !(cur?.flipV ?? false) : (cur?.flipV ?? false);
-      // Clear the unit when neither axis is flipped; otherwise set the spec.
-      // Reuse the setDecoration kit (replace = remove-then-create, single undo).
+      const next = flipUnit.toggle(flipUnit.read(child as unknown as AgocraftItem), input.axis);
+      // The unit decides the persisted attrs (null clears it); the command only
+      // emits the patch via the setDecoration kit (single undo).
       return setDecorationCommand.run(ctx, {
         itemId: input.itemId,
-        kind: FLIP_UNIT_KIND,
-        attrs: !flipH && !flipV ? null : { flipH, flipV },
+        kind: flipUnit.kind,
+        attrs: flipUnit.toAttrs(next),
       });
     },
   };

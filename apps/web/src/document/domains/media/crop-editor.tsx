@@ -9,8 +9,9 @@
 
 import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { type JSX, useEffect, useRef } from "react";
-import { coverZoom, panCropOffset, panCropWindow } from "../../crop-geometry.js";
+import { coverZoom } from "../../crop-geometry.js";
 import { croppingState, useCropDraft } from "../../interactions/cropping-state.js";
+import { cropWindowUnit } from "../../units/crop-window-unit.js";
 
 /** Crop window (0..1) + content rotation (radians, DR-029 D6) + the WI-074 D12
  *  image-offset (frame-box fractions) within the rotation cover-zoom. */
@@ -140,8 +141,8 @@ export function CropEditor({
       // un-rotated: pan the crop window (source region).
       const next =
         (drag.start.rotation ?? 0) === 0
-          ? panCropWindow(drag.start, dx, dy)
-          : panCropOffset(drag.start, dx, dy, r.width / r.height);
+          ? cropWindowUnit.pan(drag.start, dx, dy)
+          : cropWindowUnit.panOffset(drag.start, dx, dy, r.width / r.height);
       croppingState.setDraft(next);
     };
     const onUp = () => {

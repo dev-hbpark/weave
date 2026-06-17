@@ -48,7 +48,6 @@ import {
   useInteractionMode,
 } from "../document";
 import { findItemDeep, findParentAndIndex, isDomainItem } from "../document/agocraft-mirror.js";
-import { resizeCropWindow, setStraighten } from "../document/crop-geometry.js";
 import {
   type CameraPolicy,
   capabilityOf,
@@ -97,6 +96,7 @@ import {
 } from "../document/selection-chrome/modifier-tracker.js";
 import { withMoveModifiers } from "../document/selection-chrome/move-modifiers.js";
 import { rotationSnapFeedback } from "../document/selection-chrome/rotation-snap-feedback.js";
+import { cropWindowUnit } from "../document/units/crop-window-unit.js";
 import { nn } from "../lib/nn.js";
 import { type DesignBox, setCameraFitBox } from "./frame-camera-bridge.js";
 /** WI-033 A4 — context passed to `renderFrameMenu` so the callback
@@ -1578,7 +1578,7 @@ export function FrameStage(props: FrameStageProps) {
               update: (p) => {
                 const ang = Math.atan2(p.clientY - center.y, p.clientX - center.x);
                 const snap = snapRotation(start.rotation + (ang - startAng), p.shiftKey);
-                croppingState.setDraft(setStraighten(start, snap.rotation));
+                croppingState.setDraft(cropWindowUnit.straighten(start, snap.rotation));
                 if (snap.cardinalDeg !== null) {
                   rotationSnapFeedback.set({
                     cx: center.x,
@@ -1666,7 +1666,7 @@ export function FrameStage(props: FrameStageProps) {
             update: (p) => {
               const dx = (p.clientX - origin.clientX) / fr.width;
               const dy = (p.clientY - origin.clientY) / fr.height;
-              croppingState.setDraft(resizeCropWindow(start, dir, dx, dy));
+              croppingState.setDraft(cropWindowUnit.resize(start, dir, dx, dy));
             },
           },
         });
