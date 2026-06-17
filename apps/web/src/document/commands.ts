@@ -60,7 +60,6 @@ import {
   moveToTopCommand,
   ok,
   type Patch,
-  resolveFontSize,
   SHAPE_SUB_KINDS,
   type ShapeSubKind,
   serializeItemSubtree,
@@ -118,11 +117,8 @@ import { getDesignDims } from "./layout/design-dims.js";
 import { pinAutoLayoutPx, stagePinned } from "./layout/pin-auto-layout-px.js";
 import { getLayoutEngine, LAYOUT_FEATURE_ENABLED } from "./layout/registry.js";
 import { reparentTextHugPatches } from "./layout/reparent-text-hug.js";
-import {
-  engineTextMeasureEnabled,
-  measureFreeTextHugRatio,
-  measureTextInput,
-} from "./layout/text-measurer.js";
+import { textHugChildPolicy, textHugFrameRatio } from "./layout/text-layout-fit.js";
+import { engineTextMeasureEnabled, measureTextInput } from "./layout/text-measurer.js";
 import {
   ALIGN_OPS_ORDER,
   type AlignInput,
@@ -1037,64 +1033,37 @@ export function buildWeaveCommands(
                 input.designHeight,
               )
             : null;
-        // WI-051 follow-up — a TEXT added into an auto-flex slot must HUG its
-        // content (a box around the text), not FILL the slot. The default seed
-        // frame is FULL_FRAME, so the engine's `basis:"auto"` (which reads the
-        // child's CURRENT frame) would place it slot-filling — a short text then
-        // looked tiny in a big box (operator report — flex add). MEASURE the text
-        // and seed its frame to the CONTENT size BEFORE onChildAdd (same as the
-        // paste path), so `basis:"auto"` reads the content = a hug. Grid is left
-        // alone (box = cell; the render font shrink-to-fit handles overflow).
+        // DR-157 — a TEXT entering a layout container fits via the SINGLE shared seam
+        // (text-layout-fit.ts), identical to paste + reparent. For an auto-flex parent
+        // PRE-seed the staged frame to the measured content size so onChildAdd lays its
+        // siblings out against the content in one step (the FULL_FRAME default made a
+        // short text fill the slot — operator report). Grid is left as the cell (the
+        // render font shrink-to-fit handles overflow); the shared hug policy is stamped
+        // after placement (below). Container box from `getDesignDims()` — manual toolbar
+        // adds don't pass input.designWidth/Height, so `parentBox` is null for them.
         let childForAdd = agoItem;
-        // The container box in design-px — from `getDesignDims()` (manual toolbar
-        // adds do NOT pass input.designWidth/Height, so `parentBox` above is null
-        // for them; the paste path uses the same host accessor).
         const dims = getDesignDims();
         const hugBox =
           dims !== undefined
             ? absoluteFrameBox(ctx.document, String(container.id), dims.w, dims.h)
             : parentBox;
-        if (
+        const fitFlexText =
           engineTextMeasureEnabled() &&
           agoItem.kind === "text" &&
           normalizedLayout?.kind === "auto-flex" &&
-          hugBox !== null
-        ) {
+          hugBox !== null;
+        if (fitFlexText) {
           const at = agoItem.attrs as Record<string, unknown>;
           const srcFrame = at.frame as ItemFrame | undefined;
-          if (srcFrame !== undefined) {
-            const fontSizePx = resolveFontSize(
-              at.fontSizeSpec as never,
-              at.fontSize as never,
-              hugBox.h,
-            );
-            const lhSpec = at.lineHeightSpec as { value?: number; unit?: string } | undefined;
-            const lineHeight =
-              lhSpec?.unit === "multiplier" && typeof lhSpec.value === "number"
-                ? lhSpec.value
-                : typeof at.lineHeight === "number"
-                  ? at.lineHeight
-                  : 1.4;
-            const hug = measureFreeTextHugRatio(
-              {
-                text: typeof at.text === "string" ? at.text : "",
-                fontFamily: typeof at.fontFamily === "string" ? at.fontFamily : "sans-serif",
-                fontSizePx,
-                lineHeight,
-                letterSpacing: typeof at.letterSpacing === "number" ? at.letterSpacing : 0,
-              },
-              hugBox.w,
-              hugBox.h,
-            );
-            if (hug !== undefined) {
-              childForAdd = {
-                ...agoItem,
-                attrs: {
-                  ...at,
-                  frame: { ...srcFrame, width: hug.wRatio, height: hug.hRatio },
-                } as AgocraftItem["attrs"],
-              };
-            }
+          const hug = srcFrame !== undefined ? textHugFrameRatio(at, hugBox, hugBox.h) : undefined;
+          if (srcFrame !== undefined && hug !== undefined) {
+            childForAdd = {
+              ...agoItem,
+              attrs: {
+                ...at,
+                frame: { ...srcFrame, width: hug.width, height: hug.height },
+              } as AgocraftItem["attrs"],
+            };
           }
         }
         const result = getLayoutEngine().onChildAdd({
@@ -1106,6 +1075,17 @@ export function buildWeaveCommands(
         stagedItem = result.stagedChild as AgocraftItem;
         layoutSiblingPatches = result.siblingPatches;
         gridGrowPatch = result.parentPatch;
+        // DR-157 — stamp the SHARED hug policy on the placed text so add matches reparent
+        // (content-hug `basis:"auto"`, not the engine-derived frozen basis).
+        if (fitFlexText) {
+          const policy = textHugChildPolicy(normalizedLayout?.kind);
+          if (policy !== undefined) {
+            stagedItem = {
+              ...stagedItem,
+              attrs: { ...stagedItem.attrs, layoutChild: policy } as AgocraftItem["attrs"],
+            };
+          }
+        }
       }
 
       // WI-147 — AGENT-ONLY min-size guard. We compute the STAGED frame (post
@@ -2901,44 +2881,24 @@ export function buildWeaveCommands(
               // size, then reflows to fit → a visible two-step. MEASURE the text now
               // (model computes it) so its frame is its CONTENT size before onChildAdd
               // → the flex places it correctly in ONE step. Flag-off ⇒ unchanged.
+              // DR-157 — the SINGLE shared measure (same as add + reparent).
               const dims = getDesignDims();
               if (dims !== undefined && srcItem.kind === "text") {
                 const cbox = absoluteFrameBox(ctx.document, String(container.id), dims.w, dims.h);
                 const at = srcItem.attrs as Record<string, unknown>;
                 const srcFrame = at.frame as AgocraftItemFrame | undefined;
-                if (cbox !== null && srcFrame !== undefined) {
-                  const fontSizePx = resolveFontSize(
-                    at.fontSizeSpec as never,
-                    at.fontSize as never,
-                    cbox.h,
-                  );
-                  const lhSpec = at.lineHeightSpec as { value?: number; unit?: string } | undefined;
-                  const lineHeight =
-                    lhSpec?.unit === "multiplier" && typeof lhSpec.value === "number"
-                      ? lhSpec.value
-                      : typeof at.lineHeight === "number"
-                        ? at.lineHeight
-                        : 1.4;
-                  const hug = measureFreeTextHugRatio(
-                    {
-                      text: typeof at.text === "string" ? at.text : "",
-                      fontFamily: typeof at.fontFamily === "string" ? at.fontFamily : "sans-serif",
-                      fontSizePx,
-                      lineHeight,
-                      letterSpacing: typeof at.letterSpacing === "number" ? at.letterSpacing : 0,
-                    },
-                    cbox.w,
-                    cbox.h,
-                  );
-                  if (hug !== undefined) {
-                    newChild = {
-                      ...newChild,
-                      attrs: {
-                        ...newChild.attrs,
-                        frame: { ...srcFrame, width: hug.wRatio, height: hug.hRatio },
-                      } as AgocraftItem["attrs"],
-                    };
-                  }
+                const hug =
+                  cbox !== null && srcFrame !== undefined
+                    ? textHugFrameRatio(at, cbox, cbox.h)
+                    : undefined;
+                if (srcFrame !== undefined && hug !== undefined) {
+                  newChild = {
+                    ...newChild,
+                    attrs: {
+                      ...newChild.attrs,
+                      frame: { ...srcFrame, width: hug.width, height: hug.height },
+                    } as AgocraftItem["attrs"],
+                  };
                 }
               }
               const res = engine.onChildAdd({
@@ -2953,10 +2913,23 @@ export function buildWeaveCommands(
                 layoutExtra.push(res.parentPatch);
                 effLayout = (res.parentPatch as { after: LayoutSpec }).after;
               }
-              pendingChildren = [...pendingChildren, res.stagedChild as AgocraftItem];
+              // DR-157 — stamp the SHARED hug policy on a placed TEXT so paste matches
+              // add + reparent (content-hug `basis:"auto"`, not the engine-derived
+              // frozen basis). Grid → undefined (cell + render font shrink-to-fit).
+              let stagedChild = res.stagedChild as AgocraftItem;
+              if (srcItem.kind === "text") {
+                const policy = textHugChildPolicy(layout.kind);
+                if (policy !== undefined) {
+                  stagedChild = {
+                    ...stagedChild,
+                    attrs: { ...stagedChild.attrs, layoutChild: policy } as AgocraftItem["attrs"],
+                  };
+                }
+              }
+              pendingChildren = [...pendingChildren, stagedChild];
               // `stagedChild` is the kit's SerializedItem with only its frame +
               // layoutChild re-stamped by the engine → reuse it as the create item.
-              return { ...p, item: res.stagedChild as unknown as typeof p.item };
+              return { ...p, item: stagedChild as unknown as typeof p.item };
             });
             return ok(result.value, [...placed, ...layoutExtra]);
           },

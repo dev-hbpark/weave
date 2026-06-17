@@ -8,13 +8,9 @@
 // the ratio-font px), so these OVERRIDE the re-based width/height with the measured
 // content size. Flag-gated (off ⇒ no patches → the WI-238 cross-stretch path stands).
 
-import { resolveFontSize } from "@agocraft/core";
 import { absoluteFrameBox, findItemDeep, findParentAndIndex } from "../agocraft-mirror.js";
-import {
-  engineTextMeasureEnabled,
-  type FreeTextHugSpec,
-  measureFreeTextHugRatio,
-} from "./text-measurer.js";
+import { textHugChildPolicy, textHugFrameRatio } from "./text-layout-fit.js";
+import { engineTextMeasureEnabled } from "./text-measurer.js";
 
 type Doc = Parameters<typeof absoluteFrameBox>[0];
 interface AttrsPatch {
@@ -59,44 +55,6 @@ export function reparentTextHugPatches(
     const box = absoluteFrameBox(doc, newParentId, designW, designH);
     if (box === null) continue;
     const a = item.attrs as Record<string, unknown>;
-    // The font px is PRESERVED across the reparent (ratioFontReparentPatches re-bases
-    // a ratio fontSizeSpec so the rendered px is unchanged). So measure at the font as
-    // it renders NOW — resolved against the OLD parent's height — not the new parent's
-    // (which would shrink a ratio font and mis-measure the content).
-    const oldParent = findParentAndIndex(doc, itemId)?.parent;
-    const oldBox = absoluteFrameBox(
-      doc,
-      oldParent !== undefined
-        ? String(oldParent.id)
-        : String((doc as { root: { id: unknown } }).root.id),
-      designW,
-      designH,
-    );
-    const fontSizePx = resolveFontSize(
-      a.fontSizeSpec as never,
-      a.fontSize as never,
-      (oldBox ?? box).h,
-    ) as number;
-    const lhSpec = a.lineHeightSpec as { value?: number; unit?: string } | undefined;
-    const lineHeight =
-      lhSpec?.unit === "multiplier" && typeof lhSpec.value === "number"
-        ? lhSpec.value
-        : typeof a.lineHeight === "number"
-          ? a.lineHeight
-          : 1.4;
-    const spec: FreeTextHugSpec = {
-      text: typeof a.text === "string" ? a.text : "",
-      fontFamily: typeof a.fontFamily === "string" ? a.fontFamily : "sans-serif",
-      fontSizePx,
-      lineHeight,
-      letterSpacing: typeof a.letterSpacing === "number" ? a.letterSpacing : 0,
-    };
-    const hug = measureFreeTextHugRatio(spec, box.w, box.h);
-    if (hug === undefined) continue;
-    // The post-reparent attrs (re-based frame + ratio-font) are this patch's base.
-    const baseAttrs = baseAttrsAfter(bp, String(itemId)) ?? a;
-    const baseFrame = (baseAttrs.frame ?? a.frame) as Record<string, unknown> | undefined;
-    if (baseFrame === undefined) continue;
     const layoutKind = parentLayout?.kind;
 
     // auto-grid — a cell is TRACK-BOUND and the engine's DEFAULT cell alignment is
@@ -107,17 +65,30 @@ export function reparentTextHugPatches(
     // reversibly — so there is nothing to write here. Skip → let the engine stand.
     if (layoutKind === "auto-grid") continue;
 
-    // The content-hug child policy per parent kind:
-    //  • auto-flex → grow:0 + basis:"auto" (main content-sized), NO alignSelf:"stretch"
-    //    (cross stays content-sized) — replaces the WI-238 cross-stretch.
-    //  • free / absolute → no layout policy; the frame override alone content-hugs it.
-    const hugLayoutChild =
-      layoutKind === "auto-flex"
-        ? { kind: "auto-flex", grow: 0, shrink: 1, basis: "auto" }
-        : undefined;
+    // The font px is PRESERVED across the reparent (ratioFontReparentPatches re-bases a
+    // ratio fontSizeSpec so the rendered px is unchanged). So the shared measure resolves
+    // a ratio font against the OLD parent's height (its rendered px), not the new
+    // parent's (which would shrink a ratio font and mis-measure the content).
+    const oldParent = findParentAndIndex(doc, itemId)?.parent;
+    const oldBox = absoluteFrameBox(
+      doc,
+      oldParent !== undefined
+        ? String(oldParent.id)
+        : String((doc as { root: { id: unknown } }).root.id),
+      designW,
+      designH,
+    );
+    // DR-157 — the SINGLE shared measure + policy (same as add / paste).
+    const hug = textHugFrameRatio(a, box, (oldBox ?? box).h);
+    if (hug === undefined) continue;
+    // The post-reparent attrs (re-based frame + ratio-font) are this patch's base.
+    const baseAttrs = baseAttrsAfter(bp, String(itemId)) ?? a;
+    const baseFrame = (baseAttrs.frame ?? a.frame) as Record<string, unknown> | undefined;
+    if (baseFrame === undefined) continue;
+    const hugLayoutChild = textHugChildPolicy(layoutKind);
     const after: Record<string, unknown> = {
       ...baseAttrs,
-      frame: { ...baseFrame, width: hug.wRatio, height: hug.hRatio },
+      frame: { ...baseFrame, width: hug.width, height: hug.height },
       ...(hugLayoutChild !== undefined ? { layoutChild: hugLayoutChild } : {}),
     };
     out.push({ type: "item.attrs", itemId: item.id, before: baseAttrs, after });
