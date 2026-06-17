@@ -133,8 +133,10 @@ import {
 import { defaultPresetRegistry } from "./presets/default-registry.js";
 import type { PresetRegistry } from "./presets/types.js";
 import { ratioFontReparentPatches } from "./reparent-font.js";
+import type { Result, WeaveError } from "./result.js";
 import { createDefaultItem } from "./seed.js";
 import { parseVarRef } from "./style/theme-tokens.js";
+import { applyEffects } from "./transaction/effect-pipeline.js";
 import { CROP_OFFSET_UNIT_KIND } from "./transform-crop-offset.js";
 import {
   type DomainKind,
@@ -1468,8 +1470,10 @@ export function buildWeaveCommands(
           behaviors: [],
           createdAt: child.meta.createdAt,
         };
-        const attrsPatches = computeAttrsPatches(ctx, child, weaveItem, input);
-        patches.push(...attrsPatches);
+        const attrsResult = computeAttrsPatches(ctx, child, weaveItem, input);
+        // DR-165 — a typed effect error (e.g. from the pipeline) maps to a fail.
+        if (!attrsResult.ok) return fail(attrsResult.error.code, attrsResult.error.message);
+        patches.push(...attrsResult.value);
       }
 
       // ── decoration units edit (WI-063) — reuse setDecoration per unit, all in
@@ -1519,7 +1523,7 @@ export function buildWeaveCommands(
     child: AgocraftItem,
     weaveItem: WeaveItem,
     input: UpdateItemInput,
-  ): ReadonlyArray<Patch> {
+  ): Result<ReadonlyArray<Patch>, WeaveError> {
     const patchFn =
       input.patch ??
       ((it: WeaveItem): WeaveItem => ({
@@ -1570,34 +1574,18 @@ export function buildWeaveCommands(
     // pre-update document, which get appended AFTER this patch and revert
     // the edit. Bug surfaced only inside flex/grid frames (absolute parents
     // return no reflow patches, so the overwrite was invisible there).
-    const oldFrame = (child.attrs as { frame?: AgocraftItemFrame }).frame;
-    const newFrame = (after as { frame?: AgocraftItemFrame }).frame;
-    // WI-224 — only a SIZE change (width/height/rotation) re-lays-out the
-    // children; a position-only MOVE does not. A child's size is a ratio of its
-    // parent's SIZE, so moving the parent leaves every child unchanged — they
-    // travel with it. Reflowing on a pure move ran the children through the
-    // engine's ratio adapter and SHRANK them (Hug containers especially, whose
-    // px hug measure must not re-derive on a move).
-    const sizeChanged =
-      oldFrame !== undefined &&
-      newFrame !== undefined &&
-      (oldFrame.width !== newFrame.width ||
-        oldFrame.height !== newFrame.height ||
-        oldFrame.rotation !== newFrame.rotation);
-    const extraPatches: ReadonlyArray<Patch> =
-      LAYOUT_FEATURE_ENABLED && sizeChanged && oldFrame !== undefined && newFrame !== undefined
-        ? getLayoutEngine().onFrameChanged({
-            root: ctx.document.root,
-            itemId: child.id,
-            oldFrame,
-            newFrame,
-            ...(input.sessionId !== undefined ? { gestureId: input.sessionId } : {}),
-            // WI-043 P4 — fixed-px gap/padding when the host supplies a design basis.
-            ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
-            ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
-          })
-        : [];
-    return extraPatches.length > 0 ? [patch, ...extraPatches] : [patch];
+    // WI-249 / DR-164 — the "geometry changed → relayout" consequence is now a
+    // registered transaction effect (`relayoutEffect`). The command emits its
+    // primary patch; the pipeline derives the reflow patches (same guard: SIZE
+    // change + LAYOUT_FEATURE_ENABLED; same `onFrameChanged` call). Behaviour-
+    // neutral — the effect re-derives the frames from `patch.before/after.frame`.
+    const fx = applyEffects(ctx, [patch], {
+      ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+      ...(input.designWidth !== undefined ? { designWidth: input.designWidth } : {}),
+      ...(input.designHeight !== undefined ? { designHeight: input.designHeight } : {}),
+    });
+    if (!fx.ok) return fx; // a failing effect propagates its typed WeaveError
+    return { ok: true, value: fx.value.length > 0 ? [patch, ...fx.value] : [patch] };
   }
 
   // WI-055 — rectangle corner radius. A thin, dedicated command over the
