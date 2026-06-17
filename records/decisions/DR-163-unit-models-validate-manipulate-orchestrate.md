@@ -1,14 +1,14 @@
-# DR-162 — Unit models own validation + manipulation; commands orchestrate
+# DR-163 — Unit models own validation + manipulation; commands orchestrate
 
 ## Metadata
 
 | Field | Value |
 |---|---|
-| ID | DR-162 |
+| ID | DR-163 |
 | Date | 2026-06-17 |
 | Owner | hbpark |
 | Status | **ACCEPTED** (reference: crop.window + transform.flip; rollout to remaining units pending) |
-| Work Item | [WI-245](../work-items/WI-245-unit-models-validate-manipulate-orchestrate.md) |
+| Work Item | [WI-247](../work-items/WI-247-unit-models-validate-manipulate-orchestrate.md) |
 | Related | DR-028 (decoration as units), DR-161 (crop as a unit, kind-agnostic), SOLID/GRASP (Information Expert) |
 
 ## Context

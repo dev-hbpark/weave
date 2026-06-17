@@ -1,4 +1,4 @@
-// WI-245 / DR-162 — flip unit model: applicability rule + toggle manipulation.
+// WI-247 / DR-163 — flip unit model: applicability rule + toggle manipulation.
 
 import type { Item as AgocraftItem } from "@agocraft/core";
 import { describe, expect, it } from "vitest";

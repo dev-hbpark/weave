@@ -1,4 +1,4 @@
-// WI-245 / DR-162 — crop.window unit model: validation + attrs projection +
+// WI-247 / DR-163 — crop.window unit model: validation + attrs projection +
 // manipulation (the geometry math itself is covered by crop-geometry tests).
 
 import { describe, expect, it } from "vitest";

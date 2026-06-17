@@ -1,15 +1,15 @@
-# WI-245 — Unit models (validate + manipulate); commands orchestrate
+# WI-247 — Unit models (validate + manipulate); commands orchestrate
 
 ## Metadata
 
 | Field | Value |
 |---|---|
-| ID | WI-245 |
+| ID | WI-247 |
 | Date | 2026-06-17 |
 | Owner | hbpark |
 | Status | **IN PROGRESS** — reference units done (crop.window, transform.flip); rollout pending |
 | Type | Refactor / architecture — unit responsibility (Information Expert) |
-| Decision | [DR-162](../decisions/DR-162-unit-models-validate-manipulate-orchestrate.md) |
+| Decision | [DR-163](../decisions/DR-163-unit-models-validate-manipulate-orchestrate.md) |
 | Related | DR-028, DR-161, WI-244 |
 
 ## Problem (requested)
@@ -36,7 +36,7 @@ whose behaviour differs (flip's kind restriction) implements its own manipulatio
 
 ## Rollout (follow-up)
 
-Per DR-162: model the remaining decoration units (`decoration.fill` — fold in
+Per DR-163: model the remaining decoration units (`decoration.fill` — fold in
 `weave.shape.setFill`'s PaintSpec validation; `stroke` / `shadow` / `opacity` /
 `filter`; `crop.offset`), then a `unitRegistry` so the generic
 `weave.item.setDecoration` / `weave.item.update` paths validate per-kind instead

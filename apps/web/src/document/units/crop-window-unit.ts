@@ -1,4 +1,4 @@
-// WI-245 / DR-162 — crop.window UNIT MODEL.
+// WI-247 / DR-163 — crop.window UNIT MODEL.
 //
 // Makes the crop window the expert on its own state: VALIDATION (0..1 range +
 // finite rotation), the canonical attrs projection, and its MANIPULATION

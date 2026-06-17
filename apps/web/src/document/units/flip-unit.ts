@@ -1,4 +1,4 @@
-// WI-245 / DR-162 — transform.flip UNIT MODEL.
+// WI-247 / DR-163 — transform.flip UNIT MODEL.
 //
 // The flip case the operator highlighted: its behaviour DIFFERS from a plain
 // kind-agnostic unit — a flip is meaningless / harmful for some kinds (`qr`

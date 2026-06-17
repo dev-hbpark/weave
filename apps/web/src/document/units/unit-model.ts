@@ -1,4 +1,4 @@
-// WI-245 / DR-162 — Unit model contract.
+// WI-247 / DR-163 — Unit model contract.
 //
 // A "unit model" makes each unit the EXPERT on its own state (GRASP Information
 // Expert): it owns reading, value VALIDATION, an APPLICABILITY rule (does the

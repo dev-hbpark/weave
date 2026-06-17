@@ -1641,7 +1641,7 @@ export function buildWeaveCommands(
         return fail("item-not-found", `weave.media.setCrop: no item with id "${input.itemId}"`);
       }
       // DR-161 — crop is a kind-agnostic `crop.window` UNIT (no kind gate; only the
-      // media renderers read it). DR-162 — the VALIDATION is the unit model's job;
+      // media renderers read it). DR-163 — the VALIDATION is the unit model's job;
       // the command orchestrates. `appliesTo` is always true for crop, so the only
       // precondition is item-exists (checked above).
       const validated = cropWindowUnit.validate(
@@ -1698,7 +1698,7 @@ export function buildWeaveCommands(
       if (child === undefined) {
         return fail("item-not-found", `weave.item.flip: no item with id "${input.itemId}"`);
       }
-      // DR-162 — orchestrate via the flip unit model: the applicability rule
+      // DR-163 — orchestrate via the flip unit model: the applicability rule
       // (which kinds may flip) and the toggle manipulation live in the unit, not
       // inline here.
       if (!flipUnit.appliesTo(child as unknown as AgocraftItem)) {
