@@ -32,7 +32,7 @@ import type { AITooltipHotkeyTable } from "@weave/design-system";
 import { useEffect, useMemo, useRef } from "react";
 import { nn } from "../../lib/nn.js";
 import { osMarkerRoutingActive } from "../clipboard/os-clipboard-marker.js";
-import { KNOWN_DOMAIN_KINDS } from "../domain-kinds.js";
+import { isContainerKind, KNOWN_DOMAIN_KINDS } from "../domain-kinds.js";
 import { croppingState, isCroppingNow } from "../interactions/cropping-state.js";
 
 interface EditorActionDeps {
@@ -569,7 +569,10 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     // WI-036 follow-up — QuickActionBar pivoted from hover-driven to
     // selection-driven. visibleWhen / enabledWhen read the SELECTED
     // frame's kind / id instead of the hovered one.
-    visibleWhen: (ctx) => ctx.selectedKind === "frame",
+    // Containment from the kind's `structure` (isContainerKind), not a
+    // `=== "frame"` literal — a future container kind (group) shows "add child"
+    // here automatically. Today only frame is a container (behaviour-identical).
+    visibleWhen: (ctx) => isContainerKind(ctx.selectedKind),
     enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
       // Dispatched via hoverFrameChildAdder slot (still named after
@@ -611,7 +614,9 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
     },
     hotkey: { keys: "⌘ + ⌫", binding: "Mod+Backspace", scope: "editor" },
     category: "frame",
-    visibleWhen: (ctx) => ctx.selectedKind === "frame",
+    // Container-only (a leaf has no children to release) — read from
+    // `structure` via isContainerKind, so a group dissolves here too once added.
+    visibleWhen: (ctx) => isContainerKind(ctx.selectedKind),
     enabledWhen: (ctx) => typeof ctx.selectedId === "string",
     action: () => {
       // Dispatched via frameDissolver slot (bar) / DesignPage keydown (hotkey).
@@ -992,7 +997,7 @@ const EDITOR_COMMANDS: ReadonlyArray<EditorCommand> = [
       if (id === null) return;
       const d = croppingState.getDraft();
       if (d !== null) {
-        editor.exec("weave.image.setCrop", {
+        editor.exec("weave.media.setCrop", {
           itemId: id,
           crop: { x: d.x, y: d.y, w: d.w, h: d.h },
           ...(d.rotation !== 0 ? { rotation: d.rotation } : {}),

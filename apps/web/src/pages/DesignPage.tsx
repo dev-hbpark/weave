@@ -119,6 +119,7 @@ import {
   designToHostPx,
   type RatioFrame,
 } from "../document/coordinate-projection.js";
+import { isContainerKind } from "../document/domain-kinds.js";
 import { EditorModeProvider } from "../document/editor-mode/EditorModeProvider.js";
 // WI-166 / DR-114 §2b — DesignPage is a declared COMPOSITION ROOT
 // (.editor-mode-roots): the registry import is allowed here and only here;
@@ -1332,6 +1333,10 @@ function DesignPageBody() {
     const c = chartElementStore.get();
     if (c !== null && !selectedIds.has(c.chartItemId)) chartElementStore.set(null);
   }, [selectedIds]);
+  // A single selection of ANY item kind (incl. a `group`) reports
+  // `selection.kind === "frame"` (the selection-layer's single-item case — see
+  // selection-context), so this already resolves a selected group's id. The
+  // ungroup hotkey (Cmd+Shift+G) reads it and dissolves any container.
   const selectedFrameId = selection?.kind === "frame" ? selection.id : undefined;
   const _isMultiSelect = selectedIds.size > 1;
   // WI-038 Phase 2 — derive peek container from selection. Selecting any
@@ -1894,7 +1899,7 @@ function DesignPageBody() {
     (cropItemId: string) => {
       const d = croppingState.getDraft();
       if (d !== null) {
-        editor.exec("weave.image.setCrop", {
+        editor.exec("weave.media.setCrop", {
           itemId: cropItemId,
           crop: { x: d.x, y: d.y, w: d.w, h: d.h },
           ...(d.rotation !== 0 ? { rotation: d.rotation } : {}),
@@ -2047,6 +2052,10 @@ function DesignPageBody() {
       // stay out too (lock = no structural edits, same rule as delete).
       if (mod && !e.altKey && (e.key === "g" || e.key === "G")) {
         if (e.shiftKey) {
+          // WI-242 A3 — ungroup. `selectedFrameIdRef` resolves the single
+          // selected item's id for ANY kind (a group reports selection.kind
+          // "frame"), and `dissolveFrame` (removeKeepingChildren) is
+          // kind-agnostic, so this already dissolves a selected group.
           const selId = selectedFrameIdRef.current;
           if (selId === undefined) return;
           e.preventDefault();
@@ -2569,7 +2578,9 @@ function DesignPageBody() {
       return !(it !== undefined && isItemLocked(it));
     });
     const canGroup = groupableIds.length >= 2;
-    const canUngroup = cvItem?.kind === "frame" && itemCapability(itemId).movable;
+    // WI-242 A3 — ungroup any movable CONTAINER (frame OR group), read from the
+    // kind's `structure` via isContainerKind rather than a `=== "frame"` literal.
+    const canUngroup = isContainerKind(cvItem?.kind) && itemCapability(itemId).movable;
     const anyUnlocked = movedIds.some((id) => {
       const it = findItemDeep(docInAgocraft, id);
       return !(it !== undefined && isItemLocked(it));

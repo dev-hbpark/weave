@@ -101,6 +101,7 @@ import {
   type PasteCoordInput,
   resolvePasteFrame,
 } from "./clipboard/paste-coord.js";
+import { CROP_WINDOW_UNIT_KIND } from "./crop-window.js";
 import {
   buildDatasetUnit,
   type DatasetPayload,
@@ -109,6 +110,7 @@ import {
   normalizeDatasetPayload,
   readDatasetPayload,
 } from "./dataset/dataset-store.js";
+import { isContainerKind, structureOf } from "./domain-kinds.js";
 import type { ChartEncoding, ChartType, ChartVariant } from "./domains/chart/chart-model.js";
 // WI-051 Step 3 / 3.5 — engine-side text measurement, injected into Hug reflow +
 // the content-auto (non-Hug) `reflowMeasuredText` trigger (OFF by default until
@@ -983,7 +985,11 @@ export function buildWeaveCommands(
         input.enforceContainerIsFrame === true &&
         containerItem !== undefined &&
         String(containerItem.id) !== String(ctx.document.root.id) &&
-        containerItem.kind !== "frame"
+        // Containment is a kind fact, not a literal — `isContainerKind` reads it
+        // from the spec's `structure`, so a future container kind (e.g. group)
+        // is accepted here without editing this guard. Today only frame is a
+        // container, so this is exactly the previous `kind !== "frame"` check.
+        !isContainerKind(containerItem.kind)
       ) {
         return fail(
           "container-not-frame",
@@ -1191,7 +1197,73 @@ export function buildWeaveCommands(
   // the item's actual parent (so nested removals emit a correct structural
   // patch) and emits the self-contained `item.remove` (WI-024). Identical
   // behavior + error code (`item-not-found`) to the prior inline body.
-  const removeItem = createRemoveItemCommand("weave.item.remove");
+  // WI-242 A3 — GROUP dissolve-on-underflow invariant. After a remove, any
+  // container that dropped below its `structure.minChildren` AND declares
+  // `onUnderflow:"dissolve"` (today: the `group` kind) is dissolved in the SAME
+  // transaction — its surviving child reparents to the group's OWN parent and
+  // the emptied group is removed (auto-ungroup). Reuses removeFrameKeepingChildren
+  // (the kind-agnostic dissolve: reparent children → own parent + remove +
+  // WI-135 frameRatio/font rebase), so the geometry + undo round-trip are the
+  // proven ones. Read against an EVOLVED working doc (the base remove applied)
+  // so child counts + dissolve geometry are live — the weave.batch idiom. One
+  // level: a survivor that is itself an underflowing group is not re-dissolved
+  // here (rare; a fixpoint pass is a follow-up if a real case appears).
+  // `removeFrameKeepingChildren` is defined later in this factory; the closure
+  // resolves it at command-exec time (after the factory has fully run).
+  const dissolveUnderflowingGroups = (
+    ctx: CommandContext,
+    removedIds: ReadonlyArray<string>,
+    basePatches: ReadonlyArray<Patch>,
+  ): Patch[] => {
+    const parentIds = new Set<string>();
+    for (const id of removedIds) {
+      const info = findParentAndIndex(ctx.document, makeItemId(id));
+      if (info !== undefined) parentIds.add(String(info.parent.id));
+    }
+    if (parentIds.size === 0) return [];
+    let workingDoc = ctx.document;
+    for (const p of basePatches) {
+      workingDoc = applyChangeToDocument(
+        workingDoc,
+        p as unknown as Parameters<typeof applyChangeToDocument>[1],
+      );
+    }
+    const extra: Patch[] = [];
+    for (const parentId of parentIds) {
+      const parent = findItemDeep(workingDoc, parentId);
+      if (parent === undefined || !isContainerKind(parent.kind)) continue;
+      const s = structureOf(parent.kind as DomainKind);
+      if (!s.isContainer || s.onUnderflow !== "dissolve") continue;
+      if ((parent.children?.length ?? 0) >= s.minChildren) continue;
+      const dissolved = removeFrameKeepingChildren.run(
+        { ...ctx, document: workingDoc },
+        { frameId: parentId },
+      );
+      if (dissolved.ok && dissolved.patches.length > 0) {
+        extra.push(...dissolved.patches);
+        for (const p of dissolved.patches) {
+          workingDoc = applyChangeToDocument(
+            workingDoc,
+            p as unknown as Parameters<typeof applyChangeToDocument>[1],
+          );
+        }
+      }
+    }
+    return extra;
+  };
+
+  const removeItemKit = createRemoveItemCommand("weave.item.remove");
+  // WI-242 A3 — dissolve decorator: append group-underflow dissolve patches in
+  // the same transaction so removing a group's 2nd-to-last child auto-ungroups.
+  const removeItem: typeof removeItemKit = {
+    name: removeItemKit.name,
+    run: (ctx, input) => {
+      const base = removeItemKit.run(ctx, input);
+      if (!base.ok) return base;
+      const extra = dissolveUnderflowingGroups(ctx, [String(input.itemId)], base.patches);
+      return extra.length === 0 ? base : ok(base.value, [...base.patches, ...extra]);
+    },
+  };
   // WI-025 (DR-025 S3) — batch remove absorbed into the editing-command kit.
   // Every selected item removed in ONE transaction so a single Cmd+Z restores
   // them all; each removal patch targets the item's OWN parent (resolved from
@@ -1206,13 +1278,17 @@ export function buildWeaveCommands(
   // insert ascending — original sibling order restores exactly. Forward
   // removal is id-based, so the order change has no forward effect.
   // Upstream kit fix handed off to agocraft (HANDOFF — see WI-189).
+  // WI-242 A3 — also runs the group dissolve-on-underflow decorator.
   const removeItems: typeof removeItemsKit = {
     name: removeItemsKit.name,
     run: (ctx, input) => {
       const indexOf = (id: string) =>
         findParentAndIndex(ctx.document, makeItemId(id))?.indexInParent ?? -1;
       const sorted = [...input.itemIds].sort((a, b) => indexOf(b) - indexOf(a));
-      return removeItemsKit.run(ctx, { ...input, itemIds: sorted });
+      const base = removeItemsKit.run(ctx, { ...input, itemIds: sorted });
+      if (!base.ok) return base;
+      const extra = dissolveUnderflowingGroups(ctx, input.itemIds, base.patches);
+      return extra.length === 0 ? base : ok(base.value, [...base.patches, ...extra]);
     },
   };
   // WI-156 / DR-112 — the sole snapshot-boundary command (see
@@ -1460,15 +1536,20 @@ export function buildWeaveCommands(
   // are preserved verbatim). Image-only. `crop` is the 0..1 display-space window;
   // `rotation` (radians, DR-029 D6) is carried INSIDE `cropRatio` per agocraft
   // DR-037 (ImageCrop.rotation). No-crop = { 0,0,1,1 } + rotation omitted.
-  const setImageCrop: Command<SetImageCropInput, void> = {
-    name: "weave.image.setCrop",
+  const setMediaCrop: Command<SetImageCropInput, void> = {
+    name: "weave.media.setCrop",
     run: (ctx, input) => {
       const child = findChild(ctx.document, input.itemId);
       if (child === undefined) {
-        return fail("item-not-found", `weave.image.setCrop: no item with id "${input.itemId}"`);
+        return fail("item-not-found", `weave.media.setCrop: no item with id "${input.itemId}"`);
       }
-      if ((child as { kind?: string }).kind !== "image") {
-        return fail("not-an-image", `weave.image.setCrop: item "${input.itemId}" is not an image`);
+      // DR-161 — crop is a kind-agnostic UNIT now, so any croppable media works.
+      const kind = (child as { kind?: string }).kind;
+      if (kind !== "image" && kind !== "video") {
+        return fail(
+          "not-croppable",
+          `weave.media.setCrop: item "${input.itemId}" is not an image or video`,
+        );
       }
       const c = input.crop;
       const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
@@ -1488,37 +1569,42 @@ export function buildWeaveCommands(
       ) {
         return fail(
           "invalid-input",
-          "weave.image.setCrop: crop must be 0..1 with w,h>0 and x+w<=1, y+h<=1",
+          "weave.media.setCrop: crop must be 0..1 with w,h>0 and x+w<=1, y+h<=1",
         );
       }
       if (input.rotation !== undefined && !finite(input.rotation)) {
-        return fail("invalid-input", "weave.image.setCrop: rotation must be a finite number");
+        return fail("invalid-input", "weave.media.setCrop: rotation must be a finite number");
       }
-      // Flip (DR-029 D7) is a separate `transform.flip` unit, not part of cropRatio,
-      // so setCrop only sets the window + rotation.
-      const cropRatio = {
-        x: c.x,
-        y: c.y,
-        w: c.w,
-        h: c.h,
-        ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
-      };
-      const after: Readonly<Record<string, unknown>> = {
-        ...(child.attrs as unknown as Record<string, unknown>),
-        cropRatio,
-      };
-      const patch: Patch = {
-        type: "item.attrs",
-        itemId: child.id,
-        before: child.attrs,
-        after,
-      };
+      // DR-161 — the crop window is a weave-local `crop.window` UNIT now (was
+      // attrs.cropRatio). Write the unit + STRIP the legacy attr so a re-saved doc
+      // is fully unit-based (DR-028). Flip (DR-029 D7) stays its own `transform.flip`
+      // unit; setCrop only sets the window + rotation.
+      const patches: Patch[] = [];
+      const attrsRec = child.attrs as unknown as Record<string, unknown>;
+      if ("cropRatio" in attrsRec) {
+        const after: Record<string, unknown> = { ...attrsRec };
+        delete after.cropRatio;
+        patches.push({ type: "item.attrs", itemId: child.id, before: child.attrs, after });
+      }
+      const winResult = setDecorationCommand.run(ctx, {
+        itemId: input.itemId,
+        kind: CROP_WINDOW_UNIT_KIND,
+        attrs: {
+          x: c.x,
+          y: c.y,
+          w: c.w,
+          h: c.h,
+          ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
+        },
+      });
+      if (!winResult.ok) return winResult;
+      patches.push(...winResult.patches);
       // WI-074 D12 — persist the image-offset (pan within the rotation magnification)
       // as the weave-local `crop.offset` unit, in the SAME transaction (single undo).
       const off = input.offset;
       if (off !== undefined) {
         if (!finite(off.ox) || !finite(off.oy)) {
-          return fail("invalid-input", "weave.image.setCrop: offset must be finite numbers");
+          return fail("invalid-input", "weave.media.setCrop: offset must be finite numbers");
         }
         const offsetResult = setDecorationCommand.run(ctx, {
           itemId: input.itemId,
@@ -1526,9 +1612,9 @@ export function buildWeaveCommands(
           attrs: off.ox === 0 && off.oy === 0 ? null : { ox: off.ox, oy: off.oy },
         });
         if (!offsetResult.ok) return offsetResult;
-        return ok(undefined, [patch, ...offsetResult.patches]);
+        patches.push(...offsetResult.patches);
       }
-      return ok(undefined, [patch]);
+      return ok(undefined, patches);
     },
   };
 
@@ -2445,23 +2531,27 @@ export function buildWeaveCommands(
     },
   };
 
-  // ─── WI-185 ⑭ — Cmd+G: wrap the selection in a NEW frame ─────────────────
+  // ─── WI-185 ⑭ / WI-242 A2 — Cmd+G: wrap the selection in a NEW group ──────
   //
-  // weave's grouping construct IS the frame (no separate "group" kind), so
-  // "group" = create a frame over the selection's bounding box and reparent
-  // the members into it. Composite via delegate-run + an EVOLVED working doc
-  // (the weave.batch idiom): the wrap frame must exist in the document the
-  // reparent geometry reads (computeReparentFrameRatio resolves the new
-  // parent there), so the create patches are applied to a working copy before
-  // reparentItem runs. Delegating to the real commands buys every guard for
-  // free — id minting + frame normalization (weave.item.add), visual-position
-  // preserving reparent + WI-135 ratio-font re-basing (weave.item.reparent).
-  // One transaction → one Cmd+Z unwraps (children home, frame gone).
+  // The grouping construct is now the dedicated `group` kind (DR-159) — a
+  // transparent container with the ≥2-children / dissolve-on-underflow
+  // invariant — NOT a frame (a frame is a layout surface / slide; a group is a
+  // pure composition wrapper). "group" = create a `group` over the selection's
+  // bounding box and reparent the members into it. Composite via delegate-run +
+  // an EVOLVED working doc (the weave.batch idiom): the wrap group must exist in
+  // the document the reparent geometry reads (computeReparentFrameRatio resolves
+  // the new parent there), so the create patches are applied to a working copy
+  // before reparentItem runs. Delegating to the real commands buys every guard
+  // for free — id minting + frame normalization (weave.item.add), visual-
+  // position preserving reparent + WI-135 ratio-font re-basing
+  // (weave.item.reparent). One transaction → one Cmd+Z unwraps (children home,
+  // group gone). Ungroup (Cmd+Shift+G) dissolves it via removeKeepingChildren,
+  // and the A3 invariant auto-dissolves it when it underflows to <2 children.
   //
   // The bbox unions the members' UNROTATED parent-ratio boxes — a rotated
-  // member's visual corners may overhang the wrap frame slightly (frames
-  // don't clip by default, so nothing disappears); matching office tools'
-  // rotated-bbox math is deliberately out of scope here.
+  // member's visual corners may overhang the wrap group slightly (groups
+  // don't clip, so nothing disappears); matching office tools' rotated-bbox
+  // math is deliberately out of scope here.
   const groupItems: Command<
     {
       readonly itemIds: ReadonlyArray<string>;
@@ -2515,7 +2605,7 @@ export function buildWeaveCommands(
         rotation: 0,
       };
       const created = addItem.run(ctx, {
-        kind: "frame",
+        kind: "group",
         frame: groupFrame,
         containerId: nn(parentId), // non-empty itemIds → the loop set it
       });
@@ -3602,7 +3692,7 @@ export function buildWeaveCommands(
     removeItems as Command,
     updateItem as Command,
     setShapeCornerRadius as Command,
-    setImageCrop as Command,
+    setMediaCrop as Command,
     flipItem as Command,
     setShapeFill as Command,
     resizeMulti as Command,

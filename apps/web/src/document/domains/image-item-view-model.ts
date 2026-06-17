@@ -22,6 +22,7 @@ import {
 } from "@agocraft/core";
 import { type CSSProperties, useEffect } from "react";
 import { type CornerRadii, mediaBorderRadius } from "../corner-radius.js";
+import { readCropWindow } from "../crop-window.js";
 import { croppingState, useCroppingItemId } from "../interactions/cropping-state.js";
 import { useIsCulled } from "../interactions/viewport-cull-context.js";
 import { readCropOffset } from "../transform-crop-offset.js";
@@ -37,24 +38,6 @@ export interface CropRect {
   /** WI-074 D12 — image-offset (frame fractions) within the rotation magnification. */
   readonly ox: number;
   readonly oy: number;
-}
-
-const IDENTITY_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1, rotation: 0, ox: 0, oy: 0 };
-
-function readCrop(a: ImageAttrs): CropRect {
-  const c = a.cropRatio as
-    | { x?: number; y?: number; w?: number; h?: number; rotation?: number }
-    | undefined;
-  if (c === undefined) return IDENTITY_CROP;
-  return {
-    x: c.x ?? 0,
-    y: c.y ?? 0,
-    w: c.w ?? 1,
-    h: c.h ?? 1,
-    rotation: c.rotation ?? 0,
-    ox: 0,
-    oy: 0,
-  };
 }
 
 export type ImageItemVm = {
@@ -122,8 +105,9 @@ export function useImageItemViewModel(
     (findUnitInItem(itemRef, OPACITY_UNIT_KIND)?.attrs as { value: number } | undefined)?.value ??
     1;
 
-  // WI-074 D12 — merge the persisted crop image-offset into the committed crop.
-  const crop: CropRect = { ...readCrop(a), ...readCropOffset(itemRef) };
+  // DR-161 — the crop window is a `crop.window` UNIT now (legacy attrs.cropRatio
+  // still read as a fallback). WI-074 D12 — merge the persisted image-offset unit.
+  const crop: CropRect = { ...readCropWindow(itemRef), ...readCropOffset(itemRef) };
 
   const wrapperClassName = cropMode
     ? "relative h-full w-full"

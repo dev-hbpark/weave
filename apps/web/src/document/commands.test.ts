@@ -2056,8 +2056,10 @@ describe("weave.shape.breakToLine + weave.line.closeToShape (WI-065 / DR-031)", 
   });
 });
 
-// WI-074 / DR-029 — image crop command (+ DR-029 D6 content rotation in cropRatio).
-describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
+// WI-074 / DR-029 / DR-161 — media crop command. DR-161: the crop window is a
+// kind-agnostic `crop.window` UNIT now (was attrs.cropRatio), so the command is
+// `weave.media.setCrop` and works on image OR video.
+describe("buildWeaveCommands — weave.media.setCrop (WI-074 / DR-161)", () => {
   function makeImageCtx(): CommandContext {
     const weave: WeaveDocument = {
       id: "doc-img",
@@ -2092,49 +2094,52 @@ describe("buildWeaveCommands — weave.image.setCrop (WI-074)", () => {
     };
   }
   const cropCmd = () => {
-    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.image.setCrop");
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.media.setCrop");
     if (c === undefined) throw new Error("command not found");
     return c;
   };
+  // DR-161 — the crop window lands in a `crop.window` unit.create patch.
+  const cropWindowUnit = (
+    result: CommandResult<unknown>,
+  ): { x?: number; y?: number; w?: number; h?: number; rotation?: number } => {
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error?.code ?? "?"}`);
+    const create = result.patches.find(
+      (p) =>
+        (p as { type?: string }).type === "unit.create" &&
+        (p as { unit?: { kind?: string } }).unit?.kind === "crop.window",
+    ) as { unit?: { attrs?: Record<string, number> } } | undefined;
+    if (create === undefined) throw new Error("expected a crop.window unit.create patch");
+    return create.unit?.attrs ?? {};
+  };
 
-  it("sets cropRatio via an item.attrs patch, preserving other attrs", () => {
+  it("writes the crop window as a crop.window UNIT (DR-161), not attrs.cropRatio", () => {
     const result = cropCmd().run(makeImageCtx(), {
       itemId: "img-1",
       crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 },
     });
-    if (!result.ok) throw new Error(`unexpected fail: ${result.error?.code ?? "?"}`);
-    expect(result.patches).toHaveLength(1);
-    const patch = result.patches[0];
-    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
-    expect((patch.after as { cropRatio: unknown }).cropRatio).toEqual({
-      x: 0.2,
-      y: 0.2,
-      w: 0.6,
-      h: 0.6,
-    });
-    expect((patch.after as { fit: string }).fit).toBe("cover");
+    expect(cropWindowUnit(result)).toEqual({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+    // A fresh image has no legacy attrs.cropRatio → no item.attrs patch is emitted.
+    if (!result.ok) throw new Error("unexpected fail");
+    expect(result.patches.some((p) => p.type === "item.attrs")).toBe(false);
   });
 
-  it("carries rotation INSIDE cropRatio when provided (DR-029 D6)", () => {
+  it("carries rotation INSIDE the crop.window unit when provided (DR-029 D6)", () => {
     const result = cropCmd().run(makeImageCtx(), {
       itemId: "img-1",
       crop: { x: 0, y: 0, w: 1, h: 1 },
       rotation: 0.1745,
     });
-    if (!result.ok) throw new Error("unexpected fail");
-    const patch = result.patches[0];
-    if (patch === undefined || patch.type !== "item.attrs") throw new Error("expected item.attrs");
-    expect((patch.after as { cropRatio: { rotation?: number } }).cropRatio.rotation).toBe(0.1745);
+    expect(cropWindowUnit(result).rotation).toBe(0.1745);
   });
 
-  it("fails not-an-image on a frame target", () => {
+  it("fails not-croppable on a frame target (image|video only)", () => {
     const result = cropCmd().run(makeImageCtx(), {
       itemId: "frame-1",
       crop: { x: 0, y: 0, w: 1, h: 1 },
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe("not-an-image");
+    expect(result.error.code).toBe("not-croppable");
   });
 
   it("fails item-not-found for an unknown id", () => {
@@ -2987,14 +2992,14 @@ describe("weave.items.duplicateWithDelta (WI-185 ⑬)", () => {
   });
 });
 
-// ─── WI-185 ⑭ — weave.items.group (Cmd+G wrap-in-frame) ───────────────────
+// ─── WI-185 ⑭ / WI-242 A2 — weave.items.group (Cmd+G wrap-in-group) ────────
 //
-// weave's grouping construct IS the frame: group = create a frame over the
-// selection's bbox + reparent the members into it, one transaction. The
-// composite delegates to weave.item.add and weave.item.reparent against an
-// EVOLVED working doc (the weave.batch idiom), so the reparent geometry can
-// resolve the just-created wrap frame.
-describe("weave.items.group (WI-185 ⑭)", () => {
+// The grouping construct is the dedicated `group` kind (DR-159): group = create
+// a `group` over the selection's bbox + reparent the members into it, one
+// transaction. The composite delegates to weave.item.add and
+// weave.item.reparent against an EVOLVED working doc (the weave.batch idiom), so
+// the reparent geometry can resolve the just-created wrap group.
+describe("weave.items.group (WI-185 ⑭ / WI-242)", () => {
   const FRAME_A = { x: 0.1, y: 0.2, width: 0.2, height: 0.1, rotation: 0 } as const;
   const FRAME_B = { x: 0.5, y: 0.6, width: 0.1, height: 0.1, rotation: 0 } as const;
 
@@ -3054,7 +3059,7 @@ describe("weave.items.group (WI-185 ⑭)", () => {
     return c;
   }
 
-  it("wraps siblings in a NEW frame sized to their bbox and reparents them in — one transaction, visual position preserved", () => {
+  it("wraps siblings in a NEW group sized to their bbox and reparents them in — one transaction, visual position preserved", () => {
     const ctx = makeGroupCtx();
     const result = groupCmd().run(ctx, {
       itemIds: ["shape-a", "shape-b"],
@@ -3063,12 +3068,12 @@ describe("weave.items.group (WI-185 ⑭)", () => {
     });
     if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
     const groupId = result.value as string;
-    // First patch creates the wrap frame at the members' bounding box.
+    // First patch creates the wrap group at the members' bounding box.
     const create = result.patches.find((p) => p.type === "item.create");
     if (create === undefined || create.type !== "item.create")
       throw new Error("expected an item.create");
     expect(String(create.item.id)).toBe(groupId);
-    expect(create.item.kind).toBe("frame");
+    expect(create.item.kind).toBe("group");
     const gFrame = (create.item.attrs as { frame: ItemFrameLike }).frame;
     expect(gFrame.x).toBeCloseTo(0.1);
     expect(gFrame.y).toBeCloseTo(0.2);
@@ -3112,6 +3117,114 @@ describe("weave.items.group (WI-185 ⑭)", () => {
     const empty = groupCmd().run(makeGroupCtx(), { itemIds: [] });
     expect(empty.ok).toBe(false);
     if (!empty.ok) expect(empty.error.code).toBe("empty-input");
+  });
+});
+
+// WI-242 A3 — GROUP dissolve-on-underflow invariant. Removing a child until a
+// group holds < 2 dissolves the group: the sole survivor reparents to the
+// group's OWN parent (frameRatio recomputed) and the emptied group is removed,
+// all in the SAME transaction as the remove.
+describe("group dissolve-on-underflow (WI-242 A3)", () => {
+  function shape(id: string, frame: { x: number; y: number; width: number; height: number }) {
+    return {
+      id: makeItemId(id),
+      kind: "shape",
+      attrs: {
+        frame: { ...frame, rotation: 0 },
+        shape: "rectangle",
+        subAttrs: { shape: "rectangle" },
+      },
+      units: [],
+      children: [],
+      meta: { schemaVersion: 3, createdAt: META_DATE, updatedAt: META_DATE },
+    } as unknown as AgocraftItem;
+  }
+
+  // A `group` G at root holding `childIds.length` shapes.
+  function makeGroupedCtx(childIds: ReadonlyArray<string>): CommandContext {
+    const weave: WeaveDocument = {
+      id: "doc-dissolve",
+      title: "Dissolve",
+      items: [
+        {
+          id: "grp",
+          kind: "group",
+          attrs: { frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0 } },
+          behaviors: [],
+          createdAt: META_DATE,
+        } as unknown as Item,
+      ],
+      updatedAt: META_DATE,
+      schemaVersion: 3,
+    };
+    let doc = toAgocraftDocument(weave);
+    for (const [i, id] of childIds.entries()) {
+      doc = addChild(doc, shape(id, { x: i * 0.5, y: i * 0.5, width: 0.5, height: 0.5 }), "grp");
+    }
+    const idGen = createUuidV7Generator(defaultClock, defaultRandom);
+    return {
+      document: doc,
+      resolve: ((token: Token<unknown>) =>
+        token === IdGeneratorToken ? idGen : null) as CommandContext["resolve"],
+      skipRelations: false,
+    };
+  }
+
+  function removeCmd() {
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.item.remove");
+    if (c === undefined) throw new Error("command not found");
+    return c;
+  }
+
+  it("removing a 2-child group's child dissolves the group; survivor lifts to the group's parent (root)", () => {
+    const ctx = makeGroupedCtx(["a", "b"]);
+    const result = removeCmd().run(ctx, { itemId: "b" });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    let doc = ctx.document;
+    for (const p of result.patches) {
+      doc = applyChangeToDocument(doc, p as Parameters<typeof applyChangeToDocument>[1]);
+    }
+    const rootIds = doc.root.children.map((c) => String(c.id));
+    // Group gone, survivor lifted to root, removed child gone.
+    expect(rootIds).not.toContain("grp");
+    expect(rootIds).toContain("a");
+    expect(rootIds).not.toContain("b");
+    // Survivor's frame recomputed into root space: G(0.1,0.1,0.8,0.8) ∘ a(0,0,0.5,0.5).
+    const a = doc.root.children.find((c) => String(c.id) === "a");
+    const af = (a?.attrs as { frame: ItemFrameLike }).frame;
+    expect(af.x).toBeCloseTo(0.1);
+    expect(af.y).toBeCloseTo(0.1);
+    expect(af.width).toBeCloseTo(0.4);
+    expect(af.height).toBeCloseTo(0.4);
+  });
+
+  it("removing a 3-child group's child does NOT dissolve (still ≥2 children)", () => {
+    const ctx = makeGroupedCtx(["a", "b", "c"]);
+    const result = removeCmd().run(ctx, { itemId: "c" });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    let doc = ctx.document;
+    for (const p of result.patches) {
+      doc = applyChangeToDocument(doc, p as Parameters<typeof applyChangeToDocument>[1]);
+    }
+    const group = doc.root.children.find((c) => String(c.id) === "grp");
+    expect(group).toBeDefined();
+    expect((group?.children ?? []).map((c) => String(c.id)).sort()).toEqual(["a", "b"]);
+  });
+
+  it("removing BOTH children at once removes the empty group (no orphan)", () => {
+    const ctx = makeGroupedCtx(["a", "b"]);
+    const c = buildWeaveCommands(spyTargets()).find((x) => x.name === "weave.items.remove");
+    if (c === undefined) throw new Error("command not found");
+    const result = c.run(ctx, { itemIds: ["a", "b"] });
+    if (!result.ok) throw new Error(`unexpected fail: ${result.error.code}`);
+    let doc = ctx.document;
+    for (const p of result.patches) {
+      doc = applyChangeToDocument(doc, p as Parameters<typeof applyChangeToDocument>[1]);
+    }
+    const rootIds = doc.root.children.map((x) => String(x.id));
+    expect(rootIds).not.toContain("grp");
+    expect(rootIds).not.toContain("a");
+    expect(rootIds).not.toContain("b");
   });
 });
 

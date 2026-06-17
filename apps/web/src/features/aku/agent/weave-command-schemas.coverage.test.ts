@@ -25,7 +25,7 @@ const PREVIOUSLY_HIDDEN: ReadonlyArray<string> = [
   "weave.shape.setCornerRadius",
   "weave.shape.setVertices",
   "weave.item.setDecoration",
-  "weave.image.setCrop",
+  "weave.media.setCrop",
   "weave.item.flip",
   "weave.items.resizeMulti",
   "weave.items.remove",

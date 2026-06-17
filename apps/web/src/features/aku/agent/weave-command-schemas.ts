@@ -646,7 +646,7 @@ export const WEAVE_COMMAND_LABELS: Readonly<Record<string, string>> = {
   "weave.items.remove": "여러 아이템 삭제",
   "weave.item.update": "아이템 수정",
   "weave.shape.setCornerRadius": "모서리 둥글기",
-  "weave.image.setCrop": "이미지 자르기",
+  "weave.media.setCrop": "미디어 자르기",
   "weave.item.flip": "뒤집기",
   "weave.shape.setFill": "채우기 설정",
   "weave.shape.setVertices": "다각형 정점 편집",
@@ -1045,14 +1045,13 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
       "Replace a FREEFORM polygon's (subAttrs.shape === 'poly') vertices. `points` is the COMPLETE new list, each {x,y} a 0..1 ratio of the shape's own bbox; `closed` toggles filled vs open. Poly-shape only. Also doable via weave.item.update { attrs:{ subAttrs:{ shape:'poly', points, closed } } }.",
     ),
   },
-  // ── image crop (WI-074 / DR-029) — image items only ──
-  // WI-095 (DR-064) — re-exposed to the agent. `crop` = the visible window in
-  // 0..1 of the image's box ({x,y} top-left, {w,h} size; no-crop = {0,0,1,1}).
-  // `rotation` (radians) straightens the CONTENT (frame stays put); `offset`
-  // (frame-box fractions) pans within the rotation cover-zoom. Also reachable via
-  // weave.item.update { attrs:{ cropRatio:{ x,y,w,h, rotation? } } }.
-  "weave.image.setCrop": {
-    label: label("weave.image.setCrop"),
+  // ── media crop (WI-074 / DR-029 / DR-161) — image OR video ──
+  // DR-161 — crop is a kind-agnostic `crop.window` UNIT now (was attrs.cropRatio).
+  // `crop` = the visible window in 0..1 of the media's box ({x,y} top-left, {w,h}
+  // size; no-crop = {0,0,1,1}). `rotation` (radians) straightens the CONTENT (frame
+  // stays put); `offset` (frame-box fractions) pans within the rotation cover-zoom.
+  "weave.media.setCrop": {
+    label: label("weave.media.setCrop"),
     inputSchema: obj(
       {
         itemId: STR,
@@ -1061,7 +1060,7 @@ export const WEAVE_COMMAND_SCHEMAS: Readonly<Record<string, AgentCommandSpec>> =
         offset: obj({ ox: NUM, oy: NUM }, ["ox", "oy"]),
       },
       ["itemId", "crop"],
-      "CROP an image — `crop` is the visible window in 0..1 of the image box ({x,y} top-left, {w,h} size; no-crop = {0,0,1,1}). `rotation` straightens the content; `offset` pans within the cover-zoom. Image-only. Also doable via weave.item.update { attrs:{ cropRatio } }.",
+      "CROP an image or video — `crop` is the visible window in 0..1 of the media box ({x,y} top-left, {w,h} size; no-crop = {0,0,1,1}). `rotation` straightens the content; `offset` pans within the cover-zoom. Image/video only. Stored as a `crop.window` unit.",
     ),
   },
   // ── flip / mirror (WI-074 / DR-029 D7) — image / video / shape / line ──

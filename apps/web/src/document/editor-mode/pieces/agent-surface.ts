@@ -44,7 +44,7 @@ export const NONCANONICAL_AGENT_TOOLS: ReadonlyArray<string> = [
   "weave.items.duplicateWithDelta", // → items.lifecycle + items.update frames
   // (c) Niche shape/line/image ops — ~0 agent usage; canonical paths cover
   //     the common case, fail-closed is acceptable for the rare one.
-  "weave.image.setCrop", // → weave.item.update attrs.cropRatio
+  "weave.media.setCrop", // → weave.item.update units:[{ kind:"crop.window" }]
   "weave.item.flip", // → weave.item.update units:[{ kind:"transform.flip" }]
   "weave.shape.breakToLine", // shape→line conversion, rare
   "weave.line.closeToShape", // line→shape conversion, rare

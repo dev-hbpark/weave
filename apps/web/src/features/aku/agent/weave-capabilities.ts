@@ -98,6 +98,16 @@ export const WEAVE_CAPABILITIES = {
       units: ["decoration.fill", "decoration.shadow", "decoration.stroke", "decoration.opacity"],
     },
     {
+      kind: "group",
+      description: [
+        "A group: a transparent composition wrapper around TWO OR MORE items, with no paint of its own. Prefer a layout FRAME (weave.frame.setLayout) when you want items to AUTO-ARRANGE (rows / columns / grids) — a group does NOT lay out or resize its children, it only moves/selects them as a unit and keeps a bounding box. A group enforces a ≥2-children invariant: removing a child until only one remains DISSOLVES the group (it is deleted and the lone survivor is reparented to the group's parent). Groups are created from a selection by the editor (group / ungroup), not added empty via weave.item.add.",
+      ].join(" "),
+      // Group seeds only its bounding `frame` (group.create recomputes it to the
+      // union of the selected children); no paint units.
+      editableAttrs: ["frame"],
+      units: [],
+    },
+    {
       kind: "text",
       description: [
         "A text box. The visible string is attrs.text ('\\n' = line break).",
@@ -212,7 +222,7 @@ export const WEAVE_CAPABILITIES = {
     {
       kind: "image",
       description:
-        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius the corner radius in ABSOLUTE design-px (circular, auto-capped at min(width,height)/2), and attrs.borderRadii { tl, tr, br, bl } (px) rounds each corner independently. Size/position via attrs.frame. attrs.cropRatio = { x, y, w, h, rotation? } (all 0..1 except rotation radians) crops to a sub-window of the source (no-crop = { x:0,y:0,w:1,h:1 }); set it via weave.item.update or the dedicated weave.image.setCrop. " +
+        "An image. attrs.src is the URL/data-URL, attrs.alt the description, attrs.fit one of cover|contain|fill, attrs.borderRadius the corner radius in ABSOLUTE design-px (circular, auto-capped at min(width,height)/2), and attrs.borderRadii { tl, tr, br, bl } (px) rounds each corner independently. Size/position via attrs.frame. Crop to a sub-window of the source via the kind-agnostic `crop.window` UNIT { x, y, w, h, rotation? } (all 0..1 except rotation radians; no-crop = omit the unit or { x:0,y:0,w:1,h:1 }); set it via the dedicated weave.media.setCrop (image or video). " +
         'attrs.src is OPTIONAL: OMIT it (or pass "") to create a SOURCE-LESS PLACEHOLDER — a neutral framed box with an image glyph, NOT a broken image. Use this for wireframe/layout drafts where the real picture is added later. When src is empty, attrs.alt is rendered as CENTERED CAPTION TEXT inside the placeholder (so set a short alt like "제품 사진 자리" to label the slot); once a real src is set, alt reverts to its accessibility role and is no longer drawn.',
       editableAttrs: [
         "frame",
