@@ -7,7 +7,7 @@
 | ID | WI-243 |
 | Date | 2026-06-17 |
 | Owner | hbpark |
-| Status | **PLANNED — scaffold (Phase 0) coordinated with WI-241 session; per-kind phases parallelizable after** |
+| Status | **IN PROGRESS — reference kinds extracted (chart `3b76872`, text `b32a1a4`, decoupled/behavior-neutral); Phase 0 spec-facet wiring still owned by WI-241 session; remaining kinds pending** |
 | Type | Refactor / extension-point — content View/ViewModel split as a required spec facet |
 | Decision | [DR-160](../decisions/DR-160-per-item-content-viewmodel-facet.md) |
 | Handoff | [HANDOFF-002](../handoffs/HANDOFF-002-per-item-viewmodel-spec-facet.md) (to the WI-241/DR-158 session) |
@@ -100,6 +100,36 @@ already rejected silent defaults for the structure facet, same reasoning here.
 - Per-kind e2e stays green (text `history-*`/text specs, chart `chart-*` specs) —
   pure extraction, zero behavior change.
 - dependency-cruiser purity rule green (Phase N+1).
+
+## Progress log
+
+- **2026-06-17 — per-kind #1 `chart` (`3b76872`)**: new
+  `domains/chart/chart-item-view-model.ts` (`useChartItemViewModel`) owns dataset
+  resolution, `migrateEncoding`, plottability → `empty|ready` status, the drill
+  FSM, and click→role intent; `ChartBlock.tsx` → pure `ChartView({item, vm})` +
+  thin shim. `ChartView` exported for the Phase-0 SPECS flip. `domain-kinds.ts`
+  untouched. tsc clean, 1486 unit green, DOM attrs/testids unchanged.
+- **2026-06-17 — per-kind #2 `text` (`b32a1a4`)**: new
+  `domains/text-item-view-model.ts` (`useTextItemViewModel`) owns attr/theme
+  resolution, Figma-attr→CSS mapping, synchronous shrink-to-fit (DR-053/WI-051),
+  the edit-mode FSM + effects, editor seed styles; `TextBlock.tsx` → pure
+  `TextView({item, vm})` (renderReadOnly + layered outline + hyperlink + lazy
+  Lexical) + thin shim. `RichTextSnapshot` type-only (Lexical chunk stays
+  split). tsc clean, 1486 unit green, biome clean.
+- These are the **decoupled** form (Block stays the registered `renderer`,
+  calling the hook). The Phase-0 facet (HANDOFF-002, WI-241 session) flips each
+  `SPECS` entry to `useViewModel`/`view` once the required fields +
+  `makeKindRenderer` exist — a one-line edit per kind with no change to these files.
+- **Not yet live-verified** (e2e/dev-server) — this sandbox's vite `@fs`
+  vendored sprite-engine blocks networkidle (known baseline). Behavior-neutrality
+  rests on tsc + full unit green + unchanged DOM attrs; dev-server drill/edit
+  spot-check deferred to a networked environment.
+
+### Remaining kinds
+
+`frame`, `shape`, `line`, `embed` (medium VM weight) · `image`, `qr`, `video`
+(thin passthrough VM). One per change, each extract + pure-View + decommission
+of inline logic, behavior-neutral.
 
 ## Scope boundary
 
