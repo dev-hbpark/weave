@@ -1037,9 +1037,69 @@ export function buildWeaveCommands(
                 input.designHeight,
               )
             : null;
+        // WI-051 follow-up — a TEXT added into an auto-flex slot must HUG its
+        // content (a box around the text), not FILL the slot. The default seed
+        // frame is FULL_FRAME, so the engine's `basis:"auto"` (which reads the
+        // child's CURRENT frame) would place it slot-filling — a short text then
+        // looked tiny in a big box (operator report — flex add). MEASURE the text
+        // and seed its frame to the CONTENT size BEFORE onChildAdd (same as the
+        // paste path), so `basis:"auto"` reads the content = a hug. Grid is left
+        // alone (box = cell; the render font shrink-to-fit handles overflow).
+        let childForAdd = agoItem;
+        // The container box in design-px — from `getDesignDims()` (manual toolbar
+        // adds do NOT pass input.designWidth/Height, so `parentBox` above is null
+        // for them; the paste path uses the same host accessor).
+        const dims = getDesignDims();
+        const hugBox =
+          dims !== undefined
+            ? absoluteFrameBox(ctx.document, String(container.id), dims.w, dims.h)
+            : parentBox;
+        if (
+          engineTextMeasureEnabled() &&
+          agoItem.kind === "text" &&
+          normalizedLayout?.kind === "auto-flex" &&
+          hugBox !== null
+        ) {
+          const at = agoItem.attrs as Record<string, unknown>;
+          const srcFrame = at.frame as ItemFrame | undefined;
+          if (srcFrame !== undefined) {
+            const fontSizePx = resolveFontSize(
+              at.fontSizeSpec as never,
+              at.fontSize as never,
+              hugBox.h,
+            );
+            const lhSpec = at.lineHeightSpec as { value?: number; unit?: string } | undefined;
+            const lineHeight =
+              lhSpec?.unit === "multiplier" && typeof lhSpec.value === "number"
+                ? lhSpec.value
+                : typeof at.lineHeight === "number"
+                  ? at.lineHeight
+                  : 1.4;
+            const hug = measureFreeTextHugRatio(
+              {
+                text: typeof at.text === "string" ? at.text : "",
+                fontFamily: typeof at.fontFamily === "string" ? at.fontFamily : "sans-serif",
+                fontSizePx,
+                lineHeight,
+                letterSpacing: typeof at.letterSpacing === "number" ? at.letterSpacing : 0,
+              },
+              hugBox.w,
+              hugBox.h,
+            );
+            if (hug !== undefined) {
+              childForAdd = {
+                ...agoItem,
+                attrs: {
+                  ...at,
+                  frame: { ...srcFrame, width: hug.wRatio, height: hug.hRatio },
+                } as AgocraftItem["attrs"],
+              };
+            }
+          }
+        }
         const result = getLayoutEngine().onChildAdd({
           parent: safeParent,
-          newChild: agoItem,
+          newChild: childForAdd,
           growToFit: input.enforceGridCapacity === true,
           ...(parentBox !== null ? { parentPx: { w: parentBox.w, h: parentBox.h } } : {}),
         });
