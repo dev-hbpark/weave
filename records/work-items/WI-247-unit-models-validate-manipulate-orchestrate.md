@@ -7,7 +7,7 @@
 | ID | WI-247 |
 | Date | 2026-06-17 |
 | Owner | hbpark |
-| Status | **IN PROGRESS** — reference units done (crop.window, transform.flip); rollout pending |
+| Status | **DONE** — all units modeled + registry + orchestration wrapper; generic paths auto-validate |
 | Type | Refactor / architecture — unit responsibility (Information Expert) |
 | Decision | [DR-163](../decisions/DR-163-unit-models-validate-manipulate-orchestrate.md) |
 | Related | DR-028, DR-161, WI-244 |
@@ -34,13 +34,26 @@ whose behaviour differs (flip's kind restriction) implements its own manipulatio
   `isAxis`. `weave.item.flip` orchestrates (no inline kind gate / toggle math).
 - Tests: `flip-unit.test.ts` (6), `crop-window-unit.test.ts` (7). Full suite 1512 green.
 
-## Rollout (follow-up)
+## Rollout — DONE
 
-Per DR-163: model the remaining decoration units (`decoration.fill` — fold in
-`weave.shape.setFill`'s PaintSpec validation; `stroke` / `shadow` / `opacity` /
-`filter`; `crop.offset`), then a `unitRegistry` so the generic
-`weave.item.setDecoration` / `weave.item.update` paths validate per-kind instead
-of writing blind attrs.
+- **All units modeled**: `fillUnit` (absorbs `weave.shape.setFill`'s PaintSpec
+  validation), `strokeUnit`, `shadowUnit`, `opacityUnit` (clamps 0..1),
+  `filterUnit`, `cropOffsetUnit` — each `units/<x>-unit.ts` with
+  validate + `appliesTo` + `toAttrs` (+ manipulation where relevant).
+- **`unitRegistry`** (`units/unit-registry.ts`): kind → model, single source.
+- **Orchestration wrapper `emitUnit`** (operator's "랩핑된 함수에서 자동으로 넣어준다"):
+  every unit write — the typed commands AND the generic
+  `weave.item.setDecoration` / `weave.item.update` / `weave.items.update` paths —
+  goes through it, so applicability + validation + normalization happen
+  AUTOMATICALLY from the registry. A developer can't forget them; setting an
+  invalid/inapplicable unit on ANY path fails (the "don't-have-to-be-careful,
+  nothing-goes-wrong" structure the operator asked for).
+- **`makeSetUnitCommand` factory**: a typed per-unit command is now a one-line
+  call (`weave.shape.setFill` = `makeSetUnitCommand("weave.shape.setFill", fillUnit,
+  i => i.fill)`) — zero hand-written boilerplate.
+- Adding a unit = add `units/<x>-unit.ts` + one registry entry; every write path
+  validates it automatically thereafter.
+- Tests: `unit-registry.test.ts` + the two model tests; full suite 1517 green.
 
 ## Verification
 

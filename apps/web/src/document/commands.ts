@@ -48,9 +48,7 @@ import {
   createSetDecorationCommand,
   createSetPolyPointsCommand,
   defaultShapeSubAttrs,
-  FILL_UNIT_KIND,
   fail,
-  findUnitInItem,
   itemId as makeItemId,
   unitId as makeUnitId,
   mapItemDeep,
@@ -146,7 +144,9 @@ import {
   type Item as WeaveItem,
 } from "./types.js";
 import { cropWindowUnit } from "./units/crop-window-unit.js";
+import { fillUnit } from "./units/fill-unit.js";
 import { flipUnit } from "./units/flip-unit.js";
+import { getUnitModel } from "./units/unit-registry.js";
 
 /** Slice of useDocument's callback surface used by the *direct* commands
  *  (add / remove / reset). In-place commands no longer call into this.
@@ -1385,6 +1385,63 @@ export function buildWeaveCommands(
   // `weave.item.update` so a styled edit (attrs + fill/shadow/…) is one call.
   const setDecorationCommand = createSetDecorationCommand("weave.item.setDecoration");
 
+  // WI-247 / DR-163 — the orchestration WRAPPER. Every unit write (the typed
+  // commands AND the generic setDecoration / update paths) goes through here, so
+  // validation + applicability + normalization happen AUTOMATICALLY from the unit
+  // registry — a developer setting a unit can't forget them (the "don't-have-to-
+  // be-careful" structure). `null` attrs clear the unit (always allowed). Unmodeled
+  // kinds (forward-compat) pass through untouched.
+  const emitUnit = (
+    ctx: CommandContext,
+    commandName: string,
+    itemId: string,
+    kind: string,
+    attrs: Readonly<Record<string, unknown>> | null,
+  ) => {
+    if (attrs === null) return setDecorationCommand.run(ctx, { itemId, kind, attrs: null });
+    const model = getUnitModel(kind);
+    if (model === undefined) return setDecorationCommand.run(ctx, { itemId, kind, attrs });
+    const child = findChild(ctx.document, itemId);
+    if (child === undefined) {
+      return fail("item-not-found", `${commandName}: no item with id "${itemId}"`);
+    }
+    if (!model.appliesTo(child as unknown as AgocraftItem)) {
+      return fail(
+        "not-applicable",
+        `${commandName}: item "${itemId}" cannot carry the "${kind}" unit`,
+      );
+    }
+    const v = model.validate(attrs);
+    if (!v.ok) return fail(v.code, `${commandName}: ${v.message}`);
+    return setDecorationCommand.run(ctx, { itemId, kind, attrs: model.toAttrs(v.value) });
+  };
+
+  // WI-247 / DR-163 — factory for a typed "set one unit" command: the wrapper
+  // injects the whole flow, so a new unit command is one line (no remembered
+  // boilerplate). The registered weave.item.setDecoration is itself such a wrapper.
+  const makeSetUnitCommand = <I extends { itemId: string }>(
+    name: string,
+    unit: { kind: string },
+    extract: (input: I) => Readonly<Record<string, unknown>> | null,
+  ): Command<I, void> => ({
+    name,
+    run: (ctx, input) => emitUnit(ctx, name, input.itemId, unit.kind, extract(input)),
+  });
+
+  // The registered generic setter validates through the registry too (the kit
+  // instance above is the raw emit the wrapper composes).
+  const setDecorationValidated: Command<{ itemId: string; kind: string; attrs?: unknown }, void> = {
+    name: "weave.item.setDecoration",
+    run: (ctx, input) =>
+      emitUnit(
+        ctx,
+        "weave.item.setDecoration",
+        input.itemId,
+        input.kind,
+        (input.attrs as Readonly<Record<string, unknown>> | undefined) ?? null,
+      ),
+  };
+
   const updateItem: Command<UpdateItemInput, void> = {
     name: "weave.item.update",
     run: (ctx, input) => {
@@ -1419,12 +1476,8 @@ export function buildWeaveCommands(
       //    this command's single transaction → one undo step ──
       if (hasUnits) {
         for (const u of input.units ?? []) {
-          const r = setDecorationCommand.run(ctx, {
-            itemId: input.itemId,
-            kind: u.kind,
-            // null clears the decoration; an object sets/replaces it.
-            attrs: u.attrs ?? null,
-          });
+          // DR-163 — the wrapper auto-validates each unit via its model.
+          const r = emitUnit(ctx, "weave.item.update", input.itemId, u.kind, u.attrs ?? null);
           if (!r.ok) return r;
           patches.push(...r.patches);
         }
@@ -1719,55 +1772,15 @@ export function buildWeaveCommands(
     },
   };
 
-  // WI-056 → DR-028 — set a shape's fill (PaintSpec). Fill is now the
-  // `decoration.fill` UNIT, not `attrs.fill`, so this command keeps its typed,
-  // agent-discoverable surface but VALIDATES the paint then DELEGATES the patch
-  // emission to the agocraft `createSetDecorationCommand` kit (kind = fill). One
-  // source of truth for the unit.remove + unit.create patches.
-  const SHAPE_FILL_TYPES = new Set([
-    "none",
-    "solid",
-    "linear-gradient",
-    "radial-gradient",
-    "image",
-    "video",
-  ]);
-  const fillDecorationCommand = createSetDecorationCommand("weave.shape.setFill");
-  const setShapeFill: Command<SetShapeFillInput, void> = {
-    name: "weave.shape.setFill",
-    run: (ctx, input) => {
-      const child = findChild(ctx.document, input.itemId);
-      if (child === undefined) {
-        return fail("item-not-found", `weave.shape.setFill: no item with id "${input.itemId}"`);
-      }
-      // DR-028 / DR-161 — `decoration.fill` is a kind-agnostic UNIT (read by shape
-      // AND frame renderers), so no kind gate: the command validates the PaintSpec
-      // and attaches the fill unit to the (existing) target. Non-fill kinds ignore
-      // it and round-trip it untouched (onUnknown: preserve).
-      const fill = input.fill as { type?: unknown; stops?: unknown } | undefined;
-      if (fill === undefined || typeof fill.type !== "string" || !SHAPE_FILL_TYPES.has(fill.type)) {
-        return fail(
-          "invalid-input",
-          `weave.shape.setFill: \`fill.type\` must be one of ${[...SHAPE_FILL_TYPES].join(", ")}`,
-        );
-      }
-      if (
-        (fill.type === "linear-gradient" || fill.type === "radial-gradient") &&
-        (!Array.isArray(fill.stops) || fill.stops.length < 2)
-      ) {
-        return fail(
-          "invalid-input",
-          "weave.shape.setFill: a gradient fill needs `stops` with at least 2 entries",
-        );
-      }
-      // DR-028 — emit the decoration.fill unit patch via the kit command.
-      return fillDecorationCommand.run(ctx, {
-        itemId: input.itemId,
-        kind: FILL_UNIT_KIND,
-        attrs: input.fill as unknown as Readonly<Record<string, unknown>>,
-      });
-    },
-  };
+  // WI-056 → DR-028 → DR-161 → DR-163 — set a fill (PaintSpec). `decoration.fill`
+  // is a kind-agnostic UNIT; the PaintSpec validation lives in `fillUnit` and the
+  // emit in the `emitUnit` wrapper, so this typed, agent-discoverable command is a
+  // ONE-LINE factory call with zero hand-written boilerplate.
+  const setShapeFill = makeSetUnitCommand<SetShapeFillInput>(
+    "weave.shape.setFill",
+    fillUnit,
+    (input) => input.fill as Readonly<Record<string, unknown>>,
+  );
 
   // WI-032 Phase 3 — `weave.shape.update` / `weave.shape.remove` previously
   // edited entries in `canvas-design.attrs.shapes[]`. With the legacy
@@ -2029,11 +2042,7 @@ export function buildWeaveCommands(
       if (hasUnits) {
         for (const id of ids) {
           for (const u of input.units ?? []) {
-            const r = setDecorationCommand.run(ctx, {
-              itemId: id,
-              kind: u.kind,
-              attrs: u.attrs ?? null,
-            });
+            const r = emitUnit(ctx, "weave.items.update", id, u.kind, u.attrs ?? null);
             if (!r.ok) return r;
             patches.push(...r.patches);
           }
@@ -3818,7 +3827,7 @@ export function buildWeaveCommands(
     // DR-028 — decoration as units (shadow/stroke/fill/filter/opacity). The
     // agocraft kit owns the patch semantics; weave just names + uses it. Same
     // instance reused inline by weave.item.update for one-call styled edits (WI-063).
-    setDecorationCommand as Command,
+    setDecorationValidated as Command,
   ];
 
   // WI-096 (DR-065) — weave.batch: run SEVERAL commands as ONE atomic transaction.
