@@ -44,9 +44,14 @@ Add two **required** fields to `DomainKindSpec<K>` and make `renderer` derived:
 
 ```ts
 readonly useViewModel: ItemViewModelHook<K>;   // (item, onUpdate?) => ItemVm<K> — a hook
-readonly view: PureItemView<K>;                // ({ item, vm }) => JSX.Element — pure
+readonly view: PureItemView<K>;                // (props: { vm: ItemVm<K> }) => JSX.Element — pure
 readonly renderer = makeKindRenderer({ useViewModel, view });  // generated, not hand-written
 ```
+
+The pure View takes **`{ vm }` only** — never the raw `item`. The VM projects
+every value the View renders, so the View binds to one source and cannot reach
+into `item.attrs`. The model flows into the VM (`useViewModel(item, onUpdate)`),
+never to the View.
 
 `makeKindRenderer` is the only caller of the hook → the view. Because `view`'s
 props *require* a `vm` and the only producer of a `vm` is `useViewModel`, the
@@ -116,6 +121,14 @@ already rejected silent defaults for the structure facet, same reasoning here.
   `TextView({item, vm})` (renderReadOnly + layered outline + hyperlink + lazy
   Lexical) + thin shim. `RichTextSnapshot` type-only (Lexical chunk stays
   split). tsc clean, 1486 unit green, biome clean.
+- **2026-06-17 — vm-only Views (`c2e8c89`)**: tightened both reference Views to
+  bind to `{ vm }` ONLY — `ChartView`/`TextView` no longer take `item` or read
+  `item.attrs`/`item.id`. The VMs now project the rendered content (chart:
+  `itemId`; text: `anchorId`/`text`/`textRuns`/`linkHref`, hyperlink gate derived
+  in the VM). This fixes the gap the operator flagged ("the View still references
+  the model") and sets the uniform Phase-0 contract `PureItemView<K> = (props: {
+  vm }) => JSX`. tsc clean, biome clean, 1489 unit green. **Apply the same
+  vm-only rule to every remaining kind as it is migrated.**
 - These are the **decoupled** form (Block stays the registered `renderer`,
   calling the hook). The Phase-0 facet (HANDOFF-002, WI-241 session) flips each
   `SPECS` entry to `useViewModel`/`view` once the required fields +

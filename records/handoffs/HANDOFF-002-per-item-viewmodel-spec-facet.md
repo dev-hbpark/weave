@@ -39,11 +39,18 @@ renderer:
 ```ts
 // new required fields on DomainKindSpec<K>
 readonly useViewModel: ItemViewModelHook<K>;   // (item, onUpdate?) => ItemVm<K>  — a hook
-readonly view: PureItemView<K>;                // (props: { item; vm: ItemVm<K> }) => JSX.Element
+readonly view: PureItemView<K>;                // (props: { vm: ItemVm<K> }) => JSX.Element
 
 // renderer is no longer hand-written per kind — it is GENERATED from the pair:
 readonly renderer: ComponentType<DomainRendererProps<K>>;  // = makeKindRenderer({ useViewModel, view })
 ```
+
+**The pure View takes `{ vm }` ONLY — not `{ item, vm }`.** The VM projects every
+value the View renders (text VM → `anchorId`/`text`/`textRuns`/`linkHref`; chart
+VM → `itemId`), so the View binds to a single source and cannot reach into
+`item.attrs`. The model flows into the VM via `useViewModel(item, onUpdate)` and
+never reaches the View — `makeKindRenderer` calls `spec.view({ vm })`. (Proven on
+the chart + text reference kinds, commit `c2e8c89`.)
 
 `makeKindRenderer` is the only thing that calls the hook then the view:
 
@@ -53,7 +60,7 @@ function makeKindRenderer<K extends DomainKind>(
 ): ComponentType<DomainRendererProps<K>> {
   return function KindRenderer({ item, onUpdate }) {
     const vm = spec.useViewModel(item, onUpdate);   // ONE hook call per kind-component
-    return spec.view({ item, vm });
+    return spec.view({ vm });                        // View binds to the vm only
   };
 }
 ```

@@ -36,7 +36,7 @@ from them:
 
 ```ts
 readonly useViewModel: ItemViewModelHook<K>;   // (item, onUpdate?) => ItemVm<K> — a hook
-readonly view: PureItemView<K>;                // ({ item, vm }) => JSX.Element — pure, no provider
+readonly view: PureItemView<K>;                // (props: { vm: ItemVm<K> }) => JSX.Element — pure
 readonly renderer: ComponentType<DomainRendererProps<K>>;
 //        = makeKindRenderer({ useViewModel, view })   // generated, not hand-written
 ```
@@ -49,10 +49,19 @@ function makeKindRenderer<K extends DomainKind>(
 ): ComponentType<DomainRendererProps<K>> {
   return function KindRenderer({ item, onUpdate }) {
     const vm = spec.useViewModel(item, onUpdate);   // one hook call per kind-component
-    return spec.view({ item, vm });
+    return spec.view({ vm });                       // View binds to the vm only
   };
 }
 ```
+
+**The pure View takes `{ vm }` ONLY — never the raw `item`.** The ViewModel
+*projects* every value the View renders (e.g. text VM exposes
+`anchorId`/`text`/`textRuns`/`linkHref`; chart VM exposes `itemId`), so the View
+binds to a single source and cannot reach around the VM into `item.attrs`. This
+is the strict reading of the *"view renders from props with no provider"* litmus:
+the only prop is the vm. (Validated on the chart + text reference kinds, commit
+`c2e8c89`.) The model still flows **into** the VM via `useViewModel(item,
+onUpdate)`; it just never reaches the View.
 
 Because `SPECS` is the compiler-exhaustive `{ [K in DomainKind]: DomainKindSpec<K> }`
 and both fields are required, **adding a kind is a compile error until its content
