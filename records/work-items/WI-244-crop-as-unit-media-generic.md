@@ -64,6 +64,24 @@ command, two call sites). Committed-wins; rebase/renumber on conflict.
   `attrs.cropRatio` → unit on load and retires the read-fallback — **deferred per
   DR-161** (the read-fallback covers back-compat; re-saving already migrates).
 
+## Follow-up audit — other unit commands' kind gates (`c511a6c`)
+
+Swept `commands.ts` for unit-based commands gating on item kind unnecessarily
+(the crop precedent). Findings:
+
+- **Correctly ungated** (no change): `weave.item.setDecoration`, `weave.item.update`,
+  `weave.items.update`, `weave.item.add`, `weave.item.addBehavior` /
+  `removeBehavior`, `weave.media.setCrop`.
+- **`weave.shape.setFill` — gate REMOVED**: it checked `kind !== "shape"`, but
+  `decoration.fill` is read by BOTH shape and frame renderers. Now validates the
+  PaintSpec and attaches the fill unit to any existing item (non-fill kinds ignore
+  it). `not-a-shape` error gone; test migrated; agent schema text updated.
+- **`weave.item.flip` — gate KEPT (legitimate)**: `FLIP_ALLOWED_KINDS`
+  {image,video,shape,line,frame} excludes text/qr for a **UX** reason (mirror-image
+  text is unreadable, a flipped qr is unscannable — functional damage), not a
+  technical kind-coupling. A unit can technically live anywhere, but disallowing
+  the mirror is a deliberate editorial decision — left as-is.
+
 ## Not yet live-verified
 
 e2e/dev-server blocked in this sandbox (vite `@fs` networkidle baseline). Correctness
