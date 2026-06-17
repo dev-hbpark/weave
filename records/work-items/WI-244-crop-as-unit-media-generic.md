@@ -7,7 +7,7 @@
 | ID | WI-244 |
 | Date | 2026-06-17 |
 | Owner | hbpark |
-| Status | **IN PROGRESS** |
+| Status | **DONE** (slices 1–3 shipped; legacy-attr migrate-sweep deferred per DR-161) |
 | Type | Feature / refactor — crop storage model + media-generic crop UI + video wiring |
 | Decision | [DR-161](../decisions/DR-161-crop-as-unit-media-generic.md) |
 | Related | DR-028 (units), DR-029/WI-074 (image crop), WI-243/DR-160 (View/VM split), `transform-crop-offset.ts` |
@@ -43,6 +43,33 @@ keystone — a unit is kind-agnostic, so it unblocks (1)+(2).
 Touches files the WI-241/242 group-kind session may also edit (`commands.ts`,
 `DesignPage.tsx`, `editor-hotkeys.ts`). Edits are localized (the `setImageCrop`
 command, two call sites). Committed-wins; rebase/renumber on conflict.
+
+## Progress log
+
+- **Slice 1 — crop window unit (`c0fbb1c`)**: new `crop-window.ts` (`crop.window`
+  unit, mirror of `crop.offset`) + `readCropWindow` (unit ?? legacy attr ?? identity);
+  `weave.image.setCrop` → `weave.media.setCrop`, un-gated image|video, writes the unit
+  + strips the legacy attr; call sites + agent schema/capabilities/surface updated;
+  crop command tests migrated to the unit surface. 1494 unit green.
+- **Slice 2 — media-generic crop UI (`36fd182`)**: `CropEditor` + `CroppedMedia` +
+  helpers + `CropRect` moved to `domains/media/crop-editor.tsx`; inner element via a
+  `media:(style)=>ReactNode` render-prop. ImageBlock consumes it (passes `<img>`);
+  data-testids unchanged. Behavior-neutral for image. 1494 unit green.
+- **Slice 3 — video crop (`29b8fcf`)**: video VM reads the crop units, exposes
+  `cropMode`/`onEnterCrop`; `VideoView` renders committed crop + crop editor via the
+  shared component with `<video>` (committed keeps the trim/volume ref effects;
+  aspect measured). 1499 unit green.
+- **Slice 4 folded into slice 1** (command rename + agent schema/capabilities/surface
+  "image only" → "image/video"). Remaining: a migrate-sweep that lifts legacy
+  `attrs.cropRatio` → unit on load and retires the read-fallback — **deferred per
+  DR-161** (the read-fallback covers back-compat; re-saving already migrates).
+
+## Not yet live-verified
+
+e2e/dev-server blocked in this sandbox (vite `@fs` networkidle baseline). Correctness
+rests on tsc + full unit suite (incl. `crop-window` reader + migrated command tests) +
+unchanged crop data-testids. A video-crop e2e (enter → pan → commit writes the
+`crop.window` unit) should be added in a networked run.
 
 ## Verification (per slice)
 
