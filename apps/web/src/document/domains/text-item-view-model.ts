@@ -26,6 +26,7 @@ import {
   OPACITY_UNIT_KIND,
   resolveFontSize,
   type TextDecoration,
+  type TextRun,
 } from "@agocraft/core";
 import { type CSSProperties, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useSelection } from "../interactions/selection-context.js";
@@ -40,6 +41,15 @@ import { fitFontScale, isTextAutofitEnabled } from "./text-autofit.js";
 import { MIN_TEXT_WIDTH_CSS, minFitScaleFor } from "./text-fit-floors.js";
 
 export interface TextItemVm {
+  // ── Content the View renders (projected from the model so the View never
+  //    reads `item.*` — it binds to the vm only) ──
+  /** `String(item.id)` — the Lexical editor anchor. */
+  readonly anchorId: string;
+  readonly text: string;
+  readonly textRuns: ReadonlyArray<TextRun> | undefined;
+  /** The inline-hyperlink href, defined ONLY when the link should render
+   *  (present mode + a non-empty url). `undefined` → no `<a>` wrap. */
+  readonly linkHref: string | undefined;
   readonly editable: boolean;
   readonly isEditing: boolean;
   readonly hasRuns: boolean;
@@ -328,7 +338,16 @@ export function useTextItemViewModel(
       }
     : null;
 
+  // Hyperlink gate (present mode + non-empty url) — derived here so the View
+  // binds to a single `linkHref` instead of re-deriving from the model.
+  const linkHref =
+    !editable && a.hyperlink != null && a.hyperlink.url.length > 0 ? a.hyperlink.url : undefined;
+
   return {
+    anchorId: selfId,
+    text: a.text,
+    textRuns: a.textRuns,
+    linkHref,
     editable,
     isEditing,
     hasRuns,

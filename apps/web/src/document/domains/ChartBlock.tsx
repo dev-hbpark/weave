@@ -46,16 +46,11 @@ function Placeholder({ opacity }: { readonly opacity: number }): JSX.Element {
   );
 }
 
-/** Pure content View for a chart item — renders from `{ item, vm }` ONLY (no
- *  Context / store / derivation). `empty` → placeholder; `ready` → lazy ECharts
- *  wrapped in the per-item error boundary, with the VM's click intents. */
-export function ChartView({
-  item,
-  vm,
-}: {
-  readonly item: AgoItem<"chart">;
-  readonly vm: ChartItemVm;
-}): JSX.Element {
+/** Pure content View for a chart item — renders from `{ vm }` ONLY (binds to the
+ *  ViewModel, never reads `item.*`; no Context / store / derivation). `empty` →
+ *  placeholder; `ready` → lazy ECharts wrapped in the per-item error boundary,
+ *  with the VM's click intents. */
+export function ChartView({ vm }: { readonly vm: ChartItemVm }): JSX.Element {
   if (vm.status === "empty") return <Placeholder opacity={vm.opacity} />;
 
   return (
@@ -69,7 +64,7 @@ export function ChartView({
       {/* WI-172 — boundary scopes a throwing chart to THIS item (placeholder)
           instead of unmounting the whole canvas tree and cascade-failing
           subsequent agent execs. */}
-      <ChartErrorBoundary chartItemId={String(item.id)} opacity={vm.opacity}>
+      <ChartErrorBoundary chartItemId={vm.itemId} opacity={vm.opacity}>
         <Suspense fallback={<div data-testid="chart-loading" className="absolute inset-0" />}>
           <EChartView
             {...vm.echartProps}
@@ -89,5 +84,5 @@ export function ChartView({
  *  via `makeKindRenderer`, retiring this shim. */
 export function ChartBlock({ item }: ChartBlockProps): JSX.Element {
   const vm = useChartItemViewModel(item);
-  return <ChartView item={item} vm={vm} />;
+  return <ChartView vm={vm} />;
 }

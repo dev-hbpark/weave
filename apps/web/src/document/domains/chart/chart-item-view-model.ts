@@ -55,9 +55,10 @@ export type ChartEChartProps = Omit<
 /** View-state for a chart item. `empty` → placeholder; `ready` → the marks +
  *  the click intents. A plain status discriminant, deliberately not `role`. */
 export type ChartItemVm =
-  | { readonly status: "empty"; readonly opacity: number }
+  | { readonly status: "empty"; readonly itemId: string; readonly opacity: number }
   | {
       readonly status: "ready";
+      readonly itemId: string;
       readonly opacity: number;
       readonly echartProps: ChartEChartProps;
       readonly onElementClick: (info: ChartClickInfo) => void;
@@ -126,7 +127,7 @@ export function useChartItemViewModel(item: AgoItem<"chart">): ChartItemVm {
   const plottable =
     data !== undefined && data.rows.length > 0 && requiredChannelsSatisfied(chartType, encoding);
 
-  if (!plottable) return { status: "empty", opacity };
+  if (!plottable) return { status: "empty", itemId: id, opacity };
 
   const dataset = data as DatasetPayload; // guarded by `plottable`.
   const echartProps: ChartEChartProps = {
@@ -144,6 +145,7 @@ export function useChartItemViewModel(item: AgoItem<"chart">): ChartItemVm {
 
   return {
     status: "ready",
+    itemId: id,
     opacity,
     echartProps,
     onElementClick,

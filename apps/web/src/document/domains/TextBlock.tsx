@@ -30,29 +30,23 @@ interface TextBlockProps {
   readonly onUpdate?: (patch: Partial<TextAttrs>) => void;
 }
 
-/** Pure content View for a text item — renders from `{ item, vm }` ONLY. Owns no
- *  state/effects/derivation; only DOM refs (`data-text-content` is the element
- *  the selection chrome measures on the auto axis) and the lazy Lexical editor.
- *  Edit mode (Lexical) vs read-only render is chosen from `vm.isEditing`; the
- *  layered outline / hyperlink wrap are assembled from `vm` flags. */
-export function TextView({
-  item,
-  vm,
-}: {
-  readonly item: AgoItem<"text">;
-  readonly vm: TextItemVm;
-}) {
-  const a = item.attrs;
+/** Pure content View for a text item — renders from `{ vm }` ONLY (binds to the
+ *  ViewModel, never reads `item.*`). Owns no state/effects/derivation; only DOM
+ *  refs (`data-text-content` is the element the selection chrome measures on the
+ *  auto axis) and the lazy Lexical editor. Edit mode (Lexical) vs read-only
+ *  render is chosen from `vm.isEditing`; the layered outline / hyperlink wrap are
+ *  assembled from `vm` flags. */
+export function TextView({ vm }: { readonly vm: TextItemVm }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
 
   const inner =
     vm.editable && vm.isEditing ? (
-      <Suspense fallback={renderReadOnly(a.text, a.textRuns)}>
+      <Suspense fallback={renderReadOnly(vm.text, vm.textRuns)}>
         <LexicalTextEditor
-          anchorId={String(item.id)}
-          value={a.text}
-          {...(Array.isArray(a.textRuns) ? { initialTextRuns: a.textRuns } : {})}
+          anchorId={vm.anchorId}
+          value={vm.text}
+          {...(Array.isArray(vm.textRuns) ? { initialTextRuns: vm.textRuns } : {})}
           {...(vm.baseInlineFormat !== undefined ? { baseInlineFormat: vm.baseInlineFormat } : {})}
           contentStyle={vm.editorContentStyle}
           baseRangeStyle={vm.baseRangeStyle}
@@ -61,15 +55,15 @@ export function TextView({
         />
       </Suspense>
     ) : (
-      renderReadOnly(a.text, a.textRuns)
+      renderReadOnly(vm.text, vm.textRuns)
     );
   const linked =
-    !vm.editable && a.hyperlink != null && a.hyperlink.url.length > 0 ? (
+    vm.linkHref !== undefined ? (
       // WI-090 (DR-052 §2) — raise the inline `<a>` above the item-level link
       // overlay (z-index 1) so clicking linked text opens the inline URL while
       // empty box area still fires the item-level link.
       <a
-        href={a.hyperlink.url}
+        href={vm.linkHref}
         target="_blank"
         rel="noopener noreferrer"
         style={{ color: "inherit", textDecoration: "inherit", position: "relative", zIndex: 2 }}
@@ -84,7 +78,7 @@ export function TextView({
   const contentNode = vm.showOutline ? (
     <>
       <span aria-hidden="true" data-text-outline style={vm.outlineLayerStyle ?? undefined}>
-        {renderReadOnly(a.text, a.textRuns, "outline", vm.hasOutline)}
+        {renderReadOnly(vm.text, vm.textRuns, "outline", vm.hasOutline)}
       </span>
       <span style={{ position: "relative", zIndex: 1 }}>{linked}</span>
     </>
@@ -141,7 +135,7 @@ export function TextView({
  *  via `makeKindRenderer`, retiring this shim. */
 export function TextBlock({ item, onUpdate }: TextBlockProps) {
   const vm = useTextItemViewModel(item, onUpdate);
-  return <TextView item={item} vm={vm} />;
+  return <TextView vm={vm} />;
 }
 
 /** Present-mode rich-text renderer. When `textRuns` is present, map each run to
